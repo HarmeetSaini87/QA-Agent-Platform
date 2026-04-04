@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Execution Report — QA Agent Platform</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #1e1e2e;
+      color: #d4d4d4;
+      min-height: 100vh;
+    }
+
+    /* ── Toolbar ── */
+    .toolbar {
+      background: #252535;
+      border-bottom: 1px solid #2d3748;
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      print-color-adjust: exact;
+    }
+    .toolbar-title { font-size: 15px; font-weight: 600; color: #e2e8f0; flex: 1; }
+    .toolbar-sub   { font-size: 12px; color: #858585; }
+    .btn {
+      padding: 7px 16px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: background 0.15s;
+    }
+    .btn-secondary {
+      background: #2d3748;
+      color: #d4d4d4;
+      border-color: #4a5568;
+    }
+    .btn-secondary:hover { background: #3a4a60; }
+    .btn-primary {
+      background: #0e7490;
+      color: #fff;
+      border-color: #0e7490;
+    }
+    .btn-primary:hover { background: #0b6480; }
+
+    /* ── Page body ── */
+    .page { max-width: 1100px; margin: 0 auto; padding: 28px 24px; }
+
+    /* ── Loading / Error ── */
+    .center-msg { text-align: center; padding: 80px 24px; color: #858585; font-size: 14px; }
+
+    /* ── Section headings ── */
+    .section-title {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: #9cdcfe;
+      margin: 32px 0 12px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid #2d3748;
+    }
+
+    /* ── Summary grid ── */
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+      gap: 12px;
+    }
+    .summary-item {
+      background: #252535;
+      border: 1px solid #2d3748;
+      border-radius: 8px;
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .summary-lbl { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: #858585; }
+    .summary-val { font-size: 13px; color: #e2e8f0; word-break: break-all; }
+
+    /* ── Metrics row ── */
+    .metrics-row { display: flex; gap: 12px; flex-wrap: wrap; }
+    .metric {
+      flex: 1;
+      min-width: 100px;
+      background: #252535;
+      border: 1px solid #2d3748;
+      border-radius: 10px;
+      padding: 18px 12px;
+      text-align: center;
+    }
+    .metric-val { font-size: 36px; font-weight: 700; line-height: 1; color: #d4d4d4; }
+    .metric-lbl { font-size: 11px; color: #858585; margin-top: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .metric-pass .metric-val { color: #4ec9b0; }
+    .metric-fail .metric-val { color: #f48771; }
+    .metric-skip .metric-val { color: #dcdcaa; }
+    .metric-rate .metric-val { color: #9cdcfe; }
+
+    /* ── Progress bar ── */
+    .progress-wrap { margin-top: 20px; }
+    .progress-bar-bg { background: #2d3748; border-radius: 4px; height: 8px; overflow: hidden; }
+    .progress-bar-fill { height: 100%; border-radius: 4px; background: #4ec9b0; transition: width 0.4s; }
+    .progress-label { font-size: 11px; color: #858585; margin-top: 4px; }
+
+    /* ── Table ── */
+    .report-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .report-table th {
+      background: #252535;
+      padding: 10px 12px;
+      text-align: left;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #858585;
+      border-bottom: 1px solid #2d3748;
+      white-space: nowrap;
+    }
+    .report-table td {
+      padding: 10px 12px;
+      border-bottom: 1px solid #1a1f2e;
+      vertical-align: top;
+    }
+    .report-table tr:hover td { background: #1e2535; }
+
+    /* ── Status badges ── */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 9px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .badge-pass  { background: rgba(78,201,176,.15); color: #4ec9b0; border: 1px solid rgba(78,201,176,.3); }
+    .badge-fail  { background: rgba(244,135,113,.15); color: #f48771; border: 1px solid rgba(244,135,113,.3); }
+    .badge-skip  { background: rgba(220,186,38,.15);  color: #dcdcaa; border: 1px solid rgba(220,186,38,.3); }
+    .badge-run   { background: rgba(220,186,38,.15);  color: #dcdcaa; border: 1px solid rgba(220,186,38,.3); }
+
+    /* ── Failure detail panel ── */
+    .failure-block {
+      margin-top: 8px;
+      background: #1a0e0e;
+      border: 1px solid rgba(244,135,113,.25);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    .failure-header {
+      background: rgba(244,135,113,.12);
+      padding: 6px 10px;
+      font-size: 11px;
+      font-weight: 600;
+      color: #f48771;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .failure-body {
+      padding: 10px;
+      font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+      font-size: 11.5px;
+      color: #f48771cc;
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 220px;
+      overflow-y: auto;
+      line-height: 1.5;
+    }
+    .screenshot-wrap { margin-top: 10px; padding: 0 10px 10px; }
+    .screenshot-wrap img {
+      max-width: 100%;
+      border-radius: 4px;
+      border: 1px solid #2d3748;
+      cursor: pointer;
+    }
+    .screenshot-caption { font-size: 11px; color: #858585; margin-top: 4px; }
+
+    /* ── TC ID badge ── */
+    .tc-id {
+      display: inline-block;
+      font-family: monospace;
+      font-size: 11px;
+      background: #2d3748;
+      color: #9cdcfe;
+      border-radius: 4px;
+      padding: 1px 6px;
+      white-space: nowrap;
+    }
+
+    /* ── Print styles ── */
+    @media print {
+      * {
+        print-color-adjust: exact !important;
+        -webkit-print-color-adjust: exact !important;
+      }
+      .toolbar { display: none !important; }
+      .failure-body { max-height: none !important; overflow: visible !important; }
+
+      /* Force white background + dark text everywhere */
+      body, .page { background: #fff !important; color: #111 !important; }
+
+      /* Summary grid cards */
+      .summary-item {
+        background: #f4f6f8 !important;
+        border: 1px solid #d1d5db !important;
+      }
+      .summary-lbl { color: #6b7280 !important; }
+      .summary-val { color: #111 !important; }
+
+      /* Metric cards */
+      .metric { background: #f4f6f8 !important; border: 1px solid #d1d5db !important; }
+      .metric-lbl { color: #6b7280 !important; }
+      .metric-val { color: #111 !important; }
+      .metric-pass .metric-val { color: #166534 !important; }
+      .metric-fail .metric-val { color: #991b1b !important; }
+      .metric-skip .metric-val { color: #92400e !important; }
+      .metric-rate .metric-val { color: #1d4ed8 !important; }
+
+      /* Progress bar */
+      .progress-bar-bg { background: #e5e7eb !important; }
+      .progress-bar-fill { background: #16a34a !important; }
+      .progress-label { color: #6b7280 !important; }
+
+      /* Section titles */
+      .section-title { color: #1d4ed8 !important; border-bottom-color: #d1d5db !important; }
+
+      /* Table */
+      .report-table th { background: #e5e7eb !important; color: #374151 !important; border-bottom-color: #9ca3af !important; }
+      .report-table td { border-bottom-color: #e5e7eb !important; color: #111 !important; }
+      .report-table tr:hover td { background: transparent !important; }
+
+      /* Status badges */
+      .badge-pass { color: #166534 !important; background: #dcfce7 !important; border-color: #86efac !important; }
+      .badge-fail { color: #991b1b !important; background: #fee2e2 !important; border-color: #fca5a5 !important; }
+      .badge-skip { color: #92400e !important; background: #fef3c7 !important; border-color: #fcd34d !important; }
+      .badge-run  { color: #92400e !important; background: #fef3c7 !important; border-color: #fcd34d !important; }
+
+      /* TC ID */
+      .tc-id { background: #e0e7ff !important; color: #3730a3 !important; }
+
+      /* Failure block */
+      .failure-block { background: #fff5f5 !important; border-color: #fca5a5 !important; }
+      .failure-header { background: #fee2e2 !important; color: #991b1b !important; }
+      .failure-body { background: #fff5f5 !important; color: #7f1d1d !important; }
+
+      /* Grey text overrides */
+      [style*="color:#858585"],
+      [style*="color: #858585"] { color: #6b7280 !important; }
+      [style*="color:#4ec9b0"],
+      [style*="color: #4ec9b0"] { color: #166534 !important; }
+      [style*="color:#f48771"],
+      [style*="color: #f48771"] { color: #991b1b !important; }
+      [style*="color:#d4d4d4"],
+      [style*="color: #d4d4d4"] { color: #111 !important; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="toolbar">
+    <div>
+      <div class="toolbar-title">Execution Report</div>
+      <div class="toolbar-sub" id="tb-sub">Loading…</div>
+    </div>
+    <button class="btn btn-secondary" onclick="window.close()">&#8592; Back</button>
+    <button class="btn btn-secondary" onclick="exportHTML()">&#8681; Export HTML</button>
+    <button class="btn btn-primary"   onclick="window.print()">&#128438; Export PDF</button>
+  </div>
+
+  <div class="page" id="page-content">
+    <div class="center-msg" id="loading-msg">Loading report…</div>
+  </div>
+
+<script>
+const params = new URLSearchParams(location.search);
+const runId  = params.get('runId');
+
+if (!runId) {
+  document.getElementById('loading-msg').textContent = 'No runId specified.';
+} else {
+  loadReport(runId);
+}
+
+async function loadReport(id) {
+  try {
+    const res = await fetch(`/api/run/${encodeURIComponent(id)}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const r = await res.json();
+    renderReport(r);
+  } catch (err) {
+    document.getElementById('loading-msg').textContent = `Failed to load: ${err.message}`;
+  }
+}
+
+function esc(s) {
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function fmtDate(iso) {
+  if (!iso) return '—';
+  try {
+    const d = new Date(iso);
+    return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  } catch { return iso; }
+}
+
+function fmtDuration(startIso, endIso) {
+  if (!startIso || !endIso) return '—';
+  try {
+    const ms = new Date(endIso) - new Date(startIso);
+    if (ms < 0) return '—';
+    const s = Math.floor(ms / 1000);
+    if (s < 60) return `${s}s`;
+    const m = Math.floor(s / 60), rs = s % 60;
+    return `${m}m ${rs}s`;
+  } catch { return '—'; }
+}
+
+function fmtDurationMs(ms) {
+  if (!ms && ms !== 0) return '—';
+  return ms >= 1000 ? `${(ms/1000).toFixed(2)}s` : `${ms}ms`;
+}
+
+function statusBadge(status) {
+  const map = {
+    pass:    '<span class="badge badge-pass">&#10003; Passed</span>',
+    fail:    '<span class="badge badge-fail">&#10007; Failed</span>',
+    running: '<span class="badge badge-run">&#9679; Running</span>',
+    done:    '<span class="badge badge-pass">&#10003; Completed</span>',
+    failed:  '<span class="badge badge-fail">&#10007; Failed</span>',
+    skip:    '<span class="badge badge-skip">&#8212; Skipped</span>',
+  };
+  return map[status] || `<span class="badge">${esc(status)}</span>`;
+}
+
+function extractTcId(name) {
+  const m = name?.match(/\[([A-Z]{0,6}_\d+)\]/);
+  return m ? m[1] : null;
+}
+
+function cleanTitle(name) {
+  return (name || '').replace(/^\s*\[[A-Z_\d]+\]\s*/, '').trim() || name || '—';
+}
+
+function renderReport(r) {
+  const content  = document.getElementById('page-content');
+  const passRate = r.total > 0 ? Math.round((r.passed / r.total) * 100) : 0;
+  const dur      = fmtDuration(r.startedAt, r.finishedAt);
+  const shortId  = (r.runId || '').slice(0, 8);
+
+  document.title = `Execution Report — ${shortId}`;
+  document.getElementById('tb-sub').textContent =
+    `${esc(r.suiteName || r.planId || shortId)}  ·  ${fmtDate(r.startedAt)}`;
+
+  const tests = Array.isArray(r.tests) ? r.tests : [];
+  const skipped = r.total - r.passed - r.failed;
+
+  // ── Test rows
+  const testRows = tests.map((t, i) => {
+    const tcId   = extractTcId(t.name);
+    const title  = cleanTitle(t.name);
+    const status = t.status === 'pass' ? 'pass' : t.status === 'fail' ? 'fail' : 'skip';
+
+    let failureHtml = '';
+    if (status === 'fail') {
+      const errMsg  = esc(t.errorMessage || 'Test failed');
+      const errDetail = esc(t.errorDetail || '');
+      failureHtml = `
+        <div class="failure-block">
+          <div class="failure-header">&#9888; Failure Details</div>
+          <div class="failure-body">${errDetail || errMsg}</div>
+          ${t.screenshotPath ? `
+          <div class="screenshot-wrap">
+            <img src="/screenshots/${esc(t.screenshotPath.replace('test-results/',''))}"
+                 alt="Failure screenshot"
+                 onerror="this.parentElement.style.display='none'">
+            <div class="screenshot-caption">Failure screenshot</div>
+          </div>` : ''}
+        </div>`;
+    }
+
+    return `<tr>
+      <td style="text-align:center;color:#858585">${i + 1}</td>
+      <td>${tcId ? `<span class="tc-id">${esc(tcId)}</span>` : '<span style="color:#555">—</span>'}</td>
+      <td style="color:#d4d4d4">${esc(title)}</td>
+      <td>${statusBadge(status)}</td>
+      <td style="color:#858585;white-space:nowrap">${fmtDurationMs(t.durationMs)}</td>
+      <td>${status === 'fail' ? `<div style="color:#f48771;font-size:12px">${esc(t.errorMessage || 'Test failed')}</div>${failureHtml}` : '<span style="color:#555">—</span>'}</td>
+    </tr>`;
+  }).join('');
+
+  content.innerHTML = `
+    <!-- Execution Summary -->
+    <div class="section-title">Execution Summary</div>
+    <div class="summary-grid">
+      <div class="summary-item"><span class="summary-lbl">Execution ID</span><span class="summary-val" style="font-family:monospace;font-size:11px">${esc(r.runId || '—')}</span></div>
+      <div class="summary-item"><span class="summary-lbl">Project</span><span class="summary-val">${esc(r.projectName || '—')}</span></div>
+      <div class="summary-item"><span class="summary-lbl">Test Suite</span><span class="summary-val">${esc(r.suiteName || r.planId || '—')}</span></div>
+      <div class="summary-item"><span class="summary-lbl">Environment</span><span class="summary-val">${esc(r.environmentName || '—')}</span></div>
+      <div class="summary-item"><span class="summary-lbl">Executed By</span><span class="summary-val">${esc(r.executedBy || '—')}</span></div>
+      <div class="summary-item"><span class="summary-lbl">Overall Status</span><span class="summary-val">${statusBadge(r.status)}</span></div>
+      <div class="summary-item"><span class="summary-lbl">Start Time</span><span class="summary-val">${fmtDate(r.startedAt)}</span></div>
+      <div class="summary-item"><span class="summary-lbl">End Time</span><span class="summary-val">${fmtDate(r.finishedAt)}</span></div>
+      <div class="summary-item"><span class="summary-lbl">Duration</span><span class="summary-val">${dur}</span></div>
+    </div>
+
+    <!-- Test Metrics -->
+    <div class="section-title">Test Execution Summary</div>
+    <div class="metrics-row">
+      <div class="metric"><div class="metric-val">${r.total  || 0}</div><div class="metric-lbl">Total</div></div>
+      <div class="metric metric-pass"><div class="metric-val">${r.passed || 0}</div><div class="metric-lbl">Passed</div></div>
+      <div class="metric metric-fail"><div class="metric-val">${r.failed || 0}</div><div class="metric-lbl">Failed</div></div>
+      <div class="metric metric-skip"><div class="metric-val">${Math.max(0, skipped)}</div><div class="metric-lbl">Skipped</div></div>
+      <div class="metric metric-rate"><div class="metric-val">${passRate}%</div><div class="metric-lbl">Pass Rate</div></div>
+    </div>
+    <div class="progress-wrap">
+      <div class="progress-bar-bg">
+        <div class="progress-bar-fill" style="width:${passRate}%"></div>
+      </div>
+      <div class="progress-label">${r.passed || 0} of ${r.total || 0} tests passed</div>
+    </div>
+
+    <!-- Test Case Results -->
+    <div class="section-title">Test Case Results</div>
+    ${tests.length ? `
+    <div style="overflow-x:auto">
+      <table class="report-table">
+        <thead>
+          <tr>
+            <th style="width:36px">#</th>
+            <th style="width:90px">TC ID</th>
+            <th>Title</th>
+            <th style="width:110px">Status</th>
+            <th style="width:90px">Duration</th>
+            <th>Error / Details</th>
+          </tr>
+        </thead>
+        <tbody>${testRows}</tbody>
+      </table>
+    </div>` : '<p style="color:#858585;padding:20px 0">No individual test results recorded for this run.</p>'}
+  `;
+}
+
+// ── HTML Export ───────────────────────────────────────────────────────────────
+// Clone DOM, strip dark inline color styles, inject light-mode CSS
+function exportHTML() {
+  // Clone content and neutralise dark inline colors
+  const clone = document.getElementById('page-content').cloneNode(true);
+  const darkColorMap = {
+    '#d4d4d4': '#111111',
+    '#858585': '#6b7280',
+    '#4ec9b0': '#166534',
+    '#f48771': '#991b1b',
+    '#9cdcfe': '#1d4ed8',
+    '#dcdcaa': '#92400e',
+    'color:#555': 'color:#6b7280',
+  };
+  // Walk all elements and fix inline color styles
+  clone.querySelectorAll('[style]').forEach(el => {
+    let style = el.getAttribute('style');
+    for (const [dark, light] of Object.entries(darkColorMap)) {
+      style = style.replaceAll(dark, light);
+    }
+    el.setAttribute('style', style);
+  });
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Execution Report</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background:#fff; color:#111; padding:32px; }
+    .section-title { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:1px; color:#1d4ed8; margin:28px 0 12px; padding-bottom:6px; border-bottom:2px solid #e5e7eb; }
+    .summary-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:10px; margin-bottom:8px; }
+    .summary-item { background:#f4f6f8; border:1px solid #d1d5db; border-radius:8px; padding:12px; display:flex; flex-direction:column; gap:4px; }
+    .summary-lbl { font-size:10px; text-transform:uppercase; letter-spacing:0.5px; color:#6b7280; }
+    .summary-val { font-size:13px; color:#111; word-break:break-all; }
+    .metrics-row { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:8px; }
+    .metric { flex:1; min-width:90px; background:#f4f6f8; border:1px solid #d1d5db; border-radius:10px; padding:16px; text-align:center; }
+    .metric-val { font-size:32px; font-weight:700; color:#111; }
+    .metric-lbl { font-size:10px; color:#6b7280; margin-top:4px; text-transform:uppercase; letter-spacing:0.5px; }
+    .metric-pass .metric-val { color:#166534; }
+    .metric-fail .metric-val { color:#991b1b; }
+    .metric-skip .metric-val { color:#92400e; }
+    .metric-rate .metric-val { color:#1d4ed8; }
+    .progress-wrap { margin-top:16px; }
+    .progress-bar-bg { background:#e5e7eb; border-radius:4px; height:8px; }
+    .progress-bar-fill { height:100%; border-radius:4px; background:#16a34a; }
+    .progress-label { font-size:11px; color:#6b7280; margin-top:4px; }
+    table { width:100%; border-collapse:collapse; font-size:13px; margin-top:4px; }
+    th { background:#e5e7eb; padding:10px 12px; text-align:left; font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; color:#374151; border-bottom:2px solid #9ca3af; }
+    td { padding:10px 12px; border-bottom:1px solid #e5e7eb; vertical-align:top; color:#111; }
+    .badge { display:inline-flex; align-items:center; gap:4px; padding:3px 9px; border-radius:12px; font-size:11px; font-weight:600; }
+    .badge-pass { background:#dcfce7; color:#166534; border:1px solid #86efac; }
+    .badge-fail { background:#fee2e2; color:#991b1b; border:1px solid #fca5a5; }
+    .badge-skip { background:#fef3c7; color:#92400e; border:1px solid #fcd34d; }
+    .badge-run  { background:#fef3c7; color:#92400e; border:1px solid #fcd34d; }
+    .tc-id { display:inline-block; font-family:monospace; font-size:11px; background:#e0e7ff; color:#3730a3; border-radius:4px; padding:1px 6px; }
+    .failure-block { margin-top:8px; background:#fff5f5; border:1px solid #fca5a5; border-radius:6px; overflow:hidden; }
+    .failure-header { background:#fee2e2; padding:6px 10px; font-size:11px; font-weight:600; color:#991b1b; text-transform:uppercase; }
+    .failure-body { padding:10px; font-family:monospace; font-size:11px; color:#7f1d1d; white-space:pre-wrap; word-break:break-word; }
+    .screenshot-wrap img { max-width:100%; border-radius:4px; border:1px solid #d1d5db; margin-top:8px; }
+    .screenshot-caption { font-size:11px; color:#6b7280; margin-top:4px; }
+  </style>
+</head>
+<body>
+${clone.innerHTML}
+</body></html>`;
+
+  const blob = new Blob([html], { type: 'text/html' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  const shortId = (params.get('runId') || 'report').slice(0, 8);
+  a.href     = url;
+  a.download = `execution-report-${shortId}.html`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+</script>
+</body>
+</html>

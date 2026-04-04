@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sign In — QA Agent Platform</title>
+  <link rel="stylesheet" href="/login.css" />
+</head>
+<body>
+  <div class="login-bg">
+    <div class="login-card">
+
+      <!-- Logo / brand -->
+      <div class="login-brand">
+        <div class="login-logo">
+          <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="40" height="40" rx="10" fill="#2563eb"/>
+            <path d="M12 20a8 8 0 1 1 16 0 8 8 0 0 1-16 0Z" stroke="#fff" stroke-width="2.5"/>
+            <path d="M20 14v6l4 2" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/>
+            <circle cx="29" cy="29" r="6" fill="#22c55e"/>
+            <path d="M26.5 29l2 2 3-3" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <div>
+          <div class="login-app-name">QA Agent Platform</div>
+          <div class="login-tagline">Intelligent Test Automation</div>
+        </div>
+      </div>
+
+      <h2 class="login-title">Sign in to your account</h2>
+
+      <!-- Alert box -->
+      <div id="login-alert" class="login-alert" style="display:none"></div>
+
+      <!-- Force password change notice -->
+      <div id="force-change-notice" class="login-notice" style="display:none">
+        <svg width="16" height="16" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"/></svg>
+        You are required to change your password before continuing.
+      </div>
+
+      <!-- Login form -->
+      <form id="login-form" autocomplete="off" novalidate>
+        <div class="form-group">
+          <label for="username">Username or Email</label>
+          <div class="input-wrap">
+            <svg class="input-icon" viewBox="0 0 20 20" fill="currentColor"><path d="M10 8a3 3 0 100-6 3 3 0 000 6zM3.465 14.493a1.23 1.23 0 00.41 1.412A9.957 9.957 0 0010 18c2.31 0 4.438-.784 6.131-2.1.43-.333.604-.903.408-1.41a7.002 7.002 0 00-13.074.003z"/></svg>
+            <input id="username" name="username" type="text" placeholder="Enter your username"
+              autocomplete="username" spellcheck="false" required />
+          </div>
+          <span class="field-error" id="err-username"></span>
+        </div>
+
+        <div class="form-group">
+          <label for="password">Password</label>
+          <div class="input-wrap">
+            <svg class="input-icon" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 1a4.5 4.5 0 00-4.5 4.5V9H5a2 2 0 00-2 2v6a2 2 0 002 2h10a2 2 0 002-2v-6a2 2 0 00-2-2h-.5V5.5A4.5 4.5 0 0010 1zm3 8V5.5a3 3 0 10-6 0V9h6z" clip-rule="evenodd"/></svg>
+            <input id="password" name="password" type="password" placeholder="Enter your password"
+              autocomplete="current-password" required />
+            <button type="button" class="toggle-pw" onclick="togglePassword()" tabindex="-1" title="Show/hide password">
+              <svg id="eye-icon" viewBox="0 0 20 20" fill="currentColor"><path d="M10 12.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5z"/><path fill-rule="evenodd" d="M.664 10.59a1.651 1.651 0 010-1.186A10.004 10.004 0 0110 3c4.257 0 7.893 2.66 9.336 6.41.147.381.146.804 0 1.186A10.004 10.004 0 0110 17c-4.257 0-7.893-2.66-9.336-6.41zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clip-rule="evenodd"/></svg>
+            </button>
+          </div>
+          <span class="field-error" id="err-password"></span>
+        </div>
+
+        <button type="submit" class="btn-login" id="btn-login">
+          <span id="btn-text">Sign In</span>
+          <span id="btn-spinner" class="spinner" style="display:none"></span>
+        </button>
+      </form>
+
+      <!-- Change Password form (shown after force-change) -->
+      <form id="change-pw-form" style="display:none" autocomplete="off" novalidate>
+        <div id="change-alert" class="login-alert" style="display:none"></div>
+        <div class="form-group">
+          <label for="new-password">New Password</label>
+          <div class="input-wrap">
+            <svg class="input-icon" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 1a4.5 4.5 0 00-4.5 4.5V9H5a2 2 0 00-2 2v6a2 2 0 002 2h10a2 2 0 002-2v-6a2 2 0 00-2-2h-.5V5.5A4.5 4.5 0 0010 1zm3 8V5.5a3 3 0 10-6 0V9h6z" clip-rule="evenodd"/></svg>
+            <input id="new-password" type="password" placeholder="New password (min 8 chars)" required />
+          </div>
+          <div class="pw-strength" id="pw-strength"></div>
+          <span class="field-error" id="err-new-pw"></span>
+        </div>
+        <div class="form-group">
+          <label for="confirm-password">Confirm New Password</label>
+          <div class="input-wrap">
+            <svg class="input-icon" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 1a4.5 4.5 0 00-4.5 4.5V9H5a2 2 0 00-2 2v6a2 2 0 002 2h10a2 2 0 002-2v-6a2 2 0 00-2-2h-.5V5.5A4.5 4.5 0 0010 1zm3 8V5.5a3 3 0 10-6 0V9h6z" clip-rule="evenodd"/></svg>
+            <input id="confirm-password" type="password" placeholder="Repeat new password" required />
+          </div>
+          <span class="field-error" id="err-confirm-pw"></span>
+        </div>
+        <button type="submit" class="btn-login">
+          <span>Set New Password &amp; Continue</span>
+        </button>
+        <button type="button" class="btn-back" onclick="showLoginForm()">← Back to login</button>
+      </form>
+
+    </div><!-- /login-card -->
+
+    <p class="login-footer">© 2025 QA Agent Platform. Powered by Claude AI.</p>
+  </div>
+
+  <script src="/login.js"></script>
+</body>
+</html>

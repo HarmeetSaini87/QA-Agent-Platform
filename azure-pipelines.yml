@@ -1,0 +1,255 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# QA Agent Platform — Azure DevOps Pipeline
+#
+# Stages
+# ──────
+#   1. Build    — install, tsc, lint
+#   2. Test     — Playwright tests + HTML/JUnit reports + artifacts
+#   3. Heal     — self-heal analysis of broken selectors (always runs)
+#
+# Triggers
+# ────────
+#   • Push to main or develop
+#   • Pull Request against main or develop
+#   • Nightly schedule at 02:00 UTC against main
+#
+# Secrets  (Azure DevOps Variable Group: "qa-agent-secrets")
+# ──────────────────────────────────────────────────────────
+#   APP_BASE_URL      — https://your-app.example.com
+#   APP_USERNAME      — automation service account username
+#   APP_PASSWORD      — automation service account password
+#   JIRA_BASE_URL     — https://yourorg.atlassian.net
+#   JIRA_EMAIL        — service account Jira email
+#   JIRA_API_TOKEN    — Jira API token (not the account password)
+#
+# See docs/ADO_SETUP.md for step-by-step setup instructions.
+# ──────────────────────────────────────────────────────────────────────────────
+
+trigger:
+  branches:
+    include:
+      - main
+      - develop
+  paths:
+    exclude:
+      - '*.md'
+      - 'docs/**'
+
+pr:
+  branches:
+    include:
+      - main
+      - develop
+  paths:
+    exclude:
+      - '*.md'
+      - 'docs/**'
+
+schedules:
+  - cron: '0 2 * * *'
+    displayName: Nightly regression (02:00 UTC)
+    branches:
+      include:
+        - main
+    always: true
+
+# ── Variable group (secrets) + pipeline variables ─────────────────────────────
+variables:
+  - group: qa-agent-secrets        # Pipelines → Library → Variable Group
+  - name:  NODE_VERSION
+    value: '20.x'
+  - name:  CI
+    value: 'true'
+  - name:  HEADLESS
+    value: 'true'
+  - name:  DEFAULT_TIMEOUT
+    value: '30000'
+  - name:  SCREENSHOT_MODE
+    value: 'only-on-failure'
+
+# ─────────────────────────────────────────────────────────────────────────────
+stages:
+
+# ════════════════════════════════════════════════════════════════════════════
+  - stage: Build
+    displayName: '1 · Build & Lint'
+    jobs:
+      - job: BuildJob
+        displayName: 'TypeScript compile + ESLint'
+        pool:
+          vmImage: 'ubuntu-latest'
+        steps:
+          - task: NodeTool@0
+            inputs:
+              versionSpec: $(NODE_VERSION)
+            displayName: 'Use Node.js $(NODE_VERSION)'
+
+          - script: npm ci
+            displayName: 'npm ci — install dependencies'
+
+          - script: npm run build
+            displayName: 'tsc — TypeScript compile'
+
+          - script: npm run lint || true
+            displayName: 'ESLint (non-blocking warning)'
+
+# ════════════════════════════════════════════════════════════════════════════
+  - stage: Test
+    displayName: '2 · Run Tests'
+    dependsOn: Build
+    jobs:
+      - job: PlaywrightTests
+        displayName: 'Playwright — Chromium headless'
+        pool:
+          vmImage: 'ubuntu-latest'
+        timeoutInMinutes: 60
+        steps:
+          - task: NodeTool@0
+            inputs:
+              versionSpec: $(NODE_VERSION)
+            displayName: 'Use Node.js $(NODE_VERSION)'
+
+          - script: npm ci
+            displayName: 'npm ci — install dependencies'
+
+          - script: npx playwright install chromium --with-deps
+            displayName: 'Install Playwright + Chromium + OS deps'
+
+          - script: mkdir -p results/screenshots results/heals test-plans reports
+            displayName: 'Create output directories'
+
+          # ── Run tests ───────────────────────────────────────────────────
+          # continueOnError so artifacts are always uploaded even on failure
+          - script: npm test
+            displayName: 'Run Playwright test suite'
+            continueOnError: true
+            env:
+              CI:              $(CI)
+              HEADLESS:        $(HEADLESS)
+              DEFAULT_TIMEOUT: $(DEFAULT_TIMEOUT)
+              SCREENSHOT_MODE: $(SCREENSHOT_MODE)
+              APP_BASE_URL:    $(APP_BASE_URL)
+              APP_USERNAME:    $(APP_USERNAME)
+              APP_PASSWORD:    $(APP_PASSWORD)
+              JIRA_BASE_URL:   $(JIRA_BASE_URL)
+              JIRA_EMAIL:      $(JIRA_EMAIL)
+              JIRA_API_TOKEN:  $(JIRA_API_TOKEN)
+
+          # ── Generate QA Platform HTML reports ───────────────────────────
+          - script: npm run generate-report -- --all
+            displayName: 'Generate QA HTML reports'
+            condition: always()
+            continueOnError: true
+            env:
+              JIRA_BASE_URL: $(JIRA_BASE_URL)
+
+          # ── Publish JUnit results to the ADO Tests tab ──────────────────
+          - task: PublishTestResults@2
+            displayName: 'Publish JUnit results (Tests tab)'
+            condition: always()
+            inputs:
+              testResultsFormat:     'JUnit'
+              testResultsFiles:      'results/junit-results.xml'
+              testRunTitle:          'QA Agent · $(Build.SourceBranchName) · #$(Build.BuildNumber)'
+              mergeTestResults:      true
+              failTaskOnFailedTests: false   # handled explicitly below
+
+          # ── Artifacts ───────────────────────────────────────────────────
+          - task: PublishPipelineArtifact@1
+            displayName: 'Artifact: QA Platform HTML reports'
+            condition: always()
+            inputs:
+              targetPath:      'reports'
+              artifact:        'qa-html-reports'
+              publishLocation: 'pipeline'
+
+          - task: PublishPipelineArtifact@1
+            displayName: 'Artifact: Playwright HTML report'
+            condition: always()
+            inputs:
+              targetPath:      'playwright-report'
+              artifact:        'playwright-html-report'
+              publishLocation: 'pipeline'
+
+          - task: PublishPipelineArtifact@1
+            displayName: 'Artifact: Failure screenshots'
+            condition: always()
+            inputs:
+              targetPath:      'results/screenshots'
+              artifact:        'failure-screenshots'
+              publishLocation: 'pipeline'
+
+          - task: PublishPipelineArtifact@1
+            displayName: 'Artifact: Playwright traces'
+            condition: always()
+            inputs:
+              targetPath:      'test-results'
+              artifact:        'playwright-traces'
+              publishLocation: 'pipeline'
+
+          - task: PublishPipelineArtifact@1
+            displayName: 'Artifact: Run result JSONs'
+            condition: always()
+            inputs:
+              targetPath:      'results'
+              artifact:        'run-results-json'
+              publishLocation: 'pipeline'
+
+          # ── Fail the build if any tests failed ───────────────────────────
+          # We defer this until after all artifacts are uploaded
+          - bash: |
+              if [ -f results/junit-results.xml ]; then
+                FAILURES=$(grep -oP 'failures="\K[0-9]+' results/junit-results.xml | head -1 || echo 0)
+                ERRORS=$(grep -oP 'errors="\K[0-9]+' results/junit-results.xml | head -1 || echo 0)
+                TOTAL=$(( FAILURES + ERRORS ))
+                if [ "$TOTAL" -gt 0 ]; then
+                  echo "##vso[task.logissue type=error]${FAILURES} test failure(s) and ${ERRORS} error(s). See artifacts for details."
+                  exit 1
+                fi
+              else
+                echo "##vso[task.logissue type=warning]JUnit results file not found — test run may have crashed."
+                exit 1
+              fi
+            displayName: 'Fail build on test failures'
+            condition: always()
+
+# ════════════════════════════════════════════════════════════════════════════
+  - stage: Heal
+    displayName: '3 · Self-Heal Analysis'
+    dependsOn: Test
+    condition: always()
+    jobs:
+      - job: HealJob
+        displayName: 'Analyse broken selectors'
+        pool:
+          vmImage: 'ubuntu-latest'
+        steps:
+          - task: NodeTool@0
+            inputs:
+              versionSpec: $(NODE_VERSION)
+            displayName: 'Use Node.js $(NODE_VERSION)'
+
+          - script: npm ci
+            displayName: 'npm ci'
+
+          - task: DownloadPipelineArtifact@2
+            displayName: 'Download run result JSONs'
+            inputs:
+              artifact:    'run-results-json'
+              targetPath:  'results'
+            continueOnError: true
+
+          - script: mkdir -p results/heals
+            displayName: 'Ensure heals directory exists'
+
+          - script: npm run heal-run 2>&1 || true
+            displayName: 'Heal analysis — latest run'
+            continueOnError: true
+
+          - task: PublishPipelineArtifact@1
+            displayName: 'Artifact: Heal analysis files'
+            condition: always()
+            inputs:
+              targetPath:      'results/heals'
+              artifact:        'heal-files'
+              publishLocation: 'pipeline'

@@ -1,0 +1,476 @@
+{
+  "categories": [
+    {
+      "name": "Navigation",
+      "keywords": [
+        {
+          "key": "GOTO", "label": "GoToURL", "needsLocator": false, "needsValue": true, "valueHint": "https://... or ${varName}",
+          "helpLabel": "Navigates the browser to a URL",
+          "tooltip": {
+            "what": "Opens a URL in the browser. Use this as the first step to land on your application.",
+            "example": "Value: https://myapp.qa.com/login\nor use Common Data: ${appUrl}",
+            "tip": "Always follow this with a Wait or Assert step to confirm the page loaded correctly."
+          }
+        },
+        {
+          "key": "RELOAD", "label": "Reload Page", "needsLocator": false, "needsValue": false, "valueHint": "",
+          "helpLabel": "Refreshes the current browser page",
+          "tooltip": {
+            "what": "Reloads the current page — same as pressing F5. Use after actions that require a page refresh to reflect changes.",
+            "example": "No locator or value needed. Just add the step.",
+            "tip": "Follow with Wait Page Load to ensure the page fully reloads before next step."
+          }
+        },
+        {
+          "key": "BACK", "label": "Go Back", "needsLocator": false, "needsValue": false, "valueHint": "",
+          "helpLabel": "Clicks the browser Back button",
+          "tooltip": {
+            "what": "Navigates to the previous page in browser history — same as clicking the Back button.",
+            "example": "No locator or value needed.",
+            "tip": "Use after completing an action on a detail page when you need to return to the list page."
+          }
+        },
+        {
+          "key": "FORWARD", "label": "Go Forward", "needsLocator": false, "needsValue": false, "valueHint": "",
+          "helpLabel": "Clicks the browser Forward button",
+          "tooltip": {
+            "what": "Navigates forward in browser history — same as clicking the Forward button.",
+            "example": "No locator or value needed.",
+            "tip": "Only works if you have previously gone Back. Rarely used in automation."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Actions",
+      "keywords": [
+        {
+          "key": "CLICK", "label": "Click", "needsLocator": true, "needsValue": false, "valueHint": "",
+          "helpLabel": "Clicks a button, link or any clickable element",
+          "tooltip": {
+            "what": "Simulates a mouse click on a button, link, menu item, icon or any element.",
+            "example": "Locator: button:has-text(\"Save\")\nLocator: #btn-submit\nLocator: .nav-item[data-tab=\"reports\"]",
+            "tip": "For dropdown menus: first Click the trigger to open it, then Click the option. For elements inside a table row, scope your locator: tr:has-text(\"RecordName\") .btn-delete"
+          }
+        },
+        {
+          "key": "DBLCLICK", "label": "Double Click", "needsLocator": true, "needsValue": false, "valueHint": "",
+          "helpLabel": "Double-clicks an element (e.g. to open edit mode)",
+          "tooltip": {
+            "what": "Performs two rapid clicks on an element. Some applications open edit mode or a detail view on double-click.",
+            "example": "Locator: tr:has-text(\"Gateway-01\")\nLocator: .editable-cell",
+            "tip": "If single click does not open the editor, try Double Click instead."
+          }
+        },
+        {
+          "key": "FILL", "label": "Fill", "needsLocator": true, "needsValue": true, "valueHint": "Text to type",
+          "helpLabel": "Clears and types text into an input field",
+          "tooltip": {
+            "what": "Clears any existing content and types the given value into a text input, email, search or textarea field.",
+            "example": "Locator: input[name=\"Username\"]  Value: harmeet\nLocator: #search-box  Value: Gateway Type\nLocator: textarea#notes  Value: Test completed",
+            "tip": "⚠️ If the value contains # or special characters (e.g. passwords like Admin#123), use Type (slow) instead — Fill may truncate at # character."
+          }
+        },
+        {
+          "key": "TYPE", "label": "Type (slow)", "needsLocator": true, "needsValue": true, "valueHint": "Text to type",
+          "helpLabel": "Types character-by-character — safe for passwords with special characters",
+          "tooltip": {
+            "what": "Types the value one character at a time with a small delay between each keystroke. This is required for password fields containing # or other special characters that Fill may break.",
+            "example": "Locator: input[name=\"Password\"]  Value: Admin#1234\nLocator: #api-key  Value: sk-abc$xyz!",
+            "tip": "Always use this for passwords. Use Fill for regular text fields."
+          }
+        },
+        {
+          "key": "CLEAR", "label": "Clear Field", "needsLocator": true, "needsValue": false, "valueHint": "",
+          "helpLabel": "Clears all text from an input field",
+          "tooltip": {
+            "what": "Removes all existing content from a text input. Use before Fill if the field already has a value you want to replace.",
+            "example": "Locator: #search-input\nLocator: input[name=\"GatewayName\"]",
+            "tip": "Fill already clears before typing — you only need Clear as a separate step when clearing without typing a new value."
+          }
+        },
+        {
+          "key": "SELECT", "label": "Select", "needsLocator": true, "needsValue": true, "valueHint": "Option text or value",
+          "helpLabel": "Selects an option from a <select> dropdown",
+          "tooltip": {
+            "what": "Chooses an option from a standard HTML dropdown (select element). Use the visible option text or the option's value attribute.",
+            "example": "Locator: select[name=\"GatewayType\"]  Value: HTTP\nLocator: #role-dropdown  Value: Admin",
+            "tip": "⚠️ This only works on standard <select> elements. For custom styled dropdowns (div/ul based), use Click on the trigger then Click on the option."
+          }
+        },
+        {
+          "key": "CHECK", "label": "Check", "needsLocator": true, "needsValue": false, "valueHint": "",
+          "helpLabel": "Ticks a checkbox to the checked state",
+          "tooltip": {
+            "what": "Checks a checkbox if it is not already checked. Has no effect if the checkbox is already ticked.",
+            "example": "Locator: input[name=\"IsActive\"]\nLocator: label[for=\"chk-enable\"]",
+            "tip": "⚠️ Many applications use styled checkboxes where the visible element is a <label>, not the <input>. If Check fails, try targeting the label: label[for=\"checkboxId\"]"
+          }
+        },
+        {
+          "key": "UNCHECK", "label": "Uncheck", "needsLocator": true, "needsValue": false, "valueHint": "",
+          "helpLabel": "Unticks a checkbox to the unchecked state",
+          "tooltip": {
+            "what": "Unchecks a checkbox if it is currently checked. Has no effect if already unticked.",
+            "example": "Locator: input[name=\"SendNotification\"]\nLocator: label[for=\"chk-notify\"]",
+            "tip": "Same locator rules as Check — target the label if the native input is hidden."
+          }
+        },
+        {
+          "key": "HOVER", "label": "Hover", "needsLocator": true, "needsValue": false, "valueHint": "",
+          "helpLabel": "Moves the mouse over an element to reveal hover menus or tooltips",
+          "tooltip": {
+            "what": "Moves the mouse pointer over an element without clicking. Use to trigger dropdown menus, reveal hidden buttons, or show tooltips.",
+            "example": "Locator: .nav-menu-item:has-text(\"Mediation Config\")\nLocator: #user-avatar",
+            "tip": "Follow Hover with a Wait Visible step for the element that should appear after hovering, then Click it."
+          }
+        },
+        {
+          "key": "FOCUS", "label": "Focus", "needsLocator": true, "needsValue": false, "valueHint": "",
+          "helpLabel": "Moves keyboard focus to an element",
+          "tooltip": {
+            "what": "Sets the keyboard focus on an element — equivalent to clicking into a field without typing. Useful to trigger validation or reveal dynamic fields.",
+            "example": "Locator: #email-input\nLocator: input[name=\"SearchTerm\"]",
+            "tip": "Rarely needed. Use Fill or Click for most interactions. Use Focus when an action needs to trigger just by the element receiving focus."
+          }
+        },
+        {
+          "key": "PRESS KEY", "label": "Press Key", "needsLocator": false, "needsValue": true, "valueHint": "e.g. Enter, Tab, Escape, ArrowDown",
+          "helpLabel": "Presses a keyboard key",
+          "tooltip": {
+            "what": "Simulates pressing a keyboard key. Common uses: submit a form with Enter, dismiss a modal with Escape, move between fields with Tab.",
+            "example": "Value: Enter  →  submits focused form\nValue: Escape  →  closes a modal or dropdown\nValue: Tab  →  moves focus to next field\nValue: ArrowDown  →  navigates a list",
+            "tip": "Use after Fill to submit a search form. Key names are case-sensitive: use Enter not enter."
+          }
+        },
+        {
+          "key": "DRAG DROP", "label": "Drag & Drop", "needsLocator": true, "needsValue": true, "valueHint": "Target element locator",
+          "helpLabel": "Drags an element and drops it onto a target element",
+          "tooltip": {
+            "what": "Drags the source element (Locator) and drops it onto the target element (Value). Used for reordering lists, kanban boards or file drop zones.",
+            "example": "Locator: #draggable-item-1  Value: #droptarget-zone\nLocator: .kanban-card:first-child  Value: .kanban-column.done",
+            "tip": "⚠️ Some drag-and-drop implementations require JavaScript events. If this keyword fails, the application may need a custom script."
+          }
+        },
+        {
+          "key": "UPLOAD FILE", "label": "Upload File", "needsLocator": true, "needsValue": true, "valueHint": "Absolute file path",
+          "helpLabel": "Uploads a file using a file input element",
+          "tooltip": {
+            "what": "Attaches a file to a file upload input. The locator targets the <input type=\"file\"> element and the value is the full path to the file on disk.",
+            "example": "Locator: input[type=\"file\"]  Value: C:\\TestData\\invoice.pdf\nLocator: #file-upload  Value: E:\\reports\\export.xlsx",
+            "tip": "The file must exist on the machine running the test. Use absolute paths."
+          }
+        },
+        {
+          "key": "SCROLL TO", "label": "Scroll To", "needsLocator": true, "needsValue": false, "valueHint": "",
+          "helpLabel": "Scrolls the page to bring an element into view",
+          "tooltip": {
+            "what": "Scrolls the page until the target element is visible in the viewport. Use before interacting with elements that are off-screen.",
+            "example": "Locator: #save-button\nLocator: .footer-section",
+            "tip": "Most interaction keywords (Click, Fill) scroll automatically. Only use this step when you need to confirm an element is in view before taking a screenshot."
+          }
+        },
+        {
+          "key": "SELECT ALL", "label": "Select All Text", "needsLocator": true, "needsValue": false, "valueHint": "",
+          "helpLabel": "Selects all text inside an input or text area",
+          "tooltip": {
+            "what": "Triple-clicks the element to select all its text content. Use before typing to replace the full content of a field.",
+            "example": "Locator: #gateway-name-input\nLocator: textarea#description",
+            "tip": "Follow with Fill or Type to replace the selected text with a new value."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Assertions",
+      "keywords": [
+        {
+          "key": "ASSERT VISIBLE", "label": "Assert Visible", "needsLocator": true, "needsValue": false, "valueHint": "",
+          "helpLabel": "Verifies an element is visible on the page",
+          "tooltip": {
+            "what": "Confirms the element exists and is visible to the user. The test fails if the element is hidden or not in the DOM.",
+            "example": "Locator: .success-toast  →  confirm save confirmation appears\nLocator: #dashboard-panel  →  confirm user is logged in",
+            "tip": "Use after Save/Submit/Login to verify the expected result appeared on screen."
+          }
+        },
+        {
+          "key": "ASSERT HIDDEN", "label": "Assert Hidden", "needsLocator": true, "needsValue": false, "valueHint": "",
+          "helpLabel": "Verifies an element is NOT visible (hidden or removed)",
+          "tooltip": {
+            "what": "Confirms the element is no longer visible — either hidden by CSS or removed from the DOM. Use after Delete to confirm a record is gone.",
+            "example": "Locator: tr:has-text(\"GW-Test-01\")  →  confirm record was deleted\nLocator: .loading-spinner  →  confirm loading is done",
+            "tip": "Pair this with Wait Hidden if the element disappears after an animation or page refresh."
+          }
+        },
+        {
+          "key": "ASSERT TEXT", "label": "Assert Text", "needsLocator": true, "needsValue": true, "valueHint": "Expected text",
+          "helpLabel": "Verifies an element contains the expected text",
+          "tooltip": {
+            "what": "Checks that the element's visible text contains the expected value. The match is partial — the element just needs to include the text, not match it exactly.",
+            "example": "Locator: .toast-message  Value: saved successfully\nLocator: h1.page-title  Value: Gateway Type Configuration\nLocator: #user-name  Value: harmeet",
+            "tip": "Use after form submit to verify success messages. Match is case-sensitive by default."
+          }
+        },
+        {
+          "key": "ASSERT VALUE", "label": "Assert Value", "needsLocator": true, "needsValue": true, "valueHint": "Expected field value",
+          "helpLabel": "Verifies an input field contains the expected value",
+          "tooltip": {
+            "what": "Checks the current value inside an input, select or textarea field. Use to verify a form loaded with the correct pre-filled data.",
+            "example": "Locator: input[name=\"GatewayName\"]  Value: HTTP-Gateway-01\nLocator: #email-field  Value: harmeet@company.com",
+            "tip": "This checks the field's value attribute, not visible text. Use Assert Text for non-input elements like labels or spans."
+          }
+        },
+        {
+          "key": "ASSERT ATTRIBUTE", "label": "Assert Attribute", "needsLocator": true, "needsValue": true, "valueHint": "attributeName=expectedValue",
+          "helpLabel": "Verifies an element has the expected HTML attribute value",
+          "tooltip": {
+            "what": "Checks a specific HTML attribute on the element. Format the value as attributeName=expectedValue.",
+            "example": "Locator: #status-badge  Value: class=active\nLocator: a.download-link  Value: href=/reports/export.pdf\nLocator: #submit-btn  Value: disabled=true",
+            "tip": "Useful for checking CSS class states (active, disabled, selected) or link targets."
+          }
+        },
+        {
+          "key": "ASSERT COUNT", "label": "Assert Count", "needsLocator": true, "needsValue": true, "valueHint": "Expected number of elements",
+          "helpLabel": "Verifies the number of matching elements on the page",
+          "tooltip": {
+            "what": "Counts all elements matching the locator and compares to the expected number. Use to verify how many rows, items or results are shown.",
+            "example": "Locator: tbody tr  Value: 5  →  table has exactly 5 rows\nLocator: .search-result-item  Value: 3  →  search returned 3 results\nLocator: .error-message  Value: 0  →  no errors shown",
+            "tip": "Use Value: 0 to assert that nothing matched — equivalent to Assert Hidden but for multiple elements."
+          }
+        },
+        {
+          "key": "ASSERT URL", "label": "Assert URL", "needsLocator": false, "needsValue": true, "valueHint": "Expected URL or partial URL",
+          "helpLabel": "Verifies the current browser URL",
+          "tooltip": {
+            "what": "Checks that the current page URL contains the expected value. Use after navigation or login to confirm you landed on the right page.",
+            "example": "Value: /dashboard  →  confirm redirect after login\nValue: /mediation/gateway-type  →  confirm correct module opened\nValue: https://myapp.com/reports",
+            "tip": "Partial match is used — the URL just needs to contain the value. You don't need to specify the full URL."
+          }
+        },
+        {
+          "key": "ASSERT TITLE", "label": "Assert Title", "needsLocator": false, "needsValue": true, "valueHint": "Expected page title",
+          "helpLabel": "Verifies the browser tab page title",
+          "tooltip": {
+            "what": "Checks the HTML <title> of the page — the text shown in the browser tab.",
+            "example": "Value: Gateway Type Configuration\nValue: QA Agent Platform",
+            "tip": "Less commonly used. Prefer Assert URL or Assert Visible for post-navigation checks."
+          }
+        },
+        {
+          "key": "ASSERT CHECKED", "label": "Assert Checked", "needsLocator": true, "needsValue": false, "valueHint": "",
+          "helpLabel": "Verifies a checkbox is in the checked (ticked) state",
+          "tooltip": {
+            "what": "Confirms the checkbox is currently ticked. Fails if it is unchecked.",
+            "example": "Locator: input[name=\"IsActive\"]\nLocator: #chk-notifications",
+            "tip": "Use after Check to verify the action worked, or to verify pre-configured settings on a form."
+          }
+        },
+        {
+          "key": "ASSERT ENABLED", "label": "Assert Enabled", "needsLocator": true, "needsValue": false, "valueHint": "",
+          "helpLabel": "Verifies a button or input is enabled (clickable)",
+          "tooltip": {
+            "what": "Confirms the element is enabled and interactive — not grayed out or disabled.",
+            "example": "Locator: #btn-submit  →  confirm Save button is active\nLocator: input[name=\"Email\"]  →  confirm field is editable",
+            "tip": "Use to verify that required fields have been filled in before the Submit button becomes active."
+          }
+        },
+        {
+          "key": "ASSERT DISABLED", "label": "Assert Disabled", "needsLocator": true, "needsValue": false, "valueHint": "",
+          "helpLabel": "Verifies a button or input is disabled (greyed out)",
+          "tooltip": {
+            "what": "Confirms the element is disabled and cannot be interacted with.",
+            "example": "Locator: #btn-save  →  confirm Save is disabled until form is filled\nLocator: input[name=\"Id\"]  →  confirm ID field is read-only",
+            "tip": "Use to verify form validation behaviour — e.g. that Save stays disabled until all required fields are filled."
+          }
+        },
+        {
+          "key": "ASSERT CONTAINS", "label": "Assert Contains", "needsLocator": true, "needsValue": true, "valueHint": "Text to find inside element",
+          "helpLabel": "Verifies an element's content contains given text",
+          "tooltip": {
+            "what": "Similar to Assert Text but specifically checks partial text containment within an element's full content.",
+            "example": "Locator: .notification-panel  Value: updated\nLocator: #activity-log  Value: harmeet logged in",
+            "tip": "Use when the element has long content and you only need to verify part of it is present."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Wait",
+      "keywords": [
+        {
+          "key": "WAIT SELECTOR", "label": "Wait For Element", "needsLocator": true, "needsValue": false, "valueHint": "",
+          "helpLabel": "Waits until an element appears in the DOM",
+          "tooltip": {
+            "what": "Pauses the test until the element exists in the page DOM. Use before interacting with elements that load dynamically.",
+            "example": "Locator: #modal-dialog  →  wait for modal to appear\nLocator: .search-results  →  wait for results to load",
+            "tip": "Always use Wait steps instead of fixed time delays. This makes tests faster and more reliable."
+          }
+        },
+        {
+          "key": "WAIT VISIBLE", "label": "Wait Visible", "needsLocator": true, "needsValue": false, "valueHint": "",
+          "helpLabel": "Waits until an element becomes visible on screen",
+          "tooltip": {
+            "what": "Pauses until the element is visible to the user (in DOM and not hidden). More reliable than Wait For Element when elements are present but hidden.",
+            "example": "Locator: .dropdown-menu  →  wait for dropdown options to appear\nLocator: #success-banner  →  wait for confirmation message",
+            "tip": "Use this before clicking dynamically shown elements like dropdown options, modals, or toast messages."
+          }
+        },
+        {
+          "key": "WAIT HIDDEN", "label": "Wait Hidden", "needsLocator": true, "needsValue": false, "valueHint": "",
+          "helpLabel": "Waits until an element disappears from view",
+          "tooltip": {
+            "what": "Pauses until the element is no longer visible. Use after closing modals or waiting for loading spinners to finish.",
+            "example": "Locator: .loading-spinner  →  wait for page load to complete\nLocator: #modal-dialog  →  wait for modal to close after confirm",
+            "tip": "After clicking OK on a modal, use Wait Hidden on the modal to confirm it closed before proceeding."
+          }
+        },
+        {
+          "key": "WAIT PAGE LOAD", "label": "Wait PageLoad", "needsLocator": false, "needsValue": false, "valueHint": "",
+          "helpLabel": "Waits for the full page to finish loading",
+          "tooltip": {
+            "what": "Waits until the browser reports the page has fully loaded (networkidle state). Use after navigation, form submit or any action that triggers a page reload.",
+            "example": "No locator or value needed.\nUse after: GOTO, form Submit, page-level actions",
+            "tip": "Add this after every GOTO and after every form submission that causes a full page reload."
+          }
+        },
+        {
+          "key": "WAIT NAVIGATION", "label": "Wait Navigation", "needsLocator": false, "needsValue": false, "valueHint": "",
+          "helpLabel": "Waits for page navigation to complete after a click",
+          "tooltip": {
+            "what": "Waits for the browser to complete a navigation triggered by a link click or button that redirects to a new page.",
+            "example": "No locator or value needed.\nUse after clicking a navigation link that changes the URL.",
+            "tip": "Use specifically after Click steps that cause a page redirect. For ajax-only actions, use Wait Page Load instead."
+          }
+        },
+        {
+          "key": "WAIT RESPONSE", "label": "Wait For API Response", "needsLocator": false, "needsValue": true, "valueHint": "URL pattern (partial is fine)",
+          "helpLabel": "Waits for a specific API/network response before continuing",
+          "tooltip": {
+            "what": "Pauses the test until a network response matching the URL pattern is received. Useful after form submits that call an API in the background.",
+            "example": "Value: /api/gateways  →  wait for gateway list to reload\nValue: /api/users/save  →  wait for save API to respond",
+            "tip": "Use when the page updates via AJAX without a full reload. Partial URL match is fine — /api/gateways matches any URL containing that path."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Frames & Tabs",
+      "keywords": [
+        {
+          "key": "SWITCH FRAME", "label": "Switch to Frame", "needsLocator": true, "needsValue": false, "valueHint": "iframe locator",
+          "helpLabel": "Switches the test context into an iframe",
+          "tooltip": {
+            "what": "Moves the test focus inside an embedded iframe. All subsequent steps will interact with elements inside that iframe until you Switch to Main Frame.",
+            "example": "Locator: iframe#content-frame\nLocator: iframe[name=\"editor\"]",
+            "tip": "⚠️ If your locators stop working after a Click, check if the page loaded content inside an iframe. Use this step to enter it first."
+          }
+        },
+        {
+          "key": "SWITCH MAIN", "label": "Switch to Main Frame", "needsLocator": false, "needsValue": false, "valueHint": "",
+          "helpLabel": "Returns focus from an iframe back to the main page",
+          "tooltip": {
+            "what": "Exits the current iframe and returns test focus to the main page. Always use this after finishing actions inside a Switch to Frame block.",
+            "example": "No locator or value needed.",
+            "tip": "If you forget this step after working inside an iframe, subsequent locators on the main page will fail."
+          }
+        },
+        {
+          "key": "NEW TAB WAIT", "label": "Wait for New Tab", "needsLocator": false, "needsValue": false, "valueHint": "",
+          "helpLabel": "Waits for a new browser tab or popup to open",
+          "tooltip": {
+            "what": "Pauses and switches focus to a newly opened browser tab or popup window. Use when a Click opens a link in a new tab.",
+            "example": "No locator or value needed.\nPlace this immediately after the Click that opens the new tab.",
+            "tip": "After this step, all subsequent interactions happen in the new tab. Use Close Tab to return to the original."
+          }
+        },
+        {
+          "key": "CLOSE TAB", "label": "Close Tab", "needsLocator": false, "needsValue": false, "valueHint": "",
+          "helpLabel": "Closes the current browser tab",
+          "tooltip": {
+            "what": "Closes the currently active browser tab and returns focus to the previous tab.",
+            "example": "No locator or value needed.",
+            "tip": "Use after completing actions in a popup tab to return to the main application window."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Screenshot & Media",
+      "keywords": [
+        {
+          "key": "SCREENSHOT", "label": "Screenshot", "needsLocator": false, "needsValue": false, "valueHint": "",
+          "helpLabel": "Captures a full-page screenshot at this point in the test",
+          "tooltip": {
+            "what": "Takes a screenshot of the entire visible page and saves it with the test results. Use to capture evidence of test execution.",
+            "example": "No locator or value needed.\nBest placed after key actions: after login, after save, at the end of the test.",
+            "tip": "Always add a Screenshot as the last step of every test. It acts as visual proof that the test completed correctly."
+          }
+        },
+        {
+          "key": "SCREENSHOT ELEM", "label": "Screenshot Element", "needsLocator": true, "needsValue": false, "valueHint": "",
+          "helpLabel": "Captures a screenshot of a specific element only",
+          "tooltip": {
+            "what": "Takes a cropped screenshot of just the specified element. Use to capture a specific widget, chart, table or form.",
+            "example": "Locator: #results-table  →  capture just the results table\nLocator: .chart-container  →  capture a specific chart",
+            "tip": "Use when you want focused evidence of a specific UI component without capturing the whole page."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Custom",
+      "keywords": [
+        {
+          "key": "CALL FUNCTION", "label": "Call Function", "needsLocator": false, "needsValue": true, "valueHint": "Select a Common Function",
+          "helpLabel": "Runs a reusable Common Function (e.g. login, logout, navigate to module)",
+          "tooltip": {
+            "what": "Executes a pre-defined Common Function — a saved sequence of steps that can be reused across many test scripts. Use this for repetitive flows like Login, Logout or standard navigation.",
+            "example": "Function: Login as Admin  →  runs FILL username + FILL password + CLICK submit\nFunction: Navigate to Gateway Config  →  clicks through the menu to the target page",
+            "tip": "Define your reusable flows in the Common Functions module first, then call them here. This keeps your scripts short and maintainable."
+          }
+        },
+        {
+          "key": "LOG", "label": "Log Message", "needsLocator": false, "needsValue": true, "valueHint": "Message to write to the test log",
+          "helpLabel": "Writes a custom message to the test execution log",
+          "tooltip": {
+            "what": "Adds a descriptive message to the test run output. Use to mark important checkpoints in the log for easier debugging.",
+            "example": "Value: Login completed successfully\nValue: About to click Delete — verifying record exists first\nValue: Test data: username = harmeet",
+            "tip": "Use Log steps at the start of major sections in your test to make the output easier to read when debugging failures."
+          }
+        },
+        {
+          "key": "EVALUATE", "label": "Run JavaScript", "needsLocator": false, "needsValue": true, "valueHint": "JavaScript expression",
+          "helpLabel": "Executes custom JavaScript directly in the browser",
+          "tooltip": {
+            "what": "Runs a JavaScript snippet in the browser context. Use for advanced scenarios that cannot be handled by standard keywords.",
+            "example": "Value: document.title  →  get page title\nValue: localStorage.clear()  →  clear local storage\nValue: document.querySelector('#hidden-btn').click()",
+            "tip": "⚠️ Advanced use only. Use standard keywords wherever possible. Reserve this for edge cases where no other keyword works."
+          }
+        }
+      ]
+    }
+  ],
+  "locatorTypes": [
+    { "value": "css",     "label": "CSS Selector" },
+    { "value": "xpath",   "label": "XPath" },
+    { "value": "id",      "label": "ID" },
+    { "value": "name",    "label": "Name" },
+    { "value": "text",    "label": "Text" },
+    { "value": "testid",  "label": "data-testid" },
+    { "value": "role",    "label": "ARIA Role" }
+  ],
+  "dynamicTokens": [
+    { "token": "{{random.text(8)}}",       "label": "Random Text (8 chars)" },
+    { "token": "{{random.text(16)}}",      "label": "Random Text (16 chars)" },
+    { "token": "{{random.number}}",        "label": "Random Number" },
+    { "token": "{{random.number(1,100)}}", "label": "Random Number (range)" },
+    { "token": "{{random.email}}",         "label": "Random Email" },
+    { "token": "{{random.phone}}",         "label": "Random Phone" },
+    { "token": "{{random.uuid}}",          "label": "Random UUID" },
+    { "token": "{{timestamp}}",            "label": "Current Timestamp (ms)" },
+    { "token": "{{datetime}}",             "label": "Current DateTime (ISO)" },
+    { "token": "{{date}}",                 "label": "Current Date (YYYY-MM-DD)" },
+    { "token": "{{env.USERNAME}}",         "label": "Env: Username (from project)" },
+    { "token": "{{env.PASSWORD}}",         "label": "Env: Password (from project)" }
+  ]
+}

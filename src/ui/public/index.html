@@ -1,0 +1,800 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>QA Agent Platform</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="styles_addon.css" />
+</head>
+<body>
+<div class="layout">
+
+  <!-- ── Sidebar ──────────────────────────────────────────────────────────── -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <h1>QA Agent Platform</h1>
+      <span>Powered by Playwright MCP</span>
+    </div>
+
+    <nav class="nav">
+      <div class="nav-item active" data-tab="scripts">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="18" height="18" rx="2"/>
+          <line x1="9" y1="9" x2="15" y2="9"/><line x1="9" y1="13" x2="15" y2="13"/>
+          <line x1="9" y1="17" x2="12" y2="17"/>
+        </svg>
+        <span>Test Script Builder</span>
+      </div>
+      <div class="nav-item" data-tab="suites">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/>
+          <rect x="9" y="3" width="6" height="4" rx="1"/>
+          <path d="M9 12h6M9 16h4"/>
+        </svg>
+        <span>Test Suite</span>
+      </div>
+      <div class="nav-section-label">Repository</div>
+      <div class="nav-item" data-tab="locators">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          <line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/>
+        </svg>
+        <span>Locator Repo</span>
+      </div>
+      <div class="nav-item" data-tab="functions">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>
+        </svg>
+        <span>Common Functions</span>
+      </div>
+      <div class="nav-item" data-tab="commondata">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/>
+          <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
+        </svg>
+        <span>Common Data</span>
+      </div>
+
+      <div class="nav-section-label">Reports</div>
+      <div class="nav-item" data-tab="history">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+        </svg>
+        <span>Execution History</span>
+      </div>
+
+      <div class="nav-section-label admin-only" id="admin-section-label">Admin</div>
+      <div class="nav-item admin-only" data-tab="projects" id="nav-projects">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M3 7a2 2 0 012-2h5l2 2h7a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>
+        </svg>
+        <span>Projects</span>
+      </div>
+      <div class="nav-item admin-only" data-tab="admin" id="nav-admin">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+        </svg>
+        <span>Admin Panel</span>
+      </div>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="health-badge">
+        <div class="health-dot" id="health-dot"></div>
+        <span id="health-text">Checking...</span>
+      </div>
+      <!-- User info + logout -->
+      <div class="sidebar-user" id="sidebar-user">
+        <div class="sidebar-user-info">
+          <div class="sidebar-username" id="sidebar-username">—</div>
+          <div class="sidebar-role" id="sidebar-role">—</div>
+        </div>
+        <button class="btn-logout" onclick="doLogout()" title="Sign out">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/>
+            <polyline points="16 17 21 12 16 7"/>
+            <line x1="21" y1="12" x2="9" y2="12"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ── Main ─────────────────────────────────────────────────────────────── -->
+  <div class="main">
+    <div class="topbar">
+      <span class="topbar-title" id="topbar-title">Test Script Builder</span>
+      <div class="topbar-actions" style="display:flex;align-items:center;gap:10px">
+        <!-- Project Selector — scopes all resources -->
+        <div style="display:flex;align-items:center;gap:6px">
+          <label style="font-size:12px;font-weight:600;color:var(--neutral-500);white-space:nowrap">Project <span class="req">*</span></label>
+          <select id="global-project-select" class="fm-select" style="min-width:180px;font-size:12.5px"
+            onchange="onProjectChange()">
+            <option value="">— Select Project —</option>
+          </select>
+        </div>
+        <button class="btn btn-outline btn-sm" onclick="loadHistory()">↻ Refresh</button>
+        <a href="/api/health" target="_blank" class="btn btn-outline btn-sm">API Health</a>
+      </div>
+    </div>
+
+    <div class="content">
+
+      <!-- ── Tab: Test Scripts (list view) ───────────────────────────────── -->
+      <div class="panel active" id="panel-scripts">
+        <div class="card">
+          <div class="card-title">
+            Test Scripts
+            <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">
+              <input id="script-filter-title" class="filter-input" style="width:180px" placeholder="Title…" oninput="scriptRender()" />
+              <input id="script-filter-tag" class="filter-input" style="width:140px" placeholder="Tag…" oninput="scriptRender()" />
+              <input id="script-filter-comp" class="filter-input" style="width:140px" placeholder="Component…" oninput="scriptRender()" />
+              <button id="btn-new-script" class="btn btn-primary btn-sm" onclick="scriptOpenEditor()" disabled>+ New Script</button>
+            </div>
+          </div>
+          <div id="script-list-empty" class="builder-hint">Select a project first, then create scripts.</div>
+          <div id="script-list"></div>
+        </div>
+      </div>
+
+      <!-- ── Tab: Test Suite ────────────────────────────────────────────── -->
+      <div class="panel" id="panel-suites">
+        <div class="card">
+          <div class="card-title">
+            Test Suites
+            <div style="margin-left:auto;display:flex;gap:8px">
+              <input id="suite-filter" class="filter-input" style="width:200px" placeholder="Filter suites…" oninput="suiteRender()" />
+              <button id="btn-new-suite" class="btn btn-primary btn-sm" onclick="suiteOpenModal()" disabled>+ New Suite</button>
+            </div>
+          </div>
+          <div id="suite-list-empty" class="builder-hint">Select a project first, then create test suites.</div>
+          <div id="suite-list"></div>
+        </div>
+      </div>
+
+      <!-- ── Shared: Plan Preview + Run Panel ─────────────────────────────── -->
+      <div id="run-panel" style="display:none">
+        <div class="card">
+          <div class="card-title" id="run-panel-title">Test Plan</div>
+          <div id="plan-preview"></div>
+          <div class="btn-group" style="align-items:center;gap:16px;flex-wrap:wrap">
+            <button class="btn btn-success" id="btn-run-tests" onclick="triggerRun()">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              Run Tests
+            </button>
+            <label style="display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--neutral-500);cursor:pointer;user-select:none">
+              <input type="checkbox" id="chk-headed" checked style="accent-color:var(--primary);width:16px;height:16px;cursor:pointer">
+              <span id="headed-label">Headed (visible browser)</span>
+            </label>
+            <button class="btn btn-outline btn-sm" onclick="copyAiInstruction()">📋 Copy AI Instruction</button>
+          </div>
+        </div>
+
+        <div class="card" id="run-output-card" style="display:none">
+          <div class="card-title">
+            <span id="run-status-badge" class="status running">Running</span>
+            <span id="run-id-label" style="font-size:12px;color:var(--neutral-400);font-weight:400;margin-left:8px"></span>
+          </div>
+          <div class="stats" id="run-stats">
+            <div class="stat-card total"><div class="stat-value" id="rt-total">—</div><div class="stat-label">Total</div></div>
+            <div class="stat-card pass"><div class="stat-value" id="rt-pass">—</div><div class="stat-label">Passed</div></div>
+            <div class="stat-card fail"><div class="stat-value" id="rt-fail">—</div><div class="stat-label">Failed</div></div>
+          </div>
+          <div class="progress-bar">
+            <div class="progress-bar-fill" id="progress-bar-fill"></div>
+          </div>
+          <div class="progress-label" id="progress-label"></div>
+          <table class="tc-table" style="margin-top:10px" id="live-results-table">
+            <thead><tr><th style="width:28px"></th><th>Test</th><th style="width:70px;text-align:right">Duration</th></tr></thead>
+            <tbody id="test-rows"></tbody>
+          </table>
+          <div class="log-box" id="run-log"></div>
+          <div class="btn-group" id="run-done-actions" style="display:none">
+            <a class="btn btn-primary btn-sm" id="btn-view-report" href="#" target="_blank">View Report</a>
+            <button class="btn btn-outline btn-sm" onclick="loadHistory()">View in History</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Tab: Locator Repo ──────────────────────────────────────────── -->
+      <div class="panel" id="panel-locators">
+        <div class="card">
+          <div class="card-title">
+            Locator Repository
+            <button id="btn-add-locator" class="btn btn-primary btn-sm" style="margin-left:auto" onclick="locatorOpenModal()" disabled>+ Add Locator</button>
+          </div>
+          <!-- Filters -->
+          <div class="row-2" style="margin-bottom:12px;gap:8px">
+            <input id="loc-filter-name" class="filter-input" placeholder="Filter by name..." oninput="locatorRender()" />
+            <input id="loc-filter-module" class="filter-input" placeholder="Filter by page/module..." oninput="locatorRender()" />
+          </div>
+          <div id="loc-table-wrap">
+            <table class="data-table" id="loc-table">
+              <thead><tr><th>Name</th><th>Selector</th><th>Type</th><th>Page / Module</th><th>Description</th><th style="width:80px"></th></tr></thead>
+              <tbody id="loc-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div><!-- /panel-locators -->
+
+      <!-- ── Tab: Common Functions ──────────────────────────────────────── -->
+      <div class="panel" id="panel-functions">
+        <div class="card">
+          <div class="card-title">
+            Common Functions
+            <div style="display:flex;gap:8px;align-items:center;margin-left:auto">
+              <input id="fn-search" class="filter-input" style="width:220px" placeholder="Search functions…" oninput="fnRender()" />
+              <button id="btn-new-function" class="btn btn-primary btn-sm" onclick="fnOpenModal()" disabled>+ New Function</button>
+            </div>
+          </div>
+          <div id="fn-table-wrap">
+            <table class="data-table" id="fn-table">
+              <thead>
+                <tr>
+                  <th>Function Name</th>
+                  <th>Identifier</th>
+                  <th>Description</th>
+                  <th>Steps</th>
+                  <th>Created By</th>
+                  <th>Created Date</th>
+                  <th style="width:100px"></th>
+                </tr>
+              </thead>
+              <tbody id="fn-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div><!-- /panel-functions -->
+
+      <!-- ── Tab: Common Data ──────────────────────────────────────────── -->
+      <div class="panel" id="panel-commondata">
+        <div class="card">
+          <div class="card-title">
+            Common Data
+            <div style="display:flex;gap:8px;align-items:center;margin-left:auto">
+              <input id="cd-env-filter" class="fm-input" style="width:160px;font-size:13px" placeholder="Filter by environment…" oninput="cdLoad()" />
+              <button id="btn-add-cd" class="btn btn-primary btn-sm" onclick="cdOpenModal()" disabled>+ Add Common Data</button>
+            </div>
+          </div>
+          <div style="margin-bottom:10px;font-size:12.5px;color:var(--neutral-500)">
+            Reference values in test scripts using <code style="background:var(--neutral-100);padding:1px 5px;border-radius:3px">${variableName}</code>
+          </div>
+          <div id="cd-table-wrap">
+            <table class="data-table" id="cd-table">
+              <thead>
+                <tr>
+                  <th>Data Name</th>
+                  <th>Value</th>
+                  <th>Environment</th>
+                  <th>Created By</th>
+                  <th>Created Date</th>
+                  <th style="width:100px"></th>
+                </tr>
+              </thead>
+              <tbody id="cd-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div><!-- /panel-commondata -->
+
+      <!-- ── Tab: Execution History ────────────────────────────────────── -->
+      <div class="panel" id="panel-history">
+        <div class="card">
+          <div class="card-title">
+            Execution History
+          </div>
+          <!-- Filters row -->
+          <div class="filter-row" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+            <input id="hist-filter-date"   class="form-control" type="date"   placeholder="Date" style="width:150px" oninput="histRender()">
+            <input id="hist-filter-search" class="form-control" type="text"   placeholder="Search ID / Suite / User" style="flex:1;min-width:160px" oninput="histRender()">
+            <select id="hist-filter-status" class="form-control" style="width:140px" onchange="histRender()">
+              <option value="">All Statuses</option>
+              <option value="running">In Progress</option>
+              <option value="done">Completed</option>
+              <option value="failed">Failed</option>
+            </select>
+            <select id="hist-filter-env" class="form-control" style="width:140px" onchange="histRender()">
+              <option value="">All Environments</option>
+            </select>
+            <button class="btn btn-secondary btn-sm" onclick="histLoad()">&#x21BB; Refresh</button>
+          </div>
+          <!-- Table -->
+          <div style="overflow-x:auto">
+            <table class="data-table" id="hist-table">
+              <thead>
+                <tr>
+                  <th>Execution ID</th>
+                  <th class="hist-sortable" data-col="suiteName"    onclick="histSort('suiteName')">Test Suite <span class="sort-icon" id="si-suiteName"></span></th>
+                  <th class="hist-sortable" data-col="status"       onclick="histSort('status')">Status <span class="sort-icon" id="si-status"></span></th>
+                  <th class="hist-sortable" data-col="total"        onclick="histSort('total')">Total <span class="sort-icon" id="si-total"></span></th>
+                  <th class="hist-sortable" data-col="passed"       onclick="histSort('passed')">Passed <span class="sort-icon" id="si-passed"></span></th>
+                  <th class="hist-sortable" data-col="failed"       onclick="histSort('failed')">Failed <span class="sort-icon" id="si-failed"></span></th>
+                  <th class="hist-sortable" data-col="startedAt"    onclick="histSort('startedAt')">Start Time <span class="sort-icon" id="si-startedAt">&#9660;</span></th>
+                  <th>End Time</th>
+                  <th>Duration</th>
+                  <th class="hist-sortable" data-col="environmentName" onclick="histSort('environmentName')">Environment <span class="sort-icon" id="si-environmentName"></span></th>
+                  <th class="hist-sortable" data-col="executedBy"   onclick="histSort('executedBy')">Executed By <span class="sort-icon" id="si-executedBy"></span></th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="hist-tbody"></tbody>
+            </table>
+          </div>
+          <div id="hist-empty" style="display:none;text-align:center;padding:40px;color:#858585">No execution records found.</div>
+        </div>
+
+        <!-- Execution Detail overlay -->
+        <div class="modal-overlay" id="hist-detail-overlay" style="display:none">
+          <div class="modal" style="max-width:900px;width:95%">
+            <div class="modal-header">
+              <span class="modal-title" id="hist-detail-title">Execution Report</span>
+              <button class="modal-close" onclick="histDetailClose()">&times;</button>
+            </div>
+            <div class="modal-body" id="hist-detail-body" style="max-height:80vh;overflow-y:auto">
+            </div>
+          </div>
+        </div>
+      </div><!-- /panel-history -->
+
+      <!-- ── Tab: Projects ──────────────────────────────────────────────── -->
+      <div class="panel admin-only" id="panel-projects">
+        <div class="card">
+          <div class="card-title">
+            Projects
+            <button class="btn btn-primary btn-sm" style="margin-left:auto" onclick="projOpenModal()">+ New Project</button>
+          </div>
+          <div id="proj-list"></div>
+        </div>
+      </div><!-- /panel-projects -->
+
+      <!-- ── Tab: Admin Panel ───────────────────────────────────────────── -->
+      <div class="panel admin-only" id="panel-admin">
+        <!-- Admin sub-tabs -->
+        <div class="sub-tabs">
+          <button class="sub-tab active" onclick="adminSubTab('users',this)">Users</button>
+          <button class="sub-tab" onclick="adminSubTab('audit',this)">Audit Log</button>
+          <button class="sub-tab" onclick="adminSubTab('settings',this)">Settings</button>
+        </div>
+
+        <!-- Users sub-panel -->
+        <div class="sub-panel active" id="admin-users">
+          <div class="card">
+            <div class="card-title">
+              User Management
+              <button class="btn btn-primary btn-sm" style="margin-left:auto" onclick="userOpenModal()">+ Add User</button>
+            </div>
+            <table class="data-table">
+              <thead><tr><th>Username</th><th>Email</th><th>Role</th><th>Status</th><th>Last Login</th><th style="width:100px"></th></tr></thead>
+              <tbody id="user-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Audit sub-panel -->
+        <div class="sub-panel" id="admin-audit">
+          <div class="card">
+            <div class="card-title">
+              Audit Log
+              <button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="auditLoad()">↻ Refresh</button>
+            </div>
+            <table class="data-table">
+              <thead><tr><th>Time</th><th>User</th><th>Action</th><th>Resource</th><th>IP</th></tr></thead>
+              <tbody id="audit-tbody"></tbody>
+            </table>
+            <div id="audit-pagination" style="margin-top:10px;display:flex;gap:8px;align-items:center"></div>
+          </div>
+        </div>
+
+        <!-- Settings sub-panel -->
+        <div class="sub-panel" id="admin-settings">
+          <div class="card" style="max-width:520px">
+            <div class="card-title">System Settings</div>
+            <div id="settings-alert" style="margin-bottom:8px"></div>
+            <div class="field">
+              <label>App Name</label>
+              <input id="set-app-name" />
+            </div>
+            <div class="field">
+              <label>Session Timeout (minutes)</label>
+              <input id="set-timeout" type="number" min="5" max="480" />
+            </div>
+            <div class="field">
+              <label>Max Failed Login Attempts</label>
+              <input id="set-max-logins" type="number" min="3" max="20" />
+            </div>
+            <div class="field-row" style="margin-top:8px">
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+                <input id="set-allow-reg" type="checkbox" />
+                Allow self-registration (disabled by default)
+              </label>
+            </div>
+            <button class="btn btn-primary" style="margin-top:16px" onclick="settingsSave()">Save Settings</button>
+          </div>
+        </div>
+
+      </div><!-- /panel-admin -->
+
+    </div><!-- /content -->
+  </div><!-- /main -->
+</div><!-- /layout -->
+
+<!-- ── Modal: Add/Edit Locator ────────────────────────────────────────────── -->
+<div class="modal-backdrop" id="modal-locator" style="display:none">
+  <div class="modal">
+    <div class="modal-header">
+      <span id="loc-modal-title">Add Locator</span>
+      <button class="modal-close" onclick="locatorCloseModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="loc-modal-alert" style="margin-bottom:8px"></div>
+      <div class="field"><label>Name <span class="req">*</span></label><input id="loc-name" placeholder="e.g. Login Button" /></div>
+      <div class="field"><label>Selector <span class="req">*</span></label><input id="loc-selector" placeholder="e.g. #btn-login or //button[@id='login']" /></div>
+      <div class="row-2">
+        <div class="field">
+          <label>Selector Type</label>
+          <select id="loc-type">
+            <option value="css">CSS</option><option value="xpath">XPath</option>
+            <option value="id">ID</option><option value="name">Name</option>
+            <option value="text">Text</option><option value="testid">data-testid</option>
+          </select>
+        </div>
+        <div class="field"><label>Page / Module</label><input id="loc-page" placeholder="e.g. Gateway Type Config" /></div>
+      </div>
+      <div class="field"><label>Description</label><input id="loc-desc" placeholder="Optional description" /></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="locatorCloseModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="locatorSave()">Save Locator</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Modal: Add/Edit User ───────────────────────────────────────────────── -->
+<div class="modal-backdrop" id="modal-user" style="display:none">
+  <div class="modal">
+    <div class="modal-header">
+      <span id="user-modal-title">Add User</span>
+      <button class="modal-close" onclick="userCloseModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="user-modal-alert" style="margin-bottom:8px"></div>
+      <div class="row-2">
+        <div class="field"><label>Username <span class="req">*</span></label><input id="um-username" placeholder="john.doe" /></div>
+        <div class="field"><label>Email</label><input id="um-email" type="email" placeholder="john@company.com" /></div>
+      </div>
+      <div class="row-2">
+        <div class="field">
+          <label>Role <span class="req">*</span></label>
+          <select id="um-role"><option value="tester">Tester</option><option value="admin">Admin</option></select>
+        </div>
+        <div class="field"><label>Password <span class="req">*</span></label><input id="um-password" type="password" placeholder="Min 8 chars" /></div>
+      </div>
+      <div class="field-row" style="margin-top:4px">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input id="um-force-change" type="checkbox" checked />
+          Require password change on first login
+        </label>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="userCloseModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="userSave()">Save User</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Modal: Add/Edit Project ────────────────────────────────────────────── -->
+<div class="modal-backdrop" id="modal-project" style="display:none">
+  <div class="modal modal-wide">
+    <div class="modal-header">
+      <span id="proj-modal-title">New Project</span>
+      <button class="modal-close" onclick="projCloseModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="proj-modal-alert" style="margin-bottom:8px"></div>
+      <div class="row-2">
+        <div class="field"><label>Project Name <span class="req">*</span></label><input id="pm-name" class="fm-input" placeholder="e.g. BSS Mediation" /></div>
+        <div class="field"><label>TC ID Prefix <span class="req">*</span></label><input id="pm-prefix" class="fm-input" placeholder="e.g. MED" style="text-transform:uppercase" maxlength="10" /></div>
+      </div>
+      <div class="field"><label>Description</label><input id="pm-desc" class="fm-input" placeholder="Optional description" /></div>
+      <!-- Environments -->
+      <div style="display:flex;align-items:center;margin:14px 0 8px">
+        <span style="font-size:13px;font-weight:700;color:var(--neutral-700)">Environments</span>
+        <button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="projAddEnv()">+ Add Environment</button>
+      </div>
+      <div style="font-size:12px;color:var(--neutral-400);margin-bottom:8px">Define one or more environments (DEV, QA, UAT, PROD) with their Base URLs. The first environment is used by default when running a suite.</div>
+      <div id="proj-envs"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="projCloseModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="projSave()">Save Project</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Modal: Add/Edit Common Data ──────────────────────────────────────── -->
+<div class="modal-backdrop" id="modal-common-data" style="display:none">
+  <div class="modal">
+    <div class="modal-header">
+      <span id="cd-modal-title">Add Common Data</span>
+      <button class="modal-close" onclick="cdCloseModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="cd-modal-alert" style="margin-bottom:8px"></div>
+      <div class="row-2">
+        <div class="field">
+          <label>Data Name <span class="req">*</span></label>
+          <input id="cd-name" class="fm-input" placeholder="e.g. username" />
+          <div style="font-size:11.5px;color:var(--neutral-400);margin-top:3px">Use in scripts as <code>\${cd-name value}</code></div>
+        </div>
+        <div class="field">
+          <label>Environment <span class="req">*</span></label>
+          <input id="cd-env" class="fm-input" placeholder="e.g. QA, DEV, UAT" />
+        </div>
+      </div>
+      <div class="field">
+        <label>Value <span class="req">*</span></label>
+        <input id="cd-value" class="fm-input" placeholder="e.g. test_user01" />
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="cdCloseModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="cdSave()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Modal: Add/Edit Common Function ───────────────────────────────────── -->
+<div class="modal-backdrop" id="modal-function" style="display:none">
+  <div class="modal modal-wide">
+    <div class="modal-header">
+      <span id="fn-modal-title">New Function</span>
+      <button class="modal-close" onclick="fnCloseModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="fn-modal-alert" style="margin-bottom:8px"></div>
+      <div class="row-2">
+        <div class="field">
+          <label>Function Name <span class="req">*</span></label>
+          <input id="fn-name" class="fm-input" placeholder="e.g. Login as Admin" />
+        </div>
+        <div class="field">
+          <label>Identifier <span class="req">*</span></label>
+          <input id="fn-identifier" class="fm-input" placeholder="e.g. login_user" maxlength="64"
+                 oninput="this.value=this.value.replace(/[^a-zA-Z0-9_]/g,'')" />
+          <div style="font-size:11.5px;color:var(--neutral-400);margin-top:3px">Alphanumeric + underscore only. Must be unique per project.</div>
+        </div>
+      </div>
+      <div class="field">
+        <label>Description</label>
+        <input id="fn-desc" class="fm-input" placeholder="What this function does (optional)" />
+      </div>
+      <div class="card-title" style="margin-top:12px;margin-bottom:8px;font-size:13px">
+        Steps
+        <button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="fnAddStep()">+ Step</button>
+      </div>
+      <div id="fn-steps-container"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="fnCloseModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="fnSave()">Save Function</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Locator picker popup (used inside TC Builder steps) ────────────────── -->
+<div class="modal-backdrop" id="modal-locator-picker" style="display:none">
+  <div class="modal">
+    <div class="modal-header">
+      <span>Select Locator</span>
+      <button class="modal-close" onclick="locatorPickerClose()">✕</button>
+    </div>
+    <div class="modal-body">
+      <input id="loc-picker-search" class="filter-input" placeholder="Search locators..." oninput="locatorPickerFilter()" style="margin-bottom:10px;width:100%" />
+      <div id="loc-picker-list" style="max-height:320px;overflow-y:auto"></div>
+    </div>
+    <div class="modal-footer" style="justify-content:flex-start;gap:8px">
+      <button class="btn btn-outline btn-sm" onclick="locatorPickerClose()">Cancel</button>
+      <button class="btn btn-outline btn-sm" onclick="locatorOpenModal(); locatorPickerClose()">+ Create New</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════
+     Script Editor — full-page overlay
+     ══════════════════════════════════════════════════════════════════════ -->
+<div id="script-editor-overlay" class="editor-overlay" style="display:none">
+  <div class="editor-header">
+    <button class="tbl-btn" onclick="scriptEditorClose()">← Back</button>
+    <span class="editor-title" id="script-editor-title">New Script</span>
+    <div style="display:flex;gap:8px;flex-shrink:0">
+      <button class="btn btn-outline btn-sm" onclick="scriptEditorClose()">Cancel</button>
+      <button class="btn btn-primary btn-sm" onclick="scriptSave()">Save Script</button>
+    </div>
+  </div>
+  <div class="editor-body">
+    <!-- Left col: metadata -->
+    <div>
+      <div class="card">
+        <div class="card-title" style="font-size:14px">Script Details</div>
+        <div id="script-editor-alert" style="margin-bottom:8px"></div>
+        <div class="field"><label>Component</label>
+            <input id="se-component" class="fm-input" placeholder="e.g. Login, Billing, Mediation" /></div>
+        <div class="field"><label>Title <span class="req">*</span></label>
+          <input id="se-title" class="fm-input" placeholder="e.g. Verify Login Flow" /></div>
+        <div class="field"><label>Description</label>
+          <textarea id="se-desc" class="fm-input" rows="2" placeholder="Optional description" style="resize:vertical;width:100%;box-sizing:border-box"></textarea></div>
+        <div class="row-2">
+          <div class="field"><label>Priority</label>
+            <select id="se-priority" class="fm-select">
+              <option value="low">Low</option>
+              <option value="medium" selected>Medium</option>
+              <option value="high">High</option>
+              <option value="critical">Critical</option>
+            </select>
+          </div>
+          <div class="field"><label>Tags <span style="font-size:11px;color:var(--neutral-400)">(comma-separated)</span></label>
+            <input id="se-tags" class="fm-input" placeholder="smoke, login" /></div>
+        </div>
+      </div>
+      <div class="card" id="se-metadata-card" style="margin-top:12px;display:none">
+        <div class="card-title" style="font-size:13px">Metadata</div>
+        <div class="meta-grid">
+          <div class="meta-label">Created By</div><div id="se-meta-createdby">—</div>
+          <div class="meta-label">Created At</div><div id="se-meta-createdat">—</div>
+          <div class="meta-label">Modified By</div><div id="se-meta-modifiedby">—</div>
+          <div class="meta-label">Modified At</div><div id="se-meta-modifiedat">—</div>
+        </div>
+      </div>
+    </div>
+    <!-- Right col: steps -->
+    <div>
+      <div class="card">
+        <div class="card-title" style="font-size:14px">
+          Test Steps
+          <button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="scriptAddStep()">+ Add Step</button>
+        </div>
+        <div id="se-steps-container"></div>
+        <div id="se-steps-hint" class="builder-hint" style="display:none">No steps yet. Click <strong>+ Add Step</strong> above.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════
+     Overlay: Script Detail Page
+     ══════════════════════════════════════════════════════════════════════ -->
+<div id="script-detail-overlay" class="editor-overlay" style="display:none">
+  <div class="editor-header">
+    <button class="tbl-btn" onclick="scriptDetailClose()">← Back</button>
+    <span class="editor-title" id="sd-title-header">Script Detail</span>
+    <div style="display:flex;gap:8px;flex-shrink:0">
+      <button class="btn btn-outline btn-sm" onclick="scriptDetailEdit()">Edit</button>
+      <button class="btn btn-outline btn-sm" onclick="scriptDetailClose()">Close</button>
+    </div>
+  </div>
+  <div class="editor-body">
+    <!-- Left: metadata panel -->
+    <div>
+      <div class="card">
+        <div class="card-title" style="font-size:14px">Script Info</div>
+        <div class="meta-grid" id="sd-info-grid">
+          <div class="meta-label">TC ID</div>        <div id="sd-tcid" style="font-family:monospace;font-weight:700;color:var(--primary)">—</div>
+          <div class="meta-label">Component</div>    <div id="sd-component">—</div>
+          <div class="meta-label">Priority</div>     <div id="sd-priority">—</div>
+          <div class="meta-label">Tags</div>         <div id="sd-tags">—</div>
+          <div class="meta-label">Description</div>  <div id="sd-description" style="white-space:pre-wrap">—</div>
+          <div class="meta-label">Created By</div>   <div id="sd-createdby">—</div>
+          <div class="meta-label">Created At</div>   <div id="sd-createdat">—</div>
+          <div class="meta-label">Modified By</div>  <div id="sd-modifiedby">—</div>
+          <div class="meta-label">Modified At</div>  <div id="sd-modifiedat">—</div>
+        </div>
+      </div>
+    </div>
+    <!-- Right: steps list with expand/collapse -->
+    <div>
+      <div class="card">
+        <div class="card-title" style="font-size:14px">
+          Test Steps
+          <span id="sd-step-count" style="font-size:12px;color:var(--neutral-400);font-weight:400;margin-left:6px"></span>
+        </div>
+        <div id="sd-steps-list"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════
+     Modal: Create / Edit Test Suite
+     ══════════════════════════════════════════════════════════════════════ -->
+<div class="modal-backdrop" id="modal-suite" style="display:none">
+  <div class="modal modal-wide">
+    <div class="modal-header">
+      <span id="suite-modal-title">New Test Suite</span>
+      <button class="modal-close" onclick="suiteCloseModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="suite-modal-alert" style="margin-bottom:8px"></div>
+      <div class="row-2">
+        <div class="field"><label>Suite Name <span class="req">*</span></label>
+          <input id="sm-name" class="fm-input" placeholder="e.g. Smoke Test Suite" /></div>
+        <div class="field"><label>Description</label>
+          <input id="sm-desc" class="fm-input" placeholder="Optional description" /></div>
+      </div>
+      <div class="field">
+        <label>Execution Environment</label>
+        <select id="sm-env" class="fm-input">
+          <option value="">— Use project default (first environment) —</option>
+        </select>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;margin:12px 0 8px">
+        <span style="font-size:13px;font-weight:700;color:var(--neutral-700)">Add Scripts</span>
+        <input id="sm-script-filter" class="filter-input" style="width:200px;font-size:12px"
+               placeholder="Search scripts…" oninput="suiteScriptFilterRender()" />
+      </div>
+      <div id="sm-script-list"
+           style="max-height:280px;overflow-y:auto;border:1px solid var(--neutral-200);border-radius:6px;padding:4px"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="suiteCloseModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="suiteSave()">Save Suite</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════
+     Suite Detail — full-page overlay
+     ══════════════════════════════════════════════════════════════════════ -->
+<div id="suite-detail-overlay" class="editor-overlay" style="display:none">
+  <div class="editor-header">
+    <button class="tbl-btn" onclick="suiteDetailClose()">← Back</button>
+    <span class="editor-title" id="suite-detail-title">Suite Detail</span>
+    <div style="display:flex;gap:8px;align-items:center;flex-shrink:0">
+      <button class="btn btn-outline btn-sm" onclick="suiteDetailEdit()">Edit Suite</button>
+      <select id="suite-run-env" class="fm-input" style="font-size:12px;height:32px;min-width:180px">
+        <option value="">— Select Environment —</option>
+      </select>
+      <button class="btn btn-primary btn-sm" id="suite-run-btn" onclick="suiteRun()">▶ Run Suite</button>
+    </div>
+  </div>
+  <div style="padding:20px;overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:16px">
+    <!-- Top: info row -->
+    <div style="display:grid;grid-template-columns:280px 1fr;gap:16px;align-items:start">
+      <div class="card">
+        <div class="card-title" style="font-size:13px">Suite Info</div>
+        <div id="suite-detail-info" style="font-size:13px;color:var(--neutral-600)"></div>
+      </div>
+      <!-- Scripts with collapsible steps -->
+      <div class="card">
+        <div class="card-title" style="font-size:14px">
+          Scripts in Suite
+          <span id="suite-script-count" style="font-size:12px;color:var(--neutral-400);font-weight:400;margin-left:6px"></span>
+          <button id="suite-bulk-remove-btn"
+                  style="margin-left:auto;color:var(--danger);border:1px solid var(--danger);border-radius:5px;background:none;cursor:pointer;padding:4px 10px;font-size:12px;display:none"
+                  onclick="suiteRemoveSelected()">Remove Selected</button>
+        </div>
+        <div id="suite-detail-scripts"></div>
+      </div>
+    </div>
+    <!-- Bottom: full-width run output -->
+    <div class="card" id="suite-run-card" style="display:none">
+      <div class="card-title" style="font-size:13px;display:flex;align-items:center;gap:12px">
+        <span id="suite-run-status">Run Output</span>
+        <span id="suite-run-stats" style="font-size:12px;font-weight:400;color:var(--neutral-500)"></span>
+        <div id="suite-report-link" style="margin-left:auto;display:none">
+          <a id="suite-report-anchor" class="btn btn-primary btn-sm" href="#" target="_blank">📥 View Report</a>
+        </div>
+      </div>
+      <div id="suite-run-output"
+           style="background:#1e1e1e;color:#d4d4d4;font-family:monospace;font-size:12.5px;
+                  padding:12px;border-radius:6px;max-height:320px;overflow-y:auto;
+                  white-space:pre-wrap;word-break:break-all;margin-top:8px"></div>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+<script src="modules.js"></script>
+</body>
+</html>

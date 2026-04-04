@@ -1,0 +1,7 @@
+[
+  {
+    "uiLabel": "Gateway Type",
+    "selector": "#GateWayType",
+    "fieldType": "TEXT"
+  }
+]
