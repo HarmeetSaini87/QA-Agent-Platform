@@ -1330,7 +1330,7 @@ function scriptAddStep(step = {}, insertBeforeRow = null) {
       <button type="button" class="step-action-btn" onclick="scriptStepMoveDown(this)" title="Move Down">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
       </button>
-      <button type="button" class="step-action-btn" onclick="scriptStepInsertAbove(this)" title="Insert Step Above">
+      <button type="button" class="step-action-btn" onclick="scriptStepInsertBelow(this)" title="Insert Step Below">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
       </button>
       <button type="button" class="step-action-btn step-del-icon" onclick="scriptStepDelete(this)" title="Delete Step">
@@ -1821,9 +1821,10 @@ function scriptStepMoveDown(btn) {
   }
 }
 
-function scriptStepInsertAbove(btn) {
+function scriptStepInsertBelow(btn) {
   const row = btn.closest('.script-step-row');
-  scriptAddStep({}, row);
+  // nextSibling = insert after this row; null = append at end (last step)
+  scriptAddStep({}, row.nextSibling);
 }
 
 function scriptReorderNums() {
