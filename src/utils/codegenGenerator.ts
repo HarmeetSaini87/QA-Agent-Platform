@@ -360,6 +360,7 @@ function maybeScreenshot(step: ScriptStep, indent: string, runIdx: number = 0): 
 export interface CodegenInput {
   suiteName:     string;
   suiteId:       string;
+  runId:         string;  // unique per run — prevents spec file collisions
   scripts:       TestScript[];
   project:       Project;
   environment:   ProjectEnvironment | null;  // selected env for this run
@@ -367,15 +368,15 @@ export interface CodegenInput {
 }
 
 export function generateCodegenSpec(input: CodegenInput): string {
-  const { suiteName, scripts, project, environment, allFunctions } = input;
+  const { suiteName, runId, scripts, project, environment, allFunctions } = input;
   // Build Common Data map once for this run (project + environment)
   const dataMap = buildDataMap(project.id, environment?.name);
   const outputDir = path.resolve('tests', 'codegen');
   fs.mkdirSync(outputDir, { recursive: true });
 
-  // Sanitise suite name → safe filename
+  // Sanitise suite name → safe filename; suffix with short runId to avoid collisions
   const safeName = suiteName.replace(/[^a-zA-Z0-9_\- ]/g, '').trim().replace(/\s+/g, '_');
-  const specPath = path.join(outputDir, `${safeName}.spec.ts`);
+  const specPath = path.join(outputDir, `${safeName}-${runId.slice(0, 8)}.spec.ts`);
 
   const lines: string[] = [];
 
@@ -390,6 +391,11 @@ export function generateCodegenSpec(input: CodegenInput): string {
   lines.push(` */`);
   lines.push(``);
   lines.push(`import { test, expect } from '@playwright/test';`);
+  lines.push(`import * as _fs from 'fs';`);
+  lines.push(``);
+  lines.push(`// Visual diff screenshot directory (unique per run)`);
+  lines.push(`const __SS_DIR = 'test-results/${runId}';`);
+  lines.push(`_fs.mkdirSync(__SS_DIR, { recursive: true });`);
   lines.push(``);
 
   // ── One test.describe per suite, one test() per script (or per data row) ─────
@@ -423,7 +429,9 @@ export function generateCodegenSpec(input: CodegenInput): string {
     const allCounts = [...tdRowCounts, ...fnTdCounts];
     const numRuns   = allCounts.length > 0 ? Math.max(...allCounts) : 1;
 
+    // testIdx tracks position across all scripts+rows — matches record.tests[] order
     for (let runIdx = 0; runIdx < numRuns; runIdx++) {
+      const testIdx  = scripts.indexOf(script) * numRuns + runIdx;
       const runLabel = numRuns > 1 ? ` [row ${runIdx + 1}]` : '';
       lines.push(`  test('${testName}${runLabel.replace(/'/g, "\\'")}', async ({ page }) => {`);
 
@@ -431,9 +439,29 @@ export function generateCodegenSpec(input: CodegenInput): string {
       lines.push(generateNavBlock(environment, project, '    '));
       lines.push('');
 
+      // Keywords that don't need visual diff wrapping
+      const NO_DIFF_KW = new Set(['SCREENSHOT', 'WAIT', 'GOTO', 'VERIFY', 'ASSERT TEXT', 'ASSERT VISIBLE', 'ASSERT HIDDEN', 'ASSERT VALUE']);
+
       for (const step of sortedSteps) {
-        const code = generateStepCode(step, project, environment, allFunctions, dataMap, '    ', runIdx);
-        if (code) lines.push(code);
+        const kw       = (step.keyword || '').toUpperCase().trim();
+        const needsDiff = !NO_DIFF_KW.has(kw);
+
+        if (needsDiff) {
+          // Before screenshot — captures page state just before this step
+          lines.push(`    await page.screenshot({ path: \`\${__SS_DIR}/${testIdx}-before-${step.order}.png\`, fullPage: false }).catch(() => {});`);
+          lines.push(`    try {`);
+          const innerCode = generateStepCode(step, project, environment, allFunctions, dataMap, '      ', runIdx);
+          if (innerCode) lines.push(innerCode);
+          lines.push(`    } catch (__e_${step.order}) {`);
+          // After screenshot — captures page state at the moment of failure
+          lines.push(`      await page.screenshot({ path: \`\${__SS_DIR}/${testIdx}-after-${step.order}.png\`, fullPage: false }).catch(() => {});`);
+          lines.push(`      throw __e_${step.order};`);
+          lines.push(`    }`);
+        } else {
+          const code = generateStepCode(step, project, environment, allFunctions, dataMap, '    ', runIdx);
+          if (code) lines.push(code);
+        }
+
         const ss = maybeScreenshot(step, '    ', runIdx);
         if (ss) lines.push(ss);
       }
@@ -449,5 +477,304 @@ export function generateCodegenSpec(input: CodegenInput): string {
   const content = lines.join('\n');
   fs.writeFileSync(specPath, content, 'utf-8');
   logger.info(`[codegenGenerator] Wrote spec → ${specPath}`);
+  return specPath;
+}
+
+// ── Debug spec generator ───────────────────────────────────────────────────────
+// Generates a Playwright spec that pauses before each step, captures a
+// highlighted screenshot, and long-polls the server until the UI sends
+// continue / skip / stop.
+
+export interface DebugCodegenInput {
+  sessionId:    string;
+  script:       TestScript;
+  project:      Project;
+  environment:  ProjectEnvironment | null;
+  allFunctions: CommonFunction[];
+  port:         number;  // kept for interface compat; no longer used in spec
+}
+
+// Returns a plain string for display in the debugger step panel (not executed code)
+function debugValueDisplay(step: ScriptStep): string {
+  const mode = step.valueMode || 'static';
+  if (mode === 'dynamic')    return `[dynamic: ${step.value || ''}]`;
+  if (mode === 'commondata') return `[commondata: ${step.value || ''}]`;
+  if (mode === 'testdata')   return '[testdata: row 1]';
+  return step.value || '';
+}
+
+export function generateDebugSpec(input: DebugCodegenInput): string {
+  const { sessionId, script, project, environment, allFunctions, port } = input;
+  const dataMap    = buildDataMap(project.id, environment?.name);
+  const outputDir  = path.resolve('tests', 'codegen');
+  fs.mkdirSync(outputDir, { recursive: true });
+
+  const ssDir    = `debug-runs/${sessionId}`;
+  const specPath = path.join(outputDir, `debug-${sessionId.slice(0, 8)}.spec.ts`);
+  const sortedSteps = script.steps.slice().sort((a, b) => a.order - b.order);
+  const testName    = script.title.replace(/'/g, "\\'");
+  const lines: string[] = [];
+
+  // ── File header ────────────────────────────────────────────────────────────
+  lines.push(`/** Auto-generated Debug Spec — QA Agent Platform */`);
+  lines.push(`import { test } from '@playwright/test';`);
+  lines.push(`import * as _fs from 'fs';`);
+  lines.push(``);
+  lines.push(`const __SS_DIR     = '${ssDir}';`);
+  lines.push(`const __PENDING    = \`\${__SS_DIR}/pending.json\`;`);
+  lines.push(`const __GATE       = \`\${__SS_DIR}/gate.json\`;`);
+  lines.push(`_fs.mkdirSync(__SS_DIR, { recursive: true });`);
+  lines.push(``);
+
+  // ── __debugPause helper — file-based IPC ───────────────────────────────────
+  // Writes step info to pending.json, then polls for gate.json written by server.
+  // Zero network dependency — works regardless of proxy/firewall.
+  lines.push(`async function __debugPause(`);
+  lines.push(`  stepIdx: number, keyword: string, locator: string, value: string, ssPath: string`);
+  lines.push(`): Promise<'continue' | 'skip' | 'stop'> {`);
+  lines.push(`  // Signal the server: write step info`);
+  lines.push(`  try { _fs.unlinkSync(__GATE); } catch {}`);
+  lines.push(`  // Ensure screenshot file exists on disk before signaling server`);
+  lines.push(`  await new Promise<void>(r => { const iv = setInterval(() => { if (_fs.existsSync(ssPath)) { clearInterval(iv); r(); } }, 50); setTimeout(() => { clearInterval(iv); r(); }, 5000); });`);
+  lines.push(`  _fs.writeFileSync(__PENDING, JSON.stringify({ stepIdx, keyword, locator, value, screenshotPath: ssPath }));`);
+  lines.push(`  // Wait for server to write gate.json (UI clicked Step/Skip/Stop)`);
+  lines.push(`  return new Promise((resolve) => {`);
+  lines.push(`    const iv = setInterval(() => {`);
+  lines.push(`      try {`);
+  lines.push(`        if (_fs.existsSync(__GATE)) {`);
+  lines.push(`          const d = JSON.parse(_fs.readFileSync(__GATE, 'utf-8'));`);
+  lines.push(`          clearInterval(iv);`);
+  lines.push(`          try { _fs.unlinkSync(__GATE); } catch {}`);
+  lines.push(`          try { _fs.unlinkSync(__PENDING); } catch {}`);
+  lines.push(`          resolve(d.action || 'continue');`);
+  lines.push(`        }`);
+  lines.push(`      } catch {}`);
+  lines.push(`    }, 300);`);
+  lines.push(`    // Safety timeout: 30 minutes`);
+  lines.push(`    setTimeout(() => { clearInterval(iv); resolve('stop'); }, 30 * 60 * 1000);`);
+  lines.push(`  });`);
+  lines.push(`}`);
+  lines.push(``);
+
+  // ── __waitForPageSettle — waits for DOM/network to fully settle after an action ─
+  // Prevents capturing spinner/loading states in screenshots.
+  // Both waits are best-effort (errors caught) — never blocks the debug session.
+  lines.push(`async function __waitForPageSettle(page: any): Promise<void> {`);
+  lines.push(`  // 1s buffer — lets form-submit/redirect navigation actually BEGIN before we poll`);
+  lines.push(`  // Without this, waitForLoadState resolves on the unloading page and returns too early`);
+  lines.push(`  await page.waitForTimeout(1000);`);
+  lines.push(`  // Wait for full page load event on the resulting page (handles redirects + SSO)`);
+  lines.push(`  try { await page.waitForLoadState('load', { timeout: 15000 }); } catch {}`);
+  lines.push(`  // Wait for network to fully quiet down (SPA route change API calls)`);
+  lines.push(`  try { await page.waitForLoadState('networkidle', { timeout: 15000 }); } catch {}`);
+  lines.push(`  // Final buffer for CSS animations / rendering`);
+  lines.push(`  await page.waitForTimeout(500);`);
+  lines.push(`}`);
+  lines.push(``);
+
+  // ── __debugHighlight — highlights target element in screenshot ─────────────────
+  // Uses Playwright's native locator API so ALL locator types work
+  // (text, testid, role, label, placeholder, xpath, id, name, css).
+  // Color is keyed to action type for instant visual context.
+  lines.push(`async function __debugHighlight(page: any, locType: string, locVal: string, keyword: string): Promise<void> {`);
+  lines.push(`  // Clear any previous highlight`);
+  lines.push(`  await page.evaluate(() => {`);
+  lines.push(`    document.querySelectorAll('[data-dbg-hl]').forEach((e: any) => {`);
+  lines.push(`      e.style.outline = ''; e.style.outlineOffset = ''; e.style.backgroundColor = '';`);
+  lines.push(`      e.removeAttribute('data-dbg-hl');`);
+  lines.push(`    });`);
+  lines.push(`  }).catch(() => {});`);
+  lines.push(`  if (!locVal) return;`);
+  lines.push(`  const kw = keyword.toUpperCase();`);
+  lines.push(`  const color = ['CLICK', 'DBLCLICK'].includes(kw) ? '#ef4444'`);
+  lines.push(`    : ['FILL', 'TYPE', 'CLEAR'].includes(kw)        ? '#3b82f6'`);
+  lines.push(`    : ['SELECT', 'CHECK', 'UNCHECK'].includes(kw)   ? '#f97316'`);
+  lines.push(`    : ['HOVER', 'FOCUS'].includes(kw)               ? '#eab308'`);
+  lines.push(`    : kw.startsWith('ASSERT')                       ? '#22c55e'`);
+  lines.push(`    : '#8b5cf6';`);
+  lines.push(`  try {`);
+  lines.push(`    let loc: any;`);
+  lines.push(`    switch (locType) {`);
+  lines.push(`      case 'text':        loc = page.getByText(locVal, { exact: false }); break;`);
+  lines.push(`      case 'testid':      loc = page.getByTestId(locVal); break;`);
+  lines.push(`      case 'label':       loc = page.getByLabel(locVal); break;`);
+  lines.push(`      case 'placeholder': loc = page.getByPlaceholder(locVal); break;`);
+  lines.push(`      case 'xpath':       loc = page.locator('xpath=' + locVal); break;`);
+  lines.push(`      case 'id':          loc = page.locator('#' + locVal.replace(/^#/, '')); break;`);
+  lines.push(`      case 'name':        loc = page.locator('[name="' + locVal.replace(/"/g, '\\\\"') + '"]'); break;`);
+  lines.push(`      case 'role': {`);
+  lines.push(`        const [r, ...np] = locVal.split(':'); const n = np.join(':').trim();`);
+  lines.push(`        loc = n ? page.getByRole(r.trim() as any, { name: n }) : page.getByRole(r.trim() as any); break;`);
+  lines.push(`      }`);
+  lines.push(`      default: loc = page.locator(locVal); break;`);
+  lines.push(`    }`);
+  lines.push(`    await loc.first().evaluate((el: any, c: string) => {`);
+  lines.push(`      el.style.outline = '3px solid ' + c;`);
+  lines.push(`      el.style.outlineOffset = '2px';`);
+  lines.push(`      el.style.backgroundColor = c + '20';`);
+  lines.push(`      el.setAttribute('data-dbg-hl', '1');`);
+  lines.push(`      el.scrollIntoView({ block: 'center', behavior: 'instant' });`);
+  lines.push(`    }, color, { timeout: 2000 });`);
+  lines.push(`  } catch {}`);
+  lines.push(`}`);
+  lines.push(``);
+
+  // ── Test block ──────────────────────────────────────────────────────────────
+  lines.push(`test.use({ viewport: { width: 1440, height: 900 } });`);
+  lines.push(``);
+  lines.push(`test.describe('Debug: ${testName}', () => {`);
+  lines.push(`  test.setTimeout(30 * 60 * 1000); // 30-min timeout for interactive debug`);
+  lines.push(`  test('${testName}', async ({ page }) => {`);
+  lines.push(``);
+
+  // Auto-navigate first
+  lines.push(generateNavBlock(environment, project, '    '));
+  // Take initial screenshot to show the navigated page before step 1
+  // Wait for the page to render meaningful content
+  // Try: look for form fields, interactive content, or main page body
+  // Fallback to 8s timeout if elements don't appear (e.g., SSO interstitial page)
+  lines.push(`    await Promise.race([`);
+  lines.push(`      page.waitForSelector('input[name="Username"], input[type="email"], input[type="password"], button[type="submit"], form', { timeout: 10000 }),`);
+  lines.push(`      page.waitForTimeout(8000)`);
+  lines.push(`    ]).catch(() => {});`);
+  lines.push(`    await page.waitForTimeout(200); // small buffer for final render`);
+  lines.push(`    await page.screenshot({ path: \`\${__SS_DIR}/0-NAV.jpg\`, fullPage: false, type: 'jpeg', quality: 80 }).catch(() => {});`);
+  lines.push(`    // Ensure screenshot file exists on disk before signaling server`);
+  lines.push(`    await new Promise<void>(r => { const iv = setInterval(() => { if (_fs.existsSync(\`\${__SS_DIR}/0-NAV.jpg\`)) { clearInterval(iv); r(); } }, 50); setTimeout(() => { clearInterval(iv); r(); }, 5000); });`);
+  lines.push(`    _fs.writeFileSync(__PENDING, JSON.stringify({ stepIdx: 0, keyword: 'NAVIGATE', locator: '', value: '', screenshotPath: \`\${__SS_DIR}/0-NAV.jpg\` }));`);
+  lines.push(`    await (async () => { try { _fs.unlinkSync(__GATE); } catch {} })();`);
+  lines.push(`    await new Promise<void>(r => { const iv = setInterval(() => { try { if (_fs.existsSync(__GATE)) { clearInterval(iv); try { _fs.unlinkSync(__GATE); } catch {} try { _fs.unlinkSync(__PENDING); } catch {} r(); } } catch {} }, 300); setTimeout(() => { clearInterval(iv); r(); }, 30*60*1000); });`);
+  lines.push('');
+
+  for (const step of sortedSteps) {
+    const kw      = (step.keyword || '').toUpperCase().trim();
+    const loc     = step.locator || '';
+    const lt      = step.locatorType || 'css';
+    const dispVal = debugValueDisplay(step).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    const dispLoc = loc.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    const kwSlug  = kw.replace(/\s+/g, '_');
+
+    // ── CALL FUNCTION: expand sub-steps into individual debug blocks ─────────
+    // Each sub-step gets its own highlight + screenshot + pause + execute cycle
+    // so the debugger can trace inside a Common Function step-by-step.
+    if (kw === 'CALL FUNCTION') {
+      const fnName      = step.value || '';
+      const fn          = allFunctions.find(f => f.name === fnName);
+      const fnStepValues = (step as any).fnStepValues || [];
+      const fnSortedSteps = (fn?.steps || []).slice().sort((a: any, b: any) => a.order - b.order);
+
+      // ── Parent pause: screenshot of current page state, label shows function name ──
+      // Skip at this level = skip the entire function (all sub-steps are wrapped inside)
+      const parentSsVar = `__ss_${step.order}_fn`;
+      lines.push(`    // Step ${step.order}: CALL FUNCTION — ${fnName || '(unknown)'}${fn ? ` (${fnSortedSteps.length} sub-steps)` : ' — not found'}`);
+      lines.push(`    {`);
+      lines.push(`      const ${parentSsVar} = \`\${__SS_DIR}/${step.order}-CALL_FUNCTION.jpg\`;`);
+      lines.push(`      await page.screenshot({ path: ${parentSsVar}, fullPage: false, type: 'jpeg', quality: 80 }).catch(() => {});`);
+      lines.push(`      const __act_${step.order}_fn = await __debugPause(${step.order}, 'CALL FUNCTION', '', '${fnName.replace(/'/g, "\\'")}', ${parentSsVar});`);
+      lines.push(`      if (__act_${step.order}_fn === 'stop') { await page.close().catch(() => {}); return; }`);
+      lines.push(`      if (__act_${step.order}_fn !== 'skip') {`);
+
+      if (fn && fnSortedSteps.length > 0) {
+        // ── Sub-step blocks ────────────────────────────────────────────────────
+        fnSortedSteps.forEach((fs: any, fi: number) => {
+          const saved      = fnStepValues.find((v: any) => v.fnStepIdx === fi);
+          const pseudoStep: ScriptStep = {
+            id:           `fn-${fs.order}`,
+            order:        fs.order,
+            keyword:      fs.keyword,
+            locator:      fs.selector || (fs as any).locatorName || fs.detail || null,
+            locatorId:    null,
+            locatorType:  (fs as any).locatorType || 'css',
+            valueMode:    saved?.valueMode || 'static',
+            value:        saved?.value ?? null,
+            testData:     saved?.testData || [],
+            fnStepValues: [],
+            description:  (fs as any).description || fs.detail || '',
+            screenshot:   false,
+          };
+
+          const subKw      = (pseudoStep.keyword || '').toUpperCase().trim();
+          const subLoc     = pseudoStep.locator || '';
+          const subLt      = pseudoStep.locatorType || 'css';
+          const subDispVal = debugValueDisplay(pseudoStep).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+          const subDispLoc = subLoc.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+          const subKwSlug  = subKw.replace(/\s+/g, '_');
+          const subNum     = fi + 1;                         // 1-based sub-step index
+          const subStepIdx = parseFloat(`${step.order}.${subNum}`); // 1.1, 1.2, 1.3 …
+          const subSsVar   = `__ss_${step.order}_${subNum}`;
+          const subActVar  = `__act_${step.order}_${subNum}`;
+          const subDesc    = pseudoStep.description ? ` — ${pseudoStep.description}` : '';
+
+          lines.push(`        // Sub-step ${step.order}.${subNum}: ${subKw}${subDesc} [fn: ${fnName}]`);
+          lines.push(`        {`);
+
+          if (subLoc) {
+            lines.push(`          await __debugHighlight(page, '${subLt}', '${subLoc.replace(/'/g, "\\'")}', '${subKw}');`);
+          }
+
+          lines.push(`          const ${subSsVar} = \`\${__SS_DIR}/${step.order}.${subNum}-${subKwSlug}.jpg\`;`);
+          lines.push(`          await page.screenshot({ path: ${subSsVar}, fullPage: false, type: 'jpeg', quality: 80 }).catch(() => {});`);
+          lines.push(`          const ${subActVar} = await __debugPause(${subStepIdx}, '${subKw}', '${subDispLoc}', '${subDispVal}', ${subSsVar});`);
+          lines.push(`          if (${subActVar} === 'stop') { await page.close().catch(() => {}); return; }`);
+          lines.push(`          if (${subActVar} !== 'skip') {`);
+
+          // Note: nested CALL FUNCTION inside a function runs without sub-pause (one level deep only)
+          const subCode = generateStepCode(pseudoStep, project, environment, allFunctions, dataMap, '            ', 0);
+          if (subCode) lines.push(subCode);
+          lines.push(`            await __waitForPageSettle(page);`);
+
+          lines.push(`          }`);
+          lines.push(`        }`);
+          lines.push(``);
+        });
+      } else {
+        // Function not found or empty — emit a comment so spec still compiles
+        lines.push(`        // CALL FUNCTION '${fnName}' — not found in Common Functions or has no steps`);
+      }
+
+      lines.push(`      }`); // close: if not skip
+      lines.push(`    }`);   // close parent block
+      lines.push(``);
+      continue; // ← skip the regular block below for this step
+    }
+
+    // ── Regular step (non CALL FUNCTION) — unchanged behaviour ───────────────
+    const ssVar = `__ss_${step.order}`;
+
+    lines.push(`    // Step ${step.order}: ${kw}${step.description ? ' — ' + step.description : ''}`);
+    lines.push(`    {`);
+
+    // Highlight target element (color-coded by keyword type)
+    if (loc) {
+      lines.push(`      await __debugHighlight(page, '${lt}', '${loc.replace(/'/g, "\\'")}', '${kw}');`);
+    }
+
+    // Capture step screenshot — JPEG for 5× smaller file vs PNG
+    lines.push(`      const ${ssVar} = \`\${__SS_DIR}/${step.order}-${kwSlug}.jpg\`;`);
+    lines.push(`      await page.screenshot({ path: ${ssVar}, fullPage: false, type: 'jpeg', quality: 80 }).catch(() => {});`);
+
+    // Pause — long-poll until UI acts
+    lines.push(`      const __act_${step.order} = await __debugPause(${step.order}, '${kw}', '${dispLoc}', '${dispVal}', ${ssVar});`);
+    lines.push(`      if (__act_${step.order} === 'stop') { await page.close().catch(() => {}); return; }`);
+    lines.push(`      if (__act_${step.order} !== 'skip') {`);
+
+    // Actual step execution
+    const code = generateStepCode(step, project, environment, allFunctions, dataMap, '        ', 0);
+    if (code) lines.push(code);
+    // Wait for DOM/network to settle
+    lines.push(`        await __waitForPageSettle(page);`);
+
+    lines.push(`      }`);
+    lines.push(`    }`);
+    lines.push(``);
+  }
+
+  lines.push(`  });`);
+  lines.push(`});`);
+  lines.push(``);
+
+  const content = lines.join('\n');
+  fs.writeFileSync(specPath, content, 'utf-8');
+  logger.info(`[generateDebugSpec] Wrote debug spec → ${specPath}`);
   return specPath;
 }

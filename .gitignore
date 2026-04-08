@@ -20,6 +20,11 @@ results/screenshots/
 results/heals/
 test-plans/*.json
 
+# Debugger runtime artifacts — session screenshots and auto-generated specs
+debug-runs/
+tests/codegen/debug-*.spec.ts
+tests/codegen/*.spec.ts
+
 # Runtime data files (contain user accounts, test data) — do not commit
 data/*.json
 

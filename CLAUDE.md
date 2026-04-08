@@ -1,9 +1,11 @@
 # QA Agent Platform — Master AI Instructions (Project Intelligence File)
 # Auto-loaded by Claude Code every session. Keep this updated.
-# Last Updated: 2026-04-04
+# Last Updated: 2026-04-08
 
 You are the orchestration brain of the **qa-agent-platform** enterprise test automation system.
 Read this entire file before taking any action. These rules are non-negotiable.
+
+> **📋 See [docs/DEBUGGER_IMPROVEMENTS.md](docs/DEBUGGER_IMPROVEMENTS.md) for detailed notes on recent debugger fixes (2026-04-08): screenshot sync, orphan cleanup, process termination, UI styling.**
 
 ---
 
@@ -376,3 +378,12 @@ All 5 module add buttons disabled until project selected. Controlled by `_toggle
 - [x] Export PDF — `window.print()` with full print stylesheet
 - [x] Removed modules — Jira Story, Upload PRD/Docs, Chat Instruction (old Run History)
 - [x] Multi-machine access — fixed session cookie `sameSite: 'lax'`, fixed session secret
+
+### Recent Debugger Improvements (2026-04-08)
+- [x] **Screenshot sync fix** — File existence check before broadcast (was 20-40s delay, now <2s)
+- [x] **Orphan process cleanup** — 3-part system (beforeunload beacon + heartbeat timeout + enhanced close)
+- [x] **Process termination fix** — Use taskkill /F /T to kill entire process tree (includes Chrome children)
+- [x] **Modal UI styling** — Added missing `.modal-box` CSS class
+- [x] **WebSocket on all interfaces** — Server listens on 0.0.0.0 (fixes qa-launchpad.local access)
+- [x] **Loading indicator UI** — Shows spinner while screenshot loads, prevents early button enable
+- [x] **120-second fallback timeout** — Shows error if network fails (no premature button enable)

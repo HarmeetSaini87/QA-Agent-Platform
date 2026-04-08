@@ -142,10 +142,27 @@ export interface TestSuite {
   description:   string;
   scriptIds:     string[];       // ordered list of TestScript IDs
   environmentId: string | null;  // selected environment for execution
+  retries:       0 | 1 | 2;     // Playwright --retries flag (0 = disabled)
   createdBy:     string;
   createdAt:     string;
   modifiedBy:    string;
   modifiedAt:    string;
+}
+
+// ── Scheduled Run ─────────────────────────────────────────────────────────────
+
+export interface ScheduledRun {
+  id:             string;
+  projectId:      string;
+  suiteId:        string;
+  environmentId:  string;
+  cronExpression: string;   // standard 5-field cron: "0 9 * * 1-5"
+  label:          string;   // human-readable name e.g. "Weekday regression"
+  enabled:        boolean;
+  createdBy:      string;
+  createdAt:      string;
+  lastRunId?:     string;
+  lastRunAt?:     string;
 }
 
 export interface AuditEntry {

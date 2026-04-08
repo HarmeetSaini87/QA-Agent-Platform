@@ -185,6 +185,31 @@
     }
     .screenshot-caption { font-size: 11px; color: #858585; margin-top: 4px; }
 
+    /* ── Visual Diff panel ── */
+    .diff-panel { margin-top: 10px; padding: 0 10px 10px; }
+    .diff-panel-title {
+      font-size: 11px; font-weight: 600; text-transform: uppercase;
+      color: #9cdcfe; letter-spacing: .04em; margin-bottom: 6px;
+    }
+    .diff-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .diff-grid.single { grid-template-columns: 1fr; }
+    .diff-col { display: flex; flex-direction: column; }
+    .diff-label {
+      font-size: 10px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: .04em; margin-bottom: 4px;
+    }
+    .diff-label.before { color: #9cdcfe; }
+    .diff-label.after  { color: #f48771; }
+    .diff-col img {
+      width: 100%; border-radius: 4px; cursor: pointer;
+      border: 1px solid #2d3748;
+    }
+    .diff-col.after-col img { border-color: #f48771; }
+
     /* ── TC ID badge ── */
     .tc-id {
       display: inline-block;
@@ -373,19 +398,51 @@ function renderReport(r) {
 
     let failureHtml = '';
     if (status === 'fail') {
-      const errMsg  = esc(t.errorMessage || 'Test failed');
+      const errMsg    = esc(t.errorMessage || 'Test failed');
       const errDetail = esc(t.errorDetail || '');
-      failureHtml = `
-        <div class="failure-block">
-          <div class="failure-header">&#9888; Failure Details</div>
-          <div class="failure-body">${errDetail || errMsg}</div>
-          ${t.screenshotPath ? `
+
+      // Visual diff: prefer before/after pair, fall back to Playwright attachment screenshot
+      const hasBefore = !!t.screenshotBefore;
+      const hasAfter  = !!t.screenshotAfter;
+      const hasDiff   = hasBefore || hasAfter;
+
+      let diffHtml = '';
+      if (hasDiff) {
+        const beforeSrc = hasBefore ? `/screenshots/${esc(t.screenshotBefore.replace('test-results/',''))}` : '';
+        const afterSrc  = hasAfter  ? `/screenshots/${esc(t.screenshotAfter.replace('test-results/',''))}` : '';
+        const gridClass = hasBefore && hasAfter ? 'diff-grid' : 'diff-grid single';
+        diffHtml = `
+          <div class="diff-panel">
+            <div class="diff-panel-title">&#128247; Visual Diff — Failing Step</div>
+            <div class="${gridClass}">
+              ${hasBefore ? `
+              <div class="diff-col">
+                <div class="diff-label before">Before</div>
+                <img src="${beforeSrc}" alt="Before screenshot" onerror="this.parentElement.style.display='none'">
+              </div>` : ''}
+              ${hasAfter ? `
+              <div class="diff-col after-col">
+                <div class="diff-label after">After (Failed)</div>
+                <img src="${afterSrc}" alt="After screenshot" onerror="this.parentElement.style.display='none'">
+              </div>` : ''}
+            </div>
+          </div>`;
+      } else if (t.screenshotPath) {
+        // Fallback: Playwright attachment screenshot (no before/after available)
+        diffHtml = `
           <div class="screenshot-wrap">
             <img src="/screenshots/${esc(t.screenshotPath.replace('test-results/',''))}"
                  alt="Failure screenshot"
                  onerror="this.parentElement.style.display='none'">
             <div class="screenshot-caption">Failure screenshot</div>
-          </div>` : ''}
+          </div>`;
+      }
+
+      failureHtml = `
+        <div class="failure-block">
+          <div class="failure-header">&#9888; Failure Details</div>
+          <div class="failure-body">${errDetail || errMsg}</div>
+          ${diffHtml}
         </div>`;
     }
 
@@ -513,6 +570,15 @@ function exportHTML() {
     .failure-body { padding:10px; font-family:monospace; font-size:11px; color:#7f1d1d; white-space:pre-wrap; word-break:break-word; }
     .screenshot-wrap img { max-width:100%; border-radius:4px; border:1px solid #d1d5db; margin-top:8px; }
     .screenshot-caption { font-size:11px; color:#6b7280; margin-top:4px; }
+    .diff-panel { padding:8px 10px 10px; }
+    .diff-panel-title { font-size:11px; font-weight:600; color:#1e40af; margin-bottom:6px; }
+    .diff-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+    .diff-grid.single { grid-template-columns:1fr; }
+    .diff-label { font-size:10px; font-weight:600; margin-bottom:3px; }
+    .diff-label.before { color:#1d4ed8; }
+    .diff-label.after  { color:#991b1b; }
+    .diff-col img { width:100%; border-radius:4px; border:1px solid #d1d5db; }
+    .diff-col.after-col img { border-color:#fca5a5; }
   </style>
 </head>
 <body>

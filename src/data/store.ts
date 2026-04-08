@@ -59,3 +59,4 @@ export const SETTINGS    = 'settings';
 export const SCRIPTS     = 'scripts';
 export const SUITES      = 'suites';
 export const COMMON_DATA = 'common_data';
+export const SCHEDULES   = 'schedules';

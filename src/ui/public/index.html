@@ -64,6 +64,13 @@
         <span>Execution History</span>
       </div>
 
+      <div class="nav-item" data-tab="flaky">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+        </svg>
+        <span>Flaky Tests</span>
+      </div>
+
       <div class="nav-section-label admin-only" id="admin-section-label">Admin</div>
       <div class="nav-item admin-only" data-tab="projects" id="nav-projects">
         <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -337,6 +344,58 @@
         </div>
       </div><!-- /panel-history -->
 
+      <!-- ── Tab: Flaky Tests ──────────────────────────────────────────── -->
+      <div class="panel" id="panel-flaky">
+        <div class="card">
+          <div class="card-title" style="display:flex;align-items:center;gap:10px">
+            <span>⚡ Flaky Test Detection</span>
+            <span class="info-icon" tabindex="0"
+              data-tooltip="A test is flagged as flaky when it has both passed and failed across recent runs.&#10;&#10;Risk levels:&#10;  High   — fails more than 50% of the time&#10;  Medium — fails 20–50% of the time&#10;  Low    — fails less than 20% of the time&#10;&#10;Only tests with at least one pass AND one failure are shown here. Consistently failing tests appear in Execution History.">?</span>
+            <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
+              <label style="font-size:12px;font-weight:400;color:var(--neutral-400)">Last</label>
+              <select id="flaky-limit" class="fm-input" style="width:90px;font-size:12px;height:30px" onchange="flakyLoad()">
+                <option value="20">20 runs</option>
+                <option value="50" selected>50 runs</option>
+                <option value="100">100 runs</option>
+              </select>
+              <select id="flaky-suite-filter" class="fm-input" style="width:180px;font-size:12px;height:30px" onchange="flakyLoad()">
+                <option value="">All Suites</option>
+              </select>
+              <button class="btn btn-secondary btn-sm" onclick="flakyLoad()">&#x21BB; Refresh</button>
+            </div>
+          </div>
+
+          <!-- Summary cards -->
+          <div id="flaky-summary" style="display:none;gap:12px;flex-wrap:wrap;margin-bottom:16px"></div>
+
+          <!-- Table -->
+          <div style="overflow-x:auto">
+            <table class="data-table" id="flaky-table" style="display:none">
+              <thead>
+                <tr>
+                  <th>Test Name</th>
+                  <th>Suite</th>
+                  <th style="text-align:center">Passes ✓</th>
+                  <th style="text-align:center">Failures ✗</th>
+                  <th style="text-align:center">Total Runs</th>
+                  <th style="text-align:center">Fail Rate</th>
+                  <th style="text-align:center">Risk</th>
+                  <th>Avg Duration</th>
+                  <th>Last Seen</th>
+                </tr>
+              </thead>
+              <tbody id="flaky-tbody"></tbody>
+            </table>
+          </div>
+          <div id="flaky-empty" style="display:none;text-align:center;padding:48px;color:#858585">
+            <div style="font-size:32px;margin-bottom:8px">✅</div>
+            <div style="font-size:15px;font-weight:600;color:var(--neutral-300)">No flaky tests detected</div>
+            <div style="font-size:13px;color:var(--neutral-500);margin-top:4px">All tests are passing or failing consistently across the last <span id="flaky-empty-runs">N</span> runs.</div>
+          </div>
+          <div id="flaky-loading" style="text-align:center;padding:40px;color:#858585">Select a project to analyse flaky tests.</div>
+        </div>
+      </div><!-- /panel-flaky -->
+
       <!-- ── Tab: Projects ──────────────────────────────────────────────── -->
       <div class="panel admin-only" id="panel-projects">
         <div class="card">
@@ -602,6 +661,113 @@
 </div>
 
 <!-- ══════════════════════════════════════════════════════════════════════
+     Debugger Panel — full-page overlay (single script step-through)
+     ══════════════════════════════════════════════════════════════════════ -->
+<div id="debug-overlay" class="editor-overlay" style="display:none">
+  <!-- Header -->
+  <div class="editor-header">
+    <div style="display:flex;align-items:center;gap:10px;min-width:0">
+      <span style="font-size:15px">&#128027;</span>
+      <span class="editor-title" id="debug-overlay-title">Debugger</span>
+      <span id="debug-status-badge" class="debug-status-badge">—</span>
+    </div>
+    <div style="display:flex;gap:8px;flex-shrink:0">
+      <span style="font-size:12px;color:var(--neutral-400);align-self:center" id="debug-env-label"></span>
+      <button class="btn btn-outline btn-sm" onclick="debugClose()">✕ Close</button>
+    </div>
+  </div>
+
+  <!-- Body: step list (left) + browser view (right) -->
+  <div class="debug-body">
+
+    <!-- Left: step list -->
+    <div class="debug-steps-pane">
+      <div class="debug-pane-title">TEST STEPS</div>
+      <div id="debug-steps-list" class="debug-steps-list"></div>
+    </div>
+
+    <!-- Right: browser screenshot + controls -->
+    <div class="debug-view-pane">
+
+      <!-- Step detail card -->
+      <div id="debug-step-card" class="debug-step-card">
+        <div class="debug-step-card-row">
+          <span class="debug-step-card-label">Keyword</span>
+          <span id="dbg-kw" class="debug-step-card-value">—</span>
+        </div>
+        <div class="debug-step-card-row">
+          <span class="debug-step-card-label">Locator</span>
+          <span id="dbg-loc" class="debug-step-card-value mono">—</span>
+        </div>
+        <div class="debug-step-card-row">
+          <span class="debug-step-card-label">Value</span>
+          <span id="dbg-val" class="debug-step-card-value mono">—</span>
+        </div>
+      </div>
+
+      <!-- Screenshot -->
+      <div class="debug-screenshot-wrap">
+        <div id="debug-screenshot-placeholder" class="debug-ss-placeholder">
+          <div>&#128247;</div>
+          <div>Screenshot will appear here when the first step pauses</div>
+        </div>
+        <div id="debug-screenshot-loading" class="debug-ss-loading" style="display:none">
+          <div class="debug-ss-spinner"></div>
+          <div>Loading screenshot...</div>
+        </div>
+        <div id="debug-screenshot-error" class="debug-ss-error" style="display:none">
+          <div>⚠️</div>
+          <div>Failed to load screenshot (network timeout)</div>
+        </div>
+        <img id="debug-screenshot-img" src="" alt="Browser state" style="display:none"
+             onerror="this.style.display='none';document.getElementById('debug-screenshot-placeholder').style.display='flex'">
+      </div>
+
+      <!-- Controls -->
+      <div class="debug-controls">
+        <button class="btn btn-primary btn-sm" id="dbg-btn-step"
+                onclick="debugContinue('continue')" disabled>
+          &#9654; Step
+        </button>
+        <button class="btn btn-outline btn-sm" id="dbg-btn-skip"
+                onclick="debugContinue('skip')" disabled>
+          &#9197; Skip
+        </button>
+        <button class="btn btn-danger btn-sm" id="dbg-btn-stop"
+                onclick="debugContinue('stop')">
+          &#9632; Stop
+        </button>
+        <span id="debug-progress-label" class="debug-progress-label"></span>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- Debug environment picker modal -->
+<div id="debug-env-modal" class="modal-backdrop" style="display:none" onclick="if(event.target===this)debugEnvModalClose()">
+  <div class="modal-box" style="max-width:380px">
+    <div class="modal-header">
+      <span>&#128027; Start Debugger</span>
+      <button class="modal-close" onclick="debugEnvModalClose()">&#x2715;</button>
+    </div>
+    <div style="padding:18px 20px">
+      <p style="font-size:13px;color:var(--neutral-400);margin:0 0 14px">
+        Select the environment to run this script against, then click Start.
+      </p>
+      <label class="fm-label">Environment</label>
+      <select id="debug-env-select" class="fm-input" style="margin-bottom:18px">
+        <option value="">— Select Environment —</option>
+      </select>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn btn-outline btn-sm" onclick="debugEnvModalClose()">Cancel</button>
+        <button class="btn btn-primary btn-sm" onclick="debugStart()">&#128027; Start Debug</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════
      Script Editor — full-page overlay
      ══════════════════════════════════════════════════════════════════════ -->
 <div id="script-editor-overlay" class="editor-overlay" style="display:none">
@@ -728,6 +894,18 @@
           <option value="">— Use project default (first environment) —</option>
         </select>
       </div>
+      <div class="field">
+        <label style="display:flex;align-items:center;gap:6px">
+          Auto-Retry Failed Tests
+          <span class="info-icon" tabindex="0"
+            data-tooltip="When a test fails, Playwright can automatically re-run it from the start before marking it as failed.&#10;&#10;0 — No retry (default). A test fails immediately on first failure.&#10;1 — Retry once. Good for catching occasional flaky failures.&#10;2 — Retry twice. Use for tests that access slow or unstable environments.&#10;&#10;&#9888; Each retry runs the full test from scratch (including login/navigation). Retried tests are marked with a &#39;flaky&#39; flag in the report if they eventually pass.&#10;&#10;Tip: Start with 0. Only increase if you see consistent false failures in a stable environment.">?</span>
+        </label>
+        <select id="sm-retries" class="fm-input" style="max-width:280px">
+          <option value="0">0 — Disabled (fail immediately)</option>
+          <option value="1">1 — Retry once on failure</option>
+          <option value="2">2 — Retry twice on failure</option>
+        </select>
+      </div>
       <div style="display:flex;align-items:center;gap:8px;margin:12px 0 8px">
         <span style="font-size:13px;font-weight:700;color:var(--neutral-700)">Add Scripts</span>
         <input id="sm-script-filter" class="filter-input" style="width:200px;font-size:12px"
@@ -790,6 +968,53 @@
            style="background:#1e1e1e;color:#d4d4d4;font-family:monospace;font-size:12.5px;
                   padding:12px;border-radius:6px;max-height:320px;overflow-y:auto;
                   white-space:pre-wrap;word-break:break-all;margin-top:8px"></div>
+    </div>
+
+    <!-- Schedules card -->
+    <div class="card" id="suite-schedules-card">
+      <div class="card-title" style="font-size:13px;display:flex;align-items:center;gap:10px">
+        <span>🕐 Scheduled Runs</span>
+        <button class="btn btn-outline btn-sm" style="margin-left:auto;font-size:12px" onclick="schedAddShow()">+ Add Schedule</button>
+      </div>
+
+      <!-- Add/Edit form (hidden by default) -->
+      <div id="sched-form" style="display:none;background:var(--surface-1);border:1px solid var(--border);border-radius:6px;padding:14px;margin-bottom:12px">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+          <div>
+            <label class="fm-label">Label</label>
+            <input id="sched-label" class="fm-input" placeholder="e.g. Nightly Regression" />
+          </div>
+          <div>
+            <label class="fm-label">Environment</label>
+            <select id="sched-env" class="fm-input">
+              <option value="">— Select —</option>
+            </select>
+          </div>
+          <div>
+            <label class="fm-label">Frequency</label>
+            <select id="sched-preset" class="fm-input" onchange="schedPresetChange()">
+              <option value="0 9 * * *">Daily at 9am</option>
+              <option value="0 0 * * *">Nightly at midnight</option>
+              <option value="0 9 * * 1-5">Weekdays at 9am</option>
+              <option value="0 */4 * * *">Every 4 hours</option>
+              <option value="0 * * * *">Every hour</option>
+              <option value="custom">Custom cron expression</option>
+            </select>
+          </div>
+          <div id="sched-custom-wrap" style="display:none">
+            <label class="fm-label">Cron Expression <span style="font-size:10px;color:var(--neutral-400)">(UTC, 5-field)</span></label>
+            <input id="sched-cron" class="fm-input" placeholder="0 9 * * 1-5" />
+          </div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-primary btn-sm" onclick="schedSave()">Save Schedule</button>
+          <button class="btn btn-outline btn-sm" onclick="schedFormHide()">Cancel</button>
+        </div>
+        <input type="hidden" id="sched-edit-id" value="" />
+      </div>
+
+      <!-- Schedules table -->
+      <div id="sched-list"></div>
     </div>
   </div>
 </div>

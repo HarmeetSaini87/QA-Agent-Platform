@@ -904,7 +904,7 @@ async function projDropdownLoad() {
 }
 
 // Panels that require a project to be selected before any interaction
-const PROJECT_SCOPED_TABS = new Set(['scripts','suites','locators','functions','commondata','history']);
+const PROJECT_SCOPED_TABS = new Set(['scripts','suites','locators','functions','commondata','history','flaky']);
 
 const _PROJ_BANNER_ID = 'proj-required-banner';
 
@@ -949,6 +949,7 @@ function onProjectChange() {
   fnLoad();
   cdLoad();
   histLoad();
+  flakyLoad();
 }
 
 function _toggleModuleAddButtons(enabled) {
@@ -1055,6 +1056,7 @@ function scriptRender() {
           <td>
             <div style="display:flex;gap:4px">
               <button class="tbl-btn" onclick="scriptOpenEditor('${escHtml(s.id)}')">Edit</button>
+              <button class="tbl-btn dbg" onclick="debugOpen('${escHtml(s.id)}')">&#128027; Debug</button>
               <button class="tbl-btn del" onclick="scriptDelete('${escHtml(s.id)}','${escHtml(s.title)}')">Delete</button>
             </div>
           </td>
@@ -2037,7 +2039,7 @@ function suiteOpenModal(id = null) {
   editingSuiteId = id;
   modClearAlert('suite-modal-alert');
   document.getElementById('suite-modal-title').textContent = id ? 'Edit Test Suite' : 'New Test Suite';
-  if (!id) { document.getElementById('sm-name').value = ''; document.getElementById('sm-desc').value = ''; }
+  if (!id) { document.getElementById('sm-name').value = ''; document.getElementById('sm-desc').value = ''; document.getElementById('sm-retries').value = '0'; }
   document.getElementById('sm-script-filter').value = '';
   _populateEnvDropdown('');
   suiteScriptFilterRender(id ? null : []);
@@ -2051,6 +2053,7 @@ async function suiteEditById(id) {
   document.getElementById('suite-modal-title').textContent = 'Edit Test Suite';
   document.getElementById('sm-name').value = s.name;
   document.getElementById('sm-desc').value = s.description || '';
+  document.getElementById('sm-retries').value = String(s.retries ?? 0);
   document.getElementById('sm-script-filter').value = '';
   _populateEnvDropdown(s.environmentId || '');
   modClearAlert('suite-modal-alert');
@@ -2091,11 +2094,13 @@ async function suiteSave() {
   if (!currentProjectId) { modAlert('suite-modal-alert', 'error', 'Select a project first'); return; }
   const scriptIds     = [...document.querySelectorAll('#sm-script-list .sm-script-chk:checked')].map(c => c.value);
   const environmentId = document.getElementById('sm-env')?.value || null;
+  const retries = parseInt(document.getElementById('sm-retries')?.value || '0', 10);
   const body = {
     projectId: currentProjectId, name,
     description:   document.getElementById('sm-desc').value.trim(),
     scriptIds,
     environmentId: environmentId || null,
+    retries:       [0,1,2].includes(retries) ? retries : 0,
   };
   const method = editingSuiteId ? 'PUT'  : 'POST';
   const url    = editingSuiteId ? `/api/suites/${editingSuiteId}` : '/api/suites';
@@ -2135,7 +2140,8 @@ async function suiteOpenDetail(id) {
       <div><strong>Project:</strong> ${escHtml(projName)}</div>
       <div><strong>Default Env:</strong> ${escHtml(envLabel)}</div>
       <div><strong>Created by:</strong> ${escHtml(data.createdBy || '—')} &middot; ${formatDate(data.createdAt)}</div>
-      <div><strong>Modified by:</strong> ${escHtml(data.modifiedBy || '—')} &middot; ${formatDate(data.modifiedAt)}</div>`;
+      <div><strong>Modified by:</strong> ${escHtml(data.modifiedBy || '—')} &middot; ${formatDate(data.modifiedAt)}</div>
+      <div><strong>Auto-Retry:</strong> ${data.retries ? `${data.retries}x on failure` : 'Disabled'}</div>`;
   }
 
   // Populate run-time environment selector
@@ -2176,6 +2182,130 @@ async function suiteOpenDetail(id) {
   document.getElementById('suite-run-card').style.display = 'none';
   document.getElementById('suite-bulk-remove-btn').style.display = 'none';
   document.getElementById('suite-detail-overlay').style.display = 'flex';
+
+  // Populate schedule env selector + load schedules
+  const schedEnvSel = document.getElementById('sched-env');
+  if (schedEnvSel && project) {
+    const envs = project.environments || [];
+    schedEnvSel.innerHTML = '<option value="">— Select —</option>' +
+      envs.map(e => `<option value="${escHtml(e.id)}"${e.id === data.environmentId ? ' selected' : ''}>${escHtml(e.name)}</option>`).join('');
+  }
+  schedFormHide();
+  schedLoad();
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Scheduled Runs
+// ══════════════════════════════════════════════════════════════════════════════
+
+const CRON_PRESETS = {
+  '0 9 * * *':     'Daily at 9am',
+  '0 0 * * *':     'Nightly at midnight',
+  '0 9 * * 1-5':   'Weekdays at 9am',
+  '0 */4 * * *':   'Every 4 hours',
+  '0 * * * *':     'Every hour',
+};
+
+function schedPresetLabel(expr) {
+  return CRON_PRESETS[expr] || expr;
+}
+
+function schedPresetChange() {
+  const preset = document.getElementById('sched-preset')?.value;
+  const wrap   = document.getElementById('sched-custom-wrap');
+  if (wrap) wrap.style.display = preset === 'custom' ? '' : 'none';
+}
+
+function schedFormHide() {
+  const f = document.getElementById('sched-form');
+  if (f) f.style.display = 'none';
+  const editId = document.getElementById('sched-edit-id');
+  if (editId) editId.value = '';
+}
+
+function schedAddShow() {
+  const f = document.getElementById('sched-form');
+  if (!f) return;
+  document.getElementById('sched-edit-id').value = '';
+  document.getElementById('sched-label').value = '';
+  document.getElementById('sched-preset').value = '0 9 * * *';
+  document.getElementById('sched-custom-wrap').style.display = 'none';
+  f.style.display = '';
+}
+
+async function schedLoad() {
+  if (!currentSuiteId) return;
+  const res = await fetch(`/api/schedules?suiteId=${currentSuiteId}`);
+  if (!res.ok) return;
+  const schedules = await res.json();
+  const el = document.getElementById('sched-list');
+  if (!el) return;
+
+  if (schedules.length === 0) {
+    el.innerHTML = '<div style="color:var(--neutral-400);font-size:13px;padding:8px 0">No schedules configured. Add one to run this suite automatically.</div>';
+    return;
+  }
+
+  el.innerHTML = `
+    <table class="sched-table">
+      <thead><tr><th>Label</th><th>Frequency</th><th>Last Run</th><th>Enabled</th><th></th></tr></thead>
+      <tbody>
+        ${schedules.map(s => `
+          <tr>
+            <td style="font-weight:600">${escHtml(s.label)}</td>
+            <td><code class="sched-cron">${escHtml(s.cronExpression)}</code><span class="sched-preset-lbl">${escHtml(schedPresetLabel(s.cronExpression))}</span></td>
+            <td style="font-size:12px;color:var(--neutral-400)">${s.lastRunAt ? formatDate(s.lastRunAt) : '—'}</td>
+            <td>
+              <label class="sched-toggle">
+                <input type="checkbox" ${s.enabled ? 'checked' : ''} onchange="schedToggle('${escHtml(s.id)}', this.checked)" />
+                <span class="sched-toggle-track"></span>
+              </label>
+            </td>
+            <td style="text-align:right">
+              <button class="tbl-btn" onclick="schedDelete('${escHtml(s.id)}')">Delete</button>
+            </td>
+          </tr>`).join('')}
+      </tbody>
+    </table>`;
+}
+
+async function schedSave() {
+  if (!currentSuiteId) return;
+  const label   = document.getElementById('sched-label')?.value.trim();
+  const envId   = document.getElementById('sched-env')?.value;
+  const preset  = document.getElementById('sched-preset')?.value;
+  const cronVal = preset === 'custom' ? document.getElementById('sched-cron')?.value.trim() : preset;
+  const editId  = document.getElementById('sched-edit-id')?.value;
+
+  if (!label)  { alert('Please enter a label.'); return; }
+  if (!envId)  { alert('Please select an environment.'); return; }
+  if (!cronVal){ alert('Please enter or select a cron expression.'); return; }
+
+  const body = { suiteId: currentSuiteId, environmentId: envId, cronExpression: cronVal, label };
+
+  const res = editId
+    ? await fetch(`/api/schedules/${editId}`, { method: 'PUT',  headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) })
+    : await fetch('/api/schedules',            { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+
+  const data = await res.json();
+  if (!res.ok) { alert(data.error || 'Failed to save schedule'); return; }
+
+  schedFormHide();
+  schedLoad();
+}
+
+async function schedToggle(id, enabled) {
+  await fetch(`/api/schedules/${id}`, {
+    method: 'PUT', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ enabled }),
+  });
+  schedLoad();
+}
+
+async function schedDelete(id) {
+  if (!confirm('Delete this schedule?')) return;
+  await fetch(`/api/schedules/${id}`, { method: 'DELETE' });
+  schedLoad();
 }
 
 function suiteDetailClose() {
@@ -2275,9 +2405,16 @@ async function suiteRun() {
     return;
   }
 
-  const { runId } = data;
+  const { runId, queued, queuePosition } = data;
   if (logEl) logEl.innerHTML = '';
-  if (statusEl) statusEl.textContent = '⏳ Running…';
+
+  if (queued) {
+    runBtn.textContent = '⏳ Queued…';
+    if (statusEl) statusEl.textContent = `⏳ Queued — position ${queuePosition} (waiting for a free slot)`;
+    if (logEl) logEl.innerHTML = `<div style="color:#dcdcaa">Run queued — will start automatically when a slot is available (position ${queuePosition}).</div>`;
+  } else {
+    if (statusEl) statusEl.textContent = '⏳ Running…';
+  }
 
   // Use HTTP polling — works through any proxy without WS upgrade support
   let seenLines = 0;
@@ -2289,11 +2426,27 @@ async function suiteRun() {
     try {
       const r = await fetch(`/api/run/${runId}`);
       if (!r.ok) {
-        // 404 means run not registered yet — retry shortly
         pollTimer = setTimeout(poll, 1500);
         return;
       }
       const rec = await r.json();
+
+      // Show queued status while waiting
+      if (rec.status === 'queued') {
+        if (statusEl) statusEl.textContent = `⏳ Queued — waiting for a free slot…`;
+        pollTimer = setTimeout(poll, 1500);
+        return;
+      }
+
+      // Transitioned from queued → running: clear the queue message
+      if (rec.status === 'running' && logEl && logEl.querySelector('[data-queued]')) {
+        logEl.innerHTML = '';
+        seenLines = 0;
+      }
+      if (rec.status === 'running') {
+        runBtn.textContent = '⏳ Running…';
+        if (statusEl) statusEl.textContent = '⏳ Running…';
+      }
 
       // Append only new lines (server returns last 100; track by index)
       if (logEl && Array.isArray(rec.output)) {
@@ -2327,7 +2480,7 @@ async function suiteRun() {
       if (statusEl) statusEl.textContent = ok
         ? `✓ Done — ${p} passed`
         : `✗ Done — ${p} passed, ${f} failed`;
-      if (rlEl && anchorEl) { anchorEl.href = `/api/report/${runId}`; rlEl.style.display = ''; }
+      if (rlEl && anchorEl) { anchorEl.href = `/execution-report?runId=${encodeURIComponent(runId)}`; rlEl.style.display = ''; }
 
     } catch (err) {
       // Network error — keep retrying
@@ -2336,6 +2489,107 @@ async function suiteRun() {
   }
 
   poll();
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Flaky Test Detection
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function flakyLoad() {
+  if (!currentProjectId) {
+    document.getElementById('flaky-loading').style.display = '';
+    document.getElementById('flaky-loading').textContent = 'Select a project to analyse flaky tests.';
+    document.getElementById('flaky-summary').style.display = 'none';
+    document.getElementById('flaky-table').style.display = 'none';
+    document.getElementById('flaky-empty').style.display = 'none';
+    return;
+  }
+
+  // Populate suite filter from loaded suites
+  const suiteSel = document.getElementById('flaky-suite-filter');
+  if (suiteSel) {
+    const proj = allSuites.filter(s => s.projectId === currentProjectId);
+    suiteSel.innerHTML = '<option value="">All Suites</option>' +
+      proj.map(s => `<option value="${escHtml(s.id)}">${escHtml(s.name)}</option>`).join('');
+  }
+
+  const limit   = document.getElementById('flaky-limit')?.value || '50';
+  const suiteId = document.getElementById('flaky-suite-filter')?.value || '';
+  const loadEl  = document.getElementById('flaky-loading');
+  const tableEl = document.getElementById('flaky-table');
+  const emptyEl = document.getElementById('flaky-empty');
+  const summaryEl = document.getElementById('flaky-summary');
+
+  loadEl.style.display = '';
+  loadEl.textContent = 'Analysing runs…';
+  tableEl.style.display = 'none';
+  emptyEl.style.display = 'none';
+  summaryEl.style.display = 'none';
+
+  let url = `/api/flaky?projectId=${encodeURIComponent(currentProjectId)}&limit=${limit}`;
+  if (suiteId) url += `&suiteId=${encodeURIComponent(suiteId)}`;
+
+  const res = await fetch(url);
+  if (!res.ok) { loadEl.textContent = 'Failed to load flaky data.'; return; }
+  const { runs, tests } = await res.json();
+
+  loadEl.style.display = 'none';
+
+  if (tests.length === 0) {
+    document.getElementById('flaky-empty-runs').textContent = runs;
+    emptyEl.style.display = '';
+    summaryEl.style.display = 'none';
+    tableEl.style.display = 'none';
+    return;
+  }
+
+  // Summary cards
+  const high   = tests.filter(t => t.risk === 'high').length;
+  const medium = tests.filter(t => t.risk === 'medium').length;
+  const low    = tests.filter(t => t.risk === 'low').length;
+  summaryEl.style.display = 'flex';
+  summaryEl.innerHTML = `
+    <div class="flaky-card flaky-card-total">
+      <div class="flaky-card-val">${tests.length}</div>
+      <div class="flaky-card-lbl">Flaky Tests</div>
+    </div>
+    <div class="flaky-card flaky-card-runs">
+      <div class="flaky-card-val">${runs}</div>
+      <div class="flaky-card-lbl">Runs Analysed</div>
+    </div>
+    <div class="flaky-card flaky-card-high">
+      <div class="flaky-card-val">${high}</div>
+      <div class="flaky-card-lbl">High Risk (&gt;50%)</div>
+    </div>
+    <div class="flaky-card flaky-card-medium">
+      <div class="flaky-card-val">${medium}</div>
+      <div class="flaky-card-lbl">Medium Risk (20–50%)</div>
+    </div>
+    <div class="flaky-card flaky-card-low">
+      <div class="flaky-card-val">${low}</div>
+      <div class="flaky-card-lbl">Low Risk (&lt;20%)</div>
+    </div>`;
+
+  // Table rows
+  const tbody = document.getElementById('flaky-tbody');
+  tbody.innerHTML = tests.map(t => {
+    const bar = `<div class="flaky-bar-wrap"><div class="flaky-bar flaky-bar-${t.risk}" style="width:${t.failRate}%"></div></div>`;
+    const badge = `<span class="flaky-risk flaky-risk-${t.risk}">${t.risk.charAt(0).toUpperCase() + t.risk.slice(1)}</span>`;
+    const dur = t.avgMs < 1000 ? `${t.avgMs}ms` : `${(t.avgMs/1000).toFixed(1)}s`;
+    return `<tr>
+      <td style="font-weight:600;max-width:260px;word-break:break-word">${escHtml(t.name)}</td>
+      <td style="font-size:12px;color:var(--neutral-400)">${escHtml(t.suiteName)}</td>
+      <td style="text-align:center;color:#4ec9b0;font-weight:700">${t.passes}</td>
+      <td style="text-align:center;color:#f48771;font-weight:700">${t.failures}</td>
+      <td style="text-align:center;color:var(--neutral-400)">${t.total}</td>
+      <td style="min-width:120px">${bar}<span style="font-size:11.5px;color:var(--neutral-300)">${t.failRate}%</span></td>
+      <td style="text-align:center">${badge}</td>
+      <td style="font-size:12px;color:var(--neutral-400)">${dur}</td>
+      <td style="font-size:12px;color:var(--neutral-400)">${_histFmtDate(t.lastSeen)}</td>
+    </tr>`;
+  }).join('');
+
+  tableEl.style.display = '';
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -2477,6 +2731,7 @@ function histRender() {
 
 function _histStatusBadge(status) {
   const map = {
+    queued:  '<span class="hist-badge hist-badge-queued">&#9203; Queued</span>',
     running: '<span class="hist-badge hist-badge-running">&#9679; In Progress</span>',
     done:    '<span class="hist-badge hist-badge-done">&#10003; Completed</span>',
     failed:  '<span class="hist-badge hist-badge-failed">&#10007; Failed</span>',
@@ -2600,4 +2855,473 @@ function histSort(col) {
   const icon = document.getElementById(`si-${col}`);
   if (icon) icon.textContent = _histSortDir === 1 ? ' ▲' : ' ▼';
   histRender();
+}
+
+// ── Debugger ──────────────────────────────────────────────────────────────────
+// Uses HTTP polling — no WebSocket dependency (works through any proxy/IIS).
+// Polling interval: 800ms while session is active.
+
+let _debugScriptId      = null;
+let _debugSessionId     = null;
+let _debugTotalSteps    = 0;
+let _debugStepMeta      = [];
+let _debugPollTimer     = null;
+let _debugHeartbeatTimer = null;  // heartbeat polling interval
+let _debugLastStepIdx   = null;  // track which step we last displayed to avoid re-rendering same step
+
+// Step state per order: 'pending' | 'active' | 'done' | 'skipped' | 'error'
+const _debugStepState = {};
+
+// Called when user clicks "Debug" button on a script row
+function debugOpen(scriptId) {
+  _debugScriptId = scriptId;
+
+  const select = document.getElementById('debug-env-select');
+  if (!select) return;
+  select.innerHTML = '<option value="">— Select Environment —</option>';
+  const proj = _currentProjectData();
+  if (proj && proj.environments) {
+    proj.environments.forEach(env => {
+      const opt = document.createElement('option');
+      opt.value = env.id;
+      opt.textContent = env.name;
+      select.appendChild(opt);
+    });
+    if (proj.environments.length === 1) select.value = proj.environments[0].id;
+  }
+
+  document.getElementById('debug-env-modal').style.display = 'flex';
+}
+
+function debugEnvModalClose() {
+  document.getElementById('debug-env-modal').style.display = 'none';
+}
+
+// Called when user clicks "Start Debug" in the env modal
+async function debugStart() {
+  const envId = document.getElementById('debug-env-select')?.value || '';
+  debugEnvModalClose();
+  if (!_debugScriptId) return;
+
+  // Load script to build left-panel step list
+  const scriptRes = await fetch(`/api/scripts/${_debugScriptId}`);
+  if (!scriptRes.ok) { alert('Could not load script'); return; }
+  const script = await scriptRes.json();
+
+  _debugStepMeta   = (script.steps || []).slice().sort((a, b) => a.order - b.order);
+  _debugTotalSteps = _debugStepMeta.length;
+  _debugLastStepIdx = null;
+
+  Object.keys(_debugStepState).forEach(k => delete _debugStepState[k]);
+  _debugStepMeta.forEach(s => { _debugStepState[s.order] = 'pending'; });
+
+  // Show overlay
+  document.getElementById('debug-overlay').style.display = 'flex';
+  document.getElementById('debug-overlay-title').textContent = `Debugger — ${script.title}`;
+  _debugSetStatus('starting');
+  _debugSetProgress('Starting…');
+
+  const proj = _currentProjectData();
+  const env  = (proj?.environments || []).find(e => e.id === envId);
+  document.getElementById('debug-env-label').textContent = env ? `Env: ${env.name}` : '';
+
+  _debugRenderSteps();
+  _debugSetControls(false);
+
+  // Start the debug session on the server
+  const res = await fetch('/api/debug/start', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ scriptId: _debugScriptId, environmentId: envId })
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    alert(`Failed to start debugger: ${err.error || res.statusText}`);
+    debugClose();
+    return;
+  }
+
+  const { sessionId, totalSteps } = await res.json();
+  _debugSessionId  = sessionId;
+  _debugTotalSteps = totalSteps;
+  _debugSetStatus('starting');
+
+  // Start HTTP polling — checks session state every 800ms
+  _debugStartPolling();
+
+  // Orphan cleanup (1/3): Beforeunload beacon — sends stop even on hard refresh/tab close
+  window.addEventListener('beforeunload', () => {
+    if (_debugSessionId) {
+      navigator.sendBeacon('/api/debug/stop', JSON.stringify({ sessionId: _debugSessionId, action: 'stop' }));
+      console.log(`[debugger] beforeunload: sent stop beacon for session ${_debugSessionId.slice(0,8)}`);
+    }
+  });
+
+  // Orphan cleanup (3/3): Start heartbeat polling — every 10s to prevent orphan timeout
+  _debugStartHeartbeat();
+}
+
+// ── HTTP polling ─────────────────────────────────────────────────────────────
+
+function _debugStartPolling() {
+  _debugStopPolling();
+  _debugPollTimer = setInterval(_debugPoll, 800);
+}
+
+function _debugStopPolling() {
+  if (_debugPollTimer) { clearInterval(_debugPollTimer); _debugPollTimer = null; }
+}
+
+// ── Heartbeat polling (orphan cleanup) ────────────────────────────────────────
+
+function _debugStartHeartbeat() {
+  _debugStopHeartbeat();
+  _debugHeartbeatTimer = setInterval(_debugSendHeartbeat, 10000); // Every 10 seconds
+
+  // visibilitychange: fire immediate heartbeat when user returns to tab
+  // Browsers throttle setInterval in background tabs — this ensures server
+  // always gets a fresh signal the moment the user is back
+  document.addEventListener('visibilitychange', _debugOnVisibilityChange);
+
+  console.log(`[debugger] Heartbeat polling started for session ${_debugSessionId?.slice(0,8)}`);
+}
+
+function _debugStopHeartbeat() {
+  if (_debugHeartbeatTimer) { clearInterval(_debugHeartbeatTimer); _debugHeartbeatTimer = null; }
+  document.removeEventListener('visibilitychange', _debugOnVisibilityChange);
+}
+
+function _debugOnVisibilityChange() {
+  if (document.visibilityState === 'visible' && _debugSessionId) {
+    console.log(`[debugger] Tab became visible — sending immediate heartbeat`);
+    _debugSendHeartbeat();
+  }
+}
+
+async function _debugSendHeartbeat() {
+  if (!_debugSessionId) { _debugStopHeartbeat(); return; }
+  try {
+    const r = await fetch(`/api/debug/heartbeat/${_debugSessionId}`, { method: 'POST', credentials: 'include' });
+    // Never stop on failure — network blip or slow server should not kill the heartbeat
+    // Only stop if session is explicitly gone (404 means session cleaned up server-side)
+    if (r.status === 404) {
+      console.log(`[debugger] Heartbeat 404 — session no longer exists, stopping heartbeat`);
+      _debugStopHeartbeat();
+    } else if (!r.ok) {
+      console.log(`[debugger] Heartbeat ${r.status} — will retry next interval`);
+      // Do NOT stop — retry on next interval
+    }
+  } catch (e) {
+    console.log(`[debugger] Heartbeat network error: ${e.message} — will retry next interval`);
+    // Do NOT stop — network blip, retry next interval
+  }
+}
+
+// ── HTTP polling ──────────────────────────────────────────────────────────────
+
+async function _debugPoll() {
+  if (!_debugSessionId) { _debugStopPolling(); return; }
+
+  let session;
+  try {
+    const r = await fetch(`/api/debug/session/${_debugSessionId}`);
+    if (r.status === 401) {
+      // Session expired — user logged out or session timed out
+      // Send stop to clean up server-side process, then close overlay
+      console.log(`[debugger] Poll got 401 — session expired, sending stop and closing`);
+      const sid = _debugSessionId;
+      navigator.sendBeacon('/api/debug/stop', JSON.stringify({ sessionId: sid, action: 'stop' }));
+      _debugStopPolling();
+      _debugStopHeartbeat();
+      _debugSessionId = null;
+      debugClose();
+      return;
+    }
+    if (!r.ok) { _debugStopPolling(); return; }
+    session = await r.json();
+  } catch { return; }
+
+  const { status, pendingStep } = session;
+
+  // Terminal states — stop polling
+  if (status === 'done' || status === 'stopped' || status === 'error') {
+    _debugStopPolling();
+    _debugOnDone({ status });
+    return;
+  }
+
+  // A step is paused and waiting — show it if it changed
+  if (pendingStep && pendingStep.stepIdx !== _debugLastStepIdx) {
+    _debugLastStepIdx = pendingStep.stepIdx;
+    _debugOnStep(pendingStep);
+  }
+}
+
+// Called when session has a new paused step (from poll or WS — screenshotBase64 skips HTTP fetch)
+function _debugOnStep({ stepIdx, keyword, locator, value, screenshotPath, screenshotBase64 }) {
+  console.log(`[debugger:step] Received step data: stepIdx=${stepIdx}, keyword=${keyword}, screenshotPath=${screenshotPath}`);
+
+  // Mark previous active step as done
+  _debugStepMeta.forEach(s => {
+    if (_debugStepState[s.order] === 'active') _debugStepState[s.order] = 'done';
+  });
+
+  _debugStepState[stepIdx] = 'active';
+  _debugRenderSteps();
+  _debugScrollToStep(stepIdx);
+
+  document.getElementById('dbg-kw').textContent  = keyword || '—';
+  document.getElementById('dbg-loc').textContent = locator || '—';
+  document.getElementById('dbg-val').textContent = value   || '—';
+
+  const idx = _debugStepMeta.findIndex(s => s.order === stepIdx);
+  _debugSetProgress(`Step ${idx + 1} of ${_debugTotalSteps}`);
+  _debugSetStatus('paused');
+
+  // Keep controls disabled until screenshot loads
+  _debugSetControls(false);
+
+  // Load screenshot — prefer base64 from WS (zero HTTP round trip), fall back to HTTP fetch
+  console.log(`[debugger:step] Calling _debugSetScreenshot with path: ${screenshotPath} base64=${screenshotBase64 ? 'yes' : 'no'}`);
+  _debugSetScreenshot(screenshotPath, () => {
+    console.log(`[debugger:step] Screenshot loaded, enabling controls`);
+    _debugSetControls(true);
+  }, screenshotBase64 || null);
+}
+
+// Called when session is terminal
+function _debugOnDone({ status }) {
+  _debugStepMeta.forEach(s => {
+    if (_debugStepState[s.order] === 'active') {
+      _debugStepState[s.order] = status === 'stopped' ? 'skipped' : 'done';
+    }
+  });
+  _debugRenderSteps();
+  _debugSetStatus(status);
+  _debugSetProgress(status === 'stopped' ? 'Stopped by user' : status === 'error' ? 'Finished with errors' : 'Completed ✓');
+  _debugSetControls(false);
+  document.getElementById('dbg-btn-stop').disabled = true;
+}
+
+// Send continue / skip / stop to server
+async function debugContinue(action) {
+  if (!_debugSessionId) return;
+  _debugSetControls(false);
+
+  if (action === 'skip') {
+    const activeStep = _debugStepMeta.find(s => _debugStepState[s.order] === 'active');
+    if (activeStep) _debugStepState[activeStep.order] = 'skipped';
+    _debugRenderSteps();
+  }
+
+  if (action === 'stop') {
+    _debugSetStatus('stopped');
+    _debugSetProgress('Stopped by user');
+    _debugStopPolling();
+    document.getElementById('dbg-btn-stop').disabled = true;
+  } else {
+    _debugSetStatus('running');
+    // Keep _debugLastStepIdx as-is — poller will only re-render when a NEW stepIdx arrives
+    // (resetting to null caused re-render of the current step while server was still transitioning)
+  }
+
+  await fetch('/api/debug/continue', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sessionId: _debugSessionId, action })
+  }).catch(() => {});
+}
+
+function debugClose() {
+  _debugStopPolling();
+  _debugStopHeartbeat();  // Stop heartbeat before stopping session
+  if (_debugSessionId) {
+    const sessionId = _debugSessionId;
+    console.log(`[debugger] debugClose: Sending stop request for session ${sessionId.slice(0,8)}`);
+    fetch('/api/debug/continue', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId, action: 'stop' })
+    }).then(r => {
+      console.log(`[debugger] debugClose: Stop request completed (${r.status})`);
+    }).catch(e => {
+      console.error(`[debugger] debugClose: Stop request failed: ${e.message}`);
+    });
+  }
+  _debugSessionId   = null;
+  _debugScriptId    = null;
+  _debugLastStepIdx = null;
+  document.getElementById('debug-overlay').style.display = 'none';
+
+  const img = document.getElementById('debug-screenshot-img');
+  if (img) { img.src = ''; img.style.display = 'none'; }
+  const ph = document.getElementById('debug-screenshot-placeholder');
+  if (ph) ph.style.display = 'flex';
+
+  _debugSetControls(false);
+  document.getElementById('dbg-btn-stop').disabled = false;
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function _debugRenderSteps() {
+  const el = document.getElementById('debug-steps-list');
+  if (!el) return;
+  el.innerHTML = _debugStepMeta.map(s => {
+    const state = _debugStepState[s.order] || 'pending';
+    const icons = { pending: '○', active: '●', done: '✓', skipped: '⏭', error: '✗' };
+    const icon  = icons[state] || '○';
+    return `<div class="debug-step-row debug-step-${state}" data-order="${s.order}">
+      <span class="debug-step-icon">${icon}</span>
+      <div class="debug-step-info">
+        <span class="debug-step-kw">${escHtml(s.keyword || '')}</span>
+        ${s.description ? `<span class="debug-step-desc">${escHtml(s.description)}</span>` : ''}
+      </div>
+      <span class="debug-step-order">${s.order}</span>
+    </div>`;
+  }).join('');
+}
+
+function _debugScrollToStep(order) {
+  const row = document.querySelector(`.debug-step-row[data-order="${order}"]`);
+  if (row) row.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
+
+function _debugSetStatus(status) {
+  const el = document.getElementById('debug-status-badge');
+  if (!el) return;
+  const labels = { starting: 'Starting…', paused: 'Paused', running: 'Executing…', done: 'Done', stopped: 'Stopped', error: 'Error' };
+  el.textContent  = labels[status] || status;
+  el.className    = `debug-status-badge debug-status-${status}`;
+}
+
+function _debugSetProgress(label) {
+  const el = document.getElementById('debug-progress-label');
+  if (el) el.textContent = label;
+}
+
+function _debugSetControls(enabled) {
+  document.getElementById('dbg-btn-step').disabled = !enabled;
+  document.getElementById('dbg-btn-skip').disabled = !enabled;
+}
+
+// Load screenshot with retry logic + callback when ready
+// Ensures Step button only enables after screenshot is actually visible
+// ── Unified Screenshot Loader ─────────────────────────────────────────────────
+// RULE: onReady() is called in EXACTLY ONE place — after double rAF confirms
+//       the image is visually painted. Never called on error or missing elements.
+//
+// Flow:
+//   1. Show spinner (or hide old screenshot)
+//   2. Poll server every 200ms until file exists (120s max)
+//   3. Set img.src → wait for onload
+//   4. requestAnimationFrame × 2 → browser has actually painted
+//   5. Show image → call onReady() → Step button enables
+//
+//   On any failure (timeout / decode error / missing elements) → show error,
+//   keep button DISABLED. No exceptions.
+async function _debugSetScreenshot(screenshotPath, onReady, screenshotBase64 = null) {
+  const img     = document.getElementById('debug-screenshot-img');
+  const ph      = document.getElementById('debug-screenshot-placeholder');
+  const loading = document.getElementById('debug-screenshot-loading');
+  const error   = document.getElementById('debug-screenshot-error');
+
+  if (!img) {
+    console.warn('[debugger] debug-screenshot-img element not found — button stays disabled');
+    return;
+  }
+  if (!screenshotPath && !screenshotBase64) {
+    console.warn('[debugger] No screenshotPath or base64 provided — button stays disabled');
+    return;
+  }
+
+  // — Helper: update visible panel safely —
+  const showPanel = (panel) => {
+    [ph, loading, error].forEach(el => { if (el) el.style.display = 'none'; });
+    img.style.display = 'none';
+    if (panel === 'loading' && loading) loading.style.display = 'flex';
+    if (panel === 'error'   && error)   error.style.display   = 'flex';
+    if (panel === 'image')              img.style.display      = '';
+  };
+
+  showPanel('loading');
+
+  // Fast path — base64 already in WS message, no HTTP round trip needed
+  if (screenshotBase64) {
+    console.log('[debugger] Using inline base64 screenshot — skipping HTTP fetch');
+    const loadedOk = await new Promise((resolve) => {
+      img.addEventListener('load',  () => resolve(true),  { once: true });
+      img.addEventListener('error', () => resolve(false), { once: true });
+      img.src = `data:image/jpeg;base64,${screenshotBase64}`;
+    });
+    if (!loadedOk) { showPanel('error'); return; }
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+    showPanel('image');
+    console.log('[debugger] Screenshot visually painted (base64 path) — enabling Step button');
+    onReady?.();
+    return;
+  }
+
+  // Fallback path — HTTP fetch (used when WS base64 unavailable: reconnects, replays)
+  const screenshotUrl = `/debug-screenshot/${screenshotPath}`;
+  console.log(`[debugger] Loading screenshot via HTTP: ${screenshotUrl}`);
+
+  // Poll server until file exists (200ms interval, 120s deadline)
+  const deadline = Date.now() + 120000;
+  let   fileReady = false;
+
+  while (Date.now() < deadline) {
+    try {
+      const res = await fetch(screenshotUrl, { credentials: 'include' });
+      if (res.ok) { fileReady = true; break; }
+    } catch (_) { /* network blip — keep polling */ }
+    await new Promise(r => setTimeout(r, 200));
+  }
+
+  if (!fileReady) {
+    console.warn('[debugger] File never appeared within 120s — showing error, button stays disabled');
+    showPanel('error');
+    return;
+  }
+
+  // Load image
+  const loadedOk = await new Promise((resolve) => {
+    img.addEventListener('load',  () => { console.log('[debugger] Image onload fired'); resolve(true);  }, { once: true });
+    img.addEventListener('error', () => { console.warn('[debugger] Image decode error'); resolve(false); }, { once: true });
+    img.src = `${screenshotUrl}?t=${Date.now()}`;
+  });
+
+  if (!loadedOk) {
+    console.warn('[debugger] Image failed to decode — showing error, button stays disabled');
+    showPanel('error');
+    return; // onReady NOT called
+  }
+
+  // Step 4 — double rAF: guarantees browser has painted before we enable button
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+
+  // Step 5 — show image, enable controls
+  showPanel('image');
+  console.log('[debugger] Screenshot visually painted — enabling Step button');
+  onReady?.();  // ← THE ONLY PLACE onReady() is ever called
+}
+
+// WS handler — receives debug:step/done pushed by server (base64 screenshot inline)
+// This is the PRIMARY fast path; HTTP polling is the fallback for missed WS messages.
+function debugHandleWsMsg(msg) {
+  if (!_debugSessionId) return;
+  if (msg.type === 'debug:step' && msg.sessionId === _debugSessionId) {
+    _debugOnStep(msg);  // msg includes screenshotBase64 — no HTTP fetch needed
+  } else if (msg.type === 'debug:done' && msg.sessionId === _debugSessionId) {
+    _debugStopPolling();
+    _debugStopHeartbeat();
+    _debugSetStatus(msg.status || 'done');
+  }
+}
+
+// ── Helper to get current project data ──────────────────────────────────────
+
+function _currentProjectData() {
+  return allProjects.find(p => p.id === currentProjectId) || null;
 }

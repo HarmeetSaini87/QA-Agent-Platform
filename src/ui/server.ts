@@ -22,16 +22,16 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { v4 as uuidv4 } from 'uuid';
 import * as dotenv  from 'dotenv';
 import session      from 'express-session';
+import cron         from 'node-cron';
 
-import { generateHtmlReport } from '../reporter/html.reporter';
-import { generateCodegenSpec }   from '../utils/codegenGenerator';
+import { generateCodegenSpec, generateDebugSpec } from '../utils/codegenGenerator';
 import { config }  from '../framework/config';
 import { logger }  from '../utils/logger';
 
 // ── Auth + Data imports ────────────────────────────────────────────────────────
 import { seedDefaults }            from '../data/seed';
-import { readAll, upsert, remove, findById, writeAll, USERS, PROJECTS, LOCATORS, FUNCTIONS, AUDIT, SETTINGS, SCRIPTS, SUITES, COMMON_DATA } from '../data/store';
-import { User, Project, ProjectEnvironment, Locator, CommonFunction, CommonData, AuditEntry, AppSettings, DEFAULT_SETTINGS, ProjectCredential, TestScript, TestSuite } from '../data/types';
+import { readAll, upsert, remove, findById, writeAll, USERS, PROJECTS, LOCATORS, FUNCTIONS, AUDIT, SETTINGS, SCRIPTS, SUITES, COMMON_DATA, SCHEDULES } from '../data/store';
+import { User, Project, ProjectEnvironment, Locator, CommonFunction, CommonData, AuditEntry, AppSettings, DEFAULT_SETTINGS, ProjectCredential, TestScript, TestSuite, ScheduledRun } from '../data/types';
 import { hashPassword, verifyPassword, validatePasswordStrength } from '../auth/crypto';
 import { requireAuth, requireAdmin, sanitizeInput }               from '../auth/middleware';
 import { logAudit }                                                from '../auth/audit';
@@ -55,13 +55,14 @@ interface RunRecord {
   planId:          string;
   startedAt:       string;
   finishedAt?:     string;
-  status:          'running' | 'done' | 'failed';
+  status:          'queued' | 'running' | 'done' | 'failed';
   exitCode:        number | null;
   output:          string[];
   tests:           TestEvent[];
   passed:          number;
   failed:          number;
   total:           number;
+  specPath?:       string;   // path to generated spec file — deleted after run
   // Execution metadata
   projectId?:      string;
   projectName?:    string;
@@ -78,7 +79,34 @@ interface TestEvent {
   durationMs:    number;
   errorMessage?: string;   // first error line for failed tests
   errorDetail?:  string;   // full failure block (stack + call log)
-  screenshotPath?: string; // relative path to screenshot if captured
+  screenshotPath?: string; // relative path to screenshot if captured (Playwright attachment)
+  screenshotBefore?: string; // before-action screenshot (visual diff)
+  screenshotAfter?:  string; // after-failure screenshot (visual diff)
+}
+
+// ── Debug session types ───────────────────────────────────────────────────────
+
+interface DebugSession {
+  sessionId:      string;
+  scriptId:       string;
+  scriptTitle:    string;
+  projectId:      string;
+  status:         'starting' | 'paused' | 'running' | 'done' | 'stopped' | 'error';
+  currentStep:    number;   // stepOrder currently paused at
+  totalSteps:     number;
+  specPath:       string;
+  proc?:          cp.ChildProcess;
+  startedAt:      string;
+  finishedAt?:    string;
+  lastHeartbeat:  number;   // timestamp of last client heartbeat (ms) — used for orphan cleanup
+  // Last step info — stored so late-joining WS clients can catch up
+  pendingStep?: {
+    stepIdx:        number;
+    keyword:        string;
+    locator:        string;
+    value:          string;
+    screenshotPath: string;
+  };
 }
 
 type WsOut =
@@ -87,11 +115,43 @@ type WsOut =
   | { type: 'run:test';   runId: string; name: string; status: 'pass'|'fail'|'running'; durationMs?: number }
   | { type: 'run:stats';  runId: string; passed: number; failed: number; total: number; completed: number }
   | { type: 'run:done';   runId: string; passed: number; failed: number; total: number; exitCode: number|null }
+  | { type: 'debug:step'; sessionId: string; stepIdx: number; keyword: string; locator: string; value: string; screenshotPath: string }
+  | { type: 'debug:done'; sessionId: string; status: 'done' | 'stopped' | 'error' }
   | { type: 'pong' };
 
 // ── In-memory stores ──────────────────────────────────────────────────────────
 
 const runs = new Map<string, RunRecord>();
+
+// ── Debugger session state ────────────────────────────────────────────────────
+// File-based IPC: spec writes pending.json, polls for gate.json.
+// Server polls pending.json to update session state for UI to poll.
+const debugSessions = new Map<string, DebugSession>();
+const debugPollers  = new Map<string, NodeJS.Timeout>();  // sessionId → poll interval
+
+// ── Parallel run queue ────────────────────────────────────────────────────────
+// Limits concurrent Playwright processes; excess runs wait in queue.
+const MAX_CONCURRENT_RUNS = 3;
+let activeRunCount = 0;
+const runQueue: Array<() => void> = [];
+
+function enqueueRun(fn: () => void): void {
+  if (activeRunCount < MAX_CONCURRENT_RUNS) {
+    activeRunCount++;
+    fn();
+  } else {
+    runQueue.push(fn);
+  }
+}
+
+function onRunComplete(): void {
+  activeRunCount--;
+  if (runQueue.length > 0) {
+    activeRunCount++;
+    const next = runQueue.shift()!;
+    next();
+  }
+}
 
 // Map<runId, Set<WebSocket>>
 const subscribers = new Map<string, Set<WebSocket>>();
@@ -198,10 +258,68 @@ function parseFailureDetails(record: RunRecord): void {
   }
 }
 
+// ── Visual diff attachment ────────────────────────────────────────────────────
+// Scans test-results/<runId>/ for before/after screenshot pairs and attaches
+// them to the matching TestEvent by testIdx position in record.tests[].
+
+function attachVisualDiff(record: RunRecord): void {
+  const ssDir = path.resolve('test-results', record.runId);
+  if (!fs.existsSync(ssDir)) return;
+
+  const files = fs.readdirSync(ssDir);
+  // before files: "<testIdx>-before-<stepOrder>.png"
+  const beforeRe = /^(\d+)-before-(\d+)\.png$/;
+  const afterRe  = /^(\d+)-after-(\d+)\.png$/;
+
+  // Build maps: testIdx → { stepOrder → filename }
+  const beforeMap = new Map<number, Map<number, string>>();
+  const afterMap  = new Map<number, Map<number, string>>();
+
+  for (const f of files) {
+    const bm = f.match(beforeRe);
+    if (bm) {
+      const ti = parseInt(bm[1], 10);
+      const so = parseInt(bm[2], 10);
+      if (!beforeMap.has(ti)) beforeMap.set(ti, new Map());
+      beforeMap.get(ti)!.set(so, f);
+    }
+    const am = f.match(afterRe);
+    if (am) {
+      const ti = parseInt(am[1], 10);
+      const so = parseInt(am[2], 10);
+      if (!afterMap.has(ti)) afterMap.set(ti, new Map());
+      afterMap.get(ti)!.set(so, f);
+    }
+  }
+
+  record.tests.forEach((ev, idx) => {
+    if (ev.status !== 'fail') return;
+
+    const beforeSteps = beforeMap.get(idx);
+    const afterSteps  = afterMap.get(idx);
+
+    if (!beforeSteps && !afterSteps) return;
+
+    // Find the last step that has an after screenshot (= the failing step)
+    if (afterSteps && afterSteps.size > 0) {
+      const lastFailStep = Math.max(...afterSteps.keys());
+      ev.screenshotAfter  = `test-results/${record.runId}/${afterSteps.get(lastFailStep)}`;
+      // Matching before screenshot for the same step
+      if (beforeSteps?.has(lastFailStep)) {
+        ev.screenshotBefore = `test-results/${record.runId}/${beforeSteps.get(lastFailStep)}`;
+      }
+    } else if (beforeSteps && beforeSteps.size > 0) {
+      // No after shot captured — use last before shot as context
+      const lastStep = Math.max(...beforeSteps.keys());
+      ev.screenshotBefore = `test-results/${record.runId}/${beforeSteps.get(lastStep)}`;
+    }
+  });
+}
+
 // ── Run spawner (pre-built spec path) ────────────────────────────────────────
 // Used by suite execution — spec generated by codegenGenerator.ts
 
-function spawnRunWithSpec(record: RunRecord, specPath: string, headed?: boolean): void {
+function spawnRunWithSpec(record: RunRecord, specPath: string, headed?: boolean, retries = 0): void {
   const { runId } = record;
 
   broadcast(runId, {
@@ -211,12 +329,19 @@ function spawnRunWithSpec(record: RunRecord, specPath: string, headed?: boolean)
     startedAt: record.startedAt,
   });
 
-  const relPath = path.relative(path.resolve('.'), specPath).replace(/\\/g, '/');
-  const args    = ['playwright', 'test', '--reporter=list', relPath];
+  const relPath   = path.relative(path.resolve('.'), specPath).replace(/\\/g, '/');
+  const outputDir = `test-results/${runId}`;
+  // Pre-create output dir so visual diff screenshots can be written by generated spec
+  fs.mkdirSync(path.resolve(outputDir), { recursive: true });
+  const args      = ['playwright', 'test', '--reporter=list', `--output=${outputDir}`];
+  if (retries > 0) args.push(`--retries=${retries}`);
+  args.push(relPath);
 
   const runHeadless = headed === false;
   if (!runHeadless) args.push('--headed');
   logger.info(`[spawnRunWithSpec] Browser: ${runHeadless ? 'headless' : 'headed'} — ${relPath}`);
+
+  record.status = 'running';
 
   const proc = cp.spawn('npx', args, {
     cwd:   path.resolve('.'),
@@ -281,6 +406,9 @@ function spawnRunWithSpec(record: RunRecord, specPath: string, headed?: boolean)
     // Attach error messages + screenshots to failed test events
     parseFailureDetails(record);
 
+    // Attach before/after visual diff screenshots to failed test events
+    attachVisualDiff(record);
+
     broadcast(runId, {
       type: 'run:done',
       runId,
@@ -297,47 +425,14 @@ function spawnRunWithSpec(record: RunRecord, specPath: string, headed?: boolean)
     fs.mkdirSync(config.paths.results, { recursive: true });
     fs.writeFileSync(runFile, JSON.stringify(record, null, 2));
 
-    // Generate HTML report
-    try {
-      const planFile = path.join(config.paths.testPlans, `${record.planId}-plan.json`);
-      const testPlan = fs.existsSync(planFile)
-        ? JSON.parse(fs.readFileSync(planFile, 'utf-8'))
-        : undefined;
 
-      const runResult = {
-        runId:      record.runId,
-        planId:     record.planId,
-        startedAt:  record.startedAt,
-        finishedAt: new Date().toISOString(),
-        totalTests: record.total || record.tests.length,
-        passed:     record.passed,
-        failed:     record.failed,
-        skipped:    0,
-        testResults: record.tests.map((t, i) => {
-          const tcIdMatch   = t.name?.match(/\[([A-Z]{0,5}_\d+)\]/);
-          const testCaseId  = tcIdMatch ? tcIdMatch[1] : `TC_${String(i + 1).padStart(3, '0')}`;
-          const cleanTitle  = t.name?.replace(/^\s*\[[A-Z_\d]+\]\s*/, '').trim() || t.name;
-          return {
-            testCaseId, title: cleanTitle,
-            status:     t.status as 'pass' | 'fail' | 'skip',
-            durationMs: t.durationMs,
-            startedAt:  record.startedAt,
-            finishedAt: new Date().toISOString(),
-            steps:      [] as any[],
-          };
-        }),
-      };
-
-      generateHtmlReport({
-        outputPath:  path.join(config.paths.reports, `${runId}.html`),
-        runResult:   runResult as any,
-        testPlan,
-        jiraBaseUrl: config.jira.baseUrl || undefined,
-      });
-      logger.info(`[suite run] HTML report → reports/${runId}.html`);
-    } catch (err) {
-      logger.warn(`[suite run] Report generation skipped: ${(err as Error).message}`);
+    // Clean up the temporary spec file for this run
+    if (record.specPath && fs.existsSync(record.specPath)) {
+      try { fs.unlinkSync(record.specPath); } catch { /* ignore */ }
     }
+
+    // Release slot and start next queued run
+    onRunComplete();
   });
 }
 
@@ -508,13 +603,6 @@ app.get('/api/runs', (req: Request, res: Response) => {
 });
 
 
-app.get('/api/report/:runId', (req: Request, res: Response) => {
-  const rp = path.join(config.paths.reports, `${req.params.runId}.html`);
-  if (fs.existsSync(rp)) { res.sendFile(rp); return; }
-  const pw = path.join('playwright-report', 'index.html');
-  if (fs.existsSync(pw)) { res.sendFile(path.resolve(pw)); return; }
-  res.status(404).json({ error: 'Report not found' });
-});
 
 app.get('/api/health', (_req: Request, res: Response) => {
   res.json({ status: 'ok', appBaseURL: config.app.baseURL, port: PORT });
@@ -532,6 +620,18 @@ app.get('/screenshots/*', requireAuth, (req: Request, res: Response) => {
   // Restrict to test-results directory only
   const abs = path.resolve('test-results', rel);
   if (!abs.startsWith(path.resolve('test-results'))) { res.status(403).end(); return; }
+  if (fs.existsSync(abs)) { res.sendFile(abs); return; }
+  res.status(404).end();
+});
+
+// Serves debug-runs/**/*.png for the step-by-step debugger panel
+// Path format: /debug-screenshot/<encoded-path>
+// where path is the full relative path stored in screenshotPath (e.g. debug-runs/<id>/1-FILL.png)
+app.get('/debug-screenshot/:path(*)', requireAuth, (req: Request, res: Response) => {
+  const rel = decodeURIComponent(req.params.path as string);
+  const abs = path.resolve(rel);
+  // Restrict to debug-runs directory only
+  if (!abs.startsWith(path.resolve('debug-runs'))) { res.status(403).end(); return; }
   if (fs.existsSync(abs)) { res.sendFile(abs); return; }
   res.status(404).end();
 });
@@ -1085,6 +1185,7 @@ app.post('/api/suites', (req: Request, res: Response) => {
     id: uuidv4(), projectId: body.projectId, name: sanitizeInput(body.name),
     description: sanitizeInput(body.description ?? ''), scriptIds: body.scriptIds ?? [],
     environmentId: body.environmentId ?? null,
+    retries: ([0,1,2].includes(body.retries as number) ? body.retries : 0) as 0|1|2,
     createdBy: req.session.username!, createdAt: now,
     modifiedBy: req.session.username!, modifiedAt: now,
   };
@@ -1100,6 +1201,7 @@ app.put('/api/suites/:id', (req: Request, res: Response) => {
   if (body.description !== undefined) suite.description = sanitizeInput(body.description);
   if (body.scriptIds)               suite.scriptIds     = body.scriptIds;
   if (body.environmentId !== undefined) suite.environmentId = body.environmentId;
+  if (body.retries !== undefined) suite.retries = ([0,1,2].includes(body.retries as number) ? body.retries : 0) as 0|1|2;
   suite.modifiedBy = req.session.username!;
   suite.modifiedAt = new Date().toISOString();
   upsert(SUITES, suite);
@@ -1137,12 +1239,16 @@ app.post('/api/suites/:id/run', async (req: Request, res: Response) => {
     ? (project.environments || []).find(e => e.id === envId) || null
     : (project.environments?.[0] || null);
 
+  const runId     = uuidv4();
+  const startedAt = new Date().toISOString();
+
   // Generate Playwright Codegen-style spec directly from steps
   let specPath: string;
   try {
     specPath = generateCodegenSpec({
       suiteName:    suite.name,
       suiteId:      suite.id,
+      runId,
       scripts,
       project,
       environment,
@@ -1167,11 +1273,11 @@ app.post('/api/suites/:id/run', async (req: Request, res: Response) => {
   fs.mkdirSync(path.dirname(planFile), { recursive: true });
   fs.writeFileSync(planFile, JSON.stringify(planMeta, null, 2));
 
-  const runId     = uuidv4();
-  const startedAt = new Date().toISOString();
+  const queuePosition = runQueue.length;
   const record: RunRecord = {
-    runId, planPath: planFile, planId, startedAt,
-    status: 'running', exitCode: null, output: [], tests: [], passed: 0, failed: 0, total: 0,
+    runId, planPath: planFile, planId, startedAt, specPath,
+    status:          queuePosition > 0 ? 'queued' : 'running',
+    exitCode:        null, output: [], tests: [], passed: 0, failed: 0, total: 0,
     projectId:       project.id,
     projectName:     project.name,
     suiteId:         suite.id,
@@ -1182,11 +1288,402 @@ app.post('/api/suites/:id/run', async (req: Request, res: Response) => {
   };
   runs.set(runId, record);
 
-  // Spawn directly with the codegen spec path (bypass generateSpecFromPlan in spawnRun)
-  spawnRunWithSpec(record, specPath, req.body.headed !== false);
+  const queuePos = activeRunCount >= MAX_CONCURRENT_RUNS ? runQueue.length + 1 : 0;
+
+  // Enqueue — starts immediately if slot available, otherwise waits
+  enqueueRun(() => spawnRunWithSpec(record, specPath, req.body.headed !== false, suite.retries ?? 0));
 
   logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'SUITE_RUN', resourceType: 'suite', resourceId: suite.id, details: suite.name, ip: req.ip ?? null });
-  res.json({ runId, startedAt });
+  res.json({ runId, startedAt, queued: queuePos > 0, queuePosition: queuePos });
+});
+
+// ── Debugger API ─────────────────────────────────────────────────────────────
+//
+// Flow:
+//   1. POST /api/debug/start   → generate spec, spawn Playwright (headed), return { sessionId }
+//   2. Spec POSTs /api/debug/step for every step (long-poll — waits here until UI acts)
+//   3. UI POSTs /api/debug/continue { sessionId, action: 'continue'|'skip'|'stop' }
+//   4. Server resolves the long-poll → spec proceeds (or stops)
+//   5. debug:step WS event keeps the UI screenshot panel in sync
+//   6. On process close → debug:done WS event, session cleaned up
+
+// POST /api/debug/start
+app.post('/api/debug/start', requireAuth, (req: Request, res: Response) => {
+  const { scriptId, environmentId } = req.body as { scriptId: string; environmentId?: string };
+  if (!scriptId) { res.status(400).json({ error: 'scriptId required' }); return; }
+
+  const script = findById<TestScript>(SCRIPTS, scriptId);
+  if (!script) { res.status(404).json({ error: 'Script not found' }); return; }
+
+  const project = findById<Project>(PROJECTS, script.projectId);
+  if (!project) { res.status(404).json({ error: 'Project not found' }); return; }
+
+  const allFunctions = readAll<CommonFunction>(FUNCTIONS).filter(f => f.projectId === project.id);
+
+  // Resolve environment
+  const envId = environmentId || '';
+  const environment = envId
+    ? (project.environments || []).find(e => e.id === envId) ?? null
+    : (project.environments || [])[0] ?? null;
+
+  const sessionId = uuidv4();
+
+  // Generate debug spec
+  let specPath: string;
+  try {
+    specPath = generateDebugSpec({ sessionId, script, project, environment: environment ?? null, allFunctions, port: PORT });
+  } catch (err: any) {
+    logger.error(`[debug] spec generation failed: ${err.message}`);
+    res.status(500).json({ error: 'Spec generation failed', detail: err.message });
+    return;
+  }
+
+  const session: DebugSession = {
+    sessionId,
+    scriptId: script.id,
+    scriptTitle: script.title,
+    projectId: project.id,
+    status: 'starting',
+    currentStep: 0,
+    totalSteps: script.steps.length,
+    specPath,
+    startedAt: new Date().toISOString(),
+    lastHeartbeat: Date.now(),
+  };
+  debugSessions.set(sessionId, session);
+
+  logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'SCRIPT_DEBUG', resourceType: 'script', resourceId: script.id, details: script.title, ip: req.ip ?? null });
+
+  res.json({ sessionId, scriptTitle: script.title, totalSteps: session.totalSteps });
+
+  // Spawn Playwright — spec uses file-based IPC (pending.json / gate.json)
+  const relSpec   = path.relative(path.resolve('.'), specPath).replace(/\\/g, '/');
+  const ssDir     = path.resolve('debug-runs', sessionId);
+  const pendingFile = path.join(ssDir, 'pending.json');
+  const gateFile    = path.join(ssDir, 'gate.json');
+
+  const proc = cp.spawn('npx', ['playwright', 'test', '--reporter=list', relSpec], {
+    cwd:   path.resolve('.'),
+    env:   { ...process.env },
+    shell: true,
+  });
+
+  session.proc   = proc;
+  session.status = 'starting';
+
+  proc.stdout?.on('data', (c: Buffer) => { const l = c.toString().trim(); if (l) logger.info(`[dbg:${sessionId.slice(0,8)}] ${l}`); });
+  proc.stderr?.on('data', (c: Buffer) => { const l = c.toString().trim(); if (l) logger.info(`[dbg:${sessionId.slice(0,8)}] ${l}`); });
+
+  // Poll pending.json every 100ms — fast detection, reduces random delay from 0-400ms to 0-100ms
+  let _lastStepIdx = -1;
+  const poller = setInterval(() => {
+    try {
+      if (!fs.existsSync(pendingFile)) return;
+      const data = JSON.parse(fs.readFileSync(pendingFile, 'utf-8'));
+      if (data.stepIdx === _lastStepIdx) return;  // same step, already broadcast
+      _lastStepIdx             = data.stepIdx;
+      session.currentStep      = data.stepIdx;
+      session.status           = 'paused';
+      session.pendingStep      = data;
+      // Inline screenshot as base64 — UI uses it directly, zero extra HTTP request
+      let screenshotBase64: string | null = null;
+      try {
+        const ssAbs = path.resolve(data.screenshotPath);
+        if (fs.existsSync(ssAbs)) screenshotBase64 = fs.readFileSync(ssAbs).toString('base64');
+      } catch { /* skip — UI will fall back to HTTP fetch */ }
+      logger.info(`[dbg:poller] Step ${data.stepIdx} detected → broadcasting to UI (${sessionId.slice(0,8)}) base64=${screenshotBase64 ? Math.round(screenshotBase64.length/1024)+'KB' : 'null'}`);
+      broadcast(sessionId, { type: 'debug:step', sessionId, ...data, screenshotBase64 });
+    } catch (e) {
+      /* file may be mid-write — skip this tick */
+      if (_lastStepIdx >= 0) logger.debug(`[dbg:poller] Poll tick skipped for ${sessionId.slice(0,8)}: ${e}`);
+    }
+  }, 100);
+  debugPollers.set(sessionId, poller);
+
+  proc.on('close', (code) => {
+    clearInterval(poller);
+    debugPollers.delete(sessionId);
+    // Clean up any leftover IPC files
+    try { fs.unlinkSync(pendingFile); } catch { /* ignore */ }
+    try { fs.unlinkSync(gateFile);    } catch { /* ignore */ }
+
+    const s = debugSessions.get(sessionId);
+    if (s) {
+      s.status      = s.status === 'stopped' ? 'stopped' : (code === 0 ? 'done' : 'error');
+      s.finishedAt  = new Date().toISOString();
+      s.pendingStep = undefined;
+    }
+    broadcast(sessionId, { type: 'debug:done', sessionId, status: s?.status as any || 'done' });
+    logger.info(`[debug] session ${sessionId} closed — exit ${code}`);
+    if (fs.existsSync(specPath)) { try { fs.unlinkSync(specPath); } catch { /* ignore */ } }
+  });
+});
+
+// POST /api/debug/continue  — UI sends continue / skip / stop
+// Writes gate.json which the spec is polling for
+app.post('/api/debug/continue', requireAuth, (req: Request, res: Response) => {
+  const { sessionId, action } = req.body as { sessionId: string; action: 'continue' | 'skip' | 'stop' };
+  const session = debugSessions.get(sessionId);
+
+  if (session) {
+    session.pendingStep = undefined;
+    session.lastHeartbeat = Date.now(); // Any user action resets orphan timer
+    if (action === 'stop') {
+      session.status = 'stopped';
+      // Kill the process immediately — no need to wait for gate pick-up
+      if (session.proc && session.proc.pid) {
+        try {
+          // Kill entire process tree (includes child browser process)
+          // /T flag kills process tree, /F forces kill
+          if (process.platform === 'win32') {
+            require('child_process').execSync(`taskkill /F /T /PID ${session.proc.pid}`, { stdio: 'pipe' });
+            logger.info(`[debug:stop] Killed process tree for session ${sessionId.slice(0,8)} (PID: ${session.proc.pid})`);
+          } else {
+            process.kill(-session.proc.pid, 'SIGTERM');
+            logger.info(`[debug:stop] Killed process group for session ${sessionId.slice(0,8)} (PID: ${session.proc.pid})`);
+          }
+        } catch (e) {
+          logger.error(`[debug:stop] FAILED to kill process for ${sessionId.slice(0,8)}: ${e}`);
+        }
+      } else {
+        logger.warn(`[debug:stop] No process to kill for session ${sessionId.slice(0,8)} (already dead?)`);
+      }
+      clearInterval(debugPollers.get(sessionId)!);
+      debugPollers.delete(sessionId);
+      logger.info(`[debug:stop] Stopped session ${sessionId.slice(0,8)}`);
+    } else {
+      session.status = 'running';
+    }
+  }
+
+  // Write gate file so the spec exits its poll loop
+  const gateFile = path.resolve('debug-runs', sessionId, 'gate.json');
+  try {
+    fs.writeFileSync(gateFile, JSON.stringify({ action }));
+    logger.info(`[debug:continue] Wrote gate.json for ${sessionId} with action '${action}' → ${gateFile}`);
+  } catch (err) {
+    logger.error(`[debug:continue] FAILED to write gate.json for ${sessionId}: ${err}`);
+  }
+
+  res.json({ ok: true });
+});
+
+// GET /api/debug/session/:id  — UI polls this every 800ms
+// Also updates lastHeartbeat — double coverage alongside dedicated heartbeat endpoint
+app.get('/api/debug/session/:id', requireAuth, (req: Request, res: Response) => {
+  const session = debugSessions.get(req.params.id);
+  if (!session) { res.status(404).json({ error: 'Session not found' }); return; }
+  // Every poll proves the client is alive — reset orphan timer
+  if (session.status !== 'done' && session.status !== 'stopped' && session.status !== 'error') {
+    session.lastHeartbeat = Date.now();
+  }
+  const { proc: _proc, ...safe } = session;
+  res.json(safe);
+});
+
+// POST /api/debug/heartbeat/:id  — UI sends heartbeat every 10s to prevent orphan cleanup
+// If no heartbeat for 30s, server kills the process (orphan detection)
+app.post('/api/debug/heartbeat/:id', requireAuth, (req: Request, res: Response) => {
+  const session = debugSessions.get(req.params.id);
+  if (!session) { res.status(404).json({ error: 'Session not found' }); return; }
+  session.lastHeartbeat = Date.now();
+  res.json({ ok: true });
+});
+
+// ── Flaky Test Detection ──────────────────────────────────────────────────────
+
+app.get('/api/flaky', requireAuth, (req: Request, res: Response) => {
+  const { projectId, suiteId } = req.query as Record<string, string>;
+  const limit = Math.min(parseInt((req.query.limit as string) || '50', 10), 200);
+  if (!projectId) { res.status(400).json({ error: 'projectId required' }); return; }
+
+  // Load completed runs for this project
+  const resultsDir = config.paths.results;
+  if (!fs.existsSync(resultsDir)) { res.json({ runs: 0, tests: [] }); return; }
+
+  const runs = fs.readdirSync(resultsDir)
+    .filter(f => f.startsWith('run-') && f.endsWith('.json'))
+    .map(f => { try { return JSON.parse(fs.readFileSync(path.join(resultsDir, f), 'utf-8')); } catch { return null; } })
+    .filter((r): r is RunRecord => r && r.projectId === projectId && (r.status === 'done' || r.status === 'failed'))
+    .filter(r => !suiteId || r.suiteId === suiteId)
+    .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime())
+    .slice(0, limit);
+
+  // Aggregate pass/fail counts per (suiteId + testName)
+  type Entry = { name: string; suiteId: string; suiteName: string; passes: number; failures: number; durations: number[]; lastSeen: string };
+  const map = new Map<string, Entry>();
+
+  for (const run of runs) {
+    for (const t of (run.tests || [])) {
+      const key = `${run.suiteId}::${t.name}`;
+      if (!map.has(key)) map.set(key, { name: t.name, suiteId: run.suiteId || '', suiteName: run.suiteName || '', passes: 0, failures: 0, durations: [], lastSeen: run.startedAt });
+      const e = map.get(key)!;
+      if (t.status === 'pass') e.passes++;
+      else if (t.status === 'fail') e.failures++;
+      if (t.durationMs) e.durations.push(t.durationMs);
+      if (run.startedAt > e.lastSeen) e.lastSeen = run.startedAt;
+    }
+  }
+
+  // Only include tests that have BOTH passes and failures (genuinely flaky)
+  const tests = [...map.values()]
+    .filter(e => e.passes > 0 && e.failures > 0)
+    .map(e => {
+      const total    = e.passes + e.failures;
+      const failRate = Math.round((e.failures / total) * 100);
+      const risk     = failRate >= 50 ? 'high' : failRate >= 20 ? 'medium' : 'low';
+      const avgMs    = e.durations.length ? Math.round(e.durations.reduce((a, b) => a + b, 0) / e.durations.length) : 0;
+      return { name: e.name, suiteId: e.suiteId, suiteName: e.suiteName, passes: e.passes, failures: e.failures, total, failRate, risk, avgMs, lastSeen: e.lastSeen };
+    })
+    .sort((a, b) => b.failRate - a.failRate);
+
+  res.json({ runs: runs.length, tests });
+});
+
+// ── Scheduled Runs ────────────────────────────────────────────────────────────
+
+// Active cron jobs: scheduleId → scheduled task
+const cronJobs = new Map<string, ReturnType<typeof cron.schedule>>();
+
+function triggerScheduledRun(schedule: ScheduledRun): void {
+  const suite   = findById<TestSuite>(SUITES, schedule.suiteId);
+  const project = suite ? findById<Project>(PROJECTS, suite.projectId) : undefined;
+  if (!suite || !project) {
+    logger.warn(`[scheduler] Suite ${schedule.suiteId} or project not found — skipping`);
+    return;
+  }
+
+  const environment = (project.environments || []).find(e => e.id === schedule.environmentId) || project.environments?.[0] || null;
+  const scripts     = readAll<TestScript>(SCRIPTS).filter(s => suite.scriptIds.includes(s.id));
+  const allFunctions = readAll<CommonFunction>(FUNCTIONS).filter(f => f.projectId === project.id || f.projectId === null);
+
+  if (scripts.length === 0) {
+    logger.warn(`[scheduler] No scripts in suite ${suite.name} — skipping`);
+    return;
+  }
+
+  const runId     = uuidv4();
+  const startedAt = new Date().toISOString();
+
+  let specPath: string;
+  try {
+    specPath = generateCodegenSpec({ suiteName: suite.name, suiteId: suite.id, runId, scripts, project, environment, allFunctions });
+  } catch (err) {
+    logger.error(`[scheduler] Spec generation failed for schedule ${schedule.id}: ${(err as Error).message}`);
+    return;
+  }
+
+  const planId   = `suite-${suite.id.slice(0, 8)}`;
+  const planFile = path.join(config.paths.testPlans, `${planId}-plan.json`);
+  if (!fs.existsSync(planFile)) {
+    const planMeta = { planId, source: 'suite', sourceRef: suite.id, suiteName: suite.name, projectName: project.name, appBaseURL: project.appUrl, createdAt: startedAt, testCases: scripts.map(s => ({ id: s.id, title: s.title, priority: s.priority })) };
+    fs.mkdirSync(path.dirname(planFile), { recursive: true });
+    fs.writeFileSync(planFile, JSON.stringify(planMeta, null, 2));
+  }
+
+  const record: RunRecord = {
+    runId, planPath: planFile, planId, startedAt, specPath,
+    status: 'queued', exitCode: null, output: [], tests: [], passed: 0, failed: 0, total: 0,
+    projectId: project.id, projectName: project.name,
+    suiteId: suite.id, suiteName: suite.name,
+    environmentId: environment?.id || '', environmentName: environment?.name || '',
+    executedBy: `scheduler:${schedule.label}`,
+  };
+  runs.set(runId, record);
+  enqueueRun(() => spawnRunWithSpec(record, specPath, false, suite.retries ?? 0));
+
+  // Update lastRunId + lastRunAt on schedule
+  const all = readAll<ScheduledRun>(SCHEDULES);
+  const idx = all.findIndex(s => s.id === schedule.id);
+  if (idx >= 0) { all[idx].lastRunId = runId; all[idx].lastRunAt = startedAt; writeAll(SCHEDULES, all); }
+
+  logger.info(`[scheduler] Triggered run ${runId} for schedule "${schedule.label}" (suite: ${suite.name})`);
+}
+
+function registerCronJob(schedule: ScheduledRun): void {
+  if (cronJobs.has(schedule.id)) {
+    cronJobs.get(schedule.id)!.stop();
+    cronJobs.delete(schedule.id);
+  }
+  if (!schedule.enabled) return;
+  if (!cron.validate(schedule.cronExpression)) {
+    logger.warn(`[scheduler] Invalid cron expression for schedule ${schedule.id}: "${schedule.cronExpression}"`);
+    return;
+  }
+  const task = cron.schedule(schedule.cronExpression, () => triggerScheduledRun(schedule), { timezone: 'UTC' });
+  cronJobs.set(schedule.id, task);
+  logger.info(`[scheduler] Registered schedule "${schedule.label}" → ${schedule.cronExpression}`);
+}
+
+function unregisterCronJob(scheduleId: string): void {
+  const task = cronJobs.get(scheduleId);
+  if (task) { task.stop(); cronJobs.delete(scheduleId); }
+}
+
+// GET /api/schedules?suiteId=xxx
+app.get('/api/schedules', requireAuth, (req: Request, res: Response) => {
+  const { suiteId, projectId } = req.query as Record<string, string>;
+  let all = readAll<ScheduledRun>(SCHEDULES);
+  if (suiteId)   all = all.filter(s => s.suiteId   === suiteId);
+  if (projectId) all = all.filter(s => s.projectId === projectId);
+  res.json(all);
+});
+
+// POST /api/schedules
+app.post('/api/schedules', requireAuth, (req: Request, res: Response) => {
+  const { suiteId, environmentId, cronExpression, label } = req.body as Partial<ScheduledRun>;
+  if (!suiteId || !environmentId || !cronExpression || !label) {
+    res.status(400).json({ error: 'suiteId, environmentId, cronExpression and label are required' }); return;
+  }
+  if (!cron.validate(cronExpression)) {
+    res.status(400).json({ error: `Invalid cron expression: "${cronExpression}"` }); return;
+  }
+  const suite = findById<TestSuite>(SUITES, suiteId);
+  if (!suite) { res.status(404).json({ error: 'Suite not found' }); return; }
+
+  const schedule: ScheduledRun = {
+    id: uuidv4(), projectId: suite.projectId, suiteId, environmentId,
+    cronExpression, label, enabled: true,
+    createdBy: req.session.username ?? 'unknown',
+    createdAt: new Date().toISOString(),
+  };
+  upsert(SCHEDULES, schedule);
+  registerCronJob(schedule);
+  logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'SCHEDULE_CREATE', resourceType: 'schedule', resourceId: schedule.id, details: label, ip: req.ip ?? null });
+  res.json(schedule);
+});
+
+// PUT /api/schedules/:id  (update label, cron, enabled, environmentId)
+app.put('/api/schedules/:id', requireAuth, (req: Request, res: Response) => {
+  const all = readAll<ScheduledRun>(SCHEDULES);
+  const idx = all.findIndex(s => s.id === req.params.id);
+  if (idx < 0) { res.status(404).json({ error: 'Schedule not found' }); return; }
+
+  const { label, cronExpression, enabled, environmentId } = req.body as Partial<ScheduledRun>;
+  if (cronExpression && !cron.validate(cronExpression)) {
+    res.status(400).json({ error: `Invalid cron expression: "${cronExpression}"` }); return;
+  }
+
+  const updated: ScheduledRun = {
+    ...all[idx],
+    ...(label          !== undefined && { label }),
+    ...(cronExpression !== undefined && { cronExpression }),
+    ...(enabled        !== undefined && { enabled }),
+    ...(environmentId  !== undefined && { environmentId }),
+  };
+  all[idx] = updated;
+  writeAll(SCHEDULES, all);
+  registerCronJob(updated);
+  res.json(updated);
+});
+
+// DELETE /api/schedules/:id
+app.delete('/api/schedules/:id', requireAuth, (req: Request, res: Response) => {
+  unregisterCronJob(req.params.id);
+  const ok = remove(SCHEDULES, req.params.id);
+  if (!ok) { res.status(404).json({ error: 'Schedule not found' }); return; }
+  logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'SCHEDULE_DELETE', resourceType: 'schedule', resourceId: req.params.id, details: null, ip: req.ip ?? null });
+  res.json({ success: true });
 });
 
 // ── SPA fallback (requires auth) ─────────────────────────────────────────────
@@ -1216,6 +1713,15 @@ wss.on('connection', (ws) => {
       if (msg.type === 'subscribe' && msg.runId) {
         subscribe(msg.runId, ws);
         subscribed.add(msg.runId);
+
+        // Catch-up: if this is a debug session with a pending paused step, replay it
+        const dbgSession = debugSessions.get(msg.runId);
+        if (dbgSession?.pendingStep) {
+          const { stepIdx, keyword, locator, value, screenshotPath } = dbgSession.pendingStep;
+          ws.send(JSON.stringify({ type: 'debug:step', sessionId: msg.runId, stepIdx, keyword, locator, value, screenshotPath }));
+        } else if (dbgSession?.status === 'done' || dbgSession?.status === 'stopped' || dbgSession?.status === 'error') {
+          ws.send(JSON.stringify({ type: 'debug:done', sessionId: msg.runId, status: dbgSession.status }));
+        }
 
         // Replay recent state so late-joiners catch up
         const record = runs.get(msg.runId);
@@ -1250,8 +1756,32 @@ wss.on('connection', (ws) => {
   });
 });
 
-server.listen(PORT, async () => {
+server.listen(PORT, '0.0.0.0', async () => {
   await seedDefaults();
+
+  // Register all enabled schedules
+  const savedSchedules = readAll<ScheduledRun>(SCHEDULES).filter(s => s.enabled);
+  for (const s of savedSchedules) registerCronJob(s);
+  if (savedSchedules.length > 0) logger.info(`[scheduler] Loaded ${savedSchedules.length} active schedule(s)`);
+
+  // Heartbeat monitor — kill orphaned debug sessions if no heartbeat for 60s
+  setInterval(() => {
+    const now = Date.now();
+    const HEARTBEAT_TIMEOUT_MS = 60000; // 60 seconds (user may pause 30-40s reviewing screenshot)
+    debugSessions.forEach((session, sessionId) => {
+      if (session.status !== 'done' && session.status !== 'stopped' && session.status !== 'error') {
+        const timeSinceHeartbeat = now - session.lastHeartbeat;
+        if (timeSinceHeartbeat > HEARTBEAT_TIMEOUT_MS) {
+          logger.info(`[dbg:heartbeat] No heartbeat for ${timeSinceHeartbeat}ms — killing orphaned session ${sessionId.slice(0,8)}`);
+          if (session.proc) { try { session.proc.kill('SIGTERM'); } catch { /* ignore */ } }
+          session.status = 'stopped';
+          clearInterval(debugPollers.get(sessionId)!);
+          debugPollers.delete(sessionId);
+        }
+      }
+    });
+  }, 10000); // Check every 10 seconds
+
   logger.info(`QA Agent Platform UI  →  http://localhost:${PORT}`);
   logger.info(`WebSocket             →  ws://localhost:${PORT}/ws`);
   logger.info(`Jira configured       :  ${config.jira.isConfigured}`);

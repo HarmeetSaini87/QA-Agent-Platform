@@ -9,15 +9,24 @@ let wsReady      = false;
 let pollFallback = null;   // used only when WS is unavailable
 
 // ── WebSocket connection ──────────────────────────────────────────────────────
+// WS is optional — all core features use HTTP polling.
+// If the proxy doesn't support WS upgrades (e.g. IIS without WS module),
+// we give up after 4 rapid failures and stop spamming the console.
+
+let _wsFailCount    = 0;
+let _wsGaveUp       = false;
+const WS_MAX_FAILS  = 4;
 
 function connectWS() {
+  if (_wsGaveUp) return;
+
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   ws = new WebSocket(`${proto}://${location.host}/ws`);
 
   ws.addEventListener('open', () => {
-    wsReady = true;
+    wsReady      = true;
+    _wsFailCount = 0;  // reset on successful connect
     setWsIndicator('connected');
-    // Keep-alive ping every 25s
     ws._pingTimer = setInterval(() => {
       if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'ping' }));
     }, 25000);
@@ -30,8 +39,15 @@ function connectWS() {
   ws.addEventListener('close', () => {
     wsReady = false;
     clearInterval(ws._pingTimer);
+
+    _wsFailCount++;
+    if (_wsFailCount >= WS_MAX_FAILS) {
+      _wsGaveUp = true;
+      setWsIndicator('http-only');
+      return;  // stop reconnecting — HTTP polling handles everything
+    }
+
     setWsIndicator('disconnected');
-    // Auto-reconnect after 3 s
     setTimeout(connectWS, 3000);
   });
 
@@ -43,10 +59,13 @@ function setWsIndicator(state) {
   const text = document.getElementById('health-text');
   if (state === 'connected') {
     dot.classList.add('ok');
-    // Re-read health to show Jira status
     fetch('/api/health').then(r => r.json()).then(d => {
       text.textContent = d.jiraConfigured ? 'Jira connected' : 'UI running';
     }).catch(() => { text.textContent = 'UI running'; });
+  } else if (state === 'http-only') {
+    dot.classList.add('ok');
+    text.textContent = 'UI running';
+    // WS unavailable (proxy limitation) — HTTP polling handles all features
   } else {
     dot.classList.remove('ok');
     text.textContent = 'Reconnecting…';
@@ -54,6 +73,12 @@ function setWsIndicator(state) {
 }
 
 function handleWsMessage(msg) {
+  // Route debug messages to the debugger module
+  if (msg.type === 'debug:step' || msg.type === 'debug:done') {
+    if (typeof debugHandleWsMsg === 'function') debugHandleWsMsg(msg);
+    return;
+  }
+
   if (!currentRunId || msg.runId !== currentRunId) return;
 
   switch (msg.type) {
@@ -61,6 +86,19 @@ function handleWsMessage(msg) {
     case 'run:test':   appendTestRow(msg);                  break;
     case 'run:stats':  updateStats(msg);                    break;
     case 'run:done':   handleRunDone(msg);                  break;
+  }
+}
+
+// Subscribe / unsubscribe a channel (runId or sessionId) on the WS
+function wsSubscribe(id) {
+  if (wsReady && ws?.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: 'subscribe', runId: id }));
+  }
+}
+
+function wsUnsubscribe(id) {
+  if (wsReady && ws?.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: 'unsubscribe', runId: id }));
   }
 }
 
@@ -76,9 +114,11 @@ function switchTab(tab) {
     scripts: 'Test Script Builder', suites: 'Test Suite',
     locators: 'Locator Repository', functions: 'Common Functions',
     commondata: 'Common Data', history: 'Execution History',
+    flaky: 'Flaky Test Detection',
     projects: 'Projects', admin: 'Admin Panel',
   }[tab] ?? tab;
   if (tab === 'history') histLoad();
+  if (tab === 'flaky')   flakyLoad();
   hideRunPanel();
 }
 
