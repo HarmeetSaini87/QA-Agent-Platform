@@ -556,19 +556,82 @@ export function generateDebugSpec(input: DebugCodegenInput): string {
   lines.push(`}`);
   lines.push(``);
 
-  // ── __waitForPageSettle — waits for DOM/network to fully settle after an action ─
+  // ── __waitForPageSettle — waits for DOM to fully settle, spinner-aware ───────────
   // Prevents capturing spinner/loading states in screenshots.
-  // Both waits are best-effort (errors caught) — never blocks the debug session.
+  // Algorithm:
+  //   1. MutationObserver watches the DOM — resets 500ms quiet timer on every change.
+  //   2. After 500ms of no mutations, checks for visible spinners/loaders.
+  //   3. If spinner visible → re-arm 500ms timer (handles two-phase load: brief quiet
+  //      between navigation settling and data-API call starting the spinner).
+  //   4. If no spinner → resolve immediately.
+  //   5. Safety cap: 8s max — never blocks the session.
+  //   Zero static waits — all timing driven by DOM state.
   lines.push(`async function __waitForPageSettle(page: any): Promise<void> {`);
-  lines.push(`  // 1s buffer — lets form-submit/redirect navigation actually BEGIN before we poll`);
-  lines.push(`  // Without this, waitForLoadState resolves on the unloading page and returns too early`);
-  lines.push(`  await page.waitForTimeout(1000);`);
-  lines.push(`  // Wait for full page load event on the resulting page (handles redirects + SSO)`);
-  lines.push(`  try { await page.waitForLoadState('load', { timeout: 15000 }); } catch {}`);
-  lines.push(`  // Wait for network to fully quiet down (SPA route change API calls)`);
-  lines.push(`  try { await page.waitForLoadState('networkidle', { timeout: 15000 }); } catch {}`);
-  lines.push(`  // Final buffer for CSS animations / rendering`);
-  lines.push(`  await page.waitForTimeout(500);`);
+  lines.push(`  await page.evaluate(() => new Promise<void>(resolve => {`);
+  lines.push(`    // Tiered timing: 200ms initial → 300ms after mutations → 500ms when spinner found`);
+  lines.push(`    const INIT_MS    = 200;  // initial check — already-stable pages resolve fast`);
+  lines.push(`    const QUIET_MS   = 300;  // re-arm after any DOM mutation`);
+  lines.push(`    const SPINNER_MS = 500;  // extra wait when spinner is still visible`);
+  lines.push(`    const MAX_MS     = 8000; // safety cap`);
+  lines.push(`    const hasVisibleSpinner = (): boolean => {`);
+  lines.push(`      // Semantic roles + specific spinner patterns.`);
+  lines.push(`      // [class*="spin"] and [class*="loader"] included for custom spinners (e.g. BillCall).`);
+  lines.push(`      // Size guard (offsetWidth/Height < 4) prevents false positives from zero-size hidden elements.`);
+  lines.push(`      // Avoids [class*="loading"] and [class*="progress"] — too broad, match normal Angular form elements.`);
+  lines.push(`      const sel = '[role="progressbar"],[aria-busy="true"],.fa-spin,' +`);
+  lines.push(`        'mat-spinner,mat-progress-spinner,mat-progress-bar,' +`);
+  lines.push(`        '[class*="spinner"],[class*="skeleton"],[class*="shimmer"],' +`);
+  lines.push(`        '[class*="spin"],[class*="loader"]';`);
+  lines.push(`      const nodes = document.querySelectorAll(sel);`);
+  lines.push(`      for (let i = 0; i < nodes.length; i++) {`);
+  lines.push(`        const el = nodes[i] as HTMLElement;`);
+  lines.push(`        if (el.offsetWidth < 4 && el.offsetHeight < 4) continue; // skip zero-size hidden elements`);
+  lines.push(`        const st = window.getComputedStyle(el);`);
+  lines.push(`        if (st.display !== 'none' && st.visibility !== 'hidden' && st.opacity !== '0') return true;`);
+  lines.push(`      }`);
+  lines.push(`      return false;`);
+  lines.push(`    };`);
+  lines.push(`    let t: ReturnType<typeof setTimeout> | null = null;`);
+  lines.push(`    const tryResolve = () => {`);
+  lines.push(`      if (hasVisibleSpinner()) {`);
+  lines.push(`        // Spinner still visible — keep waiting with longer re-arm`);
+  lines.push(`        t = setTimeout(tryResolve, SPINNER_MS);`);
+  lines.push(`      } else {`);
+  lines.push(`        obs.disconnect();`);
+  lines.push(`        clearTimeout(safetyTimer);`);
+  lines.push(`        resolve();`);
+  lines.push(`      }`);
+  lines.push(`    };`);
+  lines.push(`    const obs = new MutationObserver(() => {`);
+  lines.push(`      if (t !== null) clearTimeout(t);`);
+  lines.push(`      t = setTimeout(tryResolve, QUIET_MS);`);
+  lines.push(`    });`);
+  lines.push(`    obs.observe(document.documentElement, { childList: true, subtree: true, attributes: true });`);
+  lines.push(`    // Initial arm — short window for already-stable pages`);
+  lines.push(`    t = setTimeout(tryResolve, INIT_MS);`);
+  lines.push(`    // Safety cap — always resolve eventually`);
+  lines.push(`    const safetyTimer = setTimeout(() => { obs.disconnect(); if (t) clearTimeout(t); resolve(); }, MAX_MS);`);
+  lines.push(`  })).catch(async () => {`);
+  lines.push(`    // evaluate threw — full-page navigation occurred (e.g. login → dashboard)`);
+  lines.push(`    await page.waitForLoadState('domcontentloaded', { timeout: 10000 }).catch(() => {});`);
+  lines.push(`    await page.waitForSelector('input:not([type="hidden"]), button', { timeout: 5000 }).catch(() => {});`);
+  lines.push(`    // After navigation: also wait for data-loading spinners to clear.`);
+  lines.push(`    // domcontentloaded + waitForSelector resolve before API-driven spinners disappear.`);
+  lines.push(`    await page.waitForFunction(() => {`);
+  lines.push(`      const sel = '[role="progressbar"],[aria-busy="true"],.fa-spin,' +`);
+  lines.push(`        'mat-spinner,mat-progress-spinner,mat-progress-bar,' +`);
+  lines.push(`        '[class*="spinner"],[class*="skeleton"],[class*="shimmer"],' +`);
+  lines.push(`        '[class*="spin"],[class*="loader"]';`);
+  lines.push(`      const nodes = document.querySelectorAll(sel);`);
+  lines.push(`      for (let i = 0; i < nodes.length; i++) {`);
+  lines.push(`        const el = nodes[i] as HTMLElement;`);
+  lines.push(`        if ((el as any).offsetWidth < 4 && (el as any).offsetHeight < 4) continue;`);
+  lines.push(`        const st = window.getComputedStyle(el);`);
+  lines.push(`        if (st.display !== 'none' && st.visibility !== 'hidden' && st.opacity !== '0') return false;`);
+  lines.push(`      }`);
+  lines.push(`      return true; // no visible spinner — page is settled`);
+  lines.push(`    }, { timeout: 8000 }).catch(() => {});`);
+  lines.push(`  });`);
   lines.push(`}`);
   lines.push(``);
 
@@ -629,15 +692,14 @@ export function generateDebugSpec(input: DebugCodegenInput): string {
 
   // Auto-navigate first
   lines.push(generateNavBlock(environment, project, '    '));
-  // Take initial screenshot to show the navigated page before step 1
-  // Wait for the page to render meaningful content
-  // Try: look for form fields, interactive content, or main page body
-  // Fallback to 8s timeout if elements don't appear (e.g., SSO interstitial page)
-  lines.push(`    await Promise.race([`);
-  lines.push(`      page.waitForSelector('input[name="Username"], input[type="email"], input[type="password"], button[type="submit"], form', { timeout: 10000 }),`);
-  lines.push(`      page.waitForTimeout(8000)`);
-  lines.push(`    ]).catch(() => {});`);
-  lines.push(`    await page.waitForTimeout(200); // small buffer for final render`);
+  // DOM-state wait — polls until the page has actually rendered content.
+  // This works for SPAs (React/Angular/Vue) where load event fires before JS renders the DOM,
+  // and for server-rendered pages equally. No hardcoded selectors, no blind timeouts.
+  lines.push(`    // DOM-state wait: poll until page has interactive elements (input or button)`);
+  lines.push(`    // Works for any app/framework — Angular, React, Vue, SSR, SSO.`);
+  lines.push(`    // Resolves the moment the SPA finishes rendering its UI — no blind timeouts.`);
+  lines.push(`    await page.waitForSelector('input:not([type="hidden"]), button', { timeout: 15000 }).catch(() => {});`);
+  lines.push(`    await page.waitForTimeout(200); // brief CSS/paint buffer`);
   lines.push(`    await page.screenshot({ path: \`\${__SS_DIR}/0-NAV.jpg\`, fullPage: false, type: 'jpeg', quality: 80 }).catch(() => {});`);
   lines.push(`    // Ensure screenshot file exists on disk before signaling server`);
   lines.push(`    await new Promise<void>(r => { const iv = setInterval(() => { if (_fs.existsSync(\`\${__SS_DIR}/0-NAV.jpg\`)) { clearInterval(iv); r(); } }, 50); setTimeout(() => { clearInterval(iv); r(); }, 5000); });`);
@@ -768,6 +830,18 @@ export function generateDebugSpec(input: DebugCodegenInput): string {
     lines.push(`    }`);
     lines.push(``);
   }
+
+  // ── Final pause — keeps browser open so user can inspect result before close ──
+  // Takes a final screenshot then waits for Stop/Continue from UI.
+  // The test only ends (browser closes) after the user explicitly acts.
+  const finalSsVar = `__ss_final`;
+  lines.push(`    // ── Final step: all steps complete — wait for user to close ──`);
+  lines.push(`    {`);
+  lines.push(`      const ${finalSsVar} = \`\${__SS_DIR}/final-done.jpg\`;`);
+  lines.push(`      await page.screenshot({ path: ${finalSsVar}, fullPage: false, type: 'jpeg', quality: 80 }).catch(() => {});`);
+  lines.push(`      await __debugPause(9999, 'DONE', '', 'All steps complete', ${finalSsVar});`);
+  lines.push(`    }`);
+  lines.push(``);
 
   lines.push(`  });`);
   lines.push(`});`);

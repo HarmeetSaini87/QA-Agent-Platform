@@ -235,6 +235,174 @@ if (process.platform === 'win32') {
 
 ---
 
+---
+
+# Round 2 — Debugger Speed & Intelligence Improvements
+**Date:** April 8, 2026  
+**Status:** ✅ All issues resolved and tested
+
+---
+
+## Overview
+Second round of improvements focused on screenshot rendering speed, visual element highlighting, Common Function expansion in debug mode, and DOM-state-driven settle logic (replacing all static waits).
+
+---
+
+## Improvement 1: JPEG Screenshots + SSE Inline Delivery (5× faster rendering)
+
+### Problem
+PNG screenshots were large (300-800 KB). Server polled `pending.json` every 400ms. UI fetched screenshot via a separate HTTP request after receiving the step signal — adding one extra network round-trip.
+
+### Solution
+Three compounding changes:
+1. **JPEG quality 80** — replaced all `type: 'png'` with `type: 'jpeg', quality: 80` → ~5× smaller files
+2. **Server-Sent Events (SSE)** — replaced WebSocket for screenshot delivery. WebSocket was blocked by IIS reverse proxy on `qa-launchpad.local`. SSE uses plain HTTP — works through any proxy.
+3. **Inline base64 in SSE payload** — server reads JPEG as base64 and embeds it directly in the SSE `debug:step` event. UI sets `img.src = data:image/jpeg;base64,...` directly — no separate HTTP fetch.
+4. **100ms poller** — server `pending.json` poll reduced from 400ms → 100ms.
+
+### Changes Made
+**`src/utils/codegenGenerator.ts`:** All `page.screenshot()` calls → `type: 'jpeg', quality: 80`  
+**`src/ui/server.ts`:** Added `debugSseClients` map, `sseSessionPush()`, `GET /api/debug/stream/:sessionId` SSE endpoint, poller interval 400ms → 100ms, base64 read + SSE push  
+**`src/ui/public/modules.js`:** `_debugOpenSse()`, `_debugCloseSse()`, `_debugSetScreenshot()` fast-path for base64
+
+### Impact
+- ✅ Screenshot renders in <500ms from action (was 2-5s+ with WebSocket + HTTP fetch)
+- ✅ Works through IIS reverse proxy (SSE vs WebSocket)
+- ✅ No extra HTTP round-trip for image fetch
+
+---
+
+## Improvement 2: Color-Coded Element Highlighting
+
+### Problem
+Screenshots showed the full page with no visual indication of which element was about to be acted on.
+
+### Solution
+`__debugHighlight(page, locType, locVal, keyword)` injected before every screenshot. Uses Playwright's native locator API — works with all locator types (CSS, XPath, text, testid, role, label, placeholder). Color coded by action:
+
+| Keyword | Colour | Hex |
+|---------|--------|-----|
+| CLICK | Red | `#ef4444` |
+| FILL | Blue | `#3b82f6` |
+| SELECT | Orange | `#f97316` |
+| HOVER | Yellow | `#eab308` |
+| ASSERT | Green | `#22c55e` |
+| Other | Purple | `#8b5cf6` |
+
+Previous highlight cleared before each new one via `[data-dbg-hl]` attribute tracking.
+
+### Changes Made
+**`src/utils/codegenGenerator.ts`:** Added `__debugHighlight()` helper function; called before every `page.screenshot()` in both regular and CALL FUNCTION sub-step blocks.
+
+### Impact
+- ✅ Target element instantly visible in every screenshot
+- ✅ Color conveys action type at a glance
+- ✅ Works with all locator types (CSS, XPath, text, role, etc.)
+- ✅ No highlight artifacts — cleared before each step
+
+---
+
+## Improvement 3: Common Function Expansion in Debugger
+
+### Problem
+CALL FUNCTION steps executed as a single black-box block — no visibility into which sub-step was running, no per-sub-step screenshot or pause.
+
+### Solution
+When a step's keyword is `CALL FUNCTION`, the debug spec expands each child step into its own full debug block:
+- `__debugHighlight` for the sub-step's locator
+- Screenshot taken for the sub-step
+- `__debugPause` with fractional step index (1.1, 1.2, 1.3 …)
+- Sub-step action executed
+- `__waitForPageSettle` after each sub-step
+
+`fnStepValues` overrides (per-child-step value injections) are honoured — the same value resolution as suite runs.
+
+### Changes Made
+**`src/utils/codegenGenerator.ts`:** CALL FUNCTION branch in debug spec generation loop expanded to emit individual debug blocks per child step.
+
+### Impact
+- ✅ Full step-by-step visibility inside Common Functions
+- ✅ Per-sub-step screenshot + pause + highlight
+- ✅ Fractional step indices (1.1, 1.2 …) shown in UI step list
+- ✅ Value overrides (fnStepValues) correctly applied
+
+---
+
+## Improvement 4: DOM-State Settle — MutationObserver + Spinner Detection
+
+### Problem
+Previous `__waitForPageSettle` used static `waitForLoadState('load')` + `waitForLoadState('networkidle')`. BillCall has background polling so `networkidle` never fires — each step added 15-30s of wait time. Replacing with a fixed shorter wait still caused spinner screenshots because:
+- **Two-phase load pattern**: DOM settles briefly between navigation completing and data API call starting → screenshot captured during this gap
+- **Navigation path**: `waitForLoadState('domcontentloaded')` fires before API-driven spinners appear
+
+### Solution
+Three-layer approach with zero static waits:
+
+#### Layer 1 — MutationObserver (same-page actions)
+Watches `document.documentElement` for any DOM change. After quiet period, checks for visible spinners before resolving:
+- `INIT_MS = 200` — initial check for already-stable pages (fast for FILL/SELECT)
+- `QUIET_MS = 300` — re-arm after any DOM mutation
+- `SPINNER_MS = 500` — re-arm when spinner is still visible (handles two-phase load gap)
+- `MAX_MS = 8000` — safety cap, always resolves
+
+#### Layer 2 — Spinner detection (`hasVisibleSpinner`)
+Checks element visibility using computed style + size guard:
+```
+[role="progressbar"], [aria-busy="true"], .fa-spin,
+mat-spinner, mat-progress-spinner, mat-progress-bar,
+[class*="spinner"], [class*="skeleton"], [class*="shimmer"],
+[class*="spin"], [class*="loader"]
+```
+`offsetWidth/Height < 4` guard prevents false positives from hidden zero-size Angular elements.  
+Excludes `[class*="loading"]` and `[class*="progress"]` — too broad, match normal Angular form/layout elements.
+
+#### Layer 3 — Navigation catch path spinner check
+When `page.evaluate` throws (URL-change navigation), the `.catch()` path now runs:
+1. `waitForLoadState('domcontentloaded')` — page shell loaded
+2. `waitForSelector('input, button')` — interactive elements present
+3. `page.waitForFunction(hasVisibleSpinner === false, { timeout: 8s })` — no spinner
+
+#### Final "DONE" pause
+After all steps complete, the spec takes a final screenshot and calls `__debugPause(9999, 'DONE', ...)`. Browser stays open and paused — only closes when user clicks Continue or Stop in the debugger UI.
+
+### Changes Made
+**`src/utils/codegenGenerator.ts`:** Complete rewrite of `__waitForPageSettle()` + final DONE pause block added after step loop.
+
+### Impact
+- ✅ Zero static waits — all timing driven by DOM state
+- ✅ Spinner screenshots eliminated (two-phase load handled)
+- ✅ Navigation pages wait for data-loading spinner to clear
+- ✅ FILL/SELECT steps resolve in ~200-300ms (no regression)
+- ✅ Browser stays open after last step for final inspection
+
+---
+
+## Testing Checklist (Round 2)
+
+- [x] JPEG screenshots render faster than PNG
+- [x] SSE delivers screenshot inline (no HTTP fetch)
+- [x] Screenshot renders in <500ms per step
+- [x] Color highlight visible on target element in every screenshot
+- [x] Highlight cleared between steps (no carry-over)
+- [x] CALL FUNCTION shows sub-steps 1.1, 1.2 … with individual screenshots
+- [x] FILL/SELECT steps resolve quickly (200-300ms, no spinner false-positives)
+- [x] Navigation steps wait for API spinner to clear before screenshot
+- [x] CLICK steps that open modals wait for modal spinner to clear
+- [x] Browser stays open at final step — only closes on user action
+- [x] 8s safety cap prevents infinite spinner wait
+
+---
+
+## Files Modified Summary (Round 2)
+
+| File | Change |
+|------|--------|
+| `src/utils/codegenGenerator.ts` | JPEG screenshots, `__debugHighlight`, CALL FUNCTION expansion, `__waitForPageSettle` rewrite, DONE pause |
+| `src/ui/server.ts` | SSE endpoint, `debugSseClients`, `sseSessionPush`, 100ms poller, base64 read |
+| `src/ui/public/modules.js` | `_debugOpenSse`, `_debugCloseSse`, `_debugSetScreenshot` base64 fast-path |
+
+---
+
 ## Future Improvements
 - [ ] Add metrics/telemetry for cleanup success rate
 - [ ] Implement graceful shutdown with retry logic

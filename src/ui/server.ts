@@ -129,6 +129,18 @@ const runs = new Map<string, RunRecord>();
 const debugSessions = new Map<string, DebugSession>();
 const debugPollers  = new Map<string, NodeJS.Timeout>();  // sessionId → poll interval
 
+// ── SSE clients for debug sessions ───────────────────────────────────────────
+// SSE works through ALL HTTP proxies (no WS upgrade needed).
+// Each debug session can have multiple SSE subscriber connections (tab reloads etc.).
+const debugSseClients = new Map<string, Set<import('http').ServerResponse>>();
+
+function sseSessionPush(sessionId: string, event: string, payload: object): void {
+  const clients = debugSseClients.get(sessionId);
+  if (!clients?.size) return;
+  const data = `event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`;
+  clients.forEach(res => { try { res.write(data); } catch { /* client disconnected */ } });
+}
+
 // ── Parallel run queue ────────────────────────────────────────────────────────
 // Limits concurrent Playwright processes; excess runs wait in queue.
 const MAX_CONCURRENT_RUNS = 3;
@@ -1307,6 +1319,43 @@ app.post('/api/suites/:id/run', async (req: Request, res: Response) => {
 //   5. debug:step WS event keeps the UI screenshot panel in sync
 //   6. On process close → debug:done WS event, session cleaned up
 
+// GET /api/debug/stream/:sessionId — SSE push channel (replaces WS for screenshot delivery)
+// Pushes step data + inline base64 screenshot as soon as pending.json is detected.
+// Works through IIS/nginx/any HTTP proxy — no WS upgrade negotiation needed.
+app.get('/api/debug/stream/:sessionId', requireAuth, (req: Request, res: Response) => {
+  const { sessionId } = req.params as { sessionId: string };
+  res.writeHead(200, {
+    'Content-Type':      'text/event-stream',
+    'Cache-Control':     'no-cache, no-transform',
+    'Connection':        'keep-alive',
+    'X-Accel-Buffering': 'no',  // disable nginx/IIS response buffering
+  });
+  res.write(': connected\n\n'); // initial comment to flush headers to browser
+
+  // Register client
+  if (!debugSseClients.has(sessionId)) debugSseClients.set(sessionId, new Set());
+  debugSseClients.get(sessionId)!.add(res);
+  logger.info(`[sse] client connected session=${sessionId.slice(0,8)} total=${debugSseClients.get(sessionId)!.size}`);
+
+  // Reconnect case: push existing pending step immediately
+  const existing = debugSessions.get(sessionId);
+  if (existing?.pendingStep) {
+    const d = existing.pendingStep;
+    let screenshotBase64: string | null = null;
+    try {
+      const ssAbs = path.resolve(d.screenshotPath);
+      if (fs.existsSync(ssAbs)) screenshotBase64 = fs.readFileSync(ssAbs).toString('base64');
+    } catch {}
+    sseSessionPush(sessionId, 'debug:step', { ...d, screenshotBase64 });
+  }
+
+  req.on('close', () => {
+    debugSseClients.get(sessionId)?.delete(res);
+    if (debugSseClients.get(sessionId)?.size === 0) debugSseClients.delete(sessionId);
+    logger.info(`[sse] client disconnected session=${sessionId.slice(0,8)}`);
+  });
+});
+
 // POST /api/debug/start
 app.post('/api/debug/start', requireAuth, (req: Request, res: Response) => {
   const { scriptId, environmentId } = req.body as { scriptId: string; environmentId?: string };
@@ -1391,7 +1440,10 @@ app.post('/api/debug/start', requireAuth, (req: Request, res: Response) => {
         const ssAbs = path.resolve(data.screenshotPath);
         if (fs.existsSync(ssAbs)) screenshotBase64 = fs.readFileSync(ssAbs).toString('base64');
       } catch { /* skip — UI will fall back to HTTP fetch */ }
-      logger.info(`[dbg:poller] Step ${data.stepIdx} detected → broadcasting to UI (${sessionId.slice(0,8)}) base64=${screenshotBase64 ? Math.round(screenshotBase64.length/1024)+'KB' : 'null'}`);
+      logger.info(`[dbg:poller] Step ${data.stepIdx} detected → pushing to UI (${sessionId.slice(0,8)}) base64=${screenshotBase64 ? Math.round(screenshotBase64.length/1024)+'KB' : 'null'}`);
+      // SSE push — primary fast path (works through all HTTP proxies)
+      sseSessionPush(sessionId, 'debug:step', { ...data, screenshotBase64 });
+      // WS broadcast — secondary (fails silently when WS upgrade is blocked by proxy)
       broadcast(sessionId, { type: 'debug:step', sessionId, ...data, screenshotBase64 });
     } catch (e) {
       /* file may be mid-write — skip this tick */
@@ -1413,6 +1465,7 @@ app.post('/api/debug/start', requireAuth, (req: Request, res: Response) => {
       s.finishedAt  = new Date().toISOString();
       s.pendingStep = undefined;
     }
+    sseSessionPush(sessionId, 'debug:done', { sessionId, status: s?.status || 'done' });
     broadcast(sessionId, { type: 'debug:done', sessionId, status: s?.status as any || 'done' });
     logger.info(`[debug] session ${sessionId} closed — exit ${code}`);
     if (fs.existsSync(specPath)) { try { fs.unlinkSync(specPath); } catch { /* ignore */ } }

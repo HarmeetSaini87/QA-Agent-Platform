@@ -379,7 +379,7 @@ All 5 module add buttons disabled until project selected. Controlled by `_toggle
 - [x] Removed modules — Jira Story, Upload PRD/Docs, Chat Instruction (old Run History)
 - [x] Multi-machine access — fixed session cookie `sameSite: 'lax'`, fixed session secret
 
-### Recent Debugger Improvements (2026-04-08)
+### Debugger Improvements — Round 1 (2026-04-08)
 - [x] **Screenshot sync fix** — File existence check before broadcast (was 20-40s delay, now <2s)
 - [x] **Orphan process cleanup** — 3-part system (beforeunload beacon + heartbeat timeout + enhanced close)
 - [x] **Process termination fix** — Use taskkill /F /T to kill entire process tree (includes Chrome children)
@@ -387,3 +387,14 @@ All 5 module add buttons disabled until project selected. Controlled by `_toggle
 - [x] **WebSocket on all interfaces** — Server listens on 0.0.0.0 (fixes qa-launchpad.local access)
 - [x] **Loading indicator UI** — Shows spinner while screenshot loads, prevents early button enable
 - [x] **120-second fallback timeout** — Shows error if network fails (no premature button enable)
+
+### Debugger Improvements — Round 2 (2026-04-08)
+- [x] **JPEG screenshots** — Replaced PNG with JPEG (quality 80) → 5× smaller files, faster delivery
+- [x] **SSE screenshot delivery** — Server-Sent Events replaces WebSocket polling for screenshot push (WS blocked by IIS proxy on qa-launchpad.local); inline base64 payload eliminates HTTP round-trip
+- [x] **100ms server poller** — Reduced pending.json poll interval from 400ms → 100ms
+- [x] **Color-coded element highlighting** — `__debugHighlight()` outlines target element before screenshot: CLICK=red, FILL=blue, SELECT=orange, HOVER=yellow, ASSERT=green, other=purple
+- [x] **Common Function expansion** — CALL FUNCTION steps expand into individual sub-step debug blocks (highlight + screenshot + pause + execute + settle per sub-step, indexed 1.1, 1.2 …)
+- [x] **DOM-state settle (MutationObserver)** — `__waitForPageSettle` uses MutationObserver instead of static waits; resolves after DOM is quiet and no spinner is visible
+- [x] **Spinner-aware settle** — Tiered timing: 200ms initial check → 300ms after mutation → 500ms re-arm when spinner visible; waits until spinner gone before screenshot
+- [x] **Navigation path spinner check** — After URL-change steps the catch path runs `waitForFunction` to confirm spinner cleared (domcontentloaded fires before API-driven spinners disappear)
+- [x] **Final "DONE" pause** — After last step, spec takes final screenshot and holds browser open until user acts (prevents browser auto-close at end of script)

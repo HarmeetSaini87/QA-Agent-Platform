@@ -2868,6 +2868,7 @@ let _debugStepMeta      = [];
 let _debugPollTimer     = null;
 let _debugHeartbeatTimer = null;  // heartbeat polling interval
 let _debugLastStepIdx   = null;  // track which step we last displayed to avoid re-rendering same step
+let _debugSseSource     = null;  // SSE EventSource (primary push channel)
 
 // Step state per order: 'pending' | 'active' | 'done' | 'skipped' | 'error'
 const _debugStepState = {};
@@ -2947,7 +2948,15 @@ async function debugStart() {
   _debugTotalSteps = totalSteps;
   _debugSetStatus('starting');
 
-  // Start HTTP polling — checks session state every 800ms
+  // ── SSE connection — primary fast path ──────────────────────────────────────
+  // SSE works through ALL HTTP proxies (no WS upgrade needed).
+  // Server pushes step data + inline base64 screenshot the moment it's ready.
+  _debugOpenSse(sessionId);
+
+  // WS subscribe — secondary (works when WS upgrade is not blocked by proxy)
+  if (typeof wsSubscribe === 'function') wsSubscribe(sessionId);
+
+  // HTTP polling — final fallback (always active, catches anything SSE/WS miss)
   _debugStartPolling();
 
   // Orphan cleanup (1/3): Beforeunload beacon — sends stop even on hard refresh/tab close
@@ -2960,6 +2969,57 @@ async function debugStart() {
 
   // Orphan cleanup (3/3): Start heartbeat polling — every 10s to prevent orphan timeout
   _debugStartHeartbeat();
+}
+
+// ── SSE (Server-Sent Events) — primary push channel ──────────────────────────
+// Opens a persistent HTTP stream to /api/debug/stream/:sessionId.
+// Server pushes debug:step events with inline base64 screenshot instantly.
+// Works through all HTTP proxies — no WebSocket upgrade needed.
+
+function _debugOpenSse(sessionId) {
+  _debugCloseSse(); // close any existing stream
+  try {
+    const src = new EventSource(`/api/debug/stream/${sessionId}`, { withCredentials: true });
+
+    src.addEventListener('debug:step', (e) => {
+      try {
+        const msg = JSON.parse(e.data);
+        console.log(`[debugger:sse] debug:step stepIdx=${msg.stepIdx} base64=${msg.screenshotBase64 ? 'yes' : 'no'}`);
+        _debugOnStep(msg); // has screenshotBase64 inline — skips HTTP fetch
+      } catch (err) {
+        console.warn('[debugger:sse] Failed to parse debug:step event', err);
+      }
+    });
+
+    src.addEventListener('debug:done', (e) => {
+      try {
+        const msg = JSON.parse(e.data);
+        console.log(`[debugger:sse] debug:done status=${msg.status}`);
+        _debugStopPolling();
+        _debugStopHeartbeat();
+        _debugSetStatus(msg.status || 'done');
+        _debugCloseSse();
+      } catch {}
+    });
+
+    src.onerror = () => {
+      // SSE connection dropped — HTTP polling fallback already active
+      console.warn('[debugger:sse] SSE connection error — falling back to HTTP poll');
+    };
+
+    _debugSseSource = src;
+    console.log(`[debugger:sse] SSE stream opened for session ${sessionId.slice(0, 8)}`);
+  } catch (err) {
+    console.warn('[debugger:sse] Failed to open SSE stream:', err);
+  }
+}
+
+function _debugCloseSse() {
+  if (_debugSseSource) {
+    _debugSseSource.close();
+    _debugSseSource = null;
+    console.log('[debugger:sse] SSE stream closed');
+  }
 }
 
 // ── HTTP polling ─────────────────────────────────────────────────────────────
@@ -3149,6 +3209,8 @@ function debugClose() {
       console.error(`[debugger] debugClose: Stop request failed: ${e.message}`);
     });
   }
+  _debugCloseSse();
+  if (_debugSessionId && typeof wsUnsubscribe === 'function') wsUnsubscribe(_debugSessionId);
   _debugSessionId   = null;
   _debugScriptId    = null;
   _debugLastStepIdx = null;
