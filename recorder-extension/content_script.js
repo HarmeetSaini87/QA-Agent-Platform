@@ -22,7 +22,23 @@
   let _lastClick      = { sel: '', ts: 0 };
   const DEBOUNCE_MS   = 300;
 
-  // ── Initialise when background sends RECORDER_INIT ──────────────────────────
+  // ── Self-init from chrome.storage (survives SSO redirects + race conditions) ─
+  // Don't rely on message passing — read session state directly from storage.
+  // This fires on every page load including SSO redirects, so recording
+  // resumes automatically after any navigation.
+  chrome.storage.local.get(['recorderState'], (result) => {
+    const state = result.recorderState;
+    if (state && state.active && state.token && state.platformOrigin) {
+      _token          = state.token;
+      _platformOrigin = state.platformOrigin;
+      _active         = true;
+      attachListeners();
+      console.info('[QA Recorder] Active on', window.location.hostname);
+      showToast('QA Recorder active — recording');
+    }
+  });
+
+  // ── Also listen for messages from background (start/stop while page is open) ─
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg.type === 'RECORDER_INIT') {
       _token          = msg.token;
