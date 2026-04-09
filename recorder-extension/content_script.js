@@ -155,6 +155,9 @@
     }
   }
 
+  // Dedupe FILL — blur + focusout both fire; suppress second within 100ms
+  let _lastFill = { sel: '', ts: 0 };
+
   function handleBlur(e) {
     if (!_active) return;
     const el = e.target;
@@ -165,20 +168,25 @@
     if ((tag === 'input' && fillable.includes(type)) || tag === 'textarea') {
       if (!el.value && el.value !== '0') return;
       const loc = bestSelector(el);
+      const now = Date.now();
+      if (loc.sel === _lastFill.sel && now - _lastFill.ts < 100) return; // dedupe blur+focusout
+      _lastFill = { sel: loc.sel, ts: now };
       postStep({ eventType: 'FILL', selector: loc.sel, selectorType: loc.type, value: el.value, smartName: smartName(el), tagName: tag, url: location.href });
     }
   }
 
   // ── Attach / detach ──────────────────────────────────────────────────────────
   function attachToRoot(root) {
-    root.addEventListener('click',  handleClick,  true);
-    root.addEventListener('change', handleChange, true);
-    root.addEventListener('blur',   handleBlur,   true);
+    root.addEventListener('click',    handleClick,  true);
+    root.addEventListener('change',   handleChange, true);
+    root.addEventListener('blur',     handleBlur,   true);
+    root.addEventListener('focusout', handleBlur,   true); // bubbles — catches Angular Material inputs
   }
   function detachFromRoot(root) {
-    root.removeEventListener('click',  handleClick,  true);
-    root.removeEventListener('change', handleChange, true);
-    root.removeEventListener('blur',   handleBlur,   true);
+    root.removeEventListener('click',    handleClick,  true);
+    root.removeEventListener('change',   handleChange, true);
+    root.removeEventListener('blur',     handleBlur,   true);
+    root.removeEventListener('focusout', handleBlur,   true);
   }
 
   // Shadow DOM

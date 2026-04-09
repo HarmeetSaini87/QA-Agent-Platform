@@ -619,16 +619,24 @@ app.get('/api/auth/me', (req: Request, res: Response) => {
   res.json({ userId: req.session.userId, username: req.session.username, role: req.session.role });
 });
 
-// ── CORS for Chrome Extension requests ───────────────────────────────────────
-// Extension popup and content_script make requests from chrome-extension:// origin.
-// Allow credentials so session cookies work for authenticated endpoints.
+// ── CORS for Chrome Extension + AUT cross-origin requests ────────────────────
+// Two cases:
+//  1. Extension popup (chrome-extension:// origin) — needs credentials for session auth
+//  2. Content script running inside AUT (e.g. https://ssoqa10.billcall.net) — POSTs
+//     to /api/recorder/step; no credentials needed (token-protected); must allow any origin
 app.use((req: Request, res: Response, next) => {
   const origin = req.headers.origin || '';
   if (origin.startsWith('chrome-extension://')) {
+    // Extension popup — allow with credentials for authenticated API calls
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Access-Control-Allow-Credentials', 'true');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  } else if (req.path === '/api/recorder/step') {
+    // Content script inside AUT page — any origin allowed (token is the auth)
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   }
   if (req.method === 'OPTIONS') { res.sendStatus(204); return; }
   next();
