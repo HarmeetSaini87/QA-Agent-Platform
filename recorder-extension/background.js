@@ -22,17 +22,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       const { token, platformOrigin, projectId, tabId } = msg;
       const state = { token, platformOrigin, projectId, tabId, active: true, stepCount: 0 };
       chrome.storage.local.set({ recorderState: state }, () => {
-        // Inject content script into the target tab
+        // Inject content script into the target tab — allFrames:true covers
+        // cross-origin iframes, nested frames, and window.open() popups.
         chrome.scripting.executeScript({
-          target: { tabId },
+          target: { tabId, allFrames: true },
           files:  ['content_script.js'],
         }).then(() => {
-          // Send init message to content script
-          chrome.tabs.sendMessage(tabId, {
-            type:           'RECORDER_INIT',
-            token,
-            platformOrigin,
-          });
+          // Send init message to all frames in the tab (main + all iframes)
+          chrome.webNavigation?.getAllFrames({ tabId }, frames => {
+            (frames || [{ frameId: 0 }]).forEach(frame => {
+              chrome.tabs.sendMessage(tabId, { type: 'RECORDER_INIT', token, platformOrigin }, { frameId: frame.frameId }).catch(() => {});
+            });
+          }) ?? chrome.tabs.sendMessage(tabId, { type: 'RECORDER_INIT', token, platformOrigin });
           sendResponse({ success: true });
         }).catch(err => {
           sendResponse({ success: false, error: err.message });
