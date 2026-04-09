@@ -25,6 +25,7 @@ import session      from 'express-session';
 import cron         from 'node-cron';
 
 import { generateCodegenSpec, generateDebugSpec } from '../utils/codegenGenerator';
+import { parseRecorderEvent, RecorderEvent }      from '../utils/recorderParser';
 import { config }  from '../framework/config';
 import { logger }  from '../utils/logger';
 
@@ -140,6 +141,45 @@ function sseSessionPush(sessionId: string, event: string, payload: object): void
   const data = `event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`;
   clients.forEach(res => { try { res.write(data); } catch { /* client disconnected */ } });
 }
+
+// ── Recorder session state ────────────────────────────────────────────────────
+// In-memory store for active recording sessions.
+// Sessions auto-expire after 30 minutes of inactivity (2h hard cap).
+
+interface RecorderSession {
+  token:       string;
+  projectId:   string;
+  createdBy:   string;
+  active:      boolean;
+  steps:       import('../data/types').ScriptStep[];
+  stepCount:   number;         // running counter for order assignment
+  lastActivity: number;        // ms timestamp — used for inactivity expiry
+  createdAt:   number;
+  sseClients:  Set<import('http').ServerResponse>;
+}
+
+const recorderSessions = new Map<string, RecorderSession>();
+
+function recorderSsePush(token: string, event: string, payload: object): void {
+  const session = recorderSessions.get(token);
+  if (!session?.sseClients.size) return;
+  const data = `event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`;
+  session.sseClients.forEach(res => { try { res.write(data); } catch {} });
+}
+
+// Expiry: 30 min inactivity, 2h hard cap
+setInterval(() => {
+  const now = Date.now();
+  for (const [token, s] of recorderSessions) {
+    const inactive  = now - s.lastActivity > 30 * 60 * 1000;
+    const hardCap   = now - s.createdAt    >  2 * 60 * 60 * 1000;
+    if (inactive || hardCap) {
+      s.sseClients.forEach(res => { try { res.end(); } catch {} });
+      recorderSessions.delete(token);
+      logger.info(`[recorder] Session expired (${inactive ? 'inactivity' : 'hard cap'}): ${token.slice(0,8)}`);
+    }
+  }
+}, 60_000);
 
 // ── Parallel run queue ────────────────────────────────────────────────────────
 // Limits concurrent Playwright processes; excess runs wait in queue.
@@ -481,6 +521,21 @@ app.get('/login', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'login.html'
 app.get('/login.css', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'login.css')));
 app.get('/login.js',  (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'login.js')));
 
+// ── recorder.js — MUST be before express.static so origin injection fires ────
+// express.static would serve the raw file directly, bypassing the origin inject.
+// Access-Control-Allow-Origin: * required so the AUT page (cross-origin) can load
+// this script via a bookmarklet or console injection.
+app.get('/recorder.js', (req: Request, res: Response) => {
+  const origin     = `${req.protocol}://${req.get('host')}`;
+  const scriptPath = path.join(PUBLIC_DIR, 'recorder.js');
+  if (!fs.existsSync(scriptPath)) { res.status(404).send('// recorder.js not found'); return; }
+  const src      = fs.readFileSync(scriptPath, 'utf-8');
+  const injected = `window.__qa_recorder_origin = ${JSON.stringify(origin)};\n${src}`;
+  res.setHeader('Content-Type', 'application/javascript');
+  res.setHeader('Access-Control-Allow-Origin', '*');   // allow cross-origin load from AUT
+  res.send(injected);
+});
+
 // Public static (CSS/JS/fonts for main app, served after auth check via SPA redirect)
 app.use(express.static(PUBLIC_DIR));
 app.use('/requirements', express.static(path.resolve('requirements')));
@@ -564,6 +619,45 @@ app.get('/api/auth/me', (req: Request, res: Response) => {
   res.json({ userId: req.session.userId, username: req.session.username, role: req.session.role });
 });
 
+// ── CORS for Chrome Extension requests ───────────────────────────────────────
+// Extension popup and content_script make requests from chrome-extension:// origin.
+// Allow credentials so session cookies work for authenticated endpoints.
+app.use((req: Request, res: Response, next) => {
+  const origin = req.headers.origin || '';
+  if (origin.startsWith('chrome-extension://')) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  }
+  if (req.method === 'OPTIONS') { res.sendStatus(204); return; }
+  next();
+});
+
+// ── Recorder step endpoint — token-authenticated, no session cookie needed ────
+// recorder.js runs in the AUT tab which has no platform session. The token
+// (created by /api/recorder/start) is sufficient access control.
+app.post('/api/recorder/step', (req: Request, res: Response) => {
+  const event = req.body as RecorderEvent;
+  const session = recorderSessions.get(event?.token);
+  if (!session || !session.active) { res.status(404).json({ error: 'session not found or inactive' }); return; }
+
+  session.lastActivity = Date.now();
+  session.stepCount++;
+
+  const { step, locatorCreated, locatorName } = parseRecorderEvent(
+    event,
+    session.projectId,
+    session.createdBy,
+    session.stepCount,
+  );
+
+  session.steps.push(step);
+  recorderSsePush(event.token, 'recorder:step', { step, locatorCreated, locatorName, stepNum: session.stepCount });
+  logger.info(`[recorder] Step ${session.stepCount}: ${step.keyword} ${step.locator || step.value || ''} (${event.token.slice(0,8)})`);
+  res.json({ success: true, stepNum: session.stepCount });
+});
+
 // ── All routes below require authentication ───────────────────────────────────
 app.use('/api', requireAuth);
 
@@ -624,6 +718,158 @@ app.get('/api/health', (_req: Request, res: Response) => {
 app.get('/execution-report', requireAuth, (_req: Request, res: Response) => {
   res.sendFile(path.join(PUBLIC_DIR, 'execution-report.html'));
 });
+
+// ── Recorder Loader page ──────────────────────────────────────────────────────
+// Two activation methods shown clearly:
+//  Method A — Drag the "Activate Recorder" link to the bookmarks bar, open AUT,
+//             click the bookmark. Works because clicking a saved javascript: bookmark
+//             is allowed by Chrome (only PASTING into the address bar is blocked).
+//  Method B — F12 Console: paste a short one-liner. Always works.
+app.get('/recorder-loader', requireAuth, (req: Request, res: Response) => {
+  const { token, url: autUrl } = req.query as { token?: string; url?: string };
+  if (!token || !autUrl) { res.status(400).send('Missing token or url'); return; }
+  const session = recorderSessions.get(token);
+  if (!session || !session.active) { res.status(404).send('Recording session not found'); return; }
+
+  const origin = `${req.protocol}://${req.get('host')}`;
+
+  // Bookmarklet href — user drags this link to bookmarks bar, then clicks while on AUT
+  const bookmarkletHref = `javascript:(function(){`
+    + `window.__qa_recorder_origin=${JSON.stringify(origin)};`
+    + `window.__qa_recorder=${JSON.stringify(token)};`
+    + `var s=document.createElement('script');`
+    + `s.src=${JSON.stringify(origin + '/recorder.js?' + Date.now())};`
+    + `document.head.appendChild(s);`
+    + `})();`;
+
+  // Console one-liner — shorter, always works via F12
+  const consoleLine = `window.__qa_recorder_origin=${JSON.stringify(origin)};window.__qa_recorder=${JSON.stringify(token)};var s=document.createElement('script');s.src='${origin}/recorder.js?t=${Date.now()}';document.head.appendChild(s);`;
+
+  res.setHeader('Content-Type', 'text/html');
+  res.send(`<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>QA Recorder — Ready</title>
+  <style>
+    *{box-sizing:border-box}
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;margin:0;background:#0f172a;color:#e2e8f0;min-height:100vh;padding:32px;display:flex;align-items:flex-start;justify-content:center}
+    .card{background:#1e293b;border-radius:16px;padding:36px;max-width:640px;width:100%;box-shadow:0 24px 64px rgba(0,0,0,.4)}
+    h2{margin:0 0 4px;font-size:20px;color:#a78bfa}
+    .subtitle{color:#64748b;font-size:12px;margin-bottom:28px}
+    .method{background:#0f172a;border:1px solid #334155;border-radius:12px;padding:20px;margin-bottom:16px}
+    .method-title{font-weight:700;font-size:14px;margin-bottom:4px;display:flex;align-items:center;gap:8px}
+    .badge{background:#7c3aed;color:#fff;font-size:10px;padding:2px 8px;border-radius:999px;font-weight:700}
+    .badge-alt{background:#0369a1;color:#fff;font-size:10px;padding:2px 8px;border-radius:999px;font-weight:700}
+    .method-desc{color:#94a3b8;font-size:13px;margin-bottom:14px;line-height:1.6}
+    .bm-link{display:inline-block;background:#7c3aed;color:#fff;text-decoration:none;padding:10px 20px;border-radius:8px;font-weight:700;font-size:14px;cursor:grab;border:2px dashed #a78bfa;margin-bottom:8px}
+    .bm-link:hover{background:#6d28d9}
+    .drag-hint{color:#64748b;font-size:11px;margin-top:4px}
+    .console-box{background:#1e293b;border:1px solid #334155;border-radius:8px;padding:10px 12px;font-family:monospace;font-size:11px;color:#7dd3fc;word-break:break-all;position:relative;margin-bottom:8px}
+    .copy-btn{position:absolute;top:8px;right:8px;background:#0369a1;color:#fff;border:none;border-radius:4px;padding:3px 8px;font-size:11px;cursor:pointer}
+    .copy-btn:hover{background:#0284c7}
+    .steps-bar{background:#0f172a;border:1px solid #22c55e33;border-radius:8px;padding:12px 16px;display:flex;align-items:center;gap:10px;margin-top:20px;font-size:13px}
+    .dot{width:8px;height:8px;border-radius:50%;background:#22c55e;animation:pulse 1.5s infinite;flex-shrink:0}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+    .steps-count{margin-left:auto;color:#22c55e;font-weight:700}
+    ol{margin:10px 0 0 0;padding-left:18px;color:#94a3b8;font-size:13px;line-height:1.8}
+    ol li strong{color:#e2e8f0}
+  </style>
+</head>
+<body>
+<div class="card">
+  <h2>&#9679; QA Recorder — Active</h2>
+  <div class="subtitle">Token: ${escapeHtml(token.slice(0,8))}… &nbsp;|&nbsp; App: ${escapeHtml(autUrl)}</div>
+
+  <!-- Step 1 -->
+  <div style="font-weight:600;font-size:13px;margin-bottom:10px;color:#94a3b8">STEP 1 &mdash; Open your app and log in</div>
+  <div style="margin-bottom:24px;font-size:13px;color:#94a3b8">
+    Open <a href="${escapeHtml(autUrl)}" target="_blank" style="color:#38bdf8">${escapeHtml(autUrl)}</a> in a new tab.
+    Log in and navigate to the <strong style="color:#e2e8f0">starting page</strong> of your test flow.
+  </div>
+
+  <!-- Step 2 — Method A -->
+  <div style="font-weight:600;font-size:13px;margin-bottom:10px;color:#94a3b8">STEP 2 &mdash; Activate the recorder (choose one method)</div>
+
+  <div class="method">
+    <div class="method-title"><span class="badge">METHOD A</span> Drag to Bookmarks Bar <span style="font-size:11px;color:#64748b;font-weight:400">(recommended)</span></div>
+    <div class="method-desc">
+      Drag the purple button below to your <strong>bookmarks bar</strong>. Then switch to your app tab and <strong>click the bookmark</strong>.
+      The recorder will activate silently in your app.
+    </div>
+    <a class="bm-link" href="${escapeHtml(bookmarkletHref)}" title="Drag me to your bookmarks bar">&#9654; Activate QA Recorder</a>
+    <div class="drag-hint">&#8593; Drag this button to your bookmarks bar, then click it on your app tab</div>
+  </div>
+
+  <div class="method">
+    <div class="method-title"><span class="badge-alt">METHOD B</span> Browser Console</div>
+    <div class="method-desc">
+      Switch to your app tab. Press <strong>F12</strong> &rarr; click the <strong>Console</strong> tab &rarr; paste the line below and press <strong>Enter</strong>.
+    </div>
+    <div class="console-box" id="console-code">${escapeHtml(consoleLine)}<button class="copy-btn" onclick="copyConsole()">Copy</button></div>
+    <div class="drag-hint">You will see <code style="color:#a78bfa">[QA Recorder] Listeners attached. Recording…</code> in the console when active.</div>
+  </div>
+
+  <!-- Step 3 -->
+  <div style="font-weight:600;font-size:13px;margin:20px 0 10px;color:#94a3b8">STEP 3 &mdash; Interact with your app</div>
+  <div style="font-size:13px;color:#94a3b8;margin-bottom:8px">
+    Click, fill fields, select dropdowns — every action streams live into the Test Script editor.
+    Watch the counter below update as steps are captured.
+  </div>
+
+  <!-- Step 4 -->
+  <div style="font-weight:600;font-size:13px;margin:20px 0 6px;color:#94a3b8">STEP 4 &mdash; Stop recording</div>
+  <div style="font-size:13px;color:#94a3b8">Click <strong style="color:#e2e8f0">&#9646;&#9646; Stop Recording</strong> in the Test Script editor when done.</div>
+
+  <div class="steps-bar">
+    <div class="dot"></div>
+    <span style="color:#94a3b8">Recording active</span>
+    <span class="steps-count" id="step-count">0 steps captured</span>
+  </div>
+</div>
+
+<script>
+  function copyConsole() {
+    const text = ${JSON.stringify(consoleLine)};
+    navigator.clipboard.writeText(text).catch(() => {
+      const ta = document.createElement('textarea');
+      ta.value = text; document.body.appendChild(ta); ta.select();
+      document.execCommand('copy'); document.body.removeChild(ta);
+    }).finally !== undefined
+      ? navigator.clipboard.writeText(text).finally(() => flash())
+      : flash();
+    flash();
+    function flash() {
+      const btn = document.querySelector('.copy-btn');
+      if (btn) { btn.textContent = 'Copied!'; setTimeout(() => btn.textContent = 'Copy', 2000); }
+    }
+  }
+
+  let lastCount = 0;
+  setInterval(async () => {
+    try {
+      const r = await fetch('/api/recorder/status/${encodeURIComponent(token)}', { credentials: 'include' });
+      if (!r.ok) return;
+      const d = await r.json();
+      if (d.stepCount !== lastCount) {
+        lastCount = d.stepCount;
+        const el = document.getElementById('step-count');
+        if (el) el.textContent = d.stepCount + ' step' + (d.stepCount === 1 ? '' : 's') + ' captured';
+      }
+      if (!d.active) {
+        const dot = document.querySelector('.dot');
+        if (dot) { dot.style.background = '#ef4444'; dot.style.animation = 'none'; }
+      }
+    } catch {}
+  }, 1500);
+<\/script>
+</body>
+</html>`);
+});
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
 
 // ── Screenshot file serving ───────────────────────────────────────────────────
 // Serves test-results/**/*.png so the report page can embed screenshots
@@ -954,6 +1200,92 @@ app.delete('/api/locators/:id', (req: Request, res: Response) => {
   const removed = remove(LOCATORS, req.params.id);
   if (!removed) { res.status(404).json({ error: 'Not found' }); return; }
   res.json({ success: true });
+});
+
+// ── UI Recorder endpoints ─────────────────────────────────────────────────────
+//
+// Flow:
+//   1. Editor POSTs /api/recorder/start → gets token + recorder URL
+//   2. Editor opens AUT tab at recorderUrl (includes ?__qa_recorder=<token>)
+//   3. Server serves recorder.js (with __qa_recorder_origin injected) at /recorder.js
+//   4. recorder.js POSTs actions to /api/recorder/step
+//   5. Server resolves locator, parses step, pushes via SSE to /api/recorder/stream/:token
+//   6. Editor appends live steps as user interacts with AUT
+//   7. Editor POSTs /api/recorder/stop → session marked inactive
+
+// POST /api/recorder/start — create a new recording session
+app.post('/api/recorder/start', requireAuth, (req: Request, res: Response) => {
+  const { projectId, autUrl } = req.body as { projectId?: string; autUrl?: string };
+  if (!projectId) { res.status(400).json({ error: 'projectId is required' }); return; }
+  if (!autUrl)    { res.status(400).json({ error: 'autUrl is required' });    return; }
+
+  const token: string = uuidv4();
+  const session: RecorderSession = {
+    token,
+    projectId,
+    createdBy:    req.session.username!,
+    active:       true,
+    steps:        [],
+    stepCount:    0,
+    lastActivity: Date.now(),
+    createdAt:    Date.now(),
+    sseClients:   new Set(),
+  };
+  recorderSessions.set(token, session);
+
+  // Build the AUT URL with recorder token injected
+  const separator   = autUrl.includes('?') ? '&' : '?';
+  const recorderUrl = `${autUrl}${separator}__qa_recorder=${token}`;
+
+  logger.info(`[recorder] Session started: ${token.slice(0,8)} project=${projectId} by=${req.session.username}`);
+  res.json({ token, recorderUrl });
+});
+
+// GET /api/recorder/stream/:token — SSE push channel for live step delivery to editor
+app.get('/api/recorder/stream/:token', requireAuth, (req: Request, res: Response) => {
+  const { token } = req.params as { token: string };
+  const session = recorderSessions.get(token);
+  if (!session) { res.status(404).json({ error: 'session not found' }); return; }
+
+  res.writeHead(200, {
+    'Content-Type':      'text/event-stream',
+    'Cache-Control':     'no-cache',
+    'Connection':        'keep-alive',
+    'X-Accel-Buffering': 'no',    // disable nginx buffering
+  });
+  res.write(`event: recorder:connected\ndata: ${JSON.stringify({ token: token.slice(0,8), stepCount: session.stepCount })}\n\n`);
+
+  session.sseClients.add(res);
+  logger.info(`[recorder] SSE client connected (token ${token.slice(0,8)}) — ${session.sseClients.size} client(s)`);
+
+  req.on('close', () => {
+    session.sseClients.delete(res);
+    logger.info(`[recorder] SSE client disconnected (token ${token.slice(0,8)}) — ${session.sseClients.size} client(s)`);
+  });
+});
+
+// GET /api/recorder/status/:token — step count + active flag (polled by loader page)
+app.get('/api/recorder/status/:token', requireAuth, (req: Request, res: Response) => {
+  const { token } = req.params as { token: string };
+  const session = recorderSessions.get(token);
+  if (!session) { res.status(404).json({ error: 'session not found' }); return; }
+  res.json({ active: session.active, stepCount: session.stepCount });
+});
+
+// POST /api/recorder/stop — stop recording session
+app.post('/api/recorder/stop', requireAuth, (req: Request, res: Response) => {
+  const { token } = req.body as { token?: string };
+  if (!token) { res.status(400).json({ error: 'token is required' }); return; }
+  const session = recorderSessions.get(token);
+  if (!session) { res.status(404).json({ error: 'session not found' }); return; }
+
+  session.active = false;
+  recorderSsePush(token, 'recorder:stopped', { stepCount: session.stepCount });
+  session.sseClients.forEach(res => { try { res.end(); } catch {} });
+  session.sseClients.clear();
+
+  logger.info(`[recorder] Session stopped: ${token.slice(0,8)} — ${session.stepCount} steps captured`);
+  res.json({ success: true, stepCount: session.stepCount, steps: session.steps });
 });
 
 // ── Common Functions ──────────────────────────────────────────────────────────

@@ -3,6 +3,20 @@
    NEW MODULES: Auth, Admin, Projects, Locators, Functions
    ══════════════════════════════════════════════════════════════════════════ */
 
+/* ── UI Recorder ────────────────────────────────────────────────────────── */
+@keyframes recorderPulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.3; }
+}
+#recorder-btn.recording {
+  background: #8b5cf6;
+  color: #fff;
+  border-color: #8b5cf6;
+}
+#recorder-status {
+  animation: recorderPulse 1.2s infinite;
+}
+
 /* ── Info icon tooltip ─────────────────────────────────────────────────── */
 .info-icon {
   display: inline-flex;

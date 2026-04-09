@@ -3388,3 +3388,205 @@ function debugHandleWsMsg(msg) {
 function _currentProjectData() {
   return allProjects.find(p => p.id === currentProjectId) || null;
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// UI RECORDER — live step capture from browser interactions
+// ══════════════════════════════════════════════════════════════════════════════
+// Flow:
+//   1. User clicks Record → pick environment → POST /api/recorder/start
+//   2. AUT opens in new tab with recorder.js injected
+//   3. Steps stream in via SSE → appended live to the script editor
+//   4. User clicks Stop Recording → POST /api/recorder/stop → session ends
+
+let _recorderToken    = null;   // active session token
+let _recorderSse      = null;   // EventSource instance
+let _recorderTab      = null;   // reference to opened AUT tab
+let _recorderStepBase = 0;      // step order offset (existing steps before recording)
+
+// ── Entry point: toggle recording on/off ────────────────────────────────────
+async function recorderToggle() {
+  if (_recorderToken) {
+    await recorderStop();
+  } else {
+    await recorderStart();
+  }
+}
+
+// ── Start recording ──────────────────────────────────────────────────────────
+async function recorderStart() {
+  if (!currentProjectId) {
+    alert('Select a project first before recording.');
+    return;
+  }
+
+  const project = _currentProjectData();
+  if (!project || !project.environments || project.environments.length === 0) {
+    alert('This project has no environments configured. Add an environment in the Projects module first.');
+    return;
+  }
+
+  // Pick environment — if only one, use it directly; otherwise prompt
+  let env = null;
+  if (project.environments.length === 1) {
+    env = project.environments[0];
+  } else {
+    env = await _recorderPickEnv(project.environments);
+    if (!env) return; // user cancelled
+  }
+
+  // Calculate step order offset — new steps will be appended after existing ones
+  const existingRows = document.querySelectorAll('#se-steps-container .script-step-row');
+  _recorderStepBase = existingRows.length;
+
+  // Start session on server
+  let token;
+  try {
+    const res = await fetch('/api/recorder/start', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ projectId: currentProjectId, autUrl: env.url }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    const data = await res.json();
+    token = data.token;
+  } catch (err) {
+    alert('Failed to start recording session: ' + err.message);
+    return;
+  }
+
+  _recorderToken = token;
+
+  // Open the recorder instructions panel in a new tab.
+  // The panel shows the bookmarklet the user pastes into their AUT tab.
+  // We cannot inject recorder.js directly into a cross-origin AUT — the bookmarklet
+  // runs in the AUT's own browser context, bypassing cross-origin restrictions.
+  const loaderUrl = `/recorder-loader?token=${encodeURIComponent(token)}&url=${encodeURIComponent(env.url)}`;
+  _recorderTab = window.open(loaderUrl, '_blank');
+
+  // Open SSE channel for live step delivery
+  _recorderOpenSse(token);
+
+  // Update UI
+  const btn    = document.getElementById('recorder-btn');
+  const status = document.getElementById('recorder-status');
+  if (btn)    { btn.textContent = '⏹ Stop Recording'; btn.classList.add('recording'); }
+  if (status) { status.textContent = 'Recording…'; status.style.display = 'inline'; }
+}
+
+// ── Stop recording ───────────────────────────────────────────────────────────
+async function recorderStop() {
+  if (!_recorderToken) return;
+  const token = _recorderToken;
+
+  _recorderCloseSse();
+  _recorderToken = null;
+
+  try {
+    await fetch('/api/recorder/stop', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ token }),
+    });
+  } catch { /* ignore — server will auto-expire */ }
+
+  // Reset UI
+  const btn    = document.getElementById('recorder-btn');
+  const status = document.getElementById('recorder-status');
+  if (btn)    { btn.textContent = '⬤ Record'; btn.classList.remove('recording'); }
+  if (status) { status.style.display = 'none'; }
+
+  console.info('[Recorder] Stopped. Steps are in the editor — review and save.');
+}
+
+// ── Environment picker (for projects with multiple environments) ──────────────
+function _recorderPickEnv(environments) {
+  return new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:center;justify-content:center';
+    overlay.innerHTML = `
+      <div class="modal-box" style="max-width:400px;padding:24px">
+        <div style="font-weight:700;font-size:15px;margin-bottom:16px">Select Environment to Record Against</div>
+        <select id="rec-env-pick" class="fm-input" style="width:100%;margin-bottom:20px">
+          ${environments.map(e => `<option value="${e.id}">${e.name} — ${e.url}</option>`).join('')}
+        </select>
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button class="btn btn-outline btn-sm" id="rec-env-cancel">Cancel</button>
+          <button class="btn btn-primary btn-sm" id="rec-env-ok">Start Recording</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    document.getElementById('rec-env-cancel').onclick = () => { document.body.removeChild(overlay); resolve(null); };
+    document.getElementById('rec-env-ok').onclick = () => {
+      const selId = document.getElementById('rec-env-pick').value;
+      const env   = environments.find(e => e.id === selId) || environments[0];
+      document.body.removeChild(overlay);
+      resolve(env);
+    };
+  });
+}
+
+// ── SSE client ───────────────────────────────────────────────────────────────
+function _recorderOpenSse(token) {
+  _recorderCloseSse();
+  const src = new EventSource(`/api/recorder/stream/${encodeURIComponent(token)}`);
+  _recorderSse = src;
+
+  src.addEventListener('recorder:step', e => {
+    try {
+      const { step, locatorCreated, locatorName } = JSON.parse(e.data);
+      _recorderAppendStep(step, locatorCreated, locatorName);
+    } catch (err) {
+      console.warn('[Recorder] Failed to parse step event:', err);
+    }
+  });
+
+  src.addEventListener('recorder:stopped', () => {
+    _recorderCloseSse();
+  });
+
+  src.onerror = () => {
+    console.warn('[Recorder] SSE connection error — will retry automatically');
+  };
+}
+
+function _recorderCloseSse() {
+  if (_recorderSse) { try { _recorderSse.close(); } catch {} _recorderSse = null; }
+}
+
+// ── Append a recorded step to the script editor ───────────────────────────────
+function _recorderAppendStep(step, locatorCreated, locatorName) {
+  // Build a step object that scriptAddStep understands
+  const stepData = {
+    keyword:     step.keyword,
+    locator:     step.locator     || '',
+    locatorId:   step.locatorId   || null,
+    locatorType: step.locatorType || 'css',
+    locatorName: locatorName      || step.locator || '',
+    value:       step.value       || '',
+    valueMode:   'static',
+    description: step.description || '',
+    screenshot:  false,
+    testData:    [],
+  };
+
+  scriptAddStep(stepData);
+
+  // Visual flash on the newly added row to draw attention
+  const rows = document.querySelectorAll('#se-steps-container .script-step-row');
+  const last = rows[rows.length - 1];
+  if (last) {
+    last.style.transition = 'background 0.3s';
+    last.style.background = 'rgba(139,92,246,0.15)';
+    setTimeout(() => { last.style.background = ''; }, 1200);
+
+    // Show "New from repo" badge if locator was auto-created
+    if (locatorCreated) {
+      const badge = document.createElement('span');
+      badge.textContent = '★ Added to Repo';
+      badge.style.cssText = 'font-size:10px;background:#8b5cf6;color:#fff;border-radius:4px;padding:1px 6px;margin-left:6px;vertical-align:middle';
+      const numEl = last.querySelector('.step-num');
+      if (numEl) numEl.parentNode.insertBefore(badge, numEl.nextSibling);
+      setTimeout(() => { try { badge.remove(); } catch {} }, 4000);
+    }
+  }
+}
