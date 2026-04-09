@@ -6,6 +6,7 @@ You are the orchestration brain of the **qa-agent-platform** enterprise test aut
 Read this entire file before taking any action. These rules are non-negotiable.
 
 > **📋 See [docs/DEBUGGER_IMPROVEMENTS.md](docs/DEBUGGER_IMPROVEMENTS.md) for detailed notes on recent debugger fixes (2026-04-08): screenshot sync, orphan cleanup, process termination, UI styling.**
+> **📋 See [docs/RECORDER_PLAN.md](docs/RECORDER_PLAN.md) for the UI Recorder feature implementation plan (2026-04-09): live step capture, locator auto-resolution, shadow DOM, browser dialogs, file upload.**
 
 ---
 
@@ -398,3 +399,11 @@ All 5 module add buttons disabled until project selected. Controlled by `_toggle
 - [x] **Spinner-aware settle** — Tiered timing: 200ms initial check → 300ms after mutation → 500ms re-arm when spinner visible; waits until spinner gone before screenshot
 - [x] **Navigation path spinner check** — After URL-change steps the catch path runs `waitForFunction` to confirm spinner cleared (domcontentloaded fires before API-driven spinners disappear)
 - [x] **Final "DONE" pause** — After last step, spec takes final screenshot and holds browser open until user acts (prevents browser auto-close at end of script)
+
+### Planned — UI Recorder (2026-04-09)
+- [ ] **recorder.js** — injected into AUT tab, captures click/fill/select/upload/dialogs/shadow DOM/iframes
+- [ ] **recorderParser.ts** — selector derivation, smart locator name generation, ScriptStep assembly
+- [ ] **Locator auto-resolve** — reverse lookup against repo; auto-creates new repo entry if no match
+- [ ] **Record button** — in Test Script editor, live step insertion via SSE
+- [ ] **4 new server endpoints** — `/api/recorder/start|step|stop|stream/:token`
+- See [docs/RECORDER_PLAN.md](docs/RECORDER_PLAN.md) for full plan
