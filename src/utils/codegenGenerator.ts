@@ -86,6 +86,13 @@ function resolveDataTokens(raw: string, dataMap: Record<string, string>): string
 
 // ── Value expression ───────────────────────────────────────────────────────────
 
+// Resolve {{var.name}} tokens → runtime session var lookup expression
+function resolveVarTokens(raw: string): string {
+  return raw.replace(/\{\{var\.([A-Za-z0-9_]+)\}\}/g,
+    (_, name) => `' + (__sessionVars['${name}'] ?? '') + '`
+  );
+}
+
 function valueExpr(step: ScriptStep, dataMap: Record<string, string> = {}, runIdx: number = 0): string {
   if (step.valueMode === 'testdata') {
     const rows = step.testData || [];
@@ -94,10 +101,28 @@ function valueExpr(step: ScriptStep, dataMap: Record<string, string> = {}, runId
     const raw = row?.value || '';
     return `'${raw.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
   }
+  // Variable mode — value is just the var name, resolve to runtime lookup
+  if (step.valueMode === 'variable') {
+    const varName = (step.value || '').trim();
+    return varName ? `(__sessionVars['${varName}'] ?? '')` : "''";
+  }
   if (!step.value) return "''";
   const resolved = resolveDataTokens(step.value, dataMap);
   if (step.valueMode === 'dynamic') return resolveToken(resolved);
-  return `'${resolved.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
+  // Resolve {{var.name}} inline tokens in static values
+  const withVars = resolveVarTokens(resolved.replace(/\\/g, '\\\\').replace(/'/g, "\\'"));
+  return `'${withVars}'`;
+}
+
+// ── Dialog look-ahead helper ──────────────────────────────────────────────────
+// Returns the dialog handler line if the given step is ACCEPT/DISMISS DIALOG,
+// otherwise returns null. Used by generation loops to prepend the handler before
+// the PRECEDING step that triggers the dialog — keeping user step order natural.
+function dialogHandlerCode(step: ScriptStep | undefined, indent: string): string | null {
+  const kw = (step?.keyword || '').toUpperCase().trim();
+  if (kw === 'ACCEPT DIALOG')  return `${indent}page.once('dialog', async dialog => { await dialog.accept(); });`;
+  if (kw === 'DISMISS DIALOG') return `${indent}page.once('dialog', async dialog => { await dialog.dismiss(); });`;
+  return null;
 }
 
 // ── Auto navigation — injected at the top of every test() block ──────────────
@@ -204,6 +229,24 @@ function generateStepCode(
     case 'UPLOAD FILE':
       return locExpr ? line(`await ${locExpr}.setInputFiles(${val});`) : line(`// UPLOAD: missing locator`);
 
+    case 'FILE CHOOSER': {
+      // Playwright intercepts the browser-level file chooser BEFORE the OS dialog opens.
+      // fileChooser.setFiles() sets the file programmatically — Windows dialog never appears.
+      // val = relative server path stored at upload time (e.g. 'test-files/proj-123/file.pdf')
+      // require('path').resolve() converts to absolute path on whatever machine runs Playwright.
+      if (!locExpr) return line(`// FILE CHOOSER: missing locator`);
+      const i = indent;
+      const pfx = comment ? comment + '\n' : '';
+      return pfx + [
+        `${i}// FILE CHOOSER — Playwright intercepts before OS dialog opens`,
+        `${i}const [__fc] = await Promise.all([`,
+        `${i}  page.waitForEvent('filechooser'),`,
+        `${i}  ${locExpr}.click(),`,
+        `${i}]);`,
+        `${i}await __fc.setFiles(require('path').resolve(${val}));`,
+      ].join('\n');
+    }
+
     case 'SCROLL TO':
       return locExpr ? line(`await ${locExpr}.scrollIntoViewIfNeeded();`) : line(`await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));`);
 
@@ -279,6 +322,16 @@ function generateStepCode(
     case 'WAIT RESPONSE':
       return line(`await page.waitForResponse(${val});`);
 
+    // ── Dialog handling ───────────────────────────────────────────────────────
+    // These steps are injected by the generation loop BEFORE the preceding action
+    // that triggers the dialog (look-ahead). They must NOT be emitted inline here
+    // because Playwright requires the handler to be registered before the trigger.
+    // The loop detects the NEXT step as dialog and prepends the handler automatically,
+    // so the user writes steps in natural order (Click → Accept Dialog).
+    case 'ACCEPT DIALOG':
+    case 'DISMISS DIALOG':
+      return ''; // emitted by look-ahead in the generation loop, not inline
+
     // ── Frame / Tab ───────────────────────────────────────────────────────────
     case 'SWITCH FRAME':
       return locExpr
@@ -305,8 +358,90 @@ function generateStepCode(
     case 'LOG':
       return line(`console.log(${val});`);
 
+    case 'SET VARIABLE': {
+      // Captures a value from the page into __sessionVars at runtime
+      const varName = (step.storeAs || '').trim();
+      if (!varName) return line(`// SET VARIABLE: no variable name specified`);
+      const src = step.storeSource || 'text';
+      const i   = indent;
+      const pfx = comment ? comment + '\n' : '';
+      if (src === 'js') {
+        // value field holds the JS expression
+        const jsExpr = (step.value || '').trim() || 'undefined';
+        return pfx + [
+          `${i}// SET VARIABLE (js) → ${varName}`,
+          `${i}__sessionVars['${varName}'] = String(await page.evaluate(() => { return (${jsExpr}); }) ?? '');`,
+        ].join('\n');
+      }
+      if (!locExpr) return line(`// SET VARIABLE: missing locator`);
+      if (src === 'value') {
+        return pfx + [
+          `${i}// SET VARIABLE (input value) → ${varName}`,
+          `${i}__sessionVars['${varName}'] = (await ${locExpr}.inputValue()).trim();`,
+        ].join('\n');
+      }
+      if (src === 'attr') {
+        const attr = (step.storeAttrName || '').trim() || 'value';
+        return pfx + [
+          `${i}// SET VARIABLE (attribute: ${attr}) → ${varName}`,
+          `${i}__sessionVars['${varName}'] = (await ${locExpr}.getAttribute('${attr}') ?? '').trim();`,
+        ].join('\n');
+      }
+      // default: text
+      return pfx + [
+        `${i}// SET VARIABLE (text) → ${varName}`,
+        `${i}__sessionVars['${varName}'] = (await ${locExpr}.innerText()).trim();`,
+      ].join('\n');
+    }
+
+    case 'DATE PICKER': {
+      if (!locExpr) return line(`// DATE PICKER: missing locator`);
+      const dateVal = (step.value || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+      const locLit  = (step.locator || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+      const ltLit   = step.locatorType || 'css';
+      const i = indent;
+      const pfx = comment ? comment + '\n' : '';
+      return pfx + [
+        `${i}// DATE PICKER — Bootstrap Datepicker (jQuery API)`,
+        `${i}await (async () => {`,
+        `${i}  // 3-letter abbreviations so both "Apr" and "April" match via .slice(0,3)`,
+        `${i}  const _mo = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];`,
+        `${i}  const _mi = (name: string) => _mo.indexOf(name.toLowerCase().slice(0, 3));`,
+        `${i}  const _parse = (s: string): Date => {`,
+        `${i}    const m1 = s.match(/^(\\d{1,2})\\s+([A-Za-z]+)\\s+(\\d{4})$/);`,
+        `${i}    if (m1) { const mo = _mi(m1[2]); if (mo < 0) throw new Error('DATE PICKER: unknown month: ' + m1[2]); return new Date(+m1[3], mo, +m1[1]); }`,
+        `${i}    const m2 = s.match(/^(\\d{4})-(\\d{2})-(\\d{2})$/);`,
+        `${i}    if (m2) return new Date(+m2[1], +m2[2] - 1, +m2[3]);`,
+        `${i}    const m3 = s.match(/^(\\d{1,2})\\/(\\d{1,2})\\/(\\d{4})$/);`,
+        `${i}    if (m3) return new Date(+m3[3], +m3[1] - 1, +m3[2]);`,
+        `${i}    const m4 = s.match(/^([A-Za-z]+)\\s+(\\d{1,2}),?\\s+(\\d{4})$/);`,
+        `${i}    if (m4) { const mo = _mi(m4[1]); if (mo < 0) throw new Error('DATE PICKER: unknown month: ' + m4[1]); return new Date(+m4[3], mo, +m4[2]); }`,
+        `${i}    throw new Error('DATE PICKER: unrecognised format: ' + s);`,
+        `${i}  };`,
+        `${i}  const _target = _parse('${dateVal}');`,
+        `${i}  // 1. Click the input to open the picker (shows calendar in debug screenshot)`,
+        `${i}  await ${locExpr}.click();`,
+        `${i}  await page.waitForSelector('.datepicker', { state: 'visible' });`,
+        `${i}  // 2. Set date via jQuery datepicker API — bypasses all UI navigation, works with multiple pickers on same page`,
+        `${i}  await page.evaluate((args: any) => {`,
+        `${i}    const [locType, locVal, y, m, d] = args;`,
+        `${i}    const el: any = locType === 'xpath'`,
+        `${i}      ? (document as any).evaluate(locVal, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue`,
+        `${i}      : document.querySelector(locVal);`,
+        `${i}    if (!el) throw new Error('DATE PICKER: element not found for locator: ' + locVal);`,
+        `${i}    const jq = (window as any).$;`,
+        `${i}    if (!jq || typeof jq(el).datepicker !== 'function')`,
+        `${i}      throw new Error('DATE PICKER: jQuery datepicker plugin not available on element');`,
+        `${i}    jq(el).datepicker('setDate', new Date(y, m, d));`,
+        `${i}  }, ['${ltLit}', '${locLit}', _target.getFullYear(), _target.getMonth(), _target.getDate()] as any);`,
+        `${i}  // 3. Press Tab to close the picker and commit the value`,
+        `${i}  await page.keyboard.press('Tab');`,
+        `${i}})();`,
+      ].join('\n');
+    }
+
     case 'EVALUATE':
-      return line(`await page.evaluate(${val || `() => {}`});`);
+      return line(`await page.evaluate(${step.value || `() => {}`});`);
 
     // ── Call Common Function (inline expansion) ────────────────────────────────
     case 'CALL FUNCTION': {
@@ -345,6 +480,23 @@ function generateStepCode(
         ? `${comment}\n${indent}// ⚠ Unknown keyword: ${kw}`
         : `${indent}// ⚠ Unknown keyword: ${kw}`;
   }
+}
+
+// Emit a storeAs line after a step if the 📌 pin is set
+function storeAsLine(step: ScriptStep, locExpr: string | null, indent: string): string {
+  const varName = (step.storeAs || '').trim();
+  if (!varName || step.keyword?.toUpperCase() === 'SET VARIABLE') return '';
+  const kw = (step.keyword || '').toUpperCase();
+  // For FILL / TYPE steps the value is what the user typed — grab from static value
+  if (kw === 'FILL' || kw === 'TYPE') {
+    const raw = (step.value || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    return `${indent}__sessionVars['${varName}'] = '${raw}'; // 📌 pinned`;
+  }
+  // For other steps with a locator, read the element's inner text
+  if (locExpr) {
+    return `${indent}__sessionVars['${varName}'] = (await ${locExpr}.innerText().catch(() => '')).trim(); // 📌 pinned`;
+  }
+  return '';
 }
 
 // ── Screenshot after step (if step.screenshot = true) ─────────────────────────
@@ -434,6 +586,7 @@ export function generateCodegenSpec(input: CodegenInput): string {
       const testIdx  = scripts.indexOf(script) * numRuns + runIdx;
       const runLabel = numRuns > 1 ? ` [row ${runIdx + 1}]` : '';
       lines.push(`  test('${testName}${runLabel.replace(/'/g, "\\'")}', async ({ page }) => {`);
+      lines.push(`    const __sessionVars: Record<string, string> = {}; // Variable Store`);
 
       // Auto-inject navigation — URL from suite environment, never from steps
       lines.push(generateNavBlock(environment, project, '    '));
@@ -442,24 +595,34 @@ export function generateCodegenSpec(input: CodegenInput): string {
       // Keywords that don't need visual diff wrapping
       const NO_DIFF_KW = new Set(['SCREENSHOT', 'WAIT', 'GOTO', 'VERIFY', 'ASSERT TEXT', 'ASSERT VISIBLE', 'ASSERT HIDDEN', 'ASSERT VALUE']);
 
-      for (const step of sortedSteps) {
+      for (let si = 0; si < sortedSteps.length; si++) {
+        const step     = sortedSteps[si];
         const kw       = (step.keyword || '').toUpperCase().trim();
         const needsDiff = !NO_DIFF_KW.has(kw);
 
+        // Skip dialog steps — they are injected before the PRECEDING step via look-ahead
+        if (kw === 'ACCEPT DIALOG' || kw === 'DISMISS DIALOG') continue;
+
+        // Look-ahead: if the NEXT step is a dialog handler, inject it before this step
+        const dlgCode = dialogHandlerCode(sortedSteps[si + 1], '    ');
+        if (dlgCode) lines.push(dlgCode);
+
         if (needsDiff) {
-          // Before screenshot — captures page state just before this step
           lines.push(`    await page.screenshot({ path: \`\${__SS_DIR}/${testIdx}-before-${step.order}.png\`, fullPage: false }).catch(() => {});`);
           lines.push(`    try {`);
           const innerCode = generateStepCode(step, project, environment, allFunctions, dataMap, '      ', runIdx);
           if (innerCode) lines.push(innerCode);
+          const pinLine = storeAsLine(step, step.locator ? buildLocatorExpr(step.locatorType || 'css', step.locator) : null, '      ');
+          if (pinLine) lines.push(pinLine);
           lines.push(`    } catch (__e_${step.order}) {`);
-          // After screenshot — captures page state at the moment of failure
           lines.push(`      await page.screenshot({ path: \`\${__SS_DIR}/${testIdx}-after-${step.order}.png\`, fullPage: false }).catch(() => {});`);
           lines.push(`      throw __e_${step.order};`);
           lines.push(`    }`);
         } else {
           const code = generateStepCode(step, project, environment, allFunctions, dataMap, '    ', runIdx);
           if (code) lines.push(code);
+          const pinLine = storeAsLine(step, step.locator ? buildLocatorExpr(step.locatorType || 'css', step.locator) : null, '    ');
+          if (pinLine) lines.push(pinLine);
         }
 
         const ss = maybeScreenshot(step, '    ', runIdx);
@@ -523,21 +686,29 @@ export function generateDebugSpec(input: DebugCodegenInput): string {
   lines.push(`const __SS_DIR     = '${ssDir}';`);
   lines.push(`const __PENDING    = \`\${__SS_DIR}/pending.json\`;`);
   lines.push(`const __GATE       = \`\${__SS_DIR}/gate.json\`;`);
+  lines.push(`const __ERROR      = \`\${__SS_DIR}/error.json\`;`);
   lines.push(`_fs.mkdirSync(__SS_DIR, { recursive: true });`);
   lines.push(``);
 
   // ── __debugPause helper — file-based IPC ───────────────────────────────────
   // Writes step info to pending.json, then polls for gate.json written by server.
   // Zero network dependency — works regardless of proxy/firewall.
+  lines.push(`interface __GateResult {`);
+  lines.push(`  action: 'continue' | 'skip' | 'stop' | 'retry';`);
+  lines.push(`  locator?: string;      // set when action='retry'`);
+  lines.push(`  locatorType?: string;  // set when action='retry'`);
+  lines.push(`  value?: string;        // set when action='retry'`);
+  lines.push(`}`);
+  lines.push(``);
   lines.push(`async function __debugPause(`);
   lines.push(`  stepIdx: number, keyword: string, locator: string, value: string, ssPath: string`);
-  lines.push(`): Promise<'continue' | 'skip' | 'stop'> {`);
+  lines.push(`): Promise<__GateResult> {`);
   lines.push(`  // Signal the server: write step info`);
   lines.push(`  try { _fs.unlinkSync(__GATE); } catch {}`);
   lines.push(`  // Ensure screenshot file exists on disk before signaling server`);
   lines.push(`  await new Promise<void>(r => { const iv = setInterval(() => { if (_fs.existsSync(ssPath)) { clearInterval(iv); r(); } }, 50); setTimeout(() => { clearInterval(iv); r(); }, 5000); });`);
   lines.push(`  _fs.writeFileSync(__PENDING, JSON.stringify({ stepIdx, keyword, locator, value, screenshotPath: ssPath }));`);
-  lines.push(`  // Wait for server to write gate.json (UI clicked Step/Skip/Stop)`);
+  lines.push(`  // Wait for server to write gate.json (UI clicked Step/Skip/Stop/Retry)`);
   lines.push(`  return new Promise((resolve) => {`);
   lines.push(`    const iv = setInterval(() => {`);
   lines.push(`      try {`);
@@ -546,12 +717,12 @@ export function generateDebugSpec(input: DebugCodegenInput): string {
   lines.push(`          clearInterval(iv);`);
   lines.push(`          try { _fs.unlinkSync(__GATE); } catch {}`);
   lines.push(`          try { _fs.unlinkSync(__PENDING); } catch {}`);
-  lines.push(`          resolve(d.action || 'continue');`);
+  lines.push(`          resolve({ action: d.action || 'continue', locator: d.locator, locatorType: d.locatorType, value: d.value });`);
   lines.push(`        }`);
   lines.push(`      } catch {}`);
   lines.push(`    }, 300);`);
   lines.push(`    // Safety timeout: 30 minutes`);
-  lines.push(`    setTimeout(() => { clearInterval(iv); resolve('stop'); }, 30 * 60 * 1000);`);
+  lines.push(`    setTimeout(() => { clearInterval(iv); resolve({ action: 'stop' }); }, 30 * 60 * 1000);`);
   lines.push(`  });`);
   lines.push(`}`);
   lines.push(``);
@@ -688,6 +859,7 @@ export function generateDebugSpec(input: DebugCodegenInput): string {
   lines.push(`test.describe('Debug: ${testName}', () => {`);
   lines.push(`  test.setTimeout(30 * 60 * 1000); // 30-min timeout for interactive debug`);
   lines.push(`  test('${testName}', async ({ page }) => {`);
+  lines.push(`    const __sessionVars: Record<string, string> = {}; // Variable Store`);
   lines.push(``);
 
   // Auto-navigate first
@@ -708,13 +880,30 @@ export function generateDebugSpec(input: DebugCodegenInput): string {
   lines.push(`    await new Promise<void>(r => { const iv = setInterval(() => { try { if (_fs.existsSync(__GATE)) { clearInterval(iv); try { _fs.unlinkSync(__GATE); } catch {} try { _fs.unlinkSync(__PENDING); } catch {} r(); } } catch {} }, 300); setTimeout(() => { clearInterval(iv); r(); }, 30*60*1000); });`);
   lines.push('');
 
-  for (const step of sortedSteps) {
+  for (let si = 0; si < sortedSteps.length; si++) {
+    const step = sortedSteps[si];
     const kw      = (step.keyword || '').toUpperCase().trim();
     const loc     = step.locator || '';
     const lt      = step.locatorType || 'css';
     const dispVal = debugValueDisplay(step).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
     const dispLoc = loc.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
     const kwSlug  = kw.replace(/\s+/g, '_');
+
+    // Dialog steps are injected before the PRECEDING step via look-ahead.
+    // In the debugger we still show them as an instant "done" step (no pause)
+    // so the user can see in the step list that the dialog was handled.
+    if (kw === 'ACCEPT DIALOG' || kw === 'DISMISS DIALOG') {
+      const dlgSsVar  = `__ss_${step.order}`;
+      const dlgAction = kw === 'ACCEPT DIALOG' ? 'accepted' : 'dismissed';
+      lines.push(`    // Step ${step.order}: ${kw} — auto-handled (dialog ${dlgAction} by preceding step)`);
+      lines.push(`    {`);
+      lines.push(`      const ${dlgSsVar} = \`\${__SS_DIR}/${step.order}-${kwSlug}.jpg\`;`);
+      lines.push(`      await page.screenshot({ path: ${dlgSsVar}, fullPage: false, type: 'jpeg', quality: 80 }).catch(() => {});`);
+      lines.push(`      await __debugPause(${step.order}, '${kw}', '', 'Dialog ${dlgAction} ✓', ${dlgSsVar});`);
+      lines.push(`    }`);
+      lines.push(``);
+      continue;
+    }
 
     // ── CALL FUNCTION: expand sub-steps into individual debug blocks ─────────
     // Each sub-step gets its own highlight + screenshot + pause + execute cycle
@@ -733,8 +922,8 @@ export function generateDebugSpec(input: DebugCodegenInput): string {
       lines.push(`      const ${parentSsVar} = \`\${__SS_DIR}/${step.order}-CALL_FUNCTION.jpg\`;`);
       lines.push(`      await page.screenshot({ path: ${parentSsVar}, fullPage: false, type: 'jpeg', quality: 80 }).catch(() => {});`);
       lines.push(`      const __act_${step.order}_fn = await __debugPause(${step.order}, 'CALL FUNCTION', '', '${fnName.replace(/'/g, "\\'")}', ${parentSsVar});`);
-      lines.push(`      if (__act_${step.order}_fn === 'stop') { await page.close().catch(() => {}); return; }`);
-      lines.push(`      if (__act_${step.order}_fn !== 'skip') {`);
+      lines.push(`      if (__act_${step.order}_fn.action === 'stop') { await page.close().catch(() => {}); return; }`);
+      lines.push(`      if (__act_${step.order}_fn.action !== 'skip') {`);
 
       if (fn && fnSortedSteps.length > 0) {
         // ── Sub-step blocks ────────────────────────────────────────────────────
@@ -777,14 +966,28 @@ export function generateDebugSpec(input: DebugCodegenInput): string {
           lines.push(`          const ${subSsVar} = \`\${__SS_DIR}/${step.order}.${subNum}-${subKwSlug}.jpg\`;`);
           lines.push(`          await page.screenshot({ path: ${subSsVar}, fullPage: false, type: 'jpeg', quality: 80 }).catch(() => {});`);
           lines.push(`          const ${subActVar} = await __debugPause(${subStepIdx}, '${subKw}', '${subDispLoc}', '${subDispVal}', ${subSsVar});`);
-          lines.push(`          if (${subActVar} === 'stop') { await page.close().catch(() => {}); return; }`);
-          lines.push(`          if (${subActVar} !== 'skip') {`);
+          lines.push(`          if (${subActVar}.action === 'stop') { await page.close().catch(() => {}); return; }`);
+          lines.push(`          if (${subActVar}.action !== 'skip') {`);
+          lines.push(`            while (true) {`);
+          lines.push(`              try {`);
 
           // Note: nested CALL FUNCTION inside a function runs without sub-pause (one level deep only)
-          const subCode = generateStepCode(pseudoStep, project, environment, allFunctions, dataMap, '            ', 0);
+          const subCode = generateStepCode(pseudoStep, project, environment, allFunctions, dataMap, '                ', 0);
           if (subCode) lines.push(subCode);
-          lines.push(`            await __waitForPageSettle(page);`);
+          lines.push(`                await __waitForPageSettle(page);`);
+          lines.push(`                break; // success — exit sub-step retry loop`);
 
+          lines.push(`              } catch (__err_${step.order}_${subNum}: any) {`);
+          lines.push(`                const __errMsg_${step.order}_${subNum} = __err_${step.order}_${subNum} instanceof Error ? __err_${step.order}_${subNum}.message : String(__err_${step.order}_${subNum});`);
+          lines.push(`                try { _fs.writeFileSync(__ERROR, JSON.stringify({ stepIdx: ${subStepIdx}, keyword: '${subKw}', locator: '${subDispLoc}', errorMessage: __errMsg_${step.order}_${subNum}, errorType: __err_${step.order}_${subNum}?.constructor?.name || 'Error' })); } catch {}`);
+          lines.push(`                const __reSub_${step.order}_${subNum} = \`\${__SS_DIR}/${step.order}.${subNum}-${subKwSlug}-err.jpg\`;`);
+          lines.push(`                await page.screenshot({ path: __reSub_${step.order}_${subNum}, fullPage: false, type: 'jpeg', quality: 80 }).catch(() => {});`);
+          lines.push(`                const __reSubGate_${step.order}_${subNum} = await __debugPause(${subStepIdx}, '${subKw}', '${subDispLoc}', '${subDispVal}', __reSub_${step.order}_${subNum});`);
+          lines.push(`                if (__reSubGate_${step.order}_${subNum}.action === 'stop') { await page.close().catch(() => {}); return; }`);
+          lines.push(`                if (__reSubGate_${step.order}_${subNum}.action === 'skip') break;`);
+          lines.push(`                // Retry: loop back with same code (user can Stop or Skip to exit)`);
+          lines.push(`              }`);
+          lines.push(`            } // end sub-step retry loop`);
           lines.push(`          }`);
           lines.push(`        }`);
           lines.push(``);
@@ -816,16 +1019,56 @@ export function generateDebugSpec(input: DebugCodegenInput): string {
     lines.push(`      await page.screenshot({ path: ${ssVar}, fullPage: false, type: 'jpeg', quality: 80 }).catch(() => {});`);
 
     // Pause — long-poll until UI acts
-    lines.push(`      const __act_${step.order} = await __debugPause(${step.order}, '${kw}', '${dispLoc}', '${dispVal}', ${ssVar});`);
-    lines.push(`      if (__act_${step.order} === 'stop') { await page.close().catch(() => {}); return; }`);
-    lines.push(`      if (__act_${step.order} !== 'skip') {`);
+    lines.push(`      const __gate_${step.order} = await __debugPause(${step.order}, '${kw}', '${dispLoc}', '${dispVal}', ${ssVar});`);
+    lines.push(`      if (__gate_${step.order}.action === 'stop') { await page.close().catch(() => {}); return; }`);
+    lines.push(`      if (__gate_${step.order}.action !== 'skip') {`);
+    lines.push(`        // Retry loop: on action='retry' re-execute with patched locator/value (no limit — user must Stop or Skip)`);
+    lines.push(`        let __retryCount_${step.order} = 0;`);
+    lines.push(`        let __patchedLoc_${step.order}  = __gate_${step.order}.locator ?? '${loc.replace(/'/g, "\\'")}';`);
+    lines.push(`        let __patchedLt_${step.order}   = __gate_${step.order}.locatorType ?? '${lt}';`);
+    lines.push(`        let __patchedVal_${step.order}  = __gate_${step.order}.value ?? '${dispVal.replace(/'/g, "\\'")}';`);
+    lines.push(`        let __currentAction_${step.order} = __gate_${step.order}.action;`);
+    lines.push(`        while (true) {`);
+    lines.push(`          try {`);
 
-    // Actual step execution
-    const code = generateStepCode(step, project, environment, allFunctions, dataMap, '        ', 0);
-    if (code) lines.push(code);
+    // Look-ahead: if NEXT step is a dialog handler, inject it before execution
+    const dbgDlgCode = dialogHandlerCode(sortedSteps[si + 1], '            ');
+    if (dbgDlgCode) lines.push(dbgDlgCode);
+
+    // Actual step execution — use patched loc/lt/val when available
+    const code = generateStepCode(step, project, environment, allFunctions, dataMap, '            ', 0);
+    if (code) {
+      // Replace static locator references with runtime patched variables in generated code
+      const patchedCode = code
+        .replace(/\bpage\.locator\(["'][^"']*["']\)/g, `page.locator(__patchedLoc_${step.order})`)
+        .replace(/\bpage\.getByLabel\(["'][^"']*["']\)/g, `page.getByLabel(__patchedLoc_${step.order})`)
+        .replace(/\bpage\.getByPlaceholder\(["'][^"']*["']\)/g, `page.getByPlaceholder(__patchedLoc_${step.order})`)
+        .replace(/\bpage\.getByTestId\(["'][^"']*["']\)/g, `page.getByTestId(__patchedLoc_${step.order})`)
+        .replace(/\bpage\.getByText\(["'][^"']*["']\)/g, `page.getByText(__patchedLoc_${step.order})`);
+      lines.push(patchedCode);
+    }
+    // 📌 Pin — store value into __sessionVars if storeAs is set
+    const dbgPinLine = storeAsLine(step, step.locator ? buildLocatorExpr(step.locatorType || 'css', step.locator) : null, '            ');
+    if (dbgPinLine) lines.push(dbgPinLine);
     // Wait for DOM/network to settle
-    lines.push(`        await __waitForPageSettle(page);`);
+    lines.push(`            await __waitForPageSettle(page);`);
+    lines.push(`            break; // success — exit retry loop`);
 
+    lines.push(`          } catch (__err_${step.order}: any) {`);
+    lines.push(`            const __errMsg_${step.order} = __err_${step.order} instanceof Error ? __err_${step.order}.message : String(__err_${step.order});`);
+    lines.push(`            try { _fs.writeFileSync(__ERROR, JSON.stringify({ stepIdx: ${step.order}, keyword: '${kw}', locator: __patchedLoc_${step.order}, errorMessage: __errMsg_${step.order}, errorType: __err_${step.order}?.constructor?.name || 'Error' })); } catch {}`);
+    lines.push(`            // Browser stays open — user must Stop or Skip to exit. Loop back to __debugPause.`);
+    lines.push(`            const __reSsPath_${step.order} = \`\${__SS_DIR}/${step.order}-${kwSlug}-retry\${++__retryCount_${step.order}}.jpg\`;`);
+    lines.push(`            await page.screenshot({ path: __reSsPath_${step.order}, fullPage: false, type: 'jpeg', quality: 80 }).catch(() => {});`);
+    lines.push(`            const __reGate_${step.order} = await __debugPause(${step.order}, '${kw}', __patchedLoc_${step.order}, __patchedVal_${step.order}, __reSsPath_${step.order});`);
+    lines.push(`            if (__reGate_${step.order}.action === 'stop') { await page.close().catch(() => {}); return; }`);
+    lines.push(`            if (__reGate_${step.order}.action === 'skip') break;`);
+    lines.push(`            if (__reGate_${step.order}.locator)     __patchedLoc_${step.order} = __reGate_${step.order}.locator!;`);
+    lines.push(`            if (__reGate_${step.order}.locatorType) __patchedLt_${step.order}  = __reGate_${step.order}.locatorType!;`);
+    lines.push(`            if (__reGate_${step.order}.value !== undefined) __patchedVal_${step.order} = __reGate_${step.order}.value!;`);
+    lines.push(`            __currentAction_${step.order} = __reGate_${step.order}.action;`);
+    lines.push(`          }`);
+    lines.push(`        } // end retry loop`);
     lines.push(`      }`);
     lines.push(`    }`);
     lines.push(``);

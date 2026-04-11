@@ -55,14 +55,38 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return true;
     }
 
+    case 'POST_STEP': {
+      // Content script cannot POST to HTTP platform from an HTTPS AUT page
+      // (Mixed Content block). We proxy the request through the background
+      // service worker which is not subject to mixed content restrictions.
+      const { platformOrigin, token, payload } = msg;
+      const body = Object.assign({ token }, payload);
+      fetch(`${platformOrigin}/api/recorder/step`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify(body),
+      }).then(() => {
+        // Update step count + badge
+        chrome.storage.local.get(['recorderState'], r => {
+          const state = r.recorderState;
+          if (state) {
+            state.stepCount = (state.stepCount || 0) + 1;
+            chrome.storage.local.set({ recorderState: state });
+            chrome.action.setBadgeText({ text: String(state.stepCount) });
+            chrome.action.setBadgeBackgroundColor({ color: '#7c3aed' });
+          }
+        });
+      }).catch(err => console.warn('[QA Recorder] POST_STEP failed:', err.message));
+      break;
+    }
+
     case 'STEP_CAPTURED': {
-      // Content script notifies background that a step was posted
+      // Legacy — kept for compatibility; actual counting now in POST_STEP
       chrome.storage.local.get(['recorderState'], r => {
         const state = r.recorderState;
         if (state) {
           state.stepCount = (state.stepCount || 0) + 1;
           chrome.storage.local.set({ recorderState: state });
-          // Update extension badge with step count
           chrome.action.setBadgeText({ text: String(state.stepCount) });
           chrome.action.setBadgeBackgroundColor({ color: '#7c3aed' });
         }
@@ -76,6 +100,28 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       });
       return true;
   }
+});
+
+// ── Re-inject content script on every page navigation while recording ────────
+// When the AUT navigates (login redirect, SPA route, etc.) the content script
+// context is destroyed. Re-inject automatically so recording continues.
+chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+  if (changeInfo.status !== 'complete') return;
+  chrome.storage.local.get(['recorderState'], (r) => {
+    const state = r.recorderState;
+    if (!state?.active || state.tabId !== tabId) return;
+    chrome.scripting.executeScript({
+      target: { tabId, allFrames: true },
+      files:  ['content_script.js'],
+    }).then(() => {
+      // Notify all frames
+      chrome.webNavigation?.getAllFrames({ tabId }, frames => {
+        (frames || [{ frameId: 0 }]).forEach(frame => {
+          chrome.tabs.sendMessage(tabId, { type: 'RECORDER_INIT', token: state.token, platformOrigin: state.platformOrigin }, { frameId: frame.frameId }).catch(() => {});
+        });
+      }) ?? chrome.tabs.sendMessage(tabId, { type: 'RECORDER_INIT', token: state.token, platformOrigin: state.platformOrigin }).catch(() => {});
+    }).catch(() => {});
+  });
 });
 
 // Clear badge when extension is installed/updated

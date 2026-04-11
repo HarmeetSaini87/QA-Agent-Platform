@@ -48,3 +48,6 @@ Thumbs.db
 # Logs
 logs/
 *.log
+
+# User-uploaded test files (FILE CHOOSER uploads)
+test-files/

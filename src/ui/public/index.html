@@ -134,9 +134,9 @@
           <div class="card-title">
             Test Scripts
             <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">
-              <input id="script-filter-title" class="filter-input" style="width:180px" placeholder="Title…" oninput="scriptRender()" />
-              <input id="script-filter-tag" class="filter-input" style="width:140px" placeholder="Tag…" oninput="scriptRender()" />
-              <input id="script-filter-comp" class="filter-input" style="width:140px" placeholder="Component…" oninput="scriptRender()" />
+              <input id="script-filter-title" class="filter-input" style="width:180px" placeholder="Title…" oninput="_scriptPage=0;scriptRender()" />
+              <input id="script-filter-tag" class="filter-input" style="width:140px" placeholder="Tag…" oninput="_scriptPage=0;scriptRender()" />
+              <input id="script-filter-comp" class="filter-input" style="width:140px" placeholder="Component…" oninput="_scriptPage=0;scriptRender()" />
               <button id="btn-new-script" class="btn btn-primary btn-sm" onclick="scriptOpenEditor()" disabled>+ New Script</button>
             </div>
           </div>
@@ -212,16 +212,37 @@
             <button id="btn-add-locator" class="btn btn-primary btn-sm" style="margin-left:auto" onclick="locatorOpenModal()" disabled>+ Add Locator</button>
           </div>
           <!-- Filters -->
-          <div class="row-2" style="margin-bottom:12px;gap:8px">
-            <input id="loc-filter-name" class="filter-input" placeholder="Filter by name..." oninput="locatorRender()" />
-            <input id="loc-filter-module" class="filter-input" placeholder="Filter by page/module..." oninput="locatorRender()" />
+          <div class="row-2" style="margin-bottom:12px;gap:8px;flex-wrap:wrap">
+            <input id="loc-filter-name" class="filter-input" placeholder="Filter by name..." oninput="_locPage=0;locatorRender()" />
+            <input id="loc-filter-module" class="filter-input" placeholder="Filter by page/module..." oninput="_locPage=0;locatorRender()" />
+            <select id="loc-filter-type" class="filter-input" style="max-width:140px" onchange="_locPage=0;locatorRender()">
+              <option value="">All types</option>
+              <option value="css">CSS</option>
+              <option value="xpath">XPath</option>
+              <option value="testid">testid</option>
+              <option value="id">ID</option>
+              <option value="name">name</option>
+              <option value="text">text</option>
+            </select>
           </div>
-          <div id="loc-table-wrap">
-            <table class="data-table" id="loc-table">
-              <thead><tr><th>Name</th><th>Selector</th><th>Type</th><th>Page / Module</th><th>Description</th><th style="width:80px"></th></tr></thead>
-              <tbody id="loc-tbody"></tbody>
-            </table>
+          <div id="loc-table-wrap" class="lt-wrap">
+            <div class="lt-body-wrap loc-tbody-wrap">
+              <table class="data-table lt-fixed" id="loc-table">
+                <thead>
+                  <tr>
+                    <th style="min-width:160px">Name</th>
+                    <th style="min-width:240px">Selector</th>
+                    <th style="min-width:80px">Type</th>
+                    <th style="min-width:150px">Page / Module</th>
+                    <th style="min-width:180px">Description</th>
+                    <th style="min-width:100px"></th>
+                  </tr>
+                </thead>
+                <tbody id="loc-tbody"></tbody>
+              </table>
+            </div>
           </div>
+          <div id="loc-pagination" class="loc-pagination"></div>
         </div>
       </div><!-- /panel-locators -->
 
@@ -231,26 +252,29 @@
           <div class="card-title">
             Common Functions
             <div style="display:flex;gap:8px;align-items:center;margin-left:auto">
-              <input id="fn-search" class="filter-input" style="width:220px" placeholder="Search functions…" oninput="fnRender()" />
+              <input id="fn-search" class="filter-input" style="width:220px" placeholder="Search functions…" oninput="_fnPage=0;fnRender()" />
               <button id="btn-new-function" class="btn btn-primary btn-sm" onclick="fnOpenModal()" disabled>+ New Function</button>
             </div>
           </div>
-          <div id="fn-table-wrap">
-            <table class="data-table" id="fn-table">
-              <thead>
-                <tr>
-                  <th>Function Name</th>
-                  <th>Identifier</th>
-                  <th>Description</th>
-                  <th>Steps</th>
-                  <th>Created By</th>
-                  <th>Created Date</th>
-                  <th style="width:100px"></th>
-                </tr>
-              </thead>
-              <tbody id="fn-tbody"></tbody>
-            </table>
+          <div id="fn-table-wrap" class="lt-wrap">
+            <div class="lt-body-wrap">
+              <table class="data-table lt-fixed" id="fn-table">
+                <thead>
+                  <tr>
+                    <th style="min-width:180px">Function Name</th>
+                    <th style="min-width:130px">Identifier</th>
+                    <th style="min-width:220px">Description</th>
+                    <th style="min-width:60px;text-align:center">Steps</th>
+                    <th style="min-width:110px">Created By</th>
+                    <th style="min-width:110px">Created Date</th>
+                    <th style="min-width:100px"></th>
+                  </tr>
+                </thead>
+                <tbody id="fn-tbody"></tbody>
+              </table>
+            </div>
           </div>
+          <div id="fn-pagination" class="lt-pagination"></div>
         </div>
       </div><!-- /panel-functions -->
 
@@ -260,28 +284,31 @@
           <div class="card-title">
             Common Data
             <div style="display:flex;gap:8px;align-items:center;margin-left:auto">
-              <input id="cd-env-filter" class="fm-input" style="width:160px;font-size:13px" placeholder="Filter by environment…" oninput="cdLoad()" />
+              <input id="cd-env-filter" class="fm-input" style="width:160px;font-size:13px" placeholder="Filter by environment…" oninput="_cdPage=0;cdLoad()" />
               <button id="btn-add-cd" class="btn btn-primary btn-sm" onclick="cdOpenModal()" disabled>+ Add Common Data</button>
             </div>
           </div>
           <div style="margin-bottom:10px;font-size:12.5px;color:var(--neutral-500)">
             Reference values in test scripts using <code style="background:var(--neutral-100);padding:1px 5px;border-radius:3px">${variableName}</code>
           </div>
-          <div id="cd-table-wrap">
-            <table class="data-table" id="cd-table">
-              <thead>
-                <tr>
-                  <th>Data Name</th>
-                  <th>Value</th>
-                  <th>Environment</th>
-                  <th>Created By</th>
-                  <th>Created Date</th>
-                  <th style="width:100px"></th>
-                </tr>
-              </thead>
-              <tbody id="cd-tbody"></tbody>
-            </table>
+          <div id="cd-table-wrap" class="lt-wrap">
+            <div class="lt-body-wrap">
+              <table class="data-table lt-fixed" id="cd-table">
+                <thead>
+                  <tr>
+                    <th style="min-width:180px">Data Name</th>
+                    <th style="min-width:200px">Value</th>
+                    <th style="min-width:120px">Environment</th>
+                    <th style="min-width:110px">Created By</th>
+                    <th style="min-width:110px">Created Date</th>
+                    <th style="min-width:100px"></th>
+                  </tr>
+                </thead>
+                <tbody id="cd-tbody"></tbody>
+              </table>
+            </div>
           </div>
+          <div id="cd-pagination" class="lt-pagination"></div>
         </div>
       </div><!-- /panel-commondata -->
 
@@ -307,26 +334,28 @@
             <button class="btn btn-secondary btn-sm" onclick="histLoad()">&#x21BB; Refresh</button>
           </div>
           <!-- Table -->
-          <div style="overflow-x:auto">
-            <table class="data-table" id="hist-table">
-              <thead>
-                <tr>
-                  <th>Execution ID</th>
-                  <th class="hist-sortable" data-col="suiteName"    onclick="histSort('suiteName')">Test Suite <span class="sort-icon" id="si-suiteName"></span></th>
-                  <th class="hist-sortable" data-col="status"       onclick="histSort('status')">Status <span class="sort-icon" id="si-status"></span></th>
-                  <th class="hist-sortable" data-col="total"        onclick="histSort('total')">Total <span class="sort-icon" id="si-total"></span></th>
-                  <th class="hist-sortable" data-col="passed"       onclick="histSort('passed')">Passed <span class="sort-icon" id="si-passed"></span></th>
-                  <th class="hist-sortable" data-col="failed"       onclick="histSort('failed')">Failed <span class="sort-icon" id="si-failed"></span></th>
-                  <th class="hist-sortable" data-col="startedAt"    onclick="histSort('startedAt')">Start Time <span class="sort-icon" id="si-startedAt">&#9660;</span></th>
-                  <th>End Time</th>
-                  <th>Duration</th>
-                  <th class="hist-sortable" data-col="environmentName" onclick="histSort('environmentName')">Environment <span class="sort-icon" id="si-environmentName"></span></th>
-                  <th class="hist-sortable" data-col="executedBy"   onclick="histSort('executedBy')">Executed By <span class="sort-icon" id="si-executedBy"></span></th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody id="hist-tbody"></tbody>
-            </table>
+          <div class="lt-wrap">
+            <div class="lt-body-wrap">
+              <table class="data-table lt-fixed" id="hist-table">
+                <thead>
+                  <tr>
+                    <th style="min-width:90px">Exec ID</th>
+                    <th style="min-width:160px" class="lt-sortable hist-sortable" data-col="suiteName"       onclick="histSort('suiteName')">Test Suite <span class="sort-icon" id="si-suiteName"></span></th>
+                    <th style="min-width:90px"  class="lt-sortable hist-sortable" data-col="status"         onclick="histSort('status')">Status <span class="sort-icon" id="si-status"></span></th>
+                    <th style="min-width:60px;text-align:center" class="lt-sortable hist-sortable" data-col="total"  onclick="histSort('total')">Total <span class="sort-icon" id="si-total"></span></th>
+                    <th style="min-width:65px;text-align:center" class="lt-sortable hist-sortable" data-col="passed" onclick="histSort('passed')">Passed <span class="sort-icon" id="si-passed"></span></th>
+                    <th style="min-width:60px;text-align:center" class="lt-sortable hist-sortable" data-col="failed" onclick="histSort('failed')">Failed <span class="sort-icon" id="si-failed"></span></th>
+                    <th style="min-width:140px" class="lt-sortable hist-sortable" data-col="startedAt"     onclick="histSort('startedAt')">Start Time <span class="sort-icon" id="si-startedAt">&#9660;</span></th>
+                    <th style="min-width:140px">End Time</th>
+                    <th style="min-width:80px">Duration</th>
+                    <th style="min-width:110px" class="lt-sortable hist-sortable" data-col="environmentName" onclick="histSort('environmentName')">Environment <span class="sort-icon" id="si-environmentName"></span></th>
+                    <th style="min-width:110px" class="lt-sortable hist-sortable" data-col="executedBy"     onclick="histSort('executedBy')">Executed By <span class="sort-icon" id="si-executedBy"></span></th>
+                    <th style="min-width:110px">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="hist-tbody"></tbody>
+              </table>
+            </div>
           </div>
           <div id="hist-empty" style="display:none;text-align:center;padding:40px;color:#858585">No execution records found.</div>
         </div>
@@ -369,23 +398,25 @@
           <div id="flaky-summary" style="display:none;gap:12px;flex-wrap:wrap;margin-bottom:16px"></div>
 
           <!-- Table -->
-          <div style="overflow-x:auto">
-            <table class="data-table" id="flaky-table" style="display:none">
-              <thead>
-                <tr>
-                  <th>Test Name</th>
-                  <th>Suite</th>
-                  <th style="text-align:center">Passes ✓</th>
-                  <th style="text-align:center">Failures ✗</th>
-                  <th style="text-align:center">Total Runs</th>
-                  <th style="text-align:center">Fail Rate</th>
-                  <th style="text-align:center">Risk</th>
-                  <th>Avg Duration</th>
-                  <th>Last Seen</th>
-                </tr>
-              </thead>
-              <tbody id="flaky-tbody"></tbody>
-            </table>
+          <div class="lt-wrap" id="flaky-table-wrap" style="display:none">
+            <div class="lt-body-wrap">
+              <table class="data-table lt-fixed" id="flaky-table">
+                <thead>
+                  <tr>
+                    <th style="min-width:220px">Test Name</th>
+                    <th style="min-width:150px">Suite</th>
+                    <th style="min-width:80px;text-align:center">Passes ✓</th>
+                    <th style="min-width:80px;text-align:center">Failures ✗</th>
+                    <th style="min-width:90px;text-align:center">Total Runs</th>
+                    <th style="min-width:120px;text-align:center">Fail Rate</th>
+                    <th style="min-width:80px;text-align:center">Risk</th>
+                    <th style="min-width:110px">Avg Duration</th>
+                    <th style="min-width:130px">Last Seen</th>
+                  </tr>
+                </thead>
+                <tbody id="flaky-tbody"></tbody>
+              </table>
+            </div>
           </div>
           <div id="flaky-empty" style="display:none;text-align:center;padding:48px;color:#858585">
             <div style="font-size:32px;margin-bottom:8px">✅</div>
@@ -423,10 +454,21 @@
               User Management
               <button class="btn btn-primary btn-sm" style="margin-left:auto" onclick="userOpenModal()">+ Add User</button>
             </div>
-            <table class="data-table">
-              <thead><tr><th>Username</th><th>Email</th><th>Role</th><th>Status</th><th>Last Login</th><th style="width:100px"></th></tr></thead>
-              <tbody id="user-tbody"></tbody>
-            </table>
+            <div class="lt-wrap">
+              <div class="lt-body-wrap">
+                <table class="data-table lt-fixed">
+                  <thead><tr>
+                    <th style="min-width:140px">Username</th>
+                    <th style="min-width:200px">Email</th>
+                    <th style="min-width:80px">Role</th>
+                    <th style="min-width:80px">Status</th>
+                    <th style="min-width:150px">Last Login</th>
+                    <th style="min-width:120px"></th>
+                  </tr></thead>
+                  <tbody id="user-tbody"></tbody>
+                </table>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -437,11 +479,21 @@
               Audit Log
               <button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="auditLoad()">↻ Refresh</button>
             </div>
-            <table class="data-table">
-              <thead><tr><th>Time</th><th>User</th><th>Action</th><th>Resource</th><th>IP</th></tr></thead>
-              <tbody id="audit-tbody"></tbody>
-            </table>
-            <div id="audit-pagination" style="margin-top:10px;display:flex;gap:8px;align-items:center"></div>
+            <div class="lt-wrap">
+              <div class="lt-body-wrap">
+                <table class="data-table lt-fixed">
+                  <thead><tr>
+                    <th style="min-width:160px">Time</th>
+                    <th style="min-width:120px">User</th>
+                    <th style="min-width:180px">Action</th>
+                    <th style="min-width:220px">Resource</th>
+                    <th style="min-width:120px">IP</th>
+                  </tr></thead>
+                  <tbody id="audit-tbody"></tbody>
+                </table>
+              </div>
+            </div>
+            <div id="audit-pagination" class="lt-pagination"></div>
           </div>
         </div>
 
@@ -596,6 +648,12 @@
         <label>Value <span class="req">*</span></label>
         <input id="cd-value" class="fm-input" placeholder="e.g. test_user01" />
       </div>
+      <div class="field" style="display:flex;align-items:center;gap:10px;margin-top:4px">
+        <input type="checkbox" id="cd-sensitive" style="width:15px;height:15px;cursor:pointer" />
+        <label for="cd-sensitive" style="cursor:pointer;margin:0;font-size:13px">
+          Sensitive value <span style="color:var(--neutral-400);font-size:11.5px">(stored encrypted, masked in UI — for passwords, tokens, API keys)</span>
+        </label>
+      </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="cdCloseModal()">Cancel</button>
@@ -703,6 +761,16 @@
           <span class="debug-step-card-label">Value</span>
           <span id="dbg-val" class="debug-step-card-value mono">—</span>
         </div>
+      </div>
+
+      <!-- Step failure error panel — shown when Playwright throws on a step -->
+      <div id="dbg-error-panel" style="display:none" class="dbg-error-panel">
+        <div class="dbg-error-header">
+          <span class="dbg-error-icon">&#10005;</span>
+          <span id="dbg-error-title">Step failed</span>
+        </div>
+        <div class="dbg-error-type" id="dbg-error-type"></div>
+        <pre id="dbg-error-message" class="dbg-error-message"></pre>
       </div>
 
       <!-- Screenshot -->
@@ -820,8 +888,8 @@
         <div class="card-title" style="font-size:14px">
           Test Steps
           <button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="scriptAddStep()">+ Add Step</button>
-          <button id="recorder-btn" class="btn btn-outline btn-sm" style="margin-left:8px;border-color:#8b5cf6;color:#8b5cf6" onclick="recorderToggle()" title="Record browser interactions and auto-populate steps">&#9679; Record</button>
-          <span id="recorder-status" style="display:none;margin-left:8px;font-size:12px;color:#8b5cf6;font-weight:600"></span>
+          <button id="recorder-btn" class="btn btn-outline btn-sm" onclick="recorderToggle()" title="Record browser interactions and auto-populate steps">&#9679; Record</button>
+          <span id="recorder-status" style="display:none"></span>
         </div>
         <div id="se-steps-container"></div>
         <div id="se-steps-hint" class="builder-hint" style="display:none">No steps yet. Click <strong>+ Add Step</strong> above.</div>

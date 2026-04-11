@@ -124,34 +124,34 @@ async function onStartClick() {
   const envId       = $('env-select').value;
   if (!platformUrl || !projectId || !envId) { showAlert('Please fill in all fields.'); return; }
 
-  const project = _projects.find(p => p.id === projectId);
-  const env     = project?.environments?.find(e => e.id === envId);
-  if (!env) { showAlert('Environment not found.'); return; }
-
   showAlert('');
-  $('btn-start').disabled = true;
-  $('btn-start').textContent = 'Starting…';
+  $('btn-start').disabled    = true;
+  $('btn-start').textContent = 'Connecting…';
 
   // Get current active tab
   const tabRes = await sendMessage({ type: 'GET_CURRENT_TAB' });
   const tab = tabRes?.tab;
   if (!tab) { showAlert('Could not get current tab.'); resetStartBtn(); return; }
 
-  // Create recording session on platform
+  // Find the session the editor already created for this project.
+  // The editor clicks "Record" first — that creates the session and opens the SSE channel.
+  // The extension reuses that same token so steps go to the editor's SSE stream.
   let token;
   try {
-    const res = await fetch(`${platformUrl}/api/recorder/start`, {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ projectId, autUrl: env.url }),
+    const res = await fetch(`${platformUrl}/api/recorder/active?projectId=${encodeURIComponent(projectId)}`, {
       credentials: 'include',
     });
-    if (res.status === 401) { showAlert('Not logged in to platform. Log in and try again.'); resetStartBtn(); return; }
+    if (res.status === 401) { showAlert('Not logged in to platform. Open the platform, log in, then retry.'); resetStartBtn(); return; }
+    if (res.status === 404) {
+      showAlert('No active recording session found. Please click the ⬤ Record button in the Test Script editor first, then come back here.');
+      resetStartBtn();
+      return;
+    }
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
     token = data.token;
   } catch (e) {
-    showAlert('Failed to start session: ' + e.message);
+    showAlert('Cannot reach platform: ' + e.message);
     resetStartBtn();
     return;
   }

@@ -47,10 +47,11 @@ export interface Locator {
   id:          string;
   name:        string;           // human-readable alias e.g. "Login Button"
   selector:    string;           // actual CSS/XPath/id
-  selectorType: 'css' | 'xpath' | 'id' | 'name' | 'text' | 'testid';
+  selectorType: 'css' | 'xpath' | 'id' | 'name' | 'text' | 'testid' | 'role' | 'label' | 'placeholder';
   pageModule:  string;           // e.g. "Mediation Config - Gateway Type"
   projectId:   string | null;    // scoped to project or global
   description: string;
+  draft?:      boolean;          // true = recorder-created, not yet saved to a script
   createdBy:   string;
   createdAt:   string;
   updatedAt:   string;
@@ -96,12 +97,17 @@ export interface ScriptStep {
   locator:       string | null;  // DOM selector (required when keyword.needsLocator)
   locatorId:     string | null;  // reference to Locator repo entry
   locatorType:   string;         // css | xpath | id | name | text | testid | role | label
-  valueMode:     'static' | 'dynamic' | 'commondata' | 'testdata';
-  value:         string | null;  // static value, dynamic token, ${cdKey}, or fn name
+  valueMode:     'static' | 'dynamic' | 'commondata' | 'testdata' | 'variable';
+  value:         string | null;  // static value, dynamic token, ${cdKey}, fn name, or var name
   testData:      TestDataRow[];  // rows for Test Data (Static) mode
   fnStepValues?: FnStepValue[];  // per-child-step values when keyword = CALL FUNCTION
   description:   string;
   screenshot:    boolean;
+  // ── Variable Store (session scope) ────────────────────────────────────────
+  storeAs?:      string;         // variable name to save result into e.g. "patientId"
+  storeScope?:   'session';      // session = current script only (global added later)
+  storeSource?:  'text' | 'value' | 'attr' | 'js';  // only for SET VARIABLE keyword
+  storeAttrName?: string;        // attribute name when storeSource = 'attr'
 }
 
 export interface TestScript {
@@ -126,8 +132,9 @@ export interface CommonData {
   id:          string;
   projectId:   string;
   dataName:    string;   // unique per project+environment
-  value:       string;
+  value:       string;   // stored as enc:<base64> when sensitive=true
   environment: string;   // e.g. "QA", "UAT", "DEV", "PROD"
+  sensitive:   boolean;  // if true: value shown masked in UI, stored encrypted
   createdBy:   string;
   createdAt:   string;
   updatedAt:   string;

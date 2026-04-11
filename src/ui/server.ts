@@ -16,7 +16,7 @@ import * as http    from 'http';
 import * as path    from 'path';
 import * as fs      from 'fs';
 import * as cp      from 'child_process';
-import express, { Request, Response } from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import multer       from 'multer';
 import { WebSocketServer, WebSocket } from 'ws';
 import { v4 as uuidv4 } from 'uuid';
@@ -32,10 +32,47 @@ import { logger }  from '../utils/logger';
 // ── Auth + Data imports ────────────────────────────────────────────────────────
 import { seedDefaults }            from '../data/seed';
 import { readAll, upsert, remove, findById, writeAll, USERS, PROJECTS, LOCATORS, FUNCTIONS, AUDIT, SETTINGS, SCRIPTS, SUITES, COMMON_DATA, SCHEDULES } from '../data/store';
-import { User, Project, ProjectEnvironment, Locator, CommonFunction, CommonData, AuditEntry, AppSettings, DEFAULT_SETTINGS, ProjectCredential, TestScript, TestSuite, ScheduledRun } from '../data/types';
+import { User, Project, ProjectEnvironment, Locator, CommonFunction, CommonData, AuditEntry, AppSettings, DEFAULT_SETTINGS, ProjectCredential, TestScript, ScriptStep, TestSuite, ScheduledRun } from '../data/types';
 import { hashPassword, verifyPassword, validatePasswordStrength } from '../auth/crypto';
 import { requireAuth, requireAdmin, sanitizeInput }               from '../auth/middleware';
 import { logAudit }                                                from '../auth/audit';
+import * as crypto from 'crypto';
+
+// ── Sensitive value encryption (AES-256-CBC) ──────────────────────────────────
+// Key derived from QA_SECRET_KEY env var, falls back to hostname-derived key.
+// Values stored as enc:<iv_hex>:<ciphertext_hex> in common_data.json.
+const _secretKey = (() => {
+  const raw = process.env.QA_SECRET_KEY || require('os').hostname() + '_qa_agent_v1';
+  return crypto.createHash('sha256').update(raw).digest(); // 32 bytes
+})();
+
+function encryptValue(plain: string): string {
+  const iv     = crypto.randomBytes(16);
+  const cipher = crypto.createCipheriv('aes-256-cbc', _secretKey, iv);
+  const enc    = Buffer.concat([cipher.update(plain, 'utf8'), cipher.final()]);
+  return `enc:${iv.toString('hex')}:${enc.toString('hex')}`;
+}
+
+function decryptValue(stored: string): string {
+  if (!stored.startsWith('enc:')) return stored;
+  const parts = stored.split(':');
+  if (parts.length < 3) return stored;
+  try {
+    const iv      = Buffer.from(parts[1], 'hex');
+    const enc     = Buffer.from(parts.slice(2).join(':'), 'hex');
+    const decipher = crypto.createDecipheriv('aes-256-cbc', _secretKey, iv);
+    return Buffer.concat([decipher.update(enc), decipher.final()]).toString('utf8');
+  } catch { return '***'; }
+}
+
+function maskValue(stored: string): string {
+  return '••••••••';
+}
+
+/** Prepare a CommonData record for API response — mask sensitive values */
+function cdForResponse(d: CommonData): object {
+  return { ...d, value: d.sensitive ? maskValue(d.value) : d.value };
+}
 
 dotenv.config();
 
@@ -43,8 +80,11 @@ dotenv.config();
 
 const PORT       = config.ui.port;
 const PUBLIC_DIR = path.resolve(__dirname, 'public');
-const UPLOAD_DIR = path.resolve(config.paths.requirements, 'uploads');
+const UPLOAD_DIR    = path.resolve(config.paths.requirements, 'uploads');
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+
+const TEST_FILES_DIR = path.resolve('test-files');
+if (!fs.existsSync(TEST_FILES_DIR)) fs.mkdirSync(TEST_FILES_DIR, { recursive: true });
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -494,6 +534,21 @@ const app = express();
 app.use(express.json());
 
 // ── Session middleware (must be before routes) ─────────────────────────────────
+// Timeout is driven by AppSettings.sessionTimeoutMinutes (default 60).
+// The helper below reads the live value from settings.json on every auth check —
+// so an admin changing the value in the UI takes effect immediately for all new
+// requests without requiring a server restart.
+
+function getSessionTimeoutMs(): number {
+  try {
+    const s = readAll<AppSettings & { id: string }>(SETTINGS)[0];
+    const mins = s?.sessionTimeoutMinutes ?? DEFAULT_SETTINGS.sessionTimeoutMinutes;
+    return Math.max(5, mins) * 60 * 1000; // minimum 5 minutes safety floor
+  } catch {
+    return DEFAULT_SETTINGS.sessionTimeoutMinutes * 60 * 1000;
+  }
+}
+
 const SESSION_SECRET = process.env.SESSION_SECRET || 'qa-agent-platform-secret-key-2026';
 app.use(session({
   secret:            SESSION_SECRET,
@@ -502,11 +557,35 @@ app.use(session({
   cookie: {
     httpOnly: true,
     secure:   false,          // set true if serving over HTTPS
-    maxAge:   60 * 60 * 1000, // 1 hour default — overridden by settings
+    maxAge:   getSessionTimeoutMs(), // read from settings at startup
     sameSite: 'lax',
   },
   name: 'qa.sid',
 }));
+
+// ── Inactivity timeout enforcement ────────────────────────────────────────────
+// Checks every authenticated request. If the session has been idle longer than
+// sessionTimeoutMinutes, it is destroyed and 401 is returned.
+// Rolling: lastActivity is updated on every request so active users stay logged in.
+app.use((req: Request, res: Response, next: NextFunction) => {
+  if (!req.session?.userId) { next(); return; }
+  const now     = Date.now();
+  const last    = (req.session as any).lastActivity as number | undefined;
+  const timeout = getSessionTimeoutMs();
+  if (last && now - last > timeout) {
+    req.session.destroy(() => {});
+    if (req.originalUrl.startsWith('/api/')) {
+      res.status(401).json({ error: 'Session expired', code: 'SESSION_EXPIRED' });
+    } else {
+      res.redirect('/login?reason=expired');
+    }
+    return;
+  }
+  (req.session as any).lastActivity = now;
+  // Keep cookie maxAge in sync with current settings value
+  if (req.session.cookie) req.session.cookie.maxAge = timeout;
+  next();
+});
 
 // ── Security headers ──────────────────────────────────────────────────────────
 app.use((_req, res, next) => {
@@ -545,6 +624,30 @@ const upload = multer({
   limits: { fileSize: 50 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     const ok = file.originalname.match(/\.(xlsx|xls|csv|pdf|docx|doc|png|jpg|jpeg|gif|webp)$/i);
+    cb(null, !!ok);
+  },
+});
+
+// ── Test Files — per-project multer storage ───────────────────────────────────
+const testFileStorage = multer.diskStorage({
+  destination: (req, _file, cb) => {
+    const projectId = (req.query.projectId as string || '').replace(/[^a-zA-Z0-9_-]/g, '');
+    if (!projectId) { cb(new Error('projectId required'), ''); return; }
+    const dir = path.join(TEST_FILES_DIR, projectId);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    cb(null, dir);
+  },
+  filename: (_req, file, cb) => {
+    // Keep original filename — sanitise it
+    const safe = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
+    cb(null, safe);
+  },
+});
+const testFileUpload = multer({
+  storage: testFileStorage,
+  limits: { fileSize: 100 * 1024 * 1024 }, // 100MB
+  fileFilter: (_req, file, cb) => {
+    const ok = file.originalname.match(/\.(xlsx|xls|csv|pdf|docx|doc|txt|json|xml|zip)$/i);
     cb(null, !!ok);
   },
 });
@@ -632,8 +735,8 @@ app.use((req: Request, res: Response, next) => {
     res.setHeader('Access-Control-Allow-Credentials', 'true');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  } else if (req.path === '/api/recorder/step') {
-    // Content script inside AUT page — any origin allowed (token is the auth)
+  } else if (req.path === '/api/recorder/step' || req.path === '/api/recorder/heartbeat') {
+    // recorder.js runs in the AUT tab (cross-origin) — token is the auth
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
     res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -667,6 +770,11 @@ app.post('/api/recorder/step', (req: Request, res: Response) => {
 });
 
 // ── All routes below require authentication ───────────────────────────────────
+// Prevent browser from caching API responses (eliminates stale-data UI lag)
+app.use('/api', (_req: Request, res: Response, next: NextFunction) => {
+  res.setHeader('Cache-Control', 'no-store');
+  next();
+});
 app.use('/api', requireAuth);
 
 // ── Run endpoints ─────────────────────────────────────────────────────────────
@@ -1088,6 +1196,40 @@ app.get('/api/admin/audit', requireAdmin, (req: Request, res: Response) => {
   res.json({ total: all.length, page, size, entries: all.slice().reverse().slice(start, start + size) });
 });
 
+// ── Test Files — upload / delete / list (project-scoped) ─────────────────────
+
+// POST /api/test-files/upload?projectId=xxx  — upload file, return server path
+app.post('/api/test-files/upload', testFileUpload.single('file'), (req: Request, res: Response) => {
+  if (!req.file) { res.status(400).json({ error: 'No file received or file type not allowed' }); return; }
+  const projectId = (req.query.projectId as string || '').replace(/[^a-zA-Z0-9_-]/g, '');
+  const serverPath = path.join('test-files', projectId, req.file.filename).replace(/\\/g, '/');
+  res.json({ filename: req.file.filename, serverPath });
+});
+
+// GET /api/test-files?projectId=xxx  — list uploaded files for project
+app.get('/api/test-files', (req: Request, res: Response) => {
+  const projectId = ((req.query.projectId as string) || '').replace(/[^a-zA-Z0-9_-]/g, '');
+  if (!projectId) { res.json([]); return; }
+  const dir = path.join(TEST_FILES_DIR, projectId);
+  if (!fs.existsSync(dir)) { res.json([]); return; }
+  const files = fs.readdirSync(dir).map(name => ({
+    filename: name,
+    serverPath: `test-files/${projectId}/${name}`,
+    sizeBytes: fs.statSync(path.join(dir, name)).size,
+  }));
+  res.json(files);
+});
+
+// DELETE /api/test-files/:projectId/:filename  — remove a file from server
+app.delete('/api/test-files/:projectId/:filename', (req: Request, res: Response) => {
+  const projectId = req.params.projectId.replace(/[^a-zA-Z0-9_-]/g, '');
+  const filename  = req.params.filename.replace(/[^a-zA-Z0-9._-]/g, '_');
+  const filePath  = path.join(TEST_FILES_DIR, projectId, filename);
+  if (!filePath.startsWith(TEST_FILES_DIR)) { res.status(403).json({ error: 'Forbidden' }); return; }
+  if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  res.json({ ok: true });
+});
+
 // ── Admin: Settings ───────────────────────────────────────────────────────────
 
 app.get('/api/admin/settings', requireAdmin, (_req, res) => {
@@ -1168,7 +1310,7 @@ app.delete('/api/projects/:id', requireAdmin, (req: Request, res: Response) => {
 
 app.get('/api/locators', (req: Request, res: Response) => {
   const { projectId } = req.query as { projectId?: string };
-  const all = readAll<Locator>(LOCATORS);
+  const all = readAll<Locator>(LOCATORS).filter(l => !l.draft); // exclude unfinished drafts
   if (projectId) {
     res.json(all.filter(l => l.projectId === projectId));
   } else {
@@ -1227,6 +1369,21 @@ app.post('/api/recorder/start', requireAuth, (req: Request, res: Response) => {
   if (!projectId) { res.status(400).json({ error: 'projectId is required' }); return; }
   if (!autUrl)    { res.status(400).json({ error: 'autUrl is required' });    return; }
 
+  // [Gap 2] One active recording per project — prevent concurrent sessions
+  for (const [, s] of recorderSessions) {
+    if (s.projectId === projectId && s.active) {
+      const sinceMin = Math.floor((Date.now() - s.createdAt) / 60000);
+      res.status(409).json({
+        error:       'Already recording',
+        recordedBy:  s.createdBy,
+        since:       new Date(s.createdAt).toISOString(),
+        sinceMin,
+        message:     `${s.createdBy} started a recording ${sinceMin}m ago. Stop that session first.`,
+      });
+      return;
+    }
+  }
+
   const token: string = uuidv4();
   const session: RecorderSession = {
     token,
@@ -1240,6 +1397,9 @@ app.post('/api/recorder/start', requireAuth, (req: Request, res: Response) => {
     sseClients:   new Set(),
   };
   recorderSessions.set(token, session);
+
+  // [Gap 3] Audit: recorder started
+  logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'RECORDER_STARTED', resourceType: 'recorder', resourceId: token.slice(0, 8), details: `project=${projectId} url=${autUrl}`, ip: req.ip ?? null });
 
   // Build the AUT URL with recorder token injected
   const separator   = autUrl.includes('?') ? '&' : '?';
@@ -1272,6 +1432,21 @@ app.get('/api/recorder/stream/:token', requireAuth, (req: Request, res: Response
   });
 });
 
+// GET /api/recorder/active?projectId=xxx — returns active session token for a project
+// Used by the extension popup to find the session the editor already created,
+// so both use the same token and steps appear in the editor.
+app.get('/api/recorder/active', requireAuth, (req: Request, res: Response) => {
+  const { projectId } = req.query as { projectId?: string };
+  if (!projectId) { res.status(400).json({ error: 'projectId required' }); return; }
+  for (const [token, session] of recorderSessions) {
+    if (session.projectId === projectId && session.active) {
+      res.json({ token, stepCount: session.stepCount });
+      return;
+    }
+  }
+  res.status(404).json({ error: 'no active session' });
+});
+
 // GET /api/recorder/status/:token — step count + active flag (polled by loader page)
 app.get('/api/recorder/status/:token', requireAuth, (req: Request, res: Response) => {
   const { token } = req.params as { token: string };
@@ -1292,8 +1467,22 @@ app.post('/api/recorder/stop', requireAuth, (req: Request, res: Response) => {
   session.sseClients.forEach(res => { try { res.end(); } catch {} });
   session.sseClients.clear();
 
+  // [Gap 3] Audit: recorder stopped
+  const durationSecs = Math.floor((Date.now() - session.createdAt) / 1000);
+  logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'RECORDER_STOPPED', resourceType: 'recorder', resourceId: token.slice(0, 8), details: `steps=${session.stepCount} duration=${durationSecs}s project=${session.projectId}`, ip: req.ip ?? null });
+
   logger.info(`[recorder] Session stopped: ${token.slice(0,8)} — ${session.stepCount} steps captured`);
   res.json({ success: true, stepCount: session.stepCount, steps: session.steps });
+});
+
+// POST /api/recorder/heartbeat — keeps session alive from recorder.js (every 5 min)
+// Token-authenticated, cross-origin (called from AUT tab). Resets lastActivity.
+app.post('/api/recorder/heartbeat', (req: Request, res: Response) => {
+  const { token } = req.body as { token?: string };
+  const session = token ? recorderSessions.get(token) : undefined;
+  if (!session || !session.active) { res.status(404).json({ ok: false }); return; }
+  session.lastActivity = Date.now();
+  res.json({ ok: true });
 });
 
 // ── Common Functions ──────────────────────────────────────────────────────────
@@ -1387,11 +1576,12 @@ app.get('/api/common-data', requireAuth, (req: Request, res: Response) => {
   let all = readAll<CommonData>(COMMON_DATA);
   if (projectId)   all = all.filter(d => d.projectId   === projectId);
   if (environment) all = all.filter(d => d.environment === environment);
-  res.json(all);
+  // Mask sensitive values in list response — reveal endpoint used for actual value
+  return res.json(all.map(cdForResponse));
 });
 
 app.post('/api/common-data', requireAuth, (req: Request, res: Response) => {
-  const { projectId, dataName, value, environment } = req.body as Partial<CommonData>;
+  const { projectId, dataName, value, environment, sensitive } = req.body as Partial<CommonData> & { sensitive?: boolean };
   if (!projectId || !dataName || !environment) {
     res.status(400).json({ error: 'projectId, dataName and environment are required' }); return;
   }
@@ -1399,10 +1589,12 @@ app.post('/api/common-data', requireAuth, (req: Request, res: Response) => {
   if (existing.find(d => d.projectId === projectId && d.dataName === dataName && d.environment === environment)) {
     res.status(409).json({ error: `"${dataName}" already exists for ${environment}` }); return;
   }
+  const isSensitive = sensitive === true;
+  const storedValue = isSensitive ? encryptValue(value ?? '') : (value ?? '');
   const now    = new Date().toISOString();
   const record: CommonData = {
     id: uuidv4(), projectId, dataName: sanitizeInput(dataName),
-    value: value ?? '', environment,
+    value: storedValue, environment, sensitive: isSensitive,
     createdBy: req.session.username!, createdAt: now, updatedAt: now,
   };
   upsert(COMMON_DATA, record);
@@ -1413,14 +1605,28 @@ app.post('/api/common-data', requireAuth, (req: Request, res: Response) => {
 app.put('/api/common-data/:id', requireAuth, (req: Request, res: Response) => {
   const record = findById<CommonData>(COMMON_DATA, req.params.id);
   if (!record) { res.status(404).json({ error: 'Not found' }); return; }
-  const { dataName, value, environment } = req.body as Partial<CommonData>;
+  const { dataName, value, environment, sensitive } = req.body as Partial<CommonData> & { sensitive?: boolean };
   if (dataName)    record.dataName    = sanitizeInput(dataName);
-  if (value !== undefined) record.value = value;
   if (environment) record.environment = environment;
+  if (sensitive !== undefined) record.sensitive = sensitive;
+  if (value !== undefined) {
+    // Only re-encrypt if the user sent a real value (not the masked placeholder)
+    if (value !== '••••••••') {
+      record.value = record.sensitive ? encryptValue(value) : value;
+    }
+  }
   record.updatedAt = new Date().toISOString();
   upsert(COMMON_DATA, record);
   logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'COMMON_DATA_UPDATED', resourceType: 'common_data', resourceId: record.id, details: record.dataName, ip: req.ip ?? null });
   res.json({ success: true });
+});
+
+// GET /api/common-data/:id/reveal — returns decrypted value for editing (auth required)
+app.get('/api/common-data/:id/reveal', requireAuth, (req: Request, res: Response) => {
+  const record = findById<CommonData>(COMMON_DATA, req.params.id);
+  if (!record) { res.status(404).json({ error: 'Not found' }); return; }
+  logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'COMMON_DATA_REVEALED', resourceType: 'common_data', resourceId: record.id, details: record.dataName, ip: req.ip ?? null });
+  res.json({ value: record.sensitive ? decryptValue(record.value) : record.value });
 });
 
 app.delete('/api/common-data/:id', requireAuth, (req: Request, res: Response) => {
@@ -1436,7 +1642,8 @@ app.post('/api/common-data/resolve', requireAuth, (req: Request, res: Response) 
   const dataMap: Record<string, string> = {};
   readAll<CommonData>(COMMON_DATA)
     .filter(d => d.projectId === projectId && d.environment === environment)
-    .forEach(d => { dataMap[d.dataName] = d.value; });
+    // Decrypt sensitive values at resolve time (used by codegen)
+    .forEach(d => { dataMap[d.dataName] = d.sensitive ? decryptValue(d.value) : d.value; });
   const resolved = text.replace(/\$\{([^}]+)\}/g, (_, name) => dataMap[name] ?? `\${${name}}`);
   res.json({ resolved, dataMap });
 });
@@ -1461,8 +1668,48 @@ app.get('/api/scripts/:id', (req: Request, res: Response) => {
   res.json(s);
 });
 
+// ── Dedup + finalise draft locators at Save Script time ──────────────────────
+// For each step that references a draft locator:
+//   1. Look for an existing FINALIZED locator with the same selector → use it
+//   2. Look for an existing FINALIZED locator with the same name → use it
+//   3. If no match → promote this draft to finalized (remove draft flag)
+// Draft locators not referenced by any finalized script get cleaned up here.
+function finaliseDraftLocators(steps: ScriptStep[], projectId: string): ScriptStep[] {
+  const allLocs  = readAll<Locator>(LOCATORS);
+  const finalized = allLocs.filter(l => l.projectId === projectId && !l.draft);
+  const norm = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim();
+
+  return steps.map(step => {
+    if (!step.locatorId) return step;
+    const draft = allLocs.find(l => l.id === step.locatorId && l.draft);
+    if (!draft) return step; // already finalized — leave as-is
+
+    // 1. Match by selector
+    const bySelector = finalized.find(l => norm(l.selector) === norm(draft.selector));
+    if (bySelector) {
+      // Delete the draft, point step to existing finalized locator
+      writeAll(LOCATORS, allLocs.filter(l => l.id !== draft.id));
+      return { ...step, locatorId: bySelector.id, locatorName: bySelector.name, locator: bySelector.selector, locatorType: bySelector.selectorType } as ScriptStep;
+    }
+
+    // 2. Match by name (case-insensitive)
+    const byName = finalized.find(l => norm(l.name) === norm(draft.name));
+    if (byName) {
+      writeAll(LOCATORS, allLocs.filter(l => l.id !== draft.id));
+      return { ...step, locatorId: byName.id, locatorName: byName.name, locator: byName.selector, locatorType: byName.selectorType } as ScriptStep;
+    }
+
+    // 3. Promote draft → finalized
+    draft.draft = false;
+    draft.updatedAt = new Date().toISOString();
+    upsert(LOCATORS, draft);
+    finalized.push(draft); // add to finalized set for subsequent steps in same save
+    return step;
+  });
+}
+
 app.post('/api/scripts', (req: Request, res: Response) => {
-  const body = req.body as Partial<TestScript>;
+  const body = req.body as Partial<TestScript> & { recorderToken?: string };
   if (!body.projectId || !body.title) { res.status(400).json({ error: 'projectId and title required' }); return; }
 
   // Auto-generate TC ID from project prefix + counter
@@ -1473,6 +1720,9 @@ app.post('/api/scripts', (req: Request, res: Response) => {
   proj.tcIdCounter += 1;
   upsert(PROJECTS, proj);
 
+  // Dedup + finalise draft locators before persisting
+  const resolvedSteps = finaliseDraftLocators(body.steps ?? [], body.projectId);
+
   const now = new Date().toISOString();
   const script: TestScript = {
     id: uuidv4(), projectId: body.projectId,
@@ -1480,29 +1730,37 @@ app.post('/api/scripts', (req: Request, res: Response) => {
     component:   sanitizeInput(body.component ?? ''),
     title:       sanitizeInput(body.title),
     description: sanitizeInput(body.description ?? ''), tags: body.tags ?? [],
-    priority: body.priority ?? 'medium', steps: body.steps ?? [],
+    priority: body.priority ?? 'medium', steps: resolvedSteps,
     createdBy: req.session.username!, createdAt: now,
     modifiedBy: req.session.username!, modifiedAt: now,
   };
   upsert(SCRIPTS, script);
   logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'SCRIPT_CREATED', resourceType: 'script', resourceId: script.id, details: `${tcId} ${script.title}`, ip: req.ip ?? null });
+  // [Gap 3] If saved from recorder session, log RECORDER_SAVED
+  if (body.recorderToken) {
+    logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'RECORDER_SAVED', resourceType: 'script', resourceId: script.id, details: `${tcId} ${script.title} steps=${resolvedSteps.length} token=${String(body.recorderToken).slice(0,8)}`, ip: req.ip ?? null });
+  }
   res.json({ success: true, id: script.id, tcId });
 });
 
 app.put('/api/scripts/:id', (req: Request, res: Response) => {
   const script = findById<TestScript>(SCRIPTS, req.params.id);
   if (!script) { res.status(404).json({ error: 'Not found' }); return; }
-  const body = req.body as Partial<TestScript>;
+  const body = req.body as Partial<TestScript> & { recorderToken?: string };
   if (body.title)                      script.title       = sanitizeInput(body.title);
   if (body.description !== undefined)  script.description = sanitizeInput(body.description);
   if (body.component   !== undefined)  script.component   = sanitizeInput(body.component);
   if (body.tags)                       script.tags        = body.tags;
   if (body.priority)                   script.priority    = body.priority;
-  if (body.steps)                      script.steps       = body.steps;
+  if (body.steps)                      script.steps       = finaliseDraftLocators(body.steps, script.projectId ?? '');
   script.modifiedBy = req.session.username!;
   script.modifiedAt = new Date().toISOString();
   upsert(SCRIPTS, script);
   logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'SCRIPT_UPDATED', resourceType: 'script', resourceId: script.id, details: script.title, ip: req.ip ?? null });
+  // [Gap 3] If saved from recorder session, log RECORDER_SAVED
+  if (body.recorderToken) {
+    logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'RECORDER_SAVED', resourceType: 'script', resourceId: script.id, details: `${script.title} steps=${script.steps.length} token=${String(body.recorderToken).slice(0,8)}`, ip: req.ip ?? null });
+  }
   res.json({ success: true });
 });
 
@@ -1750,6 +2008,7 @@ app.post('/api/debug/start', requireAuth, (req: Request, res: Response) => {
   const ssDir     = path.resolve('debug-runs', sessionId);
   const pendingFile = path.join(ssDir, 'pending.json');
   const gateFile    = path.join(ssDir, 'gate.json');
+  const errorFile   = path.join(ssDir, 'error.json');
 
   const proc = cp.spawn('npx', ['playwright', 'test', '--reporter=list', relSpec], {
     cwd:   path.resolve('.'),
@@ -1767,6 +2026,16 @@ app.post('/api/debug/start', requireAuth, (req: Request, res: Response) => {
   let _lastStepIdx = -1;
   const poller = setInterval(() => {
     try {
+      // ── Check for step error first — written by spec catch block ──────────
+      if (fs.existsSync(errorFile)) {
+        try {
+          const errData = JSON.parse(fs.readFileSync(errorFile, 'utf-8'));
+          fs.unlinkSync(errorFile);
+          logger.info(`[dbg:poller] Step error detected for step ${errData.stepIdx} — pushing debug:error to UI`);
+          sseSessionPush(sessionId, 'debug:error', errData);
+          broadcast(sessionId, { type: 'debug:error', sessionId, ...errData });
+        } catch { /* file mid-write — skip this tick */ }
+      }
       if (!fs.existsSync(pendingFile)) return;
       const data = JSON.parse(fs.readFileSync(pendingFile, 'utf-8'));
       if (data.stepIdx === _lastStepIdx) return;  // same step, already broadcast
@@ -1798,6 +2067,7 @@ app.post('/api/debug/start', requireAuth, (req: Request, res: Response) => {
     // Clean up any leftover IPC files
     try { fs.unlinkSync(pendingFile); } catch { /* ignore */ }
     try { fs.unlinkSync(gateFile);    } catch { /* ignore */ }
+    try { fs.unlinkSync(errorFile);   } catch { /* ignore */ }
 
     const s = debugSessions.get(sessionId);
     if (s) {
@@ -1812,10 +2082,16 @@ app.post('/api/debug/start', requireAuth, (req: Request, res: Response) => {
   });
 });
 
-// POST /api/debug/continue  — UI sends continue / skip / stop
+// POST /api/debug/continue  — UI sends continue / skip / stop / retry
 // Writes gate.json which the spec is polling for
 app.post('/api/debug/continue', requireAuth, (req: Request, res: Response) => {
-  const { sessionId, action } = req.body as { sessionId: string; action: 'continue' | 'skip' | 'stop' };
+  const { sessionId, action, locator, locatorType, value } = req.body as {
+    sessionId: string;
+    action: 'continue' | 'skip' | 'stop' | 'retry';
+    locator?: string;
+    locatorType?: string;
+    value?: string;
+  };
   const session = debugSessions.get(sessionId);
 
   if (session) {
@@ -1852,13 +2128,68 @@ app.post('/api/debug/continue', requireAuth, (req: Request, res: Response) => {
   // Write gate file so the spec exits its poll loop
   const gateFile = path.resolve('debug-runs', sessionId, 'gate.json');
   try {
-    fs.writeFileSync(gateFile, JSON.stringify({ action }));
+    const gatePayload: Record<string, unknown> = { action };
+    if (action === 'retry') {
+      if (locator !== undefined)     gatePayload.locator     = locator;
+      if (locatorType !== undefined) gatePayload.locatorType = locatorType;
+      if (value !== undefined)       gatePayload.value       = value;
+    }
+    fs.writeFileSync(gateFile, JSON.stringify(gatePayload));
     logger.info(`[debug:continue] Wrote gate.json for ${sessionId} with action '${action}' → ${gateFile}`);
   } catch (err) {
     logger.error(`[debug:continue] FAILED to write gate.json for ${sessionId}: ${err}`);
   }
 
   res.json({ ok: true });
+});
+
+// POST /api/debug/patch-step — persist corrected locator/value back to script + locator repo
+// Called by UI after user edits in the failure panel and clicks "Apply & Retry"
+app.post('/api/debug/patch-step', requireAuth, (req: Request, res: Response) => {
+  const { sessionId, stepOrder, locator, locatorType, value } = req.body as {
+    sessionId:   string;
+    stepOrder:   number;
+    locator?:    string;
+    locatorType?: string;
+    value?:      string;
+  };
+
+  const session = debugSessions.get(sessionId);
+  if (!session) { res.status(404).json({ error: 'Session not found' }); return; }
+
+  // Find and update the script
+  const script = findById<TestScript>(SCRIPTS, session.scriptId);
+  if (!script)  { res.status(404).json({ error: 'Script not found' }); return; }
+
+  const step = script.steps.find(s => s.order === stepOrder);
+  if (!step)    { res.status(404).json({ error: 'Step not found' }); return; }
+
+  let locatorRepoUpdated = false;
+
+  // Update locator in the repo if the step references one
+  if (locator !== undefined && step.locatorId) {
+    const repoEntry = findById<Locator>(LOCATORS, step.locatorId);
+    if (repoEntry) {
+      repoEntry.selector     = locator;
+      if (locatorType) repoEntry.selectorType = locatorType as Locator['selectorType'];
+      upsert(LOCATORS, repoEntry);
+      locatorRepoUpdated = true;
+      logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'LOCATOR_UPDATED', resourceType: 'locator', resourceId: repoEntry.id, details: `debugger patch: ${repoEntry.name}`, ip: req.ip ?? null });
+    }
+  }
+
+  // Update the step itself
+  if (locator     !== undefined) step.locator     = locator;
+  if (locatorType !== undefined) step.locatorType = locatorType;
+  if (value       !== undefined) step.value       = value;
+  script.modifiedBy = req.session.username!;
+  script.modifiedAt = new Date().toISOString();
+  upsert(SCRIPTS, script);
+
+  logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'SCRIPT_UPDATED', resourceType: 'script', resourceId: script.id, details: `debugger patch step ${stepOrder}: ${script.title}`, ip: req.ip ?? null });
+
+  logger.info(`[debug:patch] Patched step ${stepOrder} of script ${script.id} (session ${sessionId.slice(0,8)}) locatorRepoUpdated=${locatorRepoUpdated}`);
+  res.json({ ok: true, locatorRepoUpdated });
 });
 
 // GET /api/debug/session/:id  — UI polls this every 800ms

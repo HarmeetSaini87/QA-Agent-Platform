@@ -197,4 +197,10 @@ document.getElementById('change-pw-form').addEventListener('submit', async e => 
 // ── Keyboard: focus username on load ──────────────────────────────────────
 window.addEventListener('DOMContentLoaded', () => {
   document.getElementById('username')?.focus();
+
+  // Show banner when redirected here due to session expiry
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('reason') === 'expired') {
+    showAlert('login-alert', 'info', 'Your session has expired. Please log in again.');
+  }
 });

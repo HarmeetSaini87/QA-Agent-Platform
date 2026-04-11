@@ -1,6 +1,29 @@
 /* app.js — QA Agent Platform frontend  (P9: WebSocket live progress) */
 'use strict';
 
+// ── Global session-expiry interceptor ─────────────────────────────────────────
+// Wraps window.fetch so any 401 SESSION_EXPIRED response from the API
+// automatically redirects to /login with a reason message.
+// All existing fetch() calls benefit without any changes to individual modules.
+(function _patchFetch() {
+  const _orig = window.fetch.bind(window);
+  window.fetch = async function(...args) {
+    const res = await _orig(...args);
+    if (res.status === 401) {
+      try {
+        const clone = res.clone();
+        const body  = await clone.json().catch(() => ({}));
+        if (body.code === 'SESSION_EXPIRED') {
+          window.location.href = '/login?reason=expired';
+          // Return a never-resolving promise so callers don't continue processing
+          return new Promise(() => {});
+        }
+      } catch {}
+    }
+    return res;
+  };
+})();
+
 // ── State ─────────────────────────────────────────────────────────────────────
 let currentPlan  = null;
 let currentRunId = null;

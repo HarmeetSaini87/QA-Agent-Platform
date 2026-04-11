@@ -90,6 +90,15 @@
           }
         },
         {
+          "key": "DATE PICKER", "label": "Date Picker", "needsLocator": true, "needsValue": true, "valueHint": "e.g. 02 Apr 2026  or  2026-04-02  or  04/02/2026",
+          "helpLabel": "Opens a Bootstrap date picker and selects the given date",
+          "tooltip": {
+            "what": "Clicks the date input field to open a Bootstrap Datepicker widget, navigates to the correct month/year using the < > arrows, and clicks the target day. Handles navigation across any number of months automatically.",
+            "example": "Locator: .bootstrapDatepicker  Value: 02 Apr 2026\nLocator: #createdOn          Value: 2026-04-02\nLocator: input[name=fromDate] Value: 04/02/2026",
+            "tip": "Locator should point to the date input field — clicking it opens the calendar. The calendar icon next to it is decorative. Supported formats: DD Mon YYYY · YYYY-MM-DD · MM/DD/YYYY · Mon DD YYYY."
+          }
+        },
+        {
           "key": "SELECT", "label": "Select", "needsLocator": true, "needsValue": true, "valueHint": "Option text or value",
           "helpLabel": "Selects an option from a <select> dropdown",
           "tooltip": {
@@ -357,6 +366,24 @@
       "name": "Frames & Tabs",
       "keywords": [
         {
+          "key": "ACCEPT DIALOG", "label": "Accept Dialog", "needsLocator": false, "needsValue": false, "valueHint": "",
+          "helpLabel": "Clicks OK / Accept on a browser confirm, alert or prompt dialog",
+          "tooltip": {
+            "what": "Handles browser-native dialogs (confirm, alert, prompt) by clicking the OK/Accept button. Place this step BEFORE the action that triggers the dialog.",
+            "example": "Step 1: Accept Dialog (no locator/value needed)\nStep 2: Click Delete Button\n→ When Delete triggers 'Are you sure?' dialog, OK is clicked automatically.",
+            "tip": "Always place Accept Dialog BEFORE the step that opens the dialog, not after. Playwright registers the handler in advance."
+          }
+        },
+        {
+          "key": "DISMISS DIALOG", "label": "Dismiss Dialog", "needsLocator": false, "needsValue": false, "valueHint": "",
+          "helpLabel": "Clicks Cancel / Dismiss on a browser confirm or prompt dialog",
+          "tooltip": {
+            "what": "Handles browser-native dialogs (confirm, prompt) by clicking the Cancel/Dismiss button. Place this step BEFORE the action that triggers the dialog.",
+            "example": "Step 1: Dismiss Dialog (no locator/value needed)\nStep 2: Click Delete Button\n→ When Delete triggers 'Are you sure?' dialog, Cancel is clicked automatically.",
+            "tip": "Always place Dismiss Dialog BEFORE the step that opens the dialog. Use Accept Dialog when you want to confirm the action instead."
+          }
+        },
+        {
           "key": "SWITCH FRAME", "label": "Switch to Frame", "needsLocator": true, "needsValue": false, "valueHint": "iframe locator",
           "helpLabel": "Switches the test context into an iframe",
           "tooltip": {
@@ -436,6 +463,24 @@
             "what": "Adds a descriptive message to the test run output. Use to mark important checkpoints in the log for easier debugging.",
             "example": "Value: Login completed successfully\nValue: About to click Delete — verifying record exists first\nValue: Test data: username = harmeet",
             "tip": "Use Log steps at the start of major sections in your test to make the output easier to read when debugging failures."
+          }
+        },
+        {
+          "key": "FILE CHOOSER", "label": "File Chooser", "needsLocator": true, "needsValue": true, "valueHint": "Full file path e.g. C:\\Downloads\\report.xlsx",
+          "helpLabel": "Clicks a Choose File button and selects a file from the OS dialog",
+          "tooltip": {
+            "what": "Intercepts the native OS file picker dialog that opens when a Choose File / Browse button is clicked. Sets the selected file without the dialog ever appearing on screen. Use this when UPLOAD FILE does not work because the input is hidden behind a button.",
+            "example": "Locator: #choose-file-btn   Value: C:\\Users\\test\\Downloads\\data.xlsx\nLocator: .browse-button    Value: C:\\Reports\\export.csv",
+            "tip": "Locator must point to the button that opens the file dialog (not the hidden input). Value is the full path to the file on the machine running the test. After this step, click the Upload / Submit button as a separate CLICK step."
+          }
+        },
+        {
+          "key": "SET VARIABLE", "label": "Set Variable", "needsLocator": false, "needsValue": false, "valueHint": "",
+          "helpLabel": "Captures a value from the page and saves it for use in later steps",
+          "tooltip": {
+            "what": "Reads a value from the page (element text, input value, or JavaScript expression) and stores it under a name. Use {{var.name}} in any later step's value field to reference it.",
+            "example": "Source: Text on page   Locator: #order-ref   Name: orderId\nSource: Value in field  Locator: #patient-id  Name: patientId\nSource: JavaScript      JS: document.title    Name: pageTitle",
+            "tip": "Use the 📌 pin icon on a FILL or TYPE step to store a value you typed yourself. Use SET VARIABLE only when the value is generated by the page (e.g. auto-created order ID, confirmation number)."
           }
         },
         {

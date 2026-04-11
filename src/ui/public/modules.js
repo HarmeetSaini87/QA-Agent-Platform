@@ -151,13 +151,13 @@ async function userSave() {
   const data   = await res.json();
   if (!res.ok) { modAlert('user-modal-alert','error', data.error || 'Error saving user'); return; }
   userCloseModal();
-  usersLoad();
+  await usersLoad();
 }
 
 async function userDelete(id, username) {
   if (!confirm(`Delete user "${username}"? This cannot be undone.`)) return;
   const res = await fetch(`/api/admin/users/${id}`, { method: 'DELETE' });
-  if (res.ok) usersLoad();
+  if (res.ok) await usersLoad();
   else { const d = await res.json(); alert(d.error); }
 }
 
@@ -228,28 +228,51 @@ async function settingsSave() {
 // Common Data
 // ══════════════════════════════════════════════════════════════════════════════
 
-let editingCdId = null;
+let editingCdId  = null;
+let allCommonData = [];
+let _cdPage = 0;
+const CD_PAGE_SIZE = 10;
 
 async function cdLoad() {
   const tbody = document.getElementById('cd-tbody');
   if (!tbody) return;
   if (!currentProjectId) {
+    allCommonData = [];
     tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--neutral-400);padding:20px">Select a project first.</td></tr>';
+    document.getElementById('cd-pagination').innerHTML = '';
     return;
   }
   const env = document.getElementById('cd-env-filter')?.value || '';
   const qs  = `?projectId=${encodeURIComponent(currentProjectId)}${env ? '&environment=' + encodeURIComponent(env) : ''}`;
   const res  = await fetch(`/api/common-data${qs}`);
-  const list = await res.json();
+  allCommonData = await res.json();
+  _cdPage = 0;
+  cdRender();
+}
 
+function cdRender() {
+  const tbody = document.getElementById('cd-tbody');
+  const pgEl  = document.getElementById('cd-pagination');
+  if (!tbody) return;
+  const list = allCommonData;
   if (!list.length) {
-    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--neutral-400);padding:20px">No data entries yet. Click <strong>+ Add Common Data</strong> to create one.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--neutral-400);padding:24px">No data entries yet. Click <strong>+ Add Common Data</strong> to create one.</td></tr>';
+    if (pgEl) pgEl.innerHTML = '';
     return;
   }
-  tbody.innerHTML = list.map(d => `
+  const totalPages = Math.max(1, Math.ceil(list.length / CD_PAGE_SIZE));
+  if (_cdPage >= totalPages) _cdPage = totalPages - 1;
+  const page = list.slice(_cdPage * CD_PAGE_SIZE, (_cdPage + 1) * CD_PAGE_SIZE);
+  tbody.innerHTML = page.map(d => `
     <tr>
-      <td><code style="background:var(--neutral-100);padding:2px 6px;border-radius:3px;font-size:12.5px">\${${escHtml(d.dataName)}}</code></td>
-      <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(d.value)}">${escHtml(d.value)}</td>
+      <td title="${escHtml('\${' + d.dataName + '}')}" ><code style="background:var(--neutral-100);padding:2px 6px;border-radius:3px;font-size:12.5px">\${${escHtml(d.dataName)}}</code></td>
+      <td>
+        ${d.sensitive
+          ? `<span style="letter-spacing:2px;color:var(--neutral-400);font-size:13px">••••••••</span>
+             <button class="tbl-btn" style="margin-left:6px;font-size:10px;padding:1px 6px" onclick="cdReveal('${escHtml(d.id)}',this)" title="Reveal value">👁</button>`
+          : `<span title="${escHtml(d.value)}">${escHtml(d.value)}</span>`}
+        ${d.sensitive ? '<span class="badge badge-fail" style="margin-left:6px;font-size:10px;padding:1px 5px">sensitive</span>' : ''}
+      </td>
       <td><span class="badge badge-${d.environment === 'PROD' ? 'fail' : d.environment === 'UAT' ? 'medium' : 'active'}">${escHtml(d.environment)}</span></td>
       <td>${escHtml(d.createdBy || '—')}</td>
       <td>${formatDate(d.createdAt)}</td>
@@ -258,7 +281,17 @@ async function cdLoad() {
         <button class="tbl-btn del" onclick="cdDelete('${escHtml(d.id)}','${escHtml(d.dataName)}')">Delete</button>
       </td>
     </tr>`).join('');
+  if (pgEl) {
+    const start = list.length ? _cdPage * CD_PAGE_SIZE + 1 : 0;
+    const end   = Math.min((_cdPage + 1) * CD_PAGE_SIZE, list.length);
+    pgEl.innerHTML = totalPages <= 1 ? '' : `
+      <button class="tbl-btn" onclick="_cdPageGo(-1)" ${_cdPage === 0 ? 'disabled' : ''}>&#8592; Prev</button>
+      <span>Page ${_cdPage + 1} / ${totalPages} &nbsp;(${start}–${end} of ${list.length})</span>
+      <button class="tbl-btn" onclick="_cdPageGo(1)" ${_cdPage >= totalPages - 1 ? 'disabled' : ''}>Next &#8594;</button>`;
+  }
 }
+
+function _cdPageGo(delta) { _cdPage += delta; cdRender(); }
 
 function cdOpenModal(id = null) {
   editingCdId = id;
@@ -268,6 +301,8 @@ function cdOpenModal(id = null) {
     document.getElementById('cd-name').value  = '';
     document.getElementById('cd-value').value = '';
     document.getElementById('cd-env').value   = 'QA';
+    const sensEl = document.getElementById('cd-sensitive');
+    if (sensEl) sensEl.checked = false;
   }
   openModal('modal-common-data');
 }
@@ -282,8 +317,12 @@ async function cdEdit(id) {
   editingCdId = id;
   document.getElementById('cd-modal-title').textContent = 'Edit Common Data';
   document.getElementById('cd-name').value  = d.dataName;
-  document.getElementById('cd-value').value = d.value;
+  // Sensitive values show placeholder — user must re-type to change, or leave to keep existing
+  document.getElementById('cd-value').value = d.sensitive ? '' : d.value;
+  document.getElementById('cd-value').placeholder = d.sensitive ? 'Leave blank to keep existing value' : '';
   document.getElementById('cd-env').value   = d.environment;
+  const sensEl = document.getElementById('cd-sensitive');
+  if (sensEl) sensEl.checked = !!d.sensitive;
   modClearAlert('cd-modal-alert');
   openModal('modal-common-data');
 }
@@ -293,24 +332,41 @@ async function cdSave() {
   const dataName    = document.getElementById('cd-name').value.trim();
   const value       = document.getElementById('cd-value').value.trim();
   const environment = document.getElementById('cd-env').value;
+  const sensitive   = !!(document.getElementById('cd-sensitive')?.checked);
   if (!dataName)    { modAlert('cd-modal-alert', 'error', 'Data Name is required'); return; }
   if (!environment) { modAlert('cd-modal-alert', 'error', 'Environment is required'); return; }
   if (!currentProjectId) { modAlert('cd-modal-alert', 'error', 'Select a project first'); return; }
-
-  const body   = { projectId: currentProjectId, dataName, value, environment };
+  // On edit of sensitive entry: if value blank, omit it — server keeps existing encrypted value
+  const body   = { projectId: currentProjectId, dataName, environment, sensitive,
+                   ...(value || !editingCdId ? { value } : {}) };
   const method = editingCdId ? 'PUT'  : 'POST';
   const url    = editingCdId ? `/api/common-data/${editingCdId}` : '/api/common-data';
   const res    = await fetch(url, { method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
   const data   = await res.json();
   if (!res.ok) { modAlert('cd-modal-alert', 'error', data.error || 'Error saving'); return; }
   cdCloseModal();
-  cdLoad();
+  await cdLoad();
+}
+
+async function cdReveal(id, btn) {
+  const cell = btn.parentElement;
+  const res  = await fetch(`/api/common-data/${id}/reveal`);
+  if (!res.ok) { alert('Could not reveal value'); return; }
+  const { value } = await res.json();
+  const span = document.createElement('span');
+  span.style.cssText = 'font-family:monospace;font-size:12px;background:var(--neutral-100);padding:2px 6px;border-radius:3px;margin-left:4px';
+  span.textContent = value;
+  btn.replaceWith(span);
+  // Auto-hide after 10 seconds
+  setTimeout(() => {
+    span.replaceWith(btn);
+  }, 10000);
 }
 
 async function cdDelete(id, name) {
   if (!confirm(`Delete "${name}"?`)) return;
   await fetch(`/api/common-data/${id}`, { method: 'DELETE' });
-  cdLoad();
+  await cdLoad();
 }
 
 function cdCloseModal() { closeModal('modal-common-data'); editingCdId = null; }
@@ -418,13 +474,13 @@ async function projSave() {
   const data = await res.json();
   if (!res.ok) { modAlert('proj-modal-alert','error', data.error || 'Error'); return; }
   projCloseModal();
-  projLoad();
+  await projLoad();
 }
 
 async function projDelete(id, name) {
   if (!confirm(`Delete project "${name}"?`)) return;
   await fetch(`/api/projects/${id}`, { method: 'DELETE' });
-  projLoad();
+  await projLoad();
 }
 
 function projCloseModal() { closeModal('modal-project'); editingProjectId = null; }
@@ -435,6 +491,8 @@ function projCloseModal() { closeModal('modal-project'); editingProjectId = null
 
 let allLocators = [];
 let editingLocatorId = null;
+let _locPage = 0;
+const LOC_PAGE_SIZE = 10;
 
 async function locatorLoad() {
   const url = currentProjectId
@@ -442,22 +500,36 @@ async function locatorLoad() {
     : '/api/locators';
   const res = await fetch(url);
   allLocators = await res.json();
+  _locPage = 0;
   locatorRender();
 }
 
 function locatorRender() {
   const nameF   = (document.getElementById('loc-filter-name')?.value   ?? '').toLowerCase();
   const moduleF = (document.getElementById('loc-filter-module')?.value ?? '').toLowerCase();
+  const typeF   = (document.getElementById('loc-filter-type')?.value   ?? '').toLowerCase();
+
   const filtered = allLocators.filter(l =>
     (!nameF   || l.name.toLowerCase().includes(nameF)) &&
-    (!moduleF || (l.pageModule || '').toLowerCase().includes(moduleF))
+    (!moduleF || (l.pageModule || '').toLowerCase().includes(moduleF)) &&
+    (!typeF   || (l.selectorType || '').toLowerCase() === typeF)
   );
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / LOC_PAGE_SIZE));
+  if (_locPage >= totalPages) _locPage = totalPages - 1;
+
+  const pageItems = filtered.slice(_locPage * LOC_PAGE_SIZE, (_locPage + 1) * LOC_PAGE_SIZE);
+
   const tbody = document.getElementById('loc-tbody');
   if (!tbody) return;
-  tbody.innerHTML = filtered.map(l => `
-    <tr>
-      <td><strong>${escHtml(l.name)}</strong></td>
-      <td><code style="font-size:11.5px">${escHtml(l.selector)}</code></td>
+
+  tbody.innerHTML = pageItems.map(l => {
+    const isAuto = (l.description || '').toLowerCase().includes('auto-captured');
+    const autoTag = isAuto ? `<span class="badge" style="background:#7c3aed;color:#fff;font-size:10px;margin-left:4px">Auto</span>` : '';
+    const truncSel = l.selector.length > 60 ? `<span title="${escHtml(l.selector)}">${escHtml(l.selector.substring(0, 60))}…</span>` : escHtml(l.selector);
+    return `<tr>
+      <td><strong>${escHtml(l.name)}</strong>${autoTag}</td>
+      <td><code style="font-size:11px">${truncSel}</code></td>
       <td><span class="badge badge-tester">${escHtml(l.selectorType)}</span></td>
       <td>${escHtml(l.pageModule || '—')}</td>
       <td>${escHtml(l.description || '—')}</td>
@@ -465,8 +537,27 @@ function locatorRender() {
         <button class="tbl-btn" onclick="locatorEdit('${escHtml(l.id)}')">Edit</button>
         <button class="tbl-btn del" onclick="locatorDelete('${escHtml(l.id)}','${escHtml(l.name)}')">Del</button>
       </td>
-    </tr>`).join('');
-  if (!filtered.length) tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--neutral-400);padding:20px">No locators found</td></tr>';
+    </tr>`;
+  }).join('');
+
+  if (!pageItems.length) tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--neutral-400);padding:20px">No locators found</td></tr>';
+
+  // Pagination controls
+  const wrap = document.getElementById('loc-pagination');
+  if (wrap) {
+    const start = filtered.length ? _locPage * LOC_PAGE_SIZE + 1 : 0;
+    const end   = Math.min((_locPage + 1) * LOC_PAGE_SIZE, filtered.length);
+    wrap.innerHTML = `
+      <span style="font-size:13px;color:var(--neutral-500)">${start}–${end} of ${filtered.length}</span>
+      <button class="tbl-btn" onclick="_locPageGo(-1)" ${_locPage === 0 ? 'disabled' : ''}>&#8592; Prev</button>
+      <span style="font-size:13px">Page ${_locPage + 1} / ${totalPages}</span>
+      <button class="tbl-btn" onclick="_locPageGo(1)" ${_locPage >= totalPages - 1 ? 'disabled' : ''}>Next &#8594;</button>`;
+  }
+}
+
+function _locPageGo(delta) {
+  _locPage += delta;
+  locatorRender();
 }
 
 function locatorOpenModal(id = null) {
@@ -564,6 +655,8 @@ function locatorPickerSelect(id) {
 
 let allFunctions = [];
 let editingFnId  = null;
+let _fnPage = 0;
+const FN_PAGE_SIZE = 10;
 
 async function fnLoad() {
   const url = currentProjectId
@@ -576,21 +669,26 @@ async function fnLoad() {
 
 function fnRender() {
   const tbody = document.getElementById('fn-tbody');
+  const pgEl  = document.getElementById('fn-pagination');
   if (!tbody) return;
   const q = (document.getElementById('fn-search')?.value || '').toLowerCase();
-  const list = allFunctions.filter(f =>
+  const filtered = allFunctions.filter(f =>
     !q || f.name.toLowerCase().includes(q) || (f.identifier||'').toLowerCase().includes(q) || (f.description||'').toLowerCase().includes(q)
   );
-  if (!list.length) {
+  if (!filtered.length) {
     tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--neutral-400);padding:24px">
       ${allFunctions.length ? 'No functions match the search.' : 'No functions yet. Click <strong>+ New Function</strong> to create one.'}</td></tr>`;
+    if (pgEl) pgEl.innerHTML = '';
     return;
   }
-  tbody.innerHTML = list.map(f => `
+  const totalPages = Math.max(1, Math.ceil(filtered.length / FN_PAGE_SIZE));
+  if (_fnPage >= totalPages) _fnPage = totalPages - 1;
+  const page = filtered.slice(_fnPage * FN_PAGE_SIZE, (_fnPage + 1) * FN_PAGE_SIZE);
+  tbody.innerHTML = page.map(f => `
     <tr>
-      <td style="font-weight:600">${escHtml(f.name)}</td>
+      <td style="font-weight:600" title="${escHtml(f.name)}">${escHtml(f.name)}</td>
       <td><code style="background:var(--neutral-100);padding:2px 7px;border-radius:4px;font-size:12.5px">${escHtml(f.identifier || '—')}</code></td>
-      <td style="color:var(--neutral-500);font-size:12.5px">${escHtml(f.description || '—')}</td>
+      <td title="${escHtml(f.description || '')}" style="color:var(--neutral-500);font-size:12.5px">${escHtml(f.description || '—')}</td>
       <td style="text-align:center">${f.steps.length}</td>
       <td>${escHtml(f.createdBy || '—')}</td>
       <td>${formatDate(f.createdAt)}</td>
@@ -599,7 +697,17 @@ function fnRender() {
         <button class="tbl-btn del" onclick="fnDelete('${escHtml(f.id)}','${escHtml(f.name)}')">Delete</button>
       </td>
     </tr>`).join('');
+  if (pgEl) {
+    const start = filtered.length ? _fnPage * FN_PAGE_SIZE + 1 : 0;
+    const end   = Math.min((_fnPage + 1) * FN_PAGE_SIZE, filtered.length);
+    pgEl.innerHTML = totalPages <= 1 ? '' : `
+      <button class="tbl-btn" onclick="_fnPageGo(-1)" ${_fnPage === 0 ? 'disabled' : ''}>&#8592; Prev</button>
+      <span>Page ${_fnPage + 1} / ${totalPages} &nbsp;(${start}–${end} of ${filtered.length})</span>
+      <button class="tbl-btn" onclick="_fnPageGo(1)" ${_fnPage >= totalPages - 1 ? 'disabled' : ''}>Next &#8594;</button>`;
+  }
 }
+
+function _fnPageGo(delta) { _fnPage += delta; fnRender(); }
 
 async function fnOpenModal(id = null) {
   await keywordsLoad();
@@ -818,13 +926,13 @@ async function fnSave() {
   })));
 
   fnCloseModal();
-  fnLoad();
+  await fnLoad();
 }
 
 async function fnDelete(id, name) {
   if (!confirm(`Delete function "${name}"?`)) return;
   await fetch(`/api/functions/${id}`, { method: 'DELETE' });
-  fnLoad();
+  await fnLoad();
 }
 
 function fnCloseModal() { closeModal('modal-function'); editingFnId = null; }
@@ -943,6 +1051,7 @@ function onProjectChange() {
   const activeTab  = document.querySelector('.nav-item.active')?.dataset?.tab || '';
   _guardCheck(activeTab);
   _toggleModuleAddButtons(!!currentProjectId);
+  _scriptPage = 0; _fnPage = 0; _cdPage = 0; _locPage = 0;
   scriptLoad();
   suiteLoad();
   locatorLoadScoped();
@@ -988,6 +1097,8 @@ async function keywordsLoad() {
 
 let allScripts      = [];
 let editingScriptId = null;
+let _scriptPage     = 0;
+const SCRIPT_PAGE_SIZE = 10;
 
 async function scriptLoad() {
   const emptyEl = document.getElementById('script-list-empty');
@@ -1022,6 +1133,17 @@ function scriptRender() {
     listEl.innerHTML = '<div class="builder-hint">No scripts match the filter.</div>';
     return;
   }
+  const totalPages = Math.max(1, Math.ceil(filtered.length / SCRIPT_PAGE_SIZE));
+  if (_scriptPage >= totalPages) _scriptPage = totalPages - 1;
+  const page = filtered.slice(_scriptPage * SCRIPT_PAGE_SIZE, (_scriptPage + 1) * SCRIPT_PAGE_SIZE);
+  const start = filtered.length ? _scriptPage * SCRIPT_PAGE_SIZE + 1 : 0;
+  const end   = Math.min((_scriptPage + 1) * SCRIPT_PAGE_SIZE, filtered.length);
+  const pgHtml = totalPages <= 1 ? '' : `
+    <div class="lt-pagination">
+      <button class="tbl-btn" onclick="_scriptPageGo(-1)" ${_scriptPage === 0 ? 'disabled' : ''}>&#8592; Prev</button>
+      <span>Page ${_scriptPage + 1} / ${totalPages} &nbsp;(${start}–${end} of ${filtered.length})</span>
+      <button class="tbl-btn" onclick="_scriptPageGo(1)" ${_scriptPage >= totalPages - 1 ? 'disabled' : ''}>Next &#8594;</button>
+    </div>`;
   listEl.innerHTML = `
     <div style="display:flex;align-items:center;gap:8px;padding:6px 2px 8px">
       <label style="display:flex;align-items:center;gap:5px;font-size:12.5px;cursor:pointer">
@@ -1030,39 +1152,49 @@ function scriptRender() {
       <button class="tbl-btn del" id="script-bulk-del-btn" style="display:none" onclick="scriptDeleteSelected()">Delete Selected</button>
       <span id="script-sel-count" style="font-size:12px;color:var(--neutral-400)"></span>
     </div>
-    <table class="data-tbl" style="width:100%">
-      <thead><tr>
-        <th style="width:32px"></th>
-        <th style="width:90px">TC ID</th>
-        <th>Title</th>
-        <th style="width:140px">Component</th>
-        <th style="width:160px">Tag</th>
-        <th style="width:100px">Priority</th>
-        <th style="width:110px">Created By</th>
-        <th style="width:110px">Created Date</th>
-        <th style="width:110px">Actions</th>
-      </tr></thead>
-      <tbody>
-      ${filtered.map(s => `
-        <tr class="script-tbl-row" data-id="${escHtml(s.id)}">
-          <td><input type="checkbox" class="script-row-chk" value="${escHtml(s.id)}" onchange="scriptSelectionChanged()" /></td>
-          <td><span style="font-family:monospace;font-weight:600;color:var(--primary);font-size:12.5px">${escHtml(s.tcId || '—')}</span></td>
-          <td><div style="font-weight:500">${escHtml(s.title)}</div></td>
-          <td>${escHtml(s.component || '—')}</td>
-          <td>${(s.tags||[]).length ? (s.tags||[]).map(t=>`<span class="badge badge-tester">${escHtml(t)}</span>`).join(' ') : '—'}</td>
-          <td><span class="badge badge-${escHtml(s.priority)}">${escHtml(s.priority)}</span></td>
-          <td style="font-size:12px">${escHtml(s.createdBy || '—')}</td>
-          <td style="font-size:12px">${formatDate(s.createdAt)}</td>
-          <td>
-            <div style="display:flex;gap:4px">
-              <button class="tbl-btn" onclick="scriptOpenEditor('${escHtml(s.id)}')">Edit</button>
-              <button class="tbl-btn dbg" onclick="debugOpen('${escHtml(s.id)}')">&#128027; Debug</button>
-              <button class="tbl-btn del" onclick="scriptDelete('${escHtml(s.id)}','${escHtml(s.title)}')">Delete</button>
-            </div>
-          </td>
-        </tr>`).join('')}
-      </tbody>
-    </table>`;
+    <div class="lt-wrap">
+      <div class="lt-body-wrap">
+        <table class="data-table lt-fixed">
+          <thead><tr>
+            <th style="min-width:32px;width:32px"></th>
+            <th style="min-width:86px">TC ID</th>
+            <th style="min-width:200px">Title</th>
+            <th style="min-width:130px">Component</th>
+            <th style="min-width:130px">Tag</th>
+            <th style="min-width:90px">Priority</th>
+            <th style="min-width:100px">Created By</th>
+            <th style="min-width:100px">Date</th>
+            <th style="min-width:120px">Actions</th>
+          </tr></thead>
+          <tbody>
+          ${page.map(s => `
+            <tr class="script-tbl-row" data-id="${escHtml(s.id)}">
+              <td><input type="checkbox" class="script-row-chk" value="${escHtml(s.id)}" onchange="scriptSelectionChanged()" /></td>
+              <td><span style="font-family:monospace;font-weight:600;color:var(--primary);font-size:12.5px">${escHtml(s.tcId || '—')}</span></td>
+              <td title="${escHtml(s.title)}"><div style="font-weight:500">${escHtml(s.title)}</div></td>
+              <td title="${escHtml(s.component || '')}">${escHtml(s.component || '—')}</td>
+              <td>${(s.tags||[]).length ? (s.tags||[]).map(t=>`<span class="badge badge-tester">${escHtml(t)}</span>`).join(' ') : '—'}</td>
+              <td><span class="badge badge-${escHtml(s.priority)}">${escHtml(s.priority)}</span></td>
+              <td style="font-size:12px">${escHtml(s.createdBy || '—')}</td>
+              <td style="font-size:12px">${formatDate(s.createdAt)}</td>
+              <td>
+                <div style="display:flex;gap:4px">
+                  <button class="tbl-btn" onclick="scriptOpenEditor('${escHtml(s.id)}')">Edit</button>
+                  <button class="tbl-btn dbg" onclick="debugOpen('${escHtml(s.id)}')">&#128027;</button>
+                  <button class="tbl-btn del" onclick="scriptDelete('${escHtml(s.id)}','${escHtml(s.title)}')">Del</button>
+                </div>
+              </td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    ${pgHtml}`;
+}
+
+function _scriptPageGo(delta) {
+  _scriptPage += delta;
+  scriptRender();
 }
 
 function scriptSelectAll(chk) {
@@ -1333,6 +1465,12 @@ function scriptAddStep(step = {}, insertBeforeRow = null) {
       <button type="button" class="step-action-btn" onclick="scriptStepInsertBelow(this)" title="Insert Step Below">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
       </button>
+      <button type="button" class="step-action-btn step-clone-icon" onclick="scriptStepClone(this)" title="Clone Step">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+      </button>
+      <button type="button" class="step-action-btn step-pin-icon${step.storeAs ? ' step-pin-active' : ''}" onclick="scriptStepPinOpen(this)" title="Save value as variable (📌 Pin)">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3 6 6 1-4.5 4 1 6L12 16l-5.5 3 1-6L3 9l6-1z"/></svg>
+      </button>
       <button type="button" class="step-action-btn step-del-icon" onclick="scriptStepDelete(this)" title="Delete Step">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
       </button>
@@ -1347,6 +1485,10 @@ function scriptAddStep(step = {}, insertBeforeRow = null) {
     <div class="step-help-row"${helpLbl ? '' : ' style="display:none"'}>
       <span class="step-help-label">${escHtml(helpLbl)}</span>
       <span class="step-tooltip-trigger" data-tooltip-json="${escHtml(tipJson)}" onmouseenter="_kwTipShow(this)" onmouseleave="_kwTipHide()"${tipJson ? '' : ' style="display:none"'}>?</span>
+    </div>
+    <div class="step-pin-badge${step.storeAs ? '' : ' step-pin-badge-hidden'}" data-store-as="${escHtml(step.storeAs||'')}" data-store-source="${escHtml(step.storeSource||'text')}" data-store-attr="${escHtml(step.storeAttrName||'')}">
+      <span class="pin-badge-label">📌 Saved as <code>{{var.${escHtml(step.storeAs||'')}}}</code></span>
+      <button type="button" class="pin-badge-clear" onclick="scriptStepPinClear(this)" title="Remove variable">✕</button>
     </div>
     <div class="se-step-auto-badge"${isAuto ? '' : ' style="display:none"'}>
       <span class="auto-config-badge">&#x2699; Auto from Project Config — URL &amp; credentials fetched automatically</span>
@@ -1380,10 +1522,11 @@ function scriptAddStep(step = {}, insertBeforeRow = null) {
         <div class="field" style="margin:0">
           <label style="font-size:11px">Value Source</label>
           <div class="value-toggle">
-            <button type="button" class="value-toggle-btn${valMode==='static'  ?' active':''}" onclick="scriptStepToggleVal(this,'static')">Static</button>
-            <button type="button" class="value-toggle-btn${valMode==='dynamic' ?' active':''}" onclick="scriptStepToggleVal(this,'dynamic')">Dynamic</button>
-            <button type="button" class="value-toggle-btn${isCd               ?' active':''}" onclick="scriptStepToggleVal(this,'commondata')">Common Data</button>
-            <button type="button" class="value-toggle-btn value-toggle-td${isTd?' active':''}" onclick="scriptStepToggleVal(this,'testdata')" title="Placeholder — future Test Data dataset integration">Test Data (Static)</button>
+            <button type="button" class="value-toggle-btn${valMode==='static'   ?' active':''}" onclick="scriptStepToggleVal(this,'static')">Static</button>
+            <button type="button" class="value-toggle-btn${valMode==='dynamic'  ?' active':''}" onclick="scriptStepToggleVal(this,'dynamic')">Dynamic</button>
+            <button type="button" class="value-toggle-btn${isCd                 ?' active':''}" onclick="scriptStepToggleVal(this,'commondata')">Common Data</button>
+            <button type="button" class="value-toggle-btn value-toggle-td${isTd ?' active':''}" onclick="scriptStepToggleVal(this,'testdata')" title="Placeholder — future Test Data dataset integration">Test Data (Static)</button>
+            <button type="button" class="value-toggle-btn value-toggle-var${valMode==='variable'?' active':''}" onclick="scriptStepToggleVal(this,'variable')" title="Use a pinned variable from an earlier step">📌 Variable</button>
           </div>
           <input class="fm-input se-step-val-static" style="font-size:12px${valMode!=='static'?';display:none':''}"
                  placeholder="${escHtml(valHint)}" value="${escHtml(valMode==='static' ? (step.value ?? '') : '')}" />
@@ -1394,6 +1537,17 @@ function scriptAddStep(step = {}, insertBeforeRow = null) {
               <option value="">— loading Common Data… —</option>
             </select>
             ${isCd && step.value ? `<div class="cd-token-preview">Reference: <code>${escHtml(step.value)}</code></div>` : '<div class="cd-token-preview" style="display:none"></div>'}
+          </div>
+          <div class="se-step-val-var" style="${valMode==='variable'?'':'display:none'}">
+            <select class="fm-select se-step-var-select" style="font-size:12.5px" onchange="_varSelectChanged(this)">
+              <option value="">— pick a variable —</option>
+            </select>
+            <div class="var-usage-hint" style="font-size:11px;color:var(--neutral-500);margin-top:4px;display:none">
+              Use <code class="var-usage-token"></code> in any value field to reference this variable
+            </div>
+            <div class="var-no-vars-hint" style="font-size:11px;color:var(--neutral-400);margin-top:4px;display:none">
+              No variables defined yet. Use the 📌 pin icon on an earlier FILL or TYPE step to create one.
+            </div>
           </div>
           <div class="se-step-val-td" style="${isTd?'':'display:none'}">
             <div class="td-frame">
@@ -1431,6 +1585,61 @@ function scriptAddStep(step = {}, insertBeforeRow = null) {
         </div>
         <div class="se-fn-expand-area" style="margin-top:6px;display:none"></div>
       </div>
+      <!-- FILE CHOOSER upload widget -->
+      <div class="se-filechooser-widget" style="display:none">
+        <div class="fc-upload-area" style="${step.keyword==='FILE CHOOSER' && step.value ? 'display:none' : ''}">
+          <label class="fc-browse-btn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            Browse &amp; Upload File
+            <input type="file" class="fc-file-input" style="display:none" accept=".xlsx,.xls,.csv,.pdf,.docx,.doc,.txt,.json,.xml,.zip" onchange="scriptStepFileChooserUpload(this)" />
+          </label>
+          <span class="fc-hint">File is uploaded to the server and used during test execution</span>
+        </div>
+        <div class="fc-file-info" style="${step.keyword==='FILE CHOOSER' && step.value ? '' : 'display:none'}" data-server-path="${escHtml(step.value||'')}">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          <span class="fc-filename">${escHtml(step.value ? step.value.split('/').pop() : '')}</span>
+          <span class="fc-server-path">${escHtml(step.value||'')}</span>
+          <button type="button" class="fc-replace-btn" onclick="scriptStepFileChooserReplace(this)" title="Replace with a different file">
+            Replace
+            <input type="file" class="fc-file-input" style="display:none" accept=".xlsx,.xls,.csv,.pdf,.docx,.doc,.txt,.json,.xml,.zip" onchange="scriptStepFileChooserUpload(this)" />
+          </button>
+          <button type="button" class="fc-remove-btn" onclick="scriptStepFileChooserRemove(this)" title="Remove file">✕</button>
+        </div>
+        <div class="fc-uploading" style="display:none">
+          <span class="fc-spinner"></span> Uploading…
+        </div>
+      </div>
+      <!-- SET VARIABLE special fields -->
+      <div class="se-setvar-fields" style="display:none">
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:4px">
+          <div class="field" style="margin:0;flex:1;min-width:140px">
+            <label style="font-size:11px">Read From</label>
+            <select class="fm-select se-setvar-source" style="font-size:12px" onchange="_setVarSourceChanged(this)" data-saved="${escHtml(step.storeSource||'text')}">
+              <option value="text"  ${(step.storeSource||'text')==='text' ?'selected':''}>Text shown on page</option>
+              <option value="value" ${step.storeSource==='value'?'selected':''}>Value inside an input field</option>
+              <option value="attr"  ${step.storeSource==='attr' ?'selected':''}>Element attribute</option>
+              <option value="js"    ${step.storeSource==='js'   ?'selected':''}>Run JavaScript (advanced)</option>
+            </select>
+          </div>
+          <div class="field se-setvar-attr-wrap" style="margin:0;width:130px;${step.storeSource==='attr'?'':'display:none'}">
+            <label style="font-size:11px">Attribute Name</label>
+            <input class="fm-input se-setvar-attr" style="font-size:12px" placeholder="e.g. href" value="${escHtml(step.storeAttrName||'')}"/>
+          </div>
+          <div class="field" style="margin:0;flex:1;min-width:140px">
+            <label style="font-size:11px">Save As (variable name)</label>
+            <input class="fm-input se-setvar-name" style="font-size:12px;font-family:monospace"
+                   placeholder="e.g. patientId" value="${escHtml(step.storeAs||'')}"
+                   oninput="_setVarNameHint(this)" pattern="[A-Za-z0-9_]+" title="Letters, numbers and _ only"/>
+          </div>
+        </div>
+        <div class="setvar-hint" style="font-size:11px;color:var(--neutral-500);margin-top:5px;display:${step.storeAs?'block':'none'}">
+          Use <code>{{var.${escHtml(step.storeAs||'')}}}</code> in any later step's value field
+        </div>
+        <div class="se-setvar-js-wrap" style="${step.storeSource==='js'?'margin-top:6px':'display:none'}">
+          <label style="font-size:11px">JavaScript Expression</label>
+          <input class="fm-input se-step-val-static" style="font-size:12px;font-family:monospace" placeholder="e.g. document.title" value="${escHtml(step.storeSource==='js'?(step.value||''):'')}" />
+        </div>
+      </div>
     </div>
     <div class="step-row-bottom">
       <input class="fm-input se-step-desc" style="flex:1;font-size:12px" placeholder="Step description (optional)"
@@ -1446,6 +1655,12 @@ function scriptAddStep(step = {}, insertBeforeRow = null) {
   scriptReorderNums();
   // If restoring a commondata step, pre-load CD options
   if (valMode === 'commondata') _loadCdOptions(row);
+  // If restoring a variable step, pre-load variable options
+  if (valMode === 'variable') {
+    const varSel = row.querySelector('.se-step-var-select');
+    if (varSel && step.value) varSel.dataset.savedVar = step.value;
+    _loadVarOptions(row);
+  }
 }
 
 function scriptStepKwChange(sel) {
@@ -1460,10 +1675,34 @@ function scriptStepKwChange(sel) {
   const helpText  = opt?.dataset.help || '';
   const tipJson   = opt?.dataset.tooltipJson || '';
 
+  const isSetVar    = kwKey === 'SET VARIABLE';
+  const isFileChooser = kwKey === 'FILE CHOOSER';
+
   // GOTO auto-config: hide locator + value, show auto badge
-  row.querySelector('.se-step-locator').style.display = (needsLoc && !isAuto) ? '' : 'none';
-  row.querySelector('.se-step-value').style.display   = (needsVal && !isAuto && !isFnCall) ? '' : 'none';
+  row.querySelector('.se-step-locator').style.display  = (needsLoc && !isAuto && !isSetVar && !isFileChooser) ? '' : 'none';
+  row.querySelector('.se-step-value').style.display    = (needsVal && !isAuto && !isFnCall && !isSetVar && !isFileChooser) ? '' : 'none';
   row.querySelector('.se-step-auto-badge').style.display = isAuto ? '' : 'none';
+
+  // FILE CHOOSER: show custom upload widget, show locator for the trigger button
+  const fileChooserWidget = row.querySelector('.se-filechooser-widget');
+  if (fileChooserWidget) {
+    fileChooserWidget.style.display = isFileChooser ? '' : 'none';
+    if (isFileChooser) {
+      row.querySelector('.se-step-locator').style.display = '';
+      _fileChooserWidgetInit(row);
+    }
+  }
+
+  // SET VARIABLE: show special fields, show locator only when source needs it
+  const setVarFields = row.querySelector('.se-setvar-fields');
+  if (setVarFields) {
+    setVarFields.style.display = isSetVar ? '' : 'none';
+    if (isSetVar) {
+      const src = row.querySelector('.se-setvar-source')?.value || 'text';
+      const needsLocSV = src !== 'js';
+      row.querySelector('.se-step-locator').style.display = needsLocSV ? '' : 'none';
+    }
+  }
 
   // CALL FUNCTION: show function picker, hide value
   const fnPicker = row.querySelector('.se-step-fn-picker');
@@ -1688,7 +1927,190 @@ function scriptStepToggleVal(btn, mode) {
   row.querySelector('.se-step-val-dynamic')?.style && (row.querySelector('.se-step-val-dynamic').style.display = mode === 'dynamic'    ? '' : 'none');
   row.querySelector('.se-step-val-cd')?.style      && (row.querySelector('.se-step-val-cd').style.display      = mode === 'commondata' ? '' : 'none');
   row.querySelector('.se-step-val-td')?.style      && (row.querySelector('.se-step-val-td').style.display      = mode === 'testdata'   ? '' : 'none');
+  row.querySelector('.se-step-val-var')?.style     && (row.querySelector('.se-step-val-var').style.display     = mode === 'variable'   ? '' : 'none');
   if (mode === 'commondata') _loadCdOptions(row);
+  if (mode === 'variable')   _loadVarOptions(row);
+}
+
+// ── Variable tab helpers ───────────────────────────────────────────────────────
+
+function _loadVarOptions(row) {
+  const sel = row.querySelector('.se-step-var-select');
+  if (!sel) return;
+  // Collect all storeAs names from steps that come BEFORE this row
+  const container = document.getElementById('se-steps-container');
+  if (!container) return;
+  const allRows  = [...container.querySelectorAll('.script-step-row')];
+  const thisIdx  = allRows.indexOf(row);
+  const vars = [];
+  for (let i = 0; i < thisIdx; i++) {
+    const badge = allRows[i].querySelector('.step-pin-badge');
+    if (badge && badge.dataset.storeAs) vars.push(badge.dataset.storeAs);
+    // Also from SET VARIABLE steps
+    const kw = allRows[i].querySelector('.se-step-kw-select')?.value || '';
+    if (kw === 'SET VARIABLE') {
+      const n = allRows[i].querySelector('.se-setvar-name')?.value?.trim();
+      if (n) vars.push(n);
+    }
+  }
+  const savedVal = sel.dataset.savedVar || sel.value || '';
+  const noHint   = row.querySelector('.var-no-vars-hint');
+  const useHint  = row.querySelector('.var-usage-hint');
+  if (!vars.length) {
+    sel.innerHTML = '<option value="">— no variables yet —</option>';
+    if (noHint) noHint.style.display = '';
+    if (useHint) useHint.style.display = 'none';
+    return;
+  }
+  if (noHint) noHint.style.display = 'none';
+  sel.innerHTML = '<option value="">— pick a variable —</option>' +
+    vars.map(v => `<option value="${escHtml(v)}"${v===savedVal?' selected':''}>${escHtml(v)}</option>`).join('');
+  sel.dataset.savedVar = '';
+  _varSelectChanged(sel);
+}
+
+function _varSelectChanged(sel) {
+  const row   = sel.closest('.script-step-row');
+  const hint  = row?.querySelector('.var-usage-hint');
+  const token = row?.querySelector('.var-usage-token');
+  const v     = sel.value;
+  if (hint && token) {
+    if (v) { token.textContent = `{{var.${v}}}`; hint.style.display = ''; }
+    else   { hint.style.display = 'none'; }
+  }
+}
+
+// ── 📌 Pin icon handlers ───────────────────────────────────────────────────────
+
+function scriptStepPinOpen(btn) {
+  const row    = btn.closest('.script-step-row');
+  const badge  = row.querySelector('.step-pin-badge');
+  const curName = badge?.dataset.storeAs || '';
+  const name = window.prompt('Save this step\'s value as a variable.\n\nEnter a variable name (letters, numbers, _ only):\ne.g. patientId, orderId, searchTerm', curName);
+  if (name === null) return; // cancelled
+  const clean = name.trim().replace(/[^A-Za-z0-9_]/g, '');
+  if (!clean) {
+    // Treat empty as "clear pin"
+    scriptStepPinClear(btn);
+    return;
+  }
+  // Save into badge dataset
+  if (badge) {
+    badge.dataset.storeAs = clean;
+    badge.querySelector('.pin-badge-label').innerHTML = `📌 Saved as <code>{{var.${escHtml(clean)}}}</code>`;
+    badge.classList.remove('step-pin-badge-hidden');
+  }
+  btn.classList.add('step-pin-active');
+}
+
+function scriptStepPinClear(btn) {
+  const row   = btn.closest('.script-step-row');
+  const badge = row.querySelector('.step-pin-badge');
+  if (badge) {
+    badge.dataset.storeAs = '';
+    badge.classList.add('step-pin-badge-hidden');
+  }
+  row.querySelector('.step-pin-icon')?.classList.remove('step-pin-active');
+}
+
+// SET VARIABLE source change
+function _setVarSourceChanged(sel) {
+  const row = sel.closest('.script-step-row');
+  const isAttr = sel.value === 'attr';
+  const isJs   = sel.value === 'js';
+  const attrW  = row.querySelector('.se-setvar-attr-wrap');
+  const jsW    = row.querySelector('.se-setvar-js-wrap');
+  const locDiv = row.querySelector('.se-step-locator');
+  if (attrW) attrW.style.display = isAttr ? '' : 'none';
+  if (jsW)   jsW.style.display   = isJs   ? '' : 'none';
+  if (locDiv) locDiv.style.display = isJs ? 'none' : '';
+}
+
+function _setVarNameHint(inp) {
+  const row  = inp.closest('.script-step-row');
+  const hint = row?.querySelector('.setvar-hint');
+  const code = hint?.querySelector('code');
+  if (!hint || !code) return;
+  const v = inp.value.trim();
+  if (v) { code.textContent = `{{var.${v}}}`; hint.style.display = 'block'; }
+  else   { hint.style.display = 'none'; }
+}
+
+// ── FILE CHOOSER widget ───────────────────────────────────────────────────────
+
+function _fileChooserWidgetInit(row) {
+  // Nothing to init — widget renders from step data at scriptAddStep time
+}
+
+async function scriptStepFileChooserUpload(input) {
+  const file = input.files?.[0];
+  if (!file) return;
+  if (!currentProjectId) { alert('Select a project first'); return; }
+
+  const widget    = input.closest('.se-filechooser-widget');
+  const row       = input.closest('.script-step-row');
+  const uploadArea = widget.querySelector('.fc-upload-area');
+  const fileInfo  = widget.querySelector('.fc-file-info');
+  const uploading = widget.querySelector('.fc-uploading');
+
+  // Delete previous file from server if replacing
+  const prevPath = fileInfo?.dataset.serverPath;
+  if (prevPath) {
+    const parts = prevPath.split('/');
+    if (parts.length >= 3) {
+      await fetch(`/api/test-files/${encodeURIComponent(parts[1])}/${encodeURIComponent(parts[2])}`, { method: 'DELETE' }).catch(() => {});
+    }
+  }
+
+  // Show uploading state
+  if (uploadArea) uploadArea.style.display = 'none';
+  if (fileInfo)   fileInfo.style.display   = 'none';
+  if (uploading)  uploading.style.display  = '';
+
+  try {
+    const fd = new FormData();
+    fd.append('file', file);
+    const res  = await fetch(`/api/test-files/upload?projectId=${encodeURIComponent(currentProjectId)}`, { method: 'POST', body: fd });
+    if (!res.ok) throw new Error(await res.text());
+    const data = await res.json();
+
+    // Update widget to show file info
+    if (fileInfo) {
+      fileInfo.dataset.serverPath = data.serverPath;
+      fileInfo.querySelector('.fc-filename').textContent  = data.filename;
+      fileInfo.querySelector('.fc-server-path').textContent = data.serverPath;
+      fileInfo.style.display = '';
+    }
+    if (uploading) uploading.style.display = 'none';
+    // Clear input so same file can be re-selected if needed
+    input.value = '';
+  } catch (err) {
+    if (uploading) uploading.style.display = 'none';
+    if (uploadArea) uploadArea.style.display = '';
+    alert('Upload failed: ' + err.message);
+  }
+}
+
+function scriptStepFileChooserReplace(btn) {
+  // Trigger the hidden file input inside the replace button
+  btn.querySelector('.fc-file-input')?.click();
+}
+
+async function scriptStepFileChooserRemove(btn) {
+  if (!confirm('Remove this file from the server?')) return;
+  const widget    = btn.closest('.se-filechooser-widget');
+  const fileInfo  = widget.querySelector('.fc-file-info');
+  const uploadArea = widget.querySelector('.fc-upload-area');
+  const prevPath  = fileInfo?.dataset.serverPath;
+
+  if (prevPath) {
+    const parts = prevPath.split('/');
+    if (parts.length >= 3) {
+      await fetch(`/api/test-files/${encodeURIComponent(parts[1])}/${encodeURIComponent(parts[2])}`, { method: 'DELETE' }).catch(() => {});
+    }
+  }
+  if (fileInfo)  { fileInfo.dataset.serverPath = ''; fileInfo.style.display = 'none'; }
+  if (uploadArea) uploadArea.style.display = '';
 }
 
 // Populate Common Data dropdown for a step row
@@ -1827,6 +2249,83 @@ function scriptStepInsertBelow(btn) {
   scriptAddStep({}, row.nextSibling);
 }
 
+function scriptStepClone(btn) {
+  const row = btn.closest('.script-step-row');
+  const activeTab = row.querySelector('.value-toggle-btn.active')?.textContent?.trim() || 'Static';
+  const kw        = row.querySelector('.se-step-kw-select')?.value || '';
+  const isFnCall  = kw === 'CALL FUNCTION';
+  let valueMode, value, fnStepValues;
+  if (isFnCall) {
+    valueMode    = 'static';
+    value        = row.querySelector('.se-step-fn-select')?.value || null;
+    fnStepValues = [...(row.querySelectorAll('.fn-child-row') || [])]
+      .filter(cr => cr.querySelector('.fn-cs-value'))
+      .map(cr => {
+        const fi       = parseInt(cr.dataset.fnStepIdx);
+        const activeCs = cr.querySelector('.value-toggle-btn.active')?.textContent?.trim() || 'Static';
+        let csMode, csValue, csTestData = [];
+        if (activeCs === 'Dynamic') {
+          csMode  = 'dynamic';
+          csValue = cr.querySelector('.fn-cs-val-dynamic')?.value || null;
+        } else if (activeCs === 'Common Data') {
+          csMode  = 'commondata';
+          const cdName = cr.querySelector('.fn-cs-cd-select')?.value || '';
+          csValue = cdName ? `\${${cdName}}` : null;
+        } else if (activeCs === 'Test Data (Static)') {
+          csMode     = 'testdata';
+          csValue    = null;
+          csTestData = [...(cr.querySelectorAll('.fn-cs-td-row') || [])].map(tr => ({
+            value: tr.querySelector('.fn-cs-td-val')?.value?.trim() || '',
+          })).filter(r => r.value);
+        } else {
+          csMode  = 'static';
+          csValue = cr.querySelector('.fn-cs-val-static')?.value?.trim() || null;
+        }
+        return { fnStepIdx: fi, valueMode: csMode, value: csValue, testData: csTestData };
+      });
+  } else if (activeTab === '📌 Variable') {
+    valueMode = 'variable';
+    value     = row.querySelector('.se-step-var-select')?.value || null;
+  } else if (activeTab === 'Dynamic') {
+    valueMode = 'dynamic';
+    value     = row.querySelector('.se-step-val-dynamic')?.value || null;
+  } else if (activeTab === 'Common Data') {
+    valueMode = 'commondata';
+    const cdName = row.querySelector('.se-step-cd-select')?.value || '';
+    value = cdName ? `\${${cdName}}` : null;
+  } else if (activeTab === 'Test Data (Static)') {
+    valueMode = 'testdata';
+    value     = null;
+  } else {
+    valueMode = 'static';
+    value     = row.querySelector('.se-step-val-static')?.value?.trim() || null;
+  }
+  const testData = [...(row.querySelectorAll('.td-row') || [])].map(tr => ({
+    value: tr.querySelector('.td-val')?.value?.trim() || '',
+  })).filter(r => r.value);
+
+  const badge = row.querySelector('.step-pin-badge');
+  const clonedStep = {
+    id:            `clone-${Date.now()}`,
+    keyword:       kw,
+    locatorName:   row.querySelector('.se-step-loc-name')?.value?.trim() || null,
+    locatorType:   row.querySelector('.se-step-loc-type')?.value || 'css',
+    locator:       row.querySelector('.se-step-selector')?.value?.trim() || null,
+    locatorId:     row.dataset.locatorId || null,
+    valueMode,
+    value,
+    testData,
+    fnStepValues:  fnStepValues || [],
+    description:   row.querySelector('.se-step-desc')?.value?.trim() || '',
+    screenshot:    row.querySelector('.se-step-screenshot')?.checked || false,
+    storeAs:       badge?.dataset.storeAs || undefined,
+    storeScope:    badge?.dataset.storeAs ? 'session' : undefined,
+    storeSource:   row.querySelector('.se-setvar-source')?.value || undefined,
+    storeAttrName: row.querySelector('.se-setvar-attr')?.value?.trim() || undefined,
+  };
+  scriptAddStep(clonedStep, row.nextSibling);
+}
+
 function scriptReorderNums() {
   document.querySelectorAll('#se-steps-container .script-step-row').forEach((row, i) => {
     const n = row.querySelector('.step-num');
@@ -1843,9 +2342,13 @@ async function scriptSave() {
   const steps = [...document.querySelectorAll('#se-steps-container .script-step-row')].map((row, i) => {
     const activeTab = row.querySelector('.value-toggle-btn.active')?.textContent?.trim() || 'Static';
     const kw       = row.querySelector('.se-step-kw-select')?.value || '';
-    const isFnCall = kw === 'CALL FUNCTION';
+    const isFnCall     = kw === 'CALL FUNCTION';
+    const isFileChooser = kw === 'FILE CHOOSER';
     let valueMode, value, fnStepValues;
-    if (isFnCall) {
+    if (isFileChooser) {
+      valueMode = 'static';
+      value = row.querySelector('.fc-file-info')?.dataset.serverPath || null;
+    } else if (isFnCall) {
       valueMode = 'static';
       value     = row.querySelector('.se-step-fn-select')?.value || null;
       fnStepValues = [...(row.querySelectorAll('.fn-child-row') || [])]
@@ -1873,6 +2376,9 @@ async function scriptSave() {
           }
           return { fnStepIdx: fi, valueMode: csMode, value: csValue, testData: csTestData };
         });
+    } else if (activeTab === '📌 Variable') {
+      valueMode = 'variable';
+      value     = row.querySelector('.se-step-var-select')?.value || null;
     } else if (activeTab === 'Dynamic') {
       valueMode = 'dynamic';
       value     = row.querySelector('.se-step-val-dynamic')?.value || null;
@@ -1882,30 +2388,48 @@ async function scriptSave() {
       value = cdName ? `\${${cdName}}` : null;
     } else if (activeTab === 'Test Data (Static)') {
       valueMode = 'testdata';
-      value     = null;   // testdata — value comes from testData rows at runtime
+      value     = null;
     } else {
       valueMode = 'static';
       value     = row.querySelector('.se-step-val-static')?.value?.trim() || null;
     }
-    // Collect testData rows (label is optional, value is required)
+
+    // SET VARIABLE — override value with JS expression if source=js
+    const isSetVar = kw === 'SET VARIABLE';
+    const storeSource = isSetVar ? (row.querySelector('.se-setvar-source')?.value || 'text') : undefined;
+    if (isSetVar && storeSource === 'js') {
+      value = row.querySelector('.se-setvar-js-wrap .se-step-val-static')?.value?.trim() || null;
+    }
+
+    // Collect testData rows
     const testData = [...(row.querySelectorAll('.td-row') || [])].map(tr => ({
       value: tr.querySelector('.td-val')?.value?.trim() || '',
     })).filter(r => r.value);
 
+    // 📌 Pin fields
+    const badge       = row.querySelector('.step-pin-badge');
+    const storeAs     = badge?.dataset.storeAs || undefined;
+    const storeAttr   = isSetVar ? (row.querySelector('.se-setvar-attr')?.value?.trim() || undefined) : undefined;
+    const storeVarName = isSetVar ? (row.querySelector('.se-setvar-name')?.value?.trim() || undefined) : storeAs;
+
     return {
-      id:          row.dataset.stepId || `step-${i + 1}`,
-      order:       i + 1,
-      keyword:     kw,
-      locatorName: row.querySelector('.se-step-loc-name')?.value?.trim() || null,
-      locatorType: row.querySelector('.se-step-loc-type')?.value || 'css',
-      locator:     row.querySelector('.se-step-selector')?.value?.trim() || null,
-      locatorId:   null,
+      id:            row.dataset.stepId || `step-${i + 1}`,
+      order:         i + 1,
+      keyword:       kw,
+      locatorName:   row.querySelector('.se-step-loc-name')?.value?.trim() || null,
+      locatorType:   row.querySelector('.se-step-loc-type')?.value || 'css',
+      locator:       row.querySelector('.se-step-selector')?.value?.trim() || null,
+      locatorId:     null,
       valueMode,
       value,
       testData,
-      fnStepValues: fnStepValues || [],
-      description: row.querySelector('.se-step-desc')?.value?.trim() || '',
-      screenshot:  row.querySelector('.se-step-screenshot')?.checked || false,
+      fnStepValues:  fnStepValues || [],
+      description:   row.querySelector('.se-step-desc')?.value?.trim() || '',
+      screenshot:    row.querySelector('.se-step-screenshot')?.checked || false,
+      storeAs:       isSetVar ? storeVarName : (storeAs || undefined),
+      storeScope:    (isSetVar || storeAs) ? 'session' : undefined,
+      storeSource:   isSetVar ? storeSource : undefined,
+      storeAttrName: storeAttr || undefined,
     };
   });
 
@@ -2192,7 +2716,7 @@ async function suiteOpenDetail(id) {
       envs.map(e => `<option value="${escHtml(e.id)}"${e.id === data.environmentId ? ' selected' : ''}>${escHtml(e.name)}</option>`).join('');
   }
   schedFormHide();
-  schedLoad();
+  await schedLoad();
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -2292,7 +2816,7 @@ async function schedSave() {
   if (!res.ok) { alert(data.error || 'Failed to save schedule'); return; }
 
   schedFormHide();
-  schedLoad();
+  await schedLoad();
 }
 
 async function schedToggle(id, enabled) {
@@ -2300,13 +2824,13 @@ async function schedToggle(id, enabled) {
     method: 'PUT', headers: {'Content-Type':'application/json'},
     body: JSON.stringify({ enabled }),
   });
-  schedLoad();
+  await schedLoad();
 }
 
 async function schedDelete(id) {
   if (!confirm('Delete this schedule?')) return;
   await fetch(`/api/schedules/${id}`, { method: 'DELETE' });
-  schedLoad();
+  await schedLoad();
 }
 
 function suiteDetailClose() {
@@ -2501,7 +3025,7 @@ async function flakyLoad() {
     document.getElementById('flaky-loading').style.display = '';
     document.getElementById('flaky-loading').textContent = 'Select a project to analyse flaky tests.';
     document.getElementById('flaky-summary').style.display = 'none';
-    document.getElementById('flaky-table').style.display = 'none';
+    document.getElementById('flaky-table-wrap').style.display = 'none';
     document.getElementById('flaky-empty').style.display = 'none';
     return;
   }
@@ -2517,7 +3041,7 @@ async function flakyLoad() {
   const limit   = document.getElementById('flaky-limit')?.value || '50';
   const suiteId = document.getElementById('flaky-suite-filter')?.value || '';
   const loadEl  = document.getElementById('flaky-loading');
-  const tableEl = document.getElementById('flaky-table');
+  const tableEl = document.getElementById('flaky-table-wrap');
   const emptyEl = document.getElementById('flaky-empty');
   const summaryEl = document.getElementById('flaky-summary');
 
@@ -2917,6 +3441,10 @@ async function debugStart() {
   Object.keys(_debugStepState).forEach(k => delete _debugStepState[k]);
   _debugStepMeta.forEach(s => { _debugStepState[s.order] = 'pending'; });
 
+  // Hide error panel from any previous session
+  const errPanel = document.getElementById('dbg-error-panel');
+  if (errPanel) errPanel.style.display = 'none';
+
   // Show overlay
   document.getElementById('debug-overlay').style.display = 'flex';
   document.getElementById('debug-overlay-title').textContent = `Debugger — ${script.title}`;
@@ -2989,6 +3517,16 @@ function _debugOpenSse(sessionId) {
         _debugOnStep(msg); // has screenshotBase64 inline — skips HTTP fetch
       } catch (err) {
         console.warn('[debugger:sse] Failed to parse debug:step event', err);
+      }
+    });
+
+    src.addEventListener('debug:error', (e) => {
+      try {
+        const msg = JSON.parse(e.data);
+        console.log(`[debugger:sse] debug:error stepIdx=${msg.stepIdx} type=${msg.errorType}`);
+        _debugOnError(msg);
+      } catch (err) {
+        console.warn('[debugger:sse] Failed to parse debug:error event', err);
       }
     });
 
@@ -3165,6 +3703,138 @@ function _debugOnDone({ status }) {
   document.getElementById('dbg-btn-stop').disabled = true;
 }
 
+// Called when a step throws — shows error panel + inline edit, marks step red
+function _debugOnError({ stepIdx, keyword, locator, errorMessage, errorType }) {
+  // Mark the failed step red in the step list
+  _debugStepState[stepIdx] = 'failed';
+  _debugRenderSteps();
+  _debugScrollToStep(stepIdx);
+
+  // Update header info to show the failed step
+  document.getElementById('dbg-kw').textContent  = keyword  || '—';
+  document.getElementById('dbg-loc').textContent = locator  || '—';
+  document.getElementById('dbg-val').textContent = '—';
+
+  // Find step number + meta for display
+  const idx     = _debugStepMeta.findIndex(s => s.order === stepIdx || s.order === Math.floor(stepIdx));
+  const stepNum = idx >= 0 ? idx + 1 : stepIdx;
+  const stepMeta = idx >= 0 ? _debugStepMeta[idx] : null;
+
+  _debugSetProgress(`Step ${stepNum} of ${_debugTotalSteps} — FAILED`);
+  _debugSetStatus('error');
+
+  // Show error panel
+  const panel = document.getElementById('dbg-error-panel');
+  const title = document.getElementById('dbg-error-title');
+  const type  = document.getElementById('dbg-error-type');
+  const msg   = document.getElementById('dbg-error-message');
+  if (panel) panel.style.display = 'block';
+  if (title) title.textContent = `Step ${stepNum} Failed — ${keyword || ''}`;
+  if (type)  type.textContent  = errorType || 'Error';
+  if (msg)   msg.textContent   = errorMessage || 'Unknown error';
+
+  // ── Inline edit panel ────────────────────────────────────────────────────────
+  // Remove any existing edit panel first
+  const existingEdit = document.getElementById('dbg-inline-edit');
+  if (existingEdit) existingEdit.remove();
+
+  const LOCATOR_TYPES = ['css','xpath','id','name','text','testid','role','label','placeholder'];
+  const currentLoc    = locator || (stepMeta?.locator || '');
+  const currentLt     = stepMeta?.locatorType || 'css';
+  const currentVal    = stepMeta?.value || '';
+
+  const editPanel = document.createElement('div');
+  editPanel.id = 'dbg-inline-edit';
+  editPanel.style.cssText = 'margin-top:12px;background:#1e293b;border:1px solid #f59e0b;border-radius:8px;padding:14px 16px';
+  editPanel.innerHTML = `
+    <div style="font-size:12px;font-weight:700;color:#f59e0b;margin-bottom:10px;letter-spacing:0.5px">✎ EDIT &amp; RETRY — correct the step without stopping the session</div>
+    <div style="display:grid;grid-template-columns:130px 1fr;gap:8px;align-items:center;font-size:12px;color:#94a3b8">
+      <label>Locator Type</label>
+      <select id="dbg-edit-loctype" class="fm-input" style="font-size:12px;padding:3px 6px;background:#0f172a;color:#e2e8f0;border-color:#334155">
+        ${LOCATOR_TYPES.map(t => `<option value="${t}" ${currentLt===t?'selected':''}>${t}</option>`).join('')}
+      </select>
+      <label>Locator</label>
+      <input id="dbg-edit-loc" class="fm-input" type="text" value="${escHtml(currentLoc)}"
+        placeholder="Enter corrected locator…"
+        style="font-family:monospace;font-size:12px;padding:3px 6px;background:#0f172a;color:#e2e8f0;border-color:#334155">
+      <label>Value</label>
+      <input id="dbg-edit-val" class="fm-input" type="text" value="${escHtml(currentVal)}"
+        placeholder="Enter corrected value…"
+        style="font-size:12px;padding:3px 6px;background:#0f172a;color:#e2e8f0;border-color:#334155">
+    </div>
+    <div style="display:flex;gap:8px;margin-top:12px;align-items:center;flex-wrap:wrap">
+      <button class="btn btn-primary btn-sm" onclick="_debugApplyRetry(${stepIdx}, ${stepNum})">▶ Apply &amp; Retry</button>
+      <button class="btn btn-outline btn-sm" onclick="debugContinue('skip')">⏭ Skip Step</button>
+      <button class="btn btn-outline btn-sm" style="color:#ef4444;border-color:#ef4444" onclick="debugContinue('stop')">■ Stop</button>
+      <label style="margin-left:auto;display:flex;align-items:center;gap:6px;font-size:11px;color:#64748b;cursor:pointer">
+        <input type="checkbox" id="dbg-edit-persist" checked style="cursor:pointer">
+        Save changes to Script + Locator Repo
+      </label>
+    </div>`;
+
+  if (panel) panel.appendChild(editPanel);
+
+  // Disable Step + Skip buttons (handled by edit panel now)
+  const btnStep = document.getElementById('dbg-btn-step');
+  const btnSkip = document.getElementById('dbg-btn-skip');
+  if (btnStep) btnStep.disabled = true;
+  if (btnSkip) btnSkip.disabled = true;
+
+  console.log(`[debugger:error] Step ${stepIdx} (${keyword}) failed: ${errorType}: ${(errorMessage||'').slice(0,120)}`);
+}
+
+// Apply edits and send retry to the spec
+async function _debugApplyRetry(stepIdx, stepNum) {
+  const locator     = document.getElementById('dbg-edit-loc')?.value?.trim();
+  const locatorType = document.getElementById('dbg-edit-loctype')?.value;
+  const value       = document.getElementById('dbg-edit-val')?.value;
+  const persist     = document.getElementById('dbg-edit-persist')?.checked !== false;
+
+  if (!locator) { alert('Locator cannot be empty'); return; }
+
+  // Persist changes to script + locator repo
+  if (persist && _debugSessionId) {
+    try {
+      await fetch('/api/debug/patch-step', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({
+          sessionId:   _debugSessionId,
+          stepOrder:   Math.floor(stepIdx),
+          locator,
+          locatorType,
+          value,
+        }),
+      });
+    } catch (e) {
+      console.warn('[debugger] patch-step failed:', e);
+    }
+  }
+
+  // Remove the inline edit panel
+  document.getElementById('dbg-inline-edit')?.remove();
+
+  // Hide error panel
+  const panel = document.getElementById('dbg-error-panel');
+  if (panel) panel.style.display = 'none';
+
+  _debugSetStatus('running');
+  _debugSetProgress(`Retrying step ${stepNum} of ${_debugTotalSteps}…`);
+
+  // Send retry action with patched values to the spec via gate.json
+  await fetch('/api/debug/continue', {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({
+      sessionId:   _debugSessionId,
+      action:      'retry',
+      locator,
+      locatorType,
+      value,
+    }),
+  }).catch(() => {});
+}
+
 // Send continue / skip / stop to server
 async function debugContinue(action) {
   if (!_debugSessionId) return;
@@ -3233,7 +3903,7 @@ function _debugRenderSteps() {
   if (!el) return;
   el.innerHTML = _debugStepMeta.map(s => {
     const state = _debugStepState[s.order] || 'pending';
-    const icons = { pending: '○', active: '●', done: '✓', skipped: '⏭', error: '✗' };
+    const icons = { pending: '○', active: '●', done: '✓', skipped: '⏭', error: '✗', failed: '✗' };
     const icon  = icons[state] || '○';
     return `<div class="debug-step-row debug-step-${state}" data-order="${s.order}">
       <span class="debug-step-icon">${icon}</span>
@@ -3446,6 +4116,11 @@ async function recorderStart() {
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({ projectId: currentProjectId, autUrl: env.url }),
     });
+    if (res.status === 409) {
+      const d = await res.json();
+      alert(`Cannot start recording.\n\n${d.message || 'Another recording session is already active for this project.'}\n\nGo to the active session and click Stop Recording first.`);
+      return;
+    }
     if (!res.ok) throw new Error(await res.text());
     const data = await res.json();
     token = data.token;
@@ -3456,21 +4131,17 @@ async function recorderStart() {
 
   _recorderToken = token;
 
-  // Open the recorder instructions panel in a new tab.
-  // The panel shows the bookmarklet the user pastes into their AUT tab.
-  // We cannot inject recorder.js directly into a cross-origin AUT — the bookmarklet
-  // runs in the AUT's own browser context, bypassing cross-origin restrictions.
-  const loaderUrl = `/recorder-loader?token=${encodeURIComponent(token)}&url=${encodeURIComponent(env.url)}`;
-  _recorderTab = window.open(loaderUrl, '_blank');
-
   // Open SSE channel for live step delivery
   _recorderOpenSse(token);
 
   // Update UI
   const btn    = document.getElementById('recorder-btn');
   const status = document.getElementById('recorder-status');
-  if (btn)    { btn.textContent = '⏹ Stop Recording'; btn.classList.add('recording'); }
-  if (status) { status.textContent = 'Recording…'; status.style.display = 'inline'; }
+  if (btn)    { btn.textContent = '\u23F9 Stop Recording'; btn.classList.add('recording'); }
+  if (status) { status.textContent = 'Recording\u2026'; status.style.display = 'inline'; }
+
+  // Prompt user to activate extension — session is ready, extension just needs to connect
+  alert('Recording session started!\n\nNow open the QA Agent Recorder extension in Chrome and click "Start Recording".\nThe extension will inject into your AUT tab and stream steps here live.');
 }
 
 // ── Stop recording ───────────────────────────────────────────────────────────
@@ -3579,6 +4250,18 @@ function _recorderAppendStep(step, locatorCreated, locatorName) {
     last.style.background = 'rgba(139,92,246,0.15)';
     setTimeout(() => { last.style.background = ''; }, 1200);
 
+    // [Gap 4] Inline locator edit button on recorded step
+    const actionsBar = last.querySelector('.step-actions-bar') || last.querySelector('.step-header');
+    if (actionsBar) {
+      const editLocBtn = document.createElement('button');
+      editLocBtn.className = 'tbl-btn';
+      editLocBtn.title = 'Edit locator before saving';
+      editLocBtn.textContent = '✎ Fix Locator';
+      editLocBtn.style.cssText = 'font-size:10px;padding:2px 7px;margin-left:6px;background:#f59e0b;color:#fff;border:none;border-radius:3px;cursor:pointer';
+      editLocBtn.onclick = () => _recorderInlineEditLocator(last, stepData);
+      actionsBar.appendChild(editLocBtn);
+    }
+
     // Show "New from repo" badge if locator was auto-created
     if (locatorCreated) {
       const badge = document.createElement('span');
@@ -3589,4 +4272,60 @@ function _recorderAppendStep(step, locatorCreated, locatorName) {
       setTimeout(() => { try { badge.remove(); } catch {} }, 4000);
     }
   }
+}
+
+// ── [Gap 4] Inline locator editor — edit before saving ───────────────────────
+function _recorderInlineEditLocator(rowEl, stepData) {
+  // Remove any existing inline editor on this row
+  const existing = rowEl.querySelector('.rec-inline-edit');
+  if (existing) { existing.remove(); return; }
+
+  const LOCATOR_TYPES = ['css','xpath','id','name','text','testid','role','label','placeholder'];
+
+  const editor = document.createElement('div');
+  editor.className = 'rec-inline-edit';
+  editor.style.cssText = 'display:flex;gap:6px;align-items:center;padding:6px 10px 8px;background:#fef3c7;border-top:1px solid #f59e0b;flex-wrap:wrap';
+  editor.innerHTML = `
+    <span style="font-size:11px;font-weight:600;color:#92400e">Fix Locator:</span>
+    <select class="fm-input rec-loc-type" style="width:110px;font-size:12px;padding:2px 4px">
+      ${LOCATOR_TYPES.map(t => `<option value="${t}" ${stepData.locatorType === t ? 'selected' : ''}>${t}</option>`).join('')}
+    </select>
+    <input class="fm-input rec-loc-value" type="text" value="${escHtml(stepData.locator || '')}"
+      placeholder="Enter locator…" style="flex:1;min-width:200px;font-size:12px;padding:2px 6px;font-family:monospace">
+    <button class="btn btn-primary btn-sm" style="font-size:11px;padding:3px 10px" onclick="_recorderApplyLocatorEdit(this)">Apply</button>
+    <button class="tbl-btn" style="font-size:11px" onclick="this.closest('.rec-inline-edit').remove()">Cancel</button>`;
+  editor._stepData = stepData;
+  rowEl.appendChild(editor);
+  editor.querySelector('.rec-loc-value').focus();
+}
+
+function _recorderApplyLocatorEdit(btn) {
+  const editor    = btn.closest('.rec-inline-edit');
+  const rowEl     = editor.parentElement;
+  const stepData  = editor._stepData;
+  const newType   = editor.querySelector('.rec-loc-type').value;
+  const newLoc    = editor.querySelector('.rec-loc-value').value.trim();
+  if (!newLoc) { alert('Locator cannot be empty'); return; }
+
+  // Update stepData in-place (it's a reference from the scriptAddStep call)
+  stepData.locator     = newLoc;
+  stepData.locatorType = newType;
+  stepData.locatorName = newLoc;
+
+  // Update the displayed locator text in the step row
+  const locDisplay = rowEl.querySelector('.step-locator-text, .step-locator, [data-field="locator"]');
+  if (locDisplay) locDisplay.textContent = newLoc;
+
+  // Update the underlying hidden inputs if scriptAddStep rendered them
+  const locInput     = rowEl.querySelector('input[name="locator"], .se-locator-input');
+  const locTypeInput = rowEl.querySelector('select[name="locatorType"], .se-loctype-select');
+  if (locInput)     locInput.value     = newLoc;
+  if (locTypeInput) locTypeInput.value = newType;
+
+  editor.remove();
+
+  // Flash green to confirm
+  rowEl.style.transition = 'background 0.2s';
+  rowEl.style.background = 'rgba(34,197,94,0.15)';
+  setTimeout(() => { rowEl.style.background = ''; }, 1000);
 }
