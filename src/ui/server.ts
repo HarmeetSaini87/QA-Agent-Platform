@@ -2721,6 +2721,10 @@ app.delete('/api/scripts/:id', (req: Request, res: Response) => {
 
 // ── Test Suites (project-scoped) ──────────────────────────────────────────────
 
+app.get('/api/suites/all', requireAdmin, (_req: Request, res: Response) => {
+  res.json(readAll<TestSuite>(SUITES));
+});
+
 app.get('/api/suites', (req: Request, res: Response) => {
   const { projectId } = req.query as { projectId?: string };
   if (!projectId) { res.status(400).json({ error: 'projectId required' }); return; }

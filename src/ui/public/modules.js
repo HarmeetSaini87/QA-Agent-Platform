@@ -5794,7 +5794,10 @@ function _recorderApplyLocatorEdit(btn) {
 // API KEY MANAGEMENT
 // ══════════════════════════════════════════════════════════════════════════════
 
-let _apikeyRawKey = null;
+let _apikeyRawKey    = null;
+let _akAllSuites     = [];
+let _akAllProjects   = [];
+let _akGeneratedId   = null;  // id returned after generation (for YAML suite/env fallback)
 
 async function apikeyLoad() {
   const res  = await fetch('/api/admin/apikeys');
@@ -5821,21 +5824,166 @@ async function _getProjects() {
   try { const r = await fetch('/api/projects'); return await r.json(); } catch { return []; }
 }
 
-function apikeyOpenModal() {
-  _apikeyRawKey = null;
-  document.getElementById('ak-name').value = '';
+async function _getSuites(projectId) {
+  try {
+    const url = projectId ? `/api/suites?projectId=${projectId}` : '/api/suites/all';
+    const r = await fetch(url);
+    if (!r.ok) return [];
+    return await r.json();
+  } catch { return []; }
+}
+
+async function apikeyOpenModal() {
+  _apikeyRawKey  = null;
+  _akGeneratedId = null;
+
+  // Reset form
+  document.getElementById('ak-name').value    = '';
   document.getElementById('ak-expires').value = '';
+  document.getElementById('ak-suite').innerHTML  = '<option value="">— select suite —</option>';
+  document.getElementById('ak-env').innerHTML    = '<option value="">— select environment —</option>';
+  document.getElementById('ak-timeout').value = '30';
+  document.getElementById('ak-poll').value    = '5';
   document.getElementById('apikey-modal-alert').innerHTML = '';
   document.getElementById('apikey-result-block').style.display = 'none';
-  document.getElementById('apikey-form-block').style.display = '';
-  document.getElementById('ak-save-btn').style.display = '';
-  // Populate project dropdown
-  _getProjects().then(projects => {
-    const sel = document.getElementById('ak-project');
-    sel.innerHTML = '<option value="">All projects</option>' +
-      projects.map(p => `<option value="${p.id}">${escHtml(p.name)}</option>`).join('');
-  });
+  document.getElementById('apikey-form-block').style.display   = '';
+  document.getElementById('ak-save-btn').style.display         = '';
+  document.getElementById('ak-modal-title').textContent        = 'Generate API Key';
+  document.getElementById('ak-copy-yaml-btn').disabled         = true;
+  document.getElementById('ak-dl-yaml-btn').disabled           = true;
+  document.getElementById('ak-yaml-preview').textContent       = 'Configure the fields on the left to preview the generated YAML.';
+
+  // Load projects + suites in parallel
+  [_akAllProjects, _akAllSuites] = await Promise.all([_getProjects(), _getSuites(null)]);
+
+  const projSel = document.getElementById('ak-project');
+  projSel.innerHTML = '<option value="">All projects</option>' +
+    _akAllProjects.map(p => `<option value="${p.id}">${escHtml(p.name)}</option>`).join('');
+
+  _akPopulateSuites('');
+  _akYamlUpdate();
   document.getElementById('modal-apikey').style.display = 'flex';
+}
+
+function _akPopulateSuites(projectId) {
+  const filtered = projectId
+    ? _akAllSuites.filter(s => s.projectId === projectId)
+    : _akAllSuites;
+  const sel = document.getElementById('ak-suite');
+  sel.innerHTML = '<option value="">— select suite —</option>' +
+    filtered.map(s => `<option value="${s.id}">${escHtml(s.name)}</option>`).join('');
+  document.getElementById('ak-env').innerHTML = '<option value="">— select environment —</option>';
+  _akYamlUpdate();
+}
+
+function _akProjectChange() {
+  const projectId = document.getElementById('ak-project').value;
+  _akPopulateSuites(projectId);
+  _akYamlUpdate();
+}
+
+function _akSuiteChange() {
+  const suiteId = document.getElementById('ak-suite').value;
+  const suite   = _akAllSuites.find(s => s.id === suiteId);
+  const envSel  = document.getElementById('ak-env');
+  envSel.innerHTML = '<option value="">— select environment —</option>';
+
+  if (suite) {
+    // Load environments from the suite's project
+    const proj = _akAllProjects.find(p => p.id === suite.projectId);
+    if (proj && proj.environments && proj.environments.length) {
+      proj.environments.forEach(e => {
+        const opt = document.createElement('option');
+        opt.value = e.id;
+        opt.textContent = `${e.name} — ${e.url}`;
+        // Pre-select if suite has a saved environmentId
+        if (suite.environmentId && suite.environmentId === e.id) opt.selected = true;
+        envSel.appendChild(opt);
+      });
+    }
+  }
+  _akYamlUpdate();
+}
+
+function _akYamlUpdate() {
+  const platform  = window.location.origin;
+  const keyName   = document.getElementById('ak-name').value.trim() || 'ADO Pipeline — QA';
+  const suiteId   = document.getElementById('ak-suite').value;
+  const suiteName = suiteId ? ((_akAllSuites.find(s => s.id === suiteId) || {}).name || suiteId) : '<SUITE_ID>';
+  const envId     = document.getElementById('ak-env').value || '<ENV_ID>';
+  const timeout   = document.getElementById('ak-timeout').value || '30';
+  const poll      = document.getElementById('ak-poll').value || '5';
+  const rawKey    = _apikeyRawKey || '$(QA_API_KEY)';
+  const suiteIdVal = suiteId || '<SUITE_ID>';
+
+  const yaml = `# Generated by QA Agent Platform — ${new Date().toISOString().slice(0,10)}
+# Key: ${keyName}
+# Suite: ${suiteName}
+
+variables:
+  - group: qa-platform-config
+  # Required secrets in Variable Group:
+  #   QA_API_KEY  = ${_apikeyRawKey ? rawKey : '<paste key here — mark as secret>'}
+
+- task: PowerShell@2
+  displayName: 'QA Suite — ${suiteName.replace(/'/g, "\\'")}'
+  env:
+    QA_API_KEY: $(QA_API_KEY)
+  inputs:
+    targetType: inline
+    script: |
+      \\$ErrorActionPreference = 'Stop'
+      \\$platform  = '${platform}'
+      \\$suiteId   = '${suiteIdVal}'
+      \\$envId     = '${envId}'
+      \\$headers   = @{ Authorization = "Bearer \\$env:QA_API_KEY"; 'Content-Type' = 'application/json' }
+      \\$body      = @{ environmentId = \\$envId } | ConvertTo-Json
+
+      Write-Host "Triggering QA suite: ${suiteName.replace(/'/g, "\\'")}"
+      \\$trigger = Invoke-RestMethod -Uri "\\$platform/api/suites/\\$suiteId/run" \`
+                    -Method POST -Headers \\$headers -Body \\$body
+      \\$runId = \\$trigger.runId
+      if (-not \\$runId) { Write-Error "No runId returned."; exit 1 }
+      Write-Host "Run ID: \\$runId"
+
+      \\$deadline = (Get-Date).AddMinutes(${timeout})
+      do {
+        Start-Sleep -Seconds ${poll}
+        \\$run = Invoke-RestMethod -Uri "\\$platform/api/run/\\$runId" -Headers \\$headers
+        Write-Host "[\\$( \\$run.status)] passed=\\$(\\$run.passed) failed=\\$(\\$run.failed) total=\\$(\\$run.total)"
+        if ((Get-Date) -gt \\$deadline) { Write-Error "Timed out after ${timeout} minutes."; exit 1 }
+      } while (\\$run.status -eq 'running')
+
+      \\$reportUrl = "\\$platform/execution-report?runId=\\$runId"
+      Write-Host "Report: \\$reportUrl"
+
+      \\$md = @"
+## QA Suite Results — ${suiteName.replace(/`/g, '\\`')}
+| | |
+|---|---|
+| Status  | \\$(\\$run.status) |
+| Passed  | \\$(\\$run.passed) |
+| Failed  | \\$(\\$run.failed) |
+| Total   | \\$(\\$run.total) |
+
+[Open Full Report](\\$reportUrl)
+"@
+      \\$md | Out-File "\\$(\\$env:AGENT_TEMPDIRECTORY)/qa-summary.md" -Encoding utf8
+      Write-Host "##vso[task.uploadsummary]\\$(\\$env:AGENT_TEMPDIRECTORY)/qa-summary.md"
+
+      if (\\$run.status -eq 'failed' -or \\$run.failed -gt 0) {
+        Write-Error "QA suite FAILED (\\$(\\$run.failed) test(s) failed)."
+        exit 1
+      }
+      Write-Host "All tests passed."
+      exit 0`;
+
+  document.getElementById('ak-yaml-preview').textContent = yaml;
+
+  // Enable copy/download if suite is selected
+  const canExport = !!suiteId;
+  document.getElementById('ak-copy-yaml-btn').disabled = !canExport;
+  document.getElementById('ak-dl-yaml-btn').disabled   = !canExport;
 }
 
 function apikeyCloseModal() {
@@ -5847,32 +5995,61 @@ function apikeyCopyKey() {
   if (_apikeyRawKey) navigator.clipboard.writeText(_apikeyRawKey).catch(() => {});
 }
 
+function _akCopyYaml() {
+  const yaml = document.getElementById('ak-yaml-preview').textContent;
+  navigator.clipboard.writeText(yaml).then(() => {
+    const btn = document.getElementById('ak-copy-yaml-btn');
+    const orig = btn.textContent;
+    btn.textContent = 'Copied!';
+    setTimeout(() => { btn.textContent = orig; }, 1500);
+  }).catch(() => {});
+}
+
+function _akDownloadYaml() {
+  const yaml     = document.getElementById('ak-yaml-preview').textContent;
+  const suiteSel = document.getElementById('ak-suite');
+  const suiteName = suiteSel.options[suiteSel.selectedIndex]?.text || 'qa-suite';
+  const safeName  = suiteName.replace(/[^a-zA-Z0-9_-]/g, '-').toLowerCase();
+  const blob = new Blob([yaml], { type: 'text/yaml' });
+  const a    = document.createElement('a');
+  a.href     = URL.createObjectURL(blob);
+  a.download = `qa-pipeline-${safeName}.yml`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
 async function apikeySave() {
   const name      = document.getElementById('ak-name').value.trim();
   const projectId = document.getElementById('ak-project').value || null;
   const expiresIn = document.getElementById('ak-expires').value;
-  const alert     = document.getElementById('apikey-modal-alert');
+  const alertEl   = document.getElementById('apikey-modal-alert');
 
-  if (!name) { alert.innerHTML = '<div class="alert alert-error">Name is required.</div>'; return; }
+  if (!name) { alertEl.innerHTML = '<div class="alert alert-error">Key name is required.</div>'; return; }
 
   let expiresAt = null;
   if (expiresIn) {
-    const days = parseInt(expiresIn);
     const d = new Date();
-    d.setDate(d.getDate() + days);
+    d.setDate(d.getDate() + parseInt(expiresIn));
     expiresAt = d.toISOString();
   }
 
-  const res  = await fetch('/api/admin/apikeys', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, projectId, expiresAt }) });
+  const res  = await fetch('/api/admin/apikeys', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, projectId, expiresAt })
+  });
   const data = await res.json();
-  if (!res.ok) { alert.innerHTML = `<div class="alert alert-error">${escHtml(data.error || 'Error')}</div>`; return; }
+  if (!res.ok) { alertEl.innerHTML = `<div class="alert alert-error">${escHtml(data.error || 'Error')}</div>`; return; }
 
-  _apikeyRawKey = data.key;
-  document.getElementById('apikey-raw-display').textContent = data.key;
+  _apikeyRawKey  = data.key;
+  _akGeneratedId = data.id;
+
+  document.getElementById('apikey-raw-display').textContent    = data.key;
   document.getElementById('apikey-result-block').style.display = '';
-  document.getElementById('apikey-form-block').style.display = 'none';
-  document.getElementById('ak-save-btn').style.display = 'none';
+  document.getElementById('ak-save-btn').style.display         = 'none';
+  document.getElementById('ak-modal-title').textContent        = 'Key Generated — Save YAML';
+
+  // Refresh YAML with real key value embedded
+  _akYamlUpdate();
 }
 
 async function apikeyDelete(id) {
