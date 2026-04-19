@@ -2890,6 +2890,62 @@ app.delete('/api/scripts/:id', (req: Request, res: Response) => {
   res.json({ success: true });
 });
 
+// ── Bulk Script Actions ───────────────────────────────────────────────────────
+
+// DELETE /api/scripts/bulk  { ids: string[] }
+app.delete('/api/scripts/bulk', requireAuth, (req: Request, res: Response) => {
+  const { ids } = req.body as { ids?: string[] };
+  if (!Array.isArray(ids) || ids.length === 0) { res.status(400).json({ error: 'ids array required' }); return; }
+  const deleted: string[] = [];
+  for (const id of ids) {
+    const existing = findById<TestScript>(SCRIPTS, id);
+    if (!existing) continue;
+    remove(SCRIPTS, id);
+    deleted.push(id);
+    logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'SCRIPT_DELETED', resourceType: 'script', resourceId: id, details: `bulk delete`, ip: req.ip ?? null });
+  }
+  res.json({ deleted, count: deleted.length });
+});
+
+// PATCH /api/scripts/bulk  { ids: string[], patch: { priority?, tags?, component? } }
+app.patch('/api/scripts/bulk', requireAuth, (req: Request, res: Response) => {
+  const { ids, patch } = req.body as { ids?: string[]; patch?: Partial<Pick<TestScript, 'priority' | 'tags' | 'component'>> };
+  if (!Array.isArray(ids) || ids.length === 0) { res.status(400).json({ error: 'ids array required' }); return; }
+  if (!patch || Object.keys(patch).length === 0) { res.status(400).json({ error: 'patch object required' }); return; }
+  const updated: string[] = [];
+  const all = readAll<TestScript>(SCRIPTS);
+  for (const script of all) {
+    if (!ids.includes(script.id)) continue;
+    if (patch.priority)  script.priority  = patch.priority;
+    if (patch.tags)      script.tags      = patch.tags;
+    if (patch.component !== undefined) script.component = patch.component;
+    script.modifiedBy = req.session.username ?? 'unknown';
+    script.modifiedAt = new Date().toISOString();
+    updated.push(script.id);
+  }
+  writeAll(SCRIPTS, all);
+  logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'SCRIPTS_BULK_UPDATED', resourceType: 'script', resourceId: null, details: `${updated.length} scripts patched`, ip: req.ip ?? null });
+  res.json({ updated, count: updated.length });
+});
+
+// POST /api/scripts/bulk-suite  { ids: string[], suiteId: string }
+app.post('/api/scripts/bulk-suite', requireAuth, (req: Request, res: Response) => {
+  const { ids, suiteId } = req.body as { ids?: string[]; suiteId?: string };
+  if (!Array.isArray(ids) || ids.length === 0) { res.status(400).json({ error: 'ids array required' }); return; }
+  if (!suiteId) { res.status(400).json({ error: 'suiteId required' }); return; }
+  const allSuites = readAll<TestSuite>(SUITES);
+  const suite = allSuites.find(s => s.id === suiteId);
+  if (!suite) { res.status(404).json({ error: 'Suite not found' }); return; }
+  const existing = new Set(suite.scriptIds);
+  const added: string[] = [];
+  for (const id of ids) {
+    if (!existing.has(id)) { suite.scriptIds.push(id); added.push(id); }
+  }
+  writeAll(SUITES, allSuites);
+  logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'SCRIPTS_BULK_ADDED_TO_SUITE', resourceType: 'suite', resourceId: suiteId, details: `${added.length} scripts added`, ip: req.ip ?? null });
+  res.json({ added, count: added.length, suiteId });
+});
+
 // ── Test Suites (project-scoped) ──────────────────────────────────────────────
 
 app.get('/api/suites/all', requireAdmin, (_req: Request, res: Response) => {

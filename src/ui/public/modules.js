@@ -1364,12 +1364,18 @@ function scriptRender() {
       <button class="tbl-btn" onclick="_scriptPageGo(1)" ${_scriptPage >= totalPages - 1 ? 'disabled' : ''}>Next &#8594;</button>
     </div>`;
   listEl.innerHTML = `
-    <div style="display:flex;align-items:center;gap:8px;padding:6px 2px 8px">
+    <div style="display:flex;align-items:center;gap:8px;padding:6px 2px 8px;flex-wrap:wrap">
       <label style="display:flex;align-items:center;gap:5px;font-size:12.5px;cursor:pointer">
         <input type="checkbox" id="script-select-all" onchange="scriptSelectAll(this)" /> Select All
       </label>
-      <button class="tbl-btn del" id="script-bulk-del-btn" style="display:none" onclick="scriptDeleteSelected()">Delete Selected</button>
-      <span id="script-sel-count" style="font-size:12px;color:var(--neutral-400)"></span>
+      <span id="script-sel-count" style="font-size:12px;color:var(--neutral-500);font-weight:600"></span>
+      <!-- Bulk action bar — hidden until ≥1 selected -->
+      <div id="script-bulk-bar" style="display:none;display:none;align-items:center;gap:6px;flex-wrap:wrap">
+        <button class="tbl-btn" style="background:#3b82f6;color:#fff;border-color:#3b82f6" onclick="scriptBulkAddToSuite()">&#10133; Add to Suite</button>
+        <button class="tbl-btn" onclick="scriptBulkSetPriority()">&#9881; Set Priority</button>
+        <button class="tbl-btn" onclick="scriptBulkSetTag()">&#127991; Set Tag</button>
+        <button class="tbl-btn del" onclick="scriptDeleteSelected()">&#128465; Delete</button>
+      </div>
     </div>
     <div class="lt-wrap">
       <div class="lt-body-wrap">
@@ -1424,22 +1430,169 @@ function scriptSelectAll(chk) {
 }
 
 function scriptSelectionChanged() {
-  const checked = [...document.querySelectorAll('.script-row-chk:checked')];
-  const allChk  = document.getElementById('script-select-all');
+  const checked  = [...document.querySelectorAll('.script-row-chk:checked')];
+  const allChk   = document.getElementById('script-select-all');
   const allBoxes = document.querySelectorAll('.script-row-chk');
   if (allChk) allChk.indeterminate = checked.length > 0 && checked.length < allBoxes.length;
-  const delBtn  = document.getElementById('script-bulk-del-btn');
+  const bulkBar = document.getElementById('script-bulk-bar');
   const countEl = document.getElementById('script-sel-count');
-  if (delBtn)  delBtn.style.display = checked.length > 0 ? '' : 'none';
-  if (countEl) countEl.textContent  = checked.length > 0 ? `${checked.length} selected` : '';
+  if (bulkBar) bulkBar.style.display = checked.length > 0 ? 'flex' : 'none';
+  if (countEl) countEl.textContent   = checked.length > 0 ? `${checked.length} selected` : '';
 }
 
 async function scriptDeleteSelected() {
   const ids = [...document.querySelectorAll('.script-row-chk:checked')].map(c => c.value);
   if (!ids.length) return;
   if (!confirm(`Delete ${ids.length} script${ids.length > 1 ? 's' : ''}? This cannot be undone.`)) return;
-  await Promise.all(ids.map(id => fetch(`/api/scripts/${id}`, { method: 'DELETE' })));
+  const res = await fetch('/api/scripts/bulk', {
+    method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids }),
+  });
+  const data = await res.json();
+  if (!res.ok) { alert(data.error || 'Delete failed'); return; }
   await scriptLoad();
+}
+
+async function scriptBulkAddToSuite() {
+  const ids = [...document.querySelectorAll('.script-row-chk:checked')].map(c => c.value);
+  if (!ids.length) return;
+  const suites = allSuites.filter(s => s.projectId === currentProjectId);
+  if (!suites.length) { alert('No suites in this project. Create a suite first.'); return; }
+  const options = suites.map(s => `<option value="${escHtml(s.id)}">${escHtml(s.name)}</option>`).join('');
+  // Inline modal
+  const existing = document.getElementById('bulk-suite-modal');
+  if (existing) existing.remove();
+  const modal = document.createElement('div');
+  modal.id = 'bulk-suite-modal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center';
+  modal.innerHTML = `
+    <div style="background:#1e2329;border-radius:10px;padding:28px 32px;min-width:340px;box-shadow:0 8px 32px rgba(0,0,0,.5)">
+      <div style="font-size:15px;font-weight:700;color:#f1f5f9;margin-bottom:16px">&#10133; Add ${ids.length} Script${ids.length>1?'s':''} to Suite</div>
+      <select id="bulk-suite-sel" class="fm-input" style="width:100%;margin-bottom:16px">
+        <option value="">— Select a suite —</option>${options}
+      </select>
+      <div id="bulk-suite-alert" style="margin-bottom:10px;font-size:12.5px;color:#f48771;display:none"></div>
+      <div style="display:flex;gap:10px;justify-content:flex-end">
+        <button class="btn btn-outline" onclick="document.getElementById('bulk-suite-modal').remove()">Cancel</button>
+        <button class="btn btn-primary" onclick="scriptBulkAddToSuiteConfirm(${JSON.stringify(ids)})">Add to Suite</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+}
+
+async function scriptBulkAddToSuiteConfirm(ids) {
+  const suiteId = document.getElementById('bulk-suite-sel')?.value;
+  const alertEl = document.getElementById('bulk-suite-alert');
+  if (!suiteId) { alertEl.textContent = 'Select a suite first.'; alertEl.style.display = ''; return; }
+  const res  = await fetch('/api/scripts/bulk-suite', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids, suiteId }),
+  });
+  const data = await res.json();
+  if (!res.ok) { alertEl.textContent = data.error || 'Failed'; alertEl.style.display = ''; return; }
+  document.getElementById('bulk-suite-modal')?.remove();
+  const suiteName = allSuites.find(s => s.id === suiteId)?.name || suiteId;
+  // Brief success toast
+  const toast = document.createElement('div');
+  toast.style.cssText = 'position:fixed;bottom:24px;right:24px;background:#166534;color:#fff;padding:12px 20px;border-radius:8px;font-size:13px;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,.3)';
+  toast.textContent = `✓ ${data.count} script${data.count!==1?'s':''} added to "${suiteName}"`;
+  document.body.appendChild(toast);
+  setTimeout(() => toast.remove(), 3500);
+  await suiteLoad();
+}
+
+async function scriptBulkSetPriority() {
+  const ids = [...document.querySelectorAll('.script-row-chk:checked')].map(c => c.value);
+  if (!ids.length) return;
+  const priorities = ['low','medium','high','critical'];
+  const choice = await _bulkPickModal(
+    `&#9881; Set Priority for ${ids.length} Script${ids.length>1?'s':''}`,
+    'Priority', priorities.map(p => ({ value: p, label: p.charAt(0).toUpperCase()+p.slice(1) }))
+  );
+  if (!choice) return;
+  const res  = await fetch('/api/scripts/bulk', {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids, patch: { priority: choice } }),
+  });
+  if (!res.ok) { alert('Failed to update priority'); return; }
+  _bulkToast(`✓ Priority set to "${choice}" for ${ids.length} script${ids.length>1?'s':''}`);
+  await scriptLoad();
+}
+
+async function scriptBulkSetTag() {
+  const ids = [...document.querySelectorAll('.script-row-chk:checked')].map(c => c.value);
+  if (!ids.length) return;
+  const tag = await _bulkInputModal(`&#127991; Set Tag for ${ids.length} Script${ids.length>1?'s':''}`, 'Tag value');
+  if (tag === null) return;
+  const res = await fetch('/api/scripts/bulk', {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids, patch: { tags: [tag.trim()] } }),
+  });
+  if (!res.ok) { alert('Failed to update tag'); return; }
+  _bulkToast(`✓ Tag "${tag}" applied to ${ids.length} script${ids.length>1?'s':''}`);
+  await scriptLoad();
+}
+
+// Shared helpers for bulk modals
+function _bulkPickModal(title, label, options) {
+  return new Promise(resolve => {
+    const existing = document.getElementById('bulk-pick-modal');
+    if (existing) existing.remove();
+    const modal = document.createElement('div');
+    modal.id = 'bulk-pick-modal';
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center';
+    const opts = options.map(o => `<option value="${escHtml(o.value)}">${escHtml(o.label)}</option>`).join('');
+    modal.innerHTML = `
+      <div style="background:#1e2329;border-radius:10px;padding:28px 32px;min-width:320px;box-shadow:0 8px 32px rgba(0,0,0,.5)">
+        <div style="font-size:15px;font-weight:700;color:#f1f5f9;margin-bottom:16px">${title}</div>
+        <select id="bulk-pick-sel" class="fm-input" style="width:100%;margin-bottom:16px"><option value="">— Select ${escHtml(label)} —</option>${opts}</select>
+        <div style="display:flex;gap:10px;justify-content:flex-end">
+          <button class="btn btn-outline" onclick="document.getElementById('bulk-pick-modal').remove()">Cancel</button>
+          <button class="btn btn-primary" onclick="
+            const v=document.getElementById('bulk-pick-sel').value;
+            if(!v)return;
+            document.getElementById('bulk-pick-modal').remove();
+            window.__bulkPickResolve(v);">Apply</button>
+        </div>
+      </div>`;
+    document.body.appendChild(modal);
+    window.__bulkPickResolve = resolve;
+    modal.addEventListener('click', e => { if (e.target === modal) { modal.remove(); resolve(null); } });
+  });
+}
+
+function _bulkInputModal(title, placeholder) {
+  return new Promise(resolve => {
+    const existing = document.getElementById('bulk-input-modal');
+    if (existing) existing.remove();
+    const modal = document.createElement('div');
+    modal.id = 'bulk-input-modal';
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center';
+    modal.innerHTML = `
+      <div style="background:#1e2329;border-radius:10px;padding:28px 32px;min-width:320px;box-shadow:0 8px 32px rgba(0,0,0,.5)">
+        <div style="font-size:15px;font-weight:700;color:#f1f5f9;margin-bottom:16px">${title}</div>
+        <input id="bulk-input-val" class="fm-input" placeholder="${escHtml(placeholder)}" style="width:100%;margin-bottom:16px" />
+        <div style="display:flex;gap:10px;justify-content:flex-end">
+          <button class="btn btn-outline" onclick="document.getElementById('bulk-input-modal').remove()">Cancel</button>
+          <button class="btn btn-primary" onclick="
+            const v=document.getElementById('bulk-input-val').value.trim();
+            if(!v)return;
+            document.getElementById('bulk-input-modal').remove();
+            window.__bulkInputResolve(v);">Apply</button>
+        </div>
+      </div>`;
+    document.body.appendChild(modal);
+    window.__bulkInputResolve = resolve;
+    modal.addEventListener('click', e => { if (e.target === modal) { modal.remove(); resolve(null); } });
+    document.getElementById('bulk-input-val')?.focus();
+  });
+}
+
+function _bulkToast(msg) {
+  const toast = document.createElement('div');
+  toast.style.cssText = 'position:fixed;bottom:24px;right:24px;background:#166534;color:#fff;padding:12px 20px;border-radius:8px;font-size:13px;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,.3)';
+  toast.textContent = msg;
+  document.body.appendChild(toast);
+  setTimeout(() => toast.remove(), 3500);
 }
 
 async function scriptOpenEditor(id = null) {
@@ -4362,7 +4515,11 @@ function histRender() {
     const browserLabel = browserSet.size > 0
       ? [...browserSet].map(b => `<span title="${b}" style="font-size:13px">${browserIcons[b] || b}</span>`).join(' ')
       : '<span style="color:var(--neutral-400);font-size:11px">chromium</span>';
+    const compareCb = isDone
+      ? `<input type="checkbox" class="hist-compare-chk" value="${escHtml(r.runId)}" onchange="histCompareSelChanged()" style="width:14px;height:14px;cursor:pointer" />`
+      : `<span style="width:14px;display:inline-block"></span>`;
     return `<tr>
+      <td style="text-align:center">${compareCb}</td>
       <td><code style="font-size:11px">${escHtml(shortId)}</code></td>
       <td>${suite}${healBadge}</td>
       <td>${statusBadge}</td>
@@ -4492,6 +4649,149 @@ function histDetailClose() {
 
 function histOpenReport(runId) {
   window.open(`/execution-report?runId=${encodeURIComponent(runId)}`, '_blank');
+}
+
+// ── Run Comparison ─────────────────────────────────────────────────────────────
+
+function histCompareSelChanged() {
+  const checked = [...document.querySelectorAll('.hist-compare-chk:checked')];
+  const bar     = document.getElementById('hist-compare-bar');
+  const countEl = document.getElementById('hist-compare-count');
+  const btn     = document.getElementById('hist-compare-btn');
+  if (!bar) return;
+  bar.style.display  = checked.length > 0 ? 'flex' : 'none';
+  countEl.textContent = `${checked.length} run${checked.length !== 1 ? 's' : ''} selected`;
+  btn.disabled = checked.length !== 2;
+}
+
+function histClearCompare() {
+  document.querySelectorAll('.hist-compare-chk').forEach(c => c.checked = false);
+  histCompareSelChanged();
+}
+
+async function histCompare() {
+  const ids = [...document.querySelectorAll('.hist-compare-chk:checked')].map(c => c.value);
+  if (ids.length !== 2) return;
+  // Fetch full run records
+  const [r1, r2] = await Promise.all(ids.map(id =>
+    fetch(`/api/report/${encodeURIComponent(id)}`).then(r => r.json())
+  ));
+  _histRenderComparison(r1, r2);
+}
+
+function _histRenderComparison(r1, r2) {
+  const overlay = document.getElementById('run-compare-overlay');
+  const body    = document.getElementById('run-compare-body');
+  if (!overlay || !body) return;
+
+  const fmtDate = s => s ? new Date(s).toLocaleString() : '—';
+  const fmtDur  = (a, b) => {
+    if (!a || !b) return '—';
+    const ms = new Date(b).getTime() - new Date(a).getTime();
+    return ms < 60000 ? `${Math.round(ms/1000)}s` : `${Math.floor(ms/60000)}m ${Math.round((ms%60000)/1000)}s`;
+  };
+
+  // Build test name → result maps
+  const map1 = new Map((r1.tests || []).map(t => [t.name, t]));
+  const map2 = new Map((r2.tests || []).map(t => [t.name, t]));
+  const allNames = new Set([...map1.keys(), ...map2.keys()]);
+
+  const newlyFailed = [], newlyPassed = [], durationChanged = [], stable = [], onlyInA = [], onlyInB = [];
+
+  for (const name of allNames) {
+    const t1 = map1.get(name);
+    const t2 = map2.get(name);
+    if (!t1) { onlyInB.push({ name, t: t2 }); continue; }
+    if (!t2) { onlyInA.push({ name, t: t1 }); continue; }
+    if (t1.status === 'pass' && t2.status === 'fail') newlyFailed.push({ name, t1, t2 });
+    else if (t1.status === 'fail' && t2.status === 'pass') newlyPassed.push({ name, t1, t2 });
+    else {
+      const durDiff = Math.abs((t2.durationMs || 0) - (t1.durationMs || 0));
+      const durPct  = t1.durationMs > 0 ? (durDiff / t1.durationMs) * 100 : 0;
+      if (durPct >= 50 && durDiff > 1000) durationChanged.push({ name, t1, t2, durDiff, durPct });
+      else stable.push({ name, t1, t2 });
+    }
+  }
+
+  const fmtMs = ms => !ms ? '—' : ms < 1000 ? `${ms}ms` : `${(ms/1000).toFixed(1)}s`;
+  const rowClass = status => status === 'pass' ? '#4ec9b0' : '#f48771';
+
+  const section = (title, icon, color, rows, cols) => {
+    if (!rows.length) return '';
+    return `
+      <div style="margin-bottom:20px">
+        <div style="font-size:13px;font-weight:700;color:${color};margin-bottom:8px">${icon} ${title} (${rows.length})</div>
+        <table class="data-table" style="width:100%">
+          <thead><tr>${cols.map(c=>`<th>${c}</th>`).join('')}</tr></thead>
+          <tbody>${rows.join('')}</tbody>
+        </table>
+      </div>`;
+  };
+
+  const failRows = newlyFailed.map(({name,t1,t2}) => `<tr>
+    <td style="max-width:280px;word-break:break-word;font-size:12px">${escHtml(name)}</td>
+    <td style="text-align:center;color:#4ec9b0">✓ Pass</td>
+    <td style="text-align:center;color:#f48771">✗ Fail</td>
+    <td style="font-size:11px;max-width:200px;word-break:break-word;color:#f48771">${escHtml((t2.errorMessage||'').slice(0,120))}</td>
+  </tr>`);
+
+  const passRows = newlyPassed.map(({name,t1,t2}) => `<tr>
+    <td style="max-width:280px;word-break:break-word;font-size:12px">${escHtml(name)}</td>
+    <td style="text-align:center;color:#f48771">✗ Fail</td>
+    <td style="text-align:center;color:#4ec9b0">✓ Pass</td>
+    <td style="font-size:11px;color:var(--neutral-400)">Fixed</td>
+  </tr>`);
+
+  const durRows = durationChanged.map(({name,t1,t2,durPct}) => `<tr>
+    <td style="max-width:280px;word-break:break-word;font-size:12px">${escHtml(name)}</td>
+    <td style="text-align:center">${fmtMs(t1.durationMs)}</td>
+    <td style="text-align:center">${fmtMs(t2.durationMs)}</td>
+    <td style="text-align:center;color:${t2.durationMs > t1.durationMs ? '#f48771' : '#4ec9b0'};font-weight:700">${t2.durationMs > t1.durationMs ? '▲' : '▼'} ${Math.round(durPct)}%</td>
+  </tr>`);
+
+  const stableRows = stable.map(({name,t1,t2}) => `<tr>
+    <td style="max-width:280px;word-break:break-word;font-size:12px;color:var(--neutral-400)">${escHtml(name)}</td>
+    <td style="text-align:center;color:${rowClass(t1.status)}">${t1.status === 'pass' ? '✓' : '✗'}</td>
+    <td style="text-align:center;color:${rowClass(t2.status)}">${t2.status === 'pass' ? '✓' : '✗'}</td>
+    <td style="text-align:center;font-size:11px;color:var(--neutral-400)">${fmtMs(t1.durationMs)} → ${fmtMs(t2.durationMs)}</td>
+  </tr>`);
+
+  body.innerHTML = `
+    <!-- Header cards -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">
+      ${[r1,r2].map((r,i) => `
+        <div style="background:var(--neutral-800,#1e2329);border-radius:8px;padding:16px;border:2px solid ${i===0?'#3b82f6':'#8b5cf6'}">
+          <div style="font-size:11px;font-weight:700;color:${i===0?'#3b82f6':'#8b5cf6'};margin-bottom:6px">RUN ${i+1}</div>
+          <div style="font-size:12px;color:var(--neutral-300);margin-bottom:2px">&#128203; ${escHtml(r.suiteName||'—')}</div>
+          <div style="font-size:11.5px;color:var(--neutral-400);margin-bottom:2px">&#128197; ${fmtDate(r.startedAt)}</div>
+          <div style="font-size:11.5px;color:var(--neutral-400);margin-bottom:6px">&#9201; ${fmtDur(r.startedAt, r.finishedAt)}</div>
+          <div style="display:flex;gap:10px">
+            <span style="color:#4ec9b0;font-weight:700">✓ ${r.passed||0}</span>
+            <span style="color:#f48771;font-weight:700">✗ ${r.failed||0}</span>
+            <span style="color:var(--neutral-400)">of ${r.total||0}</span>
+          </div>
+        </div>`).join('')}
+    </div>
+    <!-- Summary bar -->
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px;padding:12px 16px;background:var(--neutral-800,#1e2329);border-radius:8px;font-size:12.5px">
+      <span style="color:#f48771;font-weight:700">🔴 ${newlyFailed.length} Newly Failed</span>
+      <span style="color:#4ec9b0;font-weight:700">🟢 ${newlyPassed.length} Newly Passed (Fixed)</span>
+      <span style="color:#f6c543;font-weight:700">🟡 ${durationChanged.length} Duration Changed</span>
+      <span style="color:var(--neutral-400)">⚪ ${stable.length} Stable</span>
+      ${onlyInA.length ? `<span style="color:var(--neutral-400)">📋 ${onlyInA.length} only in Run 1</span>` : ''}
+      ${onlyInB.length ? `<span style="color:var(--neutral-400)">📋 ${onlyInB.length} only in Run 2</span>` : ''}
+    </div>
+    ${section('Newly Failed (Regressions)', '🔴', '#f48771', failRows, ['Test Name','Run 1','Run 2','Error'])}
+    ${section('Newly Passed (Fixed)', '🟢', '#4ec9b0', passRows, ['Test Name','Run 1','Run 2','Note'])}
+    ${section('Duration Changed (≥50%)', '🟡', '#f6c543', durRows, ['Test Name','Run 1 Duration','Run 2 Duration','Change'])}
+    ${section('Stable', '⚪', 'var(--neutral-400)', stableRows, ['Test Name','Run 1','Run 2','Duration'])}
+  `;
+
+  overlay.style.display = '';
+}
+
+function histCompareClose() {
+  document.getElementById('run-compare-overlay').style.display = 'none';
 }
 
 function histSort(col) {
