@@ -1,0 +1,63 @@
+{
+  "name": "qa-agent-platform",
+  "version": "1.0.0",
+  "description": "Enterprise Playwright AI automation platform with MCP, Web UI, and multi-source test input",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "build:watch": "tsc --watch",
+    "ui": "tsx src/ui/server.ts",
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:unit": "vitest run",
+    "test:unit:watch": "vitest",
+    "lint": "eslint src/**/*.ts",
+    "clean": "rimraf dist reports/*.html results/*.json",
+    "promote:dev-to-prod": "node scripts/promote.js"
+  },
+  "dependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/express-session": "^1.18.2",
+    "@types/nodemailer": "^8.0.0",
+    "axios": "^1.6.7",
+    "bcryptjs": "^3.0.3",
+    "better-sqlite3": "^12.8.0",
+    "connect-sqlite3": "^0.9.16",
+    "csv-parse": "^5.5.3",
+    "dotenv": "^16.4.1",
+    "express": "^4.18.2",
+    "express-session": "^1.19.0",
+    "form-data": "^4.0.0",
+    "mammoth": "^1.6.0",
+    "multer": "^1.4.5-lts.1",
+    "node-cron": "^4.2.1",
+    "nodemailer": "^8.0.5",
+    "open": "^10.1.0",
+    "pdf-parse": "^1.1.1",
+    "uuid": "^9.0.0",
+    "winston": "^3.11.0",
+    "ws": "^8.16.0",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.42.1",
+    "@types/connect-sqlite3": "^0.9.6",
+    "@types/express": "^4.17.21",
+    "@types/multer": "^1.4.11",
+    "@types/node": "^20.11.5",
+    "@types/node-cron": "^3.0.11",
+    "@types/pdf-parse": "^1.1.4",
+    "@types/uuid": "^9.0.7",
+    "@types/ws": "^8.5.10",
+    "@typescript-eslint/eslint-plugin": "^6.19.0",
+    "@typescript-eslint/parser": "^6.19.0",
+    "eslint": "^8.56.0",
+    "rimraf": "^5.0.5",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3",
+    "vitest": "^4.1.4"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

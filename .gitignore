@@ -1,0 +1,61 @@
+# Dependencies
+node_modules/
+
+# Environment — NEVER commit secrets
+.env
+
+# Build output
+dist/
+
+# Playwright
+test-results/
+playwright-report/
+
+# Generated at runtime — do not commit
+reports/*.html
+results/*.json
+results/*.html
+results/*.ts
+results/screenshots/
+results/heals/
+test-plans/*.json
+
+# Debugger runtime artifacts — session screenshots and auto-generated specs
+debug-runs/
+tests/codegen/debug-*.spec.ts
+tests/codegen/*.spec.ts
+
+# Runtime data files (contain user accounts, test data) — do not commit
+data/*.json
+data/*.sqlite
+data/*.db
+
+# Screenshots captured during runs
+screenshots/
+
+# Results XML/HTML outputs
+results/*.xml
+
+# Local IDE / Claude settings
+.claude/
+
+# Temp folders
+New folder/
+
+# Uploaded files — do not commit user data
+requirements/uploads/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/settings.json
+.idea/
+
+# Logs
+logs/
+*.log
+
+# User-uploaded test files (FILE CHOOSER uploads)
+test-files/

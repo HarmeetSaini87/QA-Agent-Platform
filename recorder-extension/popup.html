@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>QA Agent Recorder</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      width: 320px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+      padding: 0;
+    }
+
+    /* ── Header ── */
+    .header {
+      background: #1e293b;
+      padding: 14px 16px 12px;
+      border-bottom: 1px solid #334155;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .header-icon {
+      width: 28px; height: 28px;
+      background: #7c3aed;
+      border-radius: 6px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px;
+    }
+    .header-title { font-weight: 700; font-size: 14px; }
+    .header-sub   { font-size: 11px; color: #64748b; margin-top: 1px; }
+
+    /* ── Body ── */
+    .body { padding: 16px; }
+
+    /* ── Status pill ── */
+    .status-pill {
+      display: flex; align-items: center; gap: 8px;
+      background: #1e293b; border-radius: 8px;
+      padding: 10px 12px; margin-bottom: 14px;
+      font-size: 12px; color: #94a3b8;
+    }
+    .dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: #334155; flex-shrink: 0;
+    }
+    .dot.active   { background: #22c55e; animation: pulse 1.5s infinite; }
+    .dot.inactive { background: #ef4444; animation: none; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+    .status-text { flex: 1; }
+    .steps-badge {
+      background: #7c3aed; color: #fff;
+      font-size: 11px; font-weight: 700;
+      padding: 2px 8px; border-radius: 999px;
+    }
+
+    /* ── Form fields ── */
+    .field { margin-bottom: 12px; }
+    .field label {
+      display: block; font-size: 11px; font-weight: 600;
+      color: #64748b; margin-bottom: 4px; text-transform: uppercase; letter-spacing: .5px;
+    }
+    .field input, .field select {
+      width: 100%; background: #1e293b; border: 1px solid #334155;
+      border-radius: 6px; padding: 7px 10px;
+      color: #e2e8f0; font-size: 12px; outline: none;
+    }
+    .field input:focus, .field select:focus { border-color: #7c3aed; }
+    .field input::placeholder { color: #475569; }
+
+    /* ── Buttons ── */
+    .btn {
+      width: 100%; padding: 10px; border: none; border-radius: 8px;
+      font-size: 13px; font-weight: 700; cursor: pointer;
+      transition: background .15s;
+    }
+    .btn-start  { background: #7c3aed; color: #fff; }
+    .btn-start:hover  { background: #6d28d9; }
+    .btn-stop   { background: #ef4444; color: #fff; }
+    .btn-stop:hover   { background: #dc2626; }
+    .btn:disabled { background: #1e293b; color: #475569; cursor: not-allowed; }
+
+    /* ── Alert ── */
+    .alert {
+      background: #1e293b; border: 1px solid #dc2626;
+      border-radius: 6px; padding: 8px 10px;
+      font-size: 11px; color: #fca5a5;
+      margin-bottom: 12px; display: none;
+    }
+
+    /* ── Settings link ── */
+    .footer {
+      border-top: 1px solid #1e293b;
+      padding: 10px 16px;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .footer a {
+      color: #475569; font-size: 11px; text-decoration: none;
+      cursor: pointer;
+    }
+    .footer a:hover { color: #94a3b8; }
+
+    /* ── Saved platform hint ── */
+    .saved-platform {
+      font-size: 11px; color: #475569;
+      margin-top: 4px;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="header-icon">&#9679;</div>
+    <div>
+      <div class="header-title">QA Agent Recorder</div>
+      <div class="header-sub">Capture browser interactions as test steps</div>
+    </div>
+  </div>
+
+  <div class="body">
+    <div class="alert" id="alert"></div>
+
+    <!-- Status pill -->
+    <div class="status-pill">
+      <div class="dot" id="status-dot"></div>
+      <span class="status-text" id="status-text">Not recording</span>
+      <span class="steps-badge" id="steps-badge" style="display:none">0 steps</span>
+    </div>
+
+    <!-- Form — shown when not recording -->
+    <div id="form-section">
+      <div class="field">
+        <label>Platform URL</label>
+        <input type="text" id="platform-url" placeholder="http://qa-launchpad.local:3000" />
+        <div class="saved-platform" id="saved-platform-hint"></div>
+      </div>
+      <div class="field">
+        <label>Project</label>
+        <select id="project-select">
+          <option value="">— enter platform URL first —</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Environment</label>
+        <select id="env-select">
+          <option value="">— select project first —</option>
+        </select>
+      </div>
+      <button class="btn btn-start" id="btn-start" disabled>&#9679; Start Recording</button>
+    </div>
+
+    <!-- Stop section — shown when recording -->
+    <div id="stop-section" style="display:none">
+      <div style="font-size:12px;color:#94a3b8;margin-bottom:12px;line-height:1.6">
+        Interact with the page — every click, fill, and selection is captured and streamed live into the Test Script editor.
+      </div>
+      <button class="btn btn-stop" id="btn-stop">&#9646;&#9646; Stop Recording</button>
+    </div>
+  </div>
+
+  <div class="footer">
+    <a id="open-platform" href="#" style="display:none">Open Platform &#8599;</a>
+    <a id="clear-settings" href="#">Clear saved settings</a>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
