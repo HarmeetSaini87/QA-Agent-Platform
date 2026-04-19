@@ -4690,6 +4690,7 @@ function _histRenderComparison(r1, r2) {
     const ms = new Date(b).getTime() - new Date(a).getTime();
     return ms < 60000 ? `${Math.round(ms/1000)}s` : `${Math.floor(ms/60000)}m ${Math.round((ms%60000)/1000)}s`;
   };
+  const fmtMs = ms => !ms ? '—' : ms < 1000 ? `${ms}ms` : `${(ms/1000).toFixed(1)}s`;
 
   // Build test name → result maps
   const map1 = new Map((r1.tests || []).map(t => [t.name, t]));
@@ -4703,7 +4704,7 @@ function _histRenderComparison(r1, r2) {
     const t2 = map2.get(name);
     if (!t1) { onlyInB.push({ name, t: t2 }); continue; }
     if (!t2) { onlyInA.push({ name, t: t1 }); continue; }
-    if (t1.status === 'pass' && t2.status === 'fail') newlyFailed.push({ name, t1, t2 });
+    if (t1.status === 'pass' && t2.status === 'fail')      newlyFailed.push({ name, t1, t2 });
     else if (t1.status === 'fail' && t2.status === 'pass') newlyPassed.push({ name, t1, t2 });
     else {
       const durDiff = Math.abs((t2.durationMs || 0) - (t1.durationMs || 0));
@@ -4713,81 +4714,134 @@ function _histRenderComparison(r1, r2) {
     }
   }
 
-  const fmtMs = ms => !ms ? '—' : ms < 1000 ? `${ms}ms` : `${(ms/1000).toFixed(1)}s`;
-  const rowClass = status => status === 'pass' ? '#4ec9b0' : '#f48771';
+  // ── Section builder ──────────────────────────────────────────────────────
+  const tblStyle = 'width:100%;border-collapse:collapse;font-size:12.5px;min-width:560px';
+  const thStyle  = 'padding:9px 14px;text-align:left;background:#0f1318;color:#9ca3af;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #2d3748';
+  const tdStyle  = 'padding:9px 14px;border-bottom:1px solid #1e2a38;vertical-align:top';
 
-  const section = (title, icon, color, rows, cols) => {
+  const section = (title, icon, accentColor, rows, colDefs) => {
     if (!rows.length) return '';
+    const ths = colDefs.map(c => `<th style="${thStyle}">${c}</th>`).join('');
     return `
-      <div style="margin-bottom:20px">
-        <div style="font-size:13px;font-weight:700;color:${color};margin-bottom:8px">${icon} ${title} (${rows.length})</div>
-        <table class="data-table" style="width:100%">
-          <thead><tr>${cols.map(c=>`<th>${c}</th>`).join('')}</tr></thead>
-          <tbody>${rows.join('')}</tbody>
-        </table>
+      <div style="margin-bottom:24px;border-radius:10px;overflow:hidden;border:1px solid #2d3748">
+        <div style="padding:12px 16px;background:#0f1318;display:flex;align-items:center;gap:8px;border-bottom:1px solid #2d3748">
+          <span style="font-size:16px">${icon}</span>
+          <span style="font-size:13px;font-weight:700;color:${accentColor}">${title}</span>
+          <span style="margin-left:auto;background:${accentColor}22;color:${accentColor};border-radius:12px;padding:2px 10px;font-size:11px;font-weight:700">${rows.length}</span>
+        </div>
+        <div style="overflow-x:auto">
+          <table style="${tblStyle}">
+            <thead><tr>${ths}</tr></thead>
+            <tbody>${rows.join('')}</tbody>
+          </table>
+        </div>
       </div>`;
   };
 
-  const failRows = newlyFailed.map(({name,t1,t2}) => `<tr>
-    <td style="max-width:280px;word-break:break-word;font-size:12px">${escHtml(name)}</td>
-    <td style="text-align:center;color:#4ec9b0">✓ Pass</td>
-    <td style="text-align:center;color:#f48771">✗ Fail</td>
-    <td style="font-size:11px;max-width:200px;word-break:break-word;color:#f48771">${escHtml((t2.errorMessage||'').slice(0,120))}</td>
+  const statusChip = (status) => status === 'pass'
+    ? `<span style="background:#052e16;color:#4ec9b0;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:600">✓ Pass</span>`
+    : `<span style="background:#450a0a;color:#f48771;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:600">✗ Fail</span>`;
+
+  const failRows = newlyFailed.map(({name, t1, t2}) => `<tr style="background:#1a1f26">
+    <td style="${tdStyle};color:#f1f5f9;font-weight:500">${escHtml(name)}</td>
+    <td style="${tdStyle};text-align:center">${statusChip('pass')}</td>
+    <td style="${tdStyle};text-align:center">${statusChip('fail')}</td>
+    <td style="${tdStyle};color:#f87171;font-size:11px;max-width:240px;word-break:break-word">${escHtml((t2.errorMessage || 'No error captured').slice(0, 140))}</td>
   </tr>`);
 
-  const passRows = newlyPassed.map(({name,t1,t2}) => `<tr>
-    <td style="max-width:280px;word-break:break-word;font-size:12px">${escHtml(name)}</td>
-    <td style="text-align:center;color:#f48771">✗ Fail</td>
-    <td style="text-align:center;color:#4ec9b0">✓ Pass</td>
-    <td style="font-size:11px;color:var(--neutral-400)">Fixed</td>
+  const passRows = newlyPassed.map(({name, t1, t2}) => `<tr style="background:#1a1f26">
+    <td style="${tdStyle};color:#f1f5f9;font-weight:500">${escHtml(name)}</td>
+    <td style="${tdStyle};text-align:center">${statusChip('fail')}</td>
+    <td style="${tdStyle};text-align:center">${statusChip('pass')}</td>
+    <td style="${tdStyle};color:#86efac;font-size:11px">Fixed ✓</td>
   </tr>`);
 
-  const durRows = durationChanged.map(({name,t1,t2,durPct}) => `<tr>
-    <td style="max-width:280px;word-break:break-word;font-size:12px">${escHtml(name)}</td>
-    <td style="text-align:center">${fmtMs(t1.durationMs)}</td>
-    <td style="text-align:center">${fmtMs(t2.durationMs)}</td>
-    <td style="text-align:center;color:${t2.durationMs > t1.durationMs ? '#f48771' : '#4ec9b0'};font-weight:700">${t2.durationMs > t1.durationMs ? '▲' : '▼'} ${Math.round(durPct)}%</td>
+  const durRows = durationChanged.map(({name, t1, t2, durPct}) => {
+    const slower = t2.durationMs > t1.durationMs;
+    const arrow  = slower ? '▲' : '▼';
+    const color  = slower ? '#f48771' : '#4ec9b0';
+    return `<tr style="background:#1a1f26">
+      <td style="${tdStyle};color:#f1f5f9;font-weight:500">${escHtml(name)}</td>
+      <td style="${tdStyle};text-align:center;color:#9ca3af">${fmtMs(t1.durationMs)}</td>
+      <td style="${tdStyle};text-align:center;color:#9ca3af">${fmtMs(t2.durationMs)}</td>
+      <td style="${tdStyle};text-align:center;font-weight:700;color:${color}">${arrow} ${Math.round(durPct)}%</td>
+    </tr>`;
+  });
+
+  const stableRows = stable.map(({name, t1, t2}) => `<tr style="background:#1a1f26">
+    <td style="${tdStyle};color:#6b7280">${escHtml(name)}</td>
+    <td style="${tdStyle};text-align:center">${statusChip(t1.status)}</td>
+    <td style="${tdStyle};text-align:center">${statusChip(t2.status)}</td>
+    <td style="${tdStyle};text-align:center;color:#4b5563;font-size:11px">${fmtMs(t1.durationMs)} → ${fmtMs(t2.durationMs)}</td>
   </tr>`);
 
-  const stableRows = stable.map(({name,t1,t2}) => `<tr>
-    <td style="max-width:280px;word-break:break-word;font-size:12px;color:var(--neutral-400)">${escHtml(name)}</td>
-    <td style="text-align:center;color:${rowClass(t1.status)}">${t1.status === 'pass' ? '✓' : '✗'}</td>
-    <td style="text-align:center;color:${rowClass(t2.status)}">${t2.status === 'pass' ? '✓' : '✗'}</td>
-    <td style="text-align:center;font-size:11px;color:var(--neutral-400)">${fmtMs(t1.durationMs)} → ${fmtMs(t2.durationMs)}</td>
-  </tr>`);
+  const passRate = r => r.total > 0 ? Math.round((r.passed / r.total) * 100) : 0;
+  const prColor  = r => passRate(r) >= 90 ? '#4ec9b0' : passRate(r) >= 70 ? '#f6c543' : '#f48771';
 
   body.innerHTML = `
-    <!-- Header cards -->
+    <!-- Run header cards -->
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">
-      ${[r1,r2].map((r,i) => `
-        <div style="background:var(--neutral-800,#1e2329);border-radius:8px;padding:16px;border:2px solid ${i===0?'#3b82f6':'#8b5cf6'}">
-          <div style="font-size:11px;font-weight:700;color:${i===0?'#3b82f6':'#8b5cf6'};margin-bottom:6px">RUN ${i+1}</div>
-          <div style="font-size:12px;color:var(--neutral-300);margin-bottom:2px">&#128203; ${escHtml(r.suiteName||'—')}</div>
-          <div style="font-size:11.5px;color:var(--neutral-400);margin-bottom:2px">&#128197; ${fmtDate(r.startedAt)}</div>
-          <div style="font-size:11.5px;color:var(--neutral-400);margin-bottom:6px">&#9201; ${fmtDur(r.startedAt, r.finishedAt)}</div>
-          <div style="display:flex;gap:10px">
-            <span style="color:#4ec9b0;font-weight:700">✓ ${r.passed||0}</span>
-            <span style="color:#f48771;font-weight:700">✗ ${r.failed||0}</span>
-            <span style="color:var(--neutral-400)">of ${r.total||0}</span>
+      ${[r1, r2].map((r, i) => {
+        const accent = i === 0 ? '#3b82f6' : '#8b5cf6';
+        const pr = passRate(r);
+        return `
+        <div style="background:#0f1318;border-radius:10px;border:2px solid ${accent};padding:20px;position:relative;overflow:hidden">
+          <div style="position:absolute;top:0;left:0;right:0;height:3px;background:${accent}"></div>
+          <div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:${accent};margin-bottom:10px;text-transform:uppercase">Run ${i + 1}</div>
+          <div style="font-size:15px;font-weight:700;color:#f1f5f9;margin-bottom:6px">&#128203; ${escHtml(r.suiteName || '—')}</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:12px">
+            <div style="font-size:11.5px;color:#6b7280">&#128197; ${fmtDate(r.startedAt)}</div>
+            <div style="font-size:11.5px;color:#6b7280">&#9201; ${fmtDur(r.startedAt, r.finishedAt)}</div>
+            <div style="font-size:11.5px;color:#6b7280">&#127758; ${escHtml(r.environmentName || '—')}</div>
+            <div style="font-size:11.5px;color:#6b7280">&#128100; ${escHtml(r.executedBy || '—')}</div>
           </div>
-        </div>`).join('')}
+          <div style="display:flex;align-items:center;gap:14px">
+            <span style="color:#4ec9b0;font-size:18px;font-weight:800">✓ ${r.passed || 0}</span>
+            <span style="color:#f48771;font-size:18px;font-weight:800">✗ ${r.failed || 0}</span>
+            <span style="color:#6b7280;font-size:13px">/ ${r.total || 0} tests</span>
+            <span style="margin-left:auto;font-size:20px;font-weight:800;color:${prColor(r)}">${pr}%</span>
+          </div>
+        </div>`;
+      }).join('')}
     </div>
-    <!-- Summary bar -->
-    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px;padding:12px 16px;background:var(--neutral-800,#1e2329);border-radius:8px;font-size:12.5px">
-      <span style="color:#f48771;font-weight:700">🔴 ${newlyFailed.length} Newly Failed</span>
-      <span style="color:#4ec9b0;font-weight:700">🟢 ${newlyPassed.length} Newly Passed (Fixed)</span>
-      <span style="color:#f6c543;font-weight:700">🟡 ${durationChanged.length} Duration Changed</span>
-      <span style="color:var(--neutral-400)">⚪ ${stable.length} Stable</span>
-      ${onlyInA.length ? `<span style="color:var(--neutral-400)">📋 ${onlyInA.length} only in Run 1</span>` : ''}
-      ${onlyInB.length ? `<span style="color:var(--neutral-400)">📋 ${onlyInB.length} only in Run 2</span>` : ''}
+
+    <!-- Summary KPI chips -->
+    <div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:24px;padding:16px;background:#0f1318;border-radius:10px;border:1px solid #2d3748">
+      <div style="display:flex;align-items:center;gap:8px;background:#450a0a;border:1px solid #7f1d1d;border-radius:8px;padding:8px 16px">
+        <span style="font-size:16px">🔴</span>
+        <div><div style="font-size:18px;font-weight:800;color:#f48771">${newlyFailed.length}</div><div style="font-size:10px;color:#fca5a5;text-transform:uppercase;letter-spacing:.5px">Newly Failed</div></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;background:#052e16;border:1px solid #14532d;border-radius:8px;padding:8px 16px">
+        <span style="font-size:16px">🟢</span>
+        <div><div style="font-size:18px;font-weight:800;color:#4ec9b0">${newlyPassed.length}</div><div style="font-size:10px;color:#86efac;text-transform:uppercase;letter-spacing:.5px">Fixed</div></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;background:#422006;border:1px solid #713f12;border-radius:8px;padding:8px 16px">
+        <span style="font-size:16px">🟡</span>
+        <div><div style="font-size:18px;font-weight:800;color:#f6c543">${durationChanged.length}</div><div style="font-size:10px;color:#fde68a;text-transform:uppercase;letter-spacing:.5px">Duration Changed</div></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;background:#1a1f26;border:1px solid #374151;border-radius:8px;padding:8px 16px">
+        <span style="font-size:16px">⚪</span>
+        <div><div style="font-size:18px;font-weight:800;color:#9ca3af">${stable.length}</div><div style="font-size:10px;color:#6b7280;text-transform:uppercase;letter-spacing:.5px">Stable</div></div>
+      </div>
+      ${onlyInA.length ? `<div style="display:flex;align-items:center;gap:8px;background:#1e1b4b;border:1px solid #3730a3;border-radius:8px;padding:8px 16px">
+        <span style="font-size:16px">📋</span>
+        <div><div style="font-size:18px;font-weight:800;color:#a5b4fc">${onlyInA.length}</div><div style="font-size:10px;color:#c7d2fe;text-transform:uppercase;letter-spacing:.5px">Only in Run 1</div></div>
+      </div>` : ''}
+      ${onlyInB.length ? `<div style="display:flex;align-items:center;gap:8px;background:#1e1b4b;border:1px solid #3730a3;border-radius:8px;padding:8px 16px">
+        <span style="font-size:16px">📋</span>
+        <div><div style="font-size:18px;font-weight:800;color:#a5b4fc">${onlyInB.length}</div><div style="font-size:10px;color:#c7d2fe;text-transform:uppercase;letter-spacing:.5px">Only in Run 2</div></div>
+      </div>` : ''}
     </div>
-    ${section('Newly Failed (Regressions)', '🔴', '#f48771', failRows, ['Test Name','Run 1','Run 2','Error'])}
-    ${section('Newly Passed (Fixed)', '🟢', '#4ec9b0', passRows, ['Test Name','Run 1','Run 2','Note'])}
-    ${section('Duration Changed (≥50%)', '🟡', '#f6c543', durRows, ['Test Name','Run 1 Duration','Run 2 Duration','Change'])}
-    ${section('Stable', '⚪', 'var(--neutral-400)', stableRows, ['Test Name','Run 1','Run 2','Duration'])}
+
+    ${section('Newly Failed — Regressions', '🔴', '#f48771', failRows, ['Test Name', 'Run 1', 'Run 2', 'Error Message'])}
+    ${section('Newly Passed — Fixed', '🟢', '#4ec9b0', passRows, ['Test Name', 'Run 1', 'Run 2', 'Note'])}
+    ${section('Duration Changed  (≥50% shift)', '🟡', '#f6c543', durRows, ['Test Name', 'Run 1 Duration', 'Run 2 Duration', 'Change'])}
+    ${section('Stable', '⚪', '#6b7280', stableRows, ['Test Name', 'Run 1', 'Run 2', 'Duration Trend'])}
   `;
 
-  overlay.style.display = '';
+  overlay.style.display = 'block';
+  // Scroll overlay to top
+  overlay.querySelector('div').scrollTop = 0;
 }
 
 function histCompareClose() {

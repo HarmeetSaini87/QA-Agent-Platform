@@ -530,14 +530,21 @@
         </div>
       </div><!-- /panel-history -->
 
-      <!-- ── Run Comparison overlay (full-panel modal inside history) ──── -->
-      <div id="run-compare-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:2000;overflow-y:auto;padding:24px">
-        <div style="max-width:1100px;margin:0 auto;background:var(--surface);border-radius:12px;padding:28px;box-shadow:0 8px 40px rgba(0,0,0,.5)">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
-            <div style="font-size:16px;font-weight:700;color:var(--neutral-100)">&#128270; Run Comparison</div>
-            <button class="btn btn-outline btn-sm" onclick="histCompareClose()">&#10005; Close</button>
+      <!-- ── Run Comparison overlay ────────────────────────────────────── -->
+      <div id="run-compare-overlay" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.72);backdrop-filter:blur(3px)">
+        <!-- scroll container -->
+        <div style="width:100%;height:100%;overflow:auto;padding:32px 24px;box-sizing:border-box">
+          <div style="max-width:1160px;min-width:640px;margin:0 auto;background:#1a1f26;border-radius:14px;border:1px solid #2d3748;box-shadow:0 20px 60px rgba(0,0,0,.7)">
+            <!-- sticky header -->
+            <div style="position:sticky;top:0;z-index:10;background:#1a1f26;border-bottom:1px solid #2d3748;border-radius:14px 14px 0 0;padding:18px 28px;display:flex;align-items:center;justify-content:space-between">
+              <div style="display:flex;align-items:center;gap:10px">
+                <span style="font-size:18px;font-weight:700;color:#f1f5f9">&#128270; Run Comparison</span>
+              </div>
+              <button onclick="histCompareClose()" style="background:transparent;border:1px solid #4b5563;color:#9ca3af;border-radius:6px;padding:6px 14px;cursor:pointer;font-size:13px;transition:all .15s" onmouseover="this.style.background='#374151';this.style.color='#f1f5f9'" onmouseout="this.style.background='transparent';this.style.color='#9ca3af'">&#10005; Close</button>
+            </div>
+            <!-- scrollable body -->
+            <div id="run-compare-body" style="padding:24px 28px;overflow-x:auto"></div>
           </div>
-          <div id="run-compare-body"></div>
         </div>
       </div>
 
