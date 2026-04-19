@@ -936,9 +936,11 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
   }
 
   // P1-05: seat enforcement
-  if (!isSeatAvailable(user.id)) {
-    const p = getLicensePayload();
-    res.status(403).json({ error: 'Seat limit reached. All licensed seats are in use.', seatsUsed: getSeatsUsed(), seatsTotal: p?.seats ?? 0 });
+  // Skip when no license is activated yet — allows the first admin to log in
+  // and activate a license key (Option A: no chicken-and-egg on fresh install).
+  const licPayload = getLicensePayload();
+  if (licPayload && !isSeatAvailable(user.id)) {
+    res.status(403).json({ error: 'Seat limit reached. All licensed seats are in use.', seatsUsed: getSeatsUsed(), seatsTotal: licPayload.seats ?? 0 });
     return;
   }
 
