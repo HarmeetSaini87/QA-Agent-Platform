@@ -5825,9 +5825,9 @@ async function _getProjects() {
 }
 
 async function _getSuites(projectId) {
+  if (!projectId) return [];
   try {
-    const url = projectId ? `/api/suites?projectId=${projectId}` : '/api/suites/all';
-    const r = await fetch(url);
+    const r = await fetch(`/api/suites?projectId=${projectId}`);
     if (!r.ok) return [];
     return await r.json();
   } catch { return []; }
@@ -5853,31 +5853,42 @@ async function apikeyOpenModal() {
   document.getElementById('ak-dl-yaml-btn').disabled           = true;
   document.getElementById('ak-yaml-preview').textContent       = 'Configure the fields on the left to preview the generated YAML.';
 
-  // Load projects + suites in parallel
-  [_akAllProjects, _akAllSuites] = await Promise.all([_getProjects(), _getSuites(null)]);
+  // Load projects first, then suites
+  _akAllProjects = await _getProjects();
+  _akAllSuites   = [];
 
   const projSel = document.getElementById('ak-project');
-  projSel.innerHTML = '<option value="">All projects</option>' +
+  projSel.innerHTML = '<option value="">— select project —</option>' +
     _akAllProjects.map(p => `<option value="${p.id}">${escHtml(p.name)}</option>`).join('');
 
-  _akPopulateSuites('');
-  _akYamlUpdate();
   document.getElementById('modal-apikey').style.display = 'flex';
+  _akYamlUpdate();
 }
 
 function _akPopulateSuites(projectId) {
-  const filtered = projectId
-    ? _akAllSuites.filter(s => s.projectId === projectId)
-    : _akAllSuites;
-  const sel = document.getElementById('ak-suite');
+  const list = projectId ? _akAllSuites.filter(s => s.projectId === projectId) : _akAllSuites;
+  const sel  = document.getElementById('ak-suite');
   sel.innerHTML = '<option value="">— select suite —</option>' +
-    filtered.map(s => `<option value="${s.id}">${escHtml(s.name)}</option>`).join('');
+    list.map(s => `<option value="${s.id}">${escHtml(s.name)}</option>`).join('');
   document.getElementById('ak-env').innerHTML = '<option value="">— select environment —</option>';
-  _akYamlUpdate();
 }
 
-function _akProjectChange() {
+async function _akProjectChange() {
   const projectId = document.getElementById('ak-project').value;
+
+  // Reset downstream selects
+  document.getElementById('ak-suite').innerHTML = '<option value="">— loading… —</option>';
+  document.getElementById('ak-env').innerHTML   = '<option value="">— select environment —</option>';
+
+  if (!projectId) {
+    document.getElementById('ak-suite').innerHTML = '<option value="">— select suite —</option>';
+    _akAllSuites = [];
+    _akYamlUpdate();
+    return;
+  }
+
+  // Fetch suites for this project directly
+  _akAllSuites = await _getSuites(projectId);
   _akPopulateSuites(projectId);
   _akYamlUpdate();
 }
@@ -6024,7 +6035,8 @@ async function apikeySave() {
   const expiresIn = document.getElementById('ak-expires').value;
   const alertEl   = document.getElementById('apikey-modal-alert');
 
-  if (!name) { alertEl.innerHTML = '<div class="alert alert-error">Key name is required.</div>'; return; }
+  if (!name)      { alertEl.innerHTML = '<div class="alert alert-error">Key name is required.</div>'; return; }
+  if (!projectId) { alertEl.innerHTML = '<div class="alert alert-error">Project scope is required.</div>'; return; }
 
   let expiresAt = null;
   if (expiresIn) {
