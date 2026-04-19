@@ -1,7 +1,7 @@
 # QA Agent Platform — Licensing User Flow & Test Guide
 # Audience: Vendor Operations + Customer Admin + QA Tester
-# Created: 2026-04-17 | Last Updated: 2026-04-18
-# Covers: All license tiers, all enforcement layers, all user roles
+# Created: 2026-04-17 | Last Updated: 2026-04-19
+# Covers: All license tiers, all enforcement layers, all user roles, auto-trial
 
 ---
 
@@ -93,12 +93,13 @@
 │  data/audit.json    → all platform events including license events  │
 │                                                                     │
 │  src/ui/server.ts                                                   │
-│    ├── STARTUP:  checkStoredLicFile()  → RSA re-verify             │
+│    ├── STARTUP:  activateAutoTrial()  → no license.json → 14-day trial  │
+│    │             checkStoredLicFile()  → RSA re-verify             │
 │    │             checkMachineBinding() → fingerprint check         │
 │    │             syncSeatsFromSessions() → rehydrate seat map       │
 │    ├── EVERY REQUEST: getLicensePayload() → expiry re-check        │
 │    ├── EVERY HOUR:   checkExpiryTick()                             │
-│    └── ON LOGIN:     isSeatAvailable()                             │
+│    └── ON LOGIN:     isSeatAvailable() (skipped if no license)     │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -116,7 +117,8 @@ The vendor and customer communicate out-of-band (email, ticket system).
 
 | Tier | Code | Activation | Machine Binding | Use Case |
 |------|------|-----------|-----------------|----------|
-| **Trial** | `EVAL` | HMAC key | None | 30-day evaluation, any machine |
+| **Auto-Trial** | `AUTO-TRIAL` | Automatic on first install | None | 14-day built-in trial, no key needed |
+| **Trial** | `EVAL` | HMAC key | None | 30-day vendor-issued evaluation key |
 | **Starter** | `STR` | HMAC key | Yes (fingerprint) | 1 server, up to 3 users |
 | **Team** | `TEAM` | RSA `.lic` file | Yes (signed into .lic) | 1–3 servers, paid user count |
 | **Enterprise** | `ENT` | RSA `.lic` file | Yes (signed into .lic) | Multi-server, unlimited users, white-label |
@@ -141,18 +143,21 @@ The vendor and customer communicate out-of-band (email, ticket system).
 
 ### Per-Tier Quotas
 
-| Quota | Trial | Starter | Team | Enterprise |
-|-------|-------|---------|------|------------|
-| Max concurrent sessions (seats) | 5 | 3 | Paid SKU | Paid SKU |
-| Max server instances | 1 | 1 | Per SKU | Per SKU |
-| Max projects | ∞ | **1** | ∞ | ∞ |
-| Audit log retention | 7 days | 30 days | 90 days | ∞ |
-| Recorder | ✓ | ✓ | ✓ | ✓ |
-| Debugger | ✓ | ✓ | ✓ | ✓ |
-| Scheduler | ✓ | ✗ | ✓ | ✓ |
-| SSO (SAML/LDAP) | ✗ | ✗ | ✓ | ✓ |
-| API Access | ✗ | ✗ | ✗ | ✓ |
-| White-label | ✗ | ✗ | ✗ | ✓ |
+| Quota | Auto-Trial | Trial (EVAL) | Starter | Team | Enterprise |
+|-------|-----------|--------------|---------|------|------------|
+| Max concurrent sessions (seats) | **3** | 5 | 3 | Paid SKU | Paid SKU |
+| Max server instances | 1 | 1 | 1 | Per SKU | Per SKU |
+| Max projects | **3** | ∞ | **1** | ∞ | ∞ |
+| Audit log retention | 30 days | 7 days | 30 days | 90 days | ∞ |
+| Duration | **14 days** | 30 days | Annual | Annual | Annual/Perpetual |
+| Recorder | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Debugger | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Scheduler | ✓ | ✓ | ✗ | ✓ | ✓ |
+| SSO (SAML/LDAP) | ✗ | ✗ | ✗ | ✓ | ✓ |
+| API Access | ✓ | ✗ | ✗ | ✗ | ✓ |
+| White-label | ✗ | ✗ | ✗ | ✗ | ✓ |
+| Machine binding | None | None | Yes | Yes | Yes |
+| Key required | **No** | Yes | Yes | Yes | Yes |
 
 ### Key Format for Encoding Quotas
 
@@ -351,13 +356,42 @@ npx tsx tools/genLicense.ts \
 
 ## 5. Customer Admin Flows
 
+### 5.0 Fresh Install — First Login (Auto-Trial)
+
+**Who:** Customer platform admin — brand new install, no license key yet
+
+```
+1. Install and start the platform server
+   → Server auto-activates 14-day trial (no key needed)
+   → Console: "[license] No license found — auto-trial activated (14 days)"
+
+2. Navigate to: http://your-server:3003
+   → Login page appears normally
+
+3. Log in with the seeded admin account (username: admin / password: Admin@1234 or as set during seed)
+   → Seat check skipped during auto-trial activation
+   → Dashboard loads with full feature access
+
+4. Orange banner at top: "🟠 Free Trial — 14 days remaining. Activate your license key →"
+
+5. Use the platform freely during trial:
+   ✓ Create projects (up to 3)
+   ✓ Create users, scripts, suites, locators
+   ✓ Run suites, use recorder, debugger, scheduler, API keys
+   ✗ SSO and white-label not available in trial
+
+6. When ready to activate: Admin → License → enter key from vendor → Activate
+```
+
+---
+
 ### 5.1 Get Your Machine ID (Before Activation)
 
 **Who:** Customer platform admin  
 **When:** Before requesting any Team/Enterprise license from vendor
 
 ```
-1. Start the platform server (no license required to start in dev mode)
+1. Start the platform server (auto-trial activates if no license exists)
 2. Log in as admin
 3. Navigate to: Admin tab → License sub-tab
 4. Look for the blue box: "Your Machine ID (required to get a license)"
@@ -893,31 +927,116 @@ If today = 2027-01-03 → daysLeft = 4 → banner: "expires in 4 days"
 
 ## 10. Trial / Evaluation Flow
 
-**Complete customer journey:**
+### 10.1 Auto-Trial (Built-in — No Key Required)
+
+**Trigger:** Server starts and finds no `data/license.json`
+
+**This is the default experience on every fresh install.**
 
 ```
-Day 0 — Vendor sends trial key: QAP-EVAL-TRIAL-202506-005-001-3F9A
+Day 0 — Customer installs platform (no key, no vendor contact needed)
 
-Day 0 — Customer activates:
-  1. Start platform (no license required to start)
-  2. Admin → License → paste key → Activate Starter Key
-  3. Platform shows: [TRIAL] Trial License  (banner always visible)
+Server startup console:
+═══════════════════════════════════════════════════════
+[license] No license found — auto-trial activated (14 days).
+[license] Trial expires: 2026-05-03
+[license] Features: recorder, debugger, scheduler, apiAccess (3 seats, 3 projects)
+[license] Go to Admin → License to activate your license key.
+═══════════════════════════════════════════════════════
 
-Days 1–30 — Full evaluation:
+Day 0 — Admin logs in normally (seat check skipped — auto-trial active):
+  → Orange banner at top of every page:
+    "🟠 Free Trial — 14 days remaining. Activate your license key →"
+  → Admin → License shows [TRIAL (AUTO)] badge + activate form visible
+
+Days 1–14 — Full evaluation, all features available:
+  ✓ Recorder, Debugger, Scheduler, API Access all enabled
+  ✓ Up to 3 concurrent users
+  ✓ Up to 3 projects
+  ✗ SSO, White-label disabled
+  → No machine binding — reinstall/re-image freely
+
+Day 11 — 3 days remaining → banner turns red:
+    "🔴 Free Trial — 3 days remaining. Activate your license key →"
+
+Day 14 — Trial expires:
+  → getLicensePayload() returns null → read-only mode
+  → Red banner: "Your QA Agent Platform license has expired."
+  → Admin goes to Admin → License → activates real key → instantly exits read-only
+
+Customer contacts vendor at any time → vendor issues key/lic → customer activates
+```
+
+**Admin → License panel during auto-trial:**
+```
+┌──────────────────────────────────────────────────────┐
+│ 🟠 14 days left on your free trial.                  │
+│    Enter a license key below to activate.            │
+│                                                      │
+│ [TRIAL (AUTO)]  Trial  |  Expires 2026-05-03         │
+│ 3 seats  |  3 projects max                           │
+│                                                      │
+│ Features: [Recorder] [Debugger] [Scheduler] [API]    │
+│                                                      │
+│ ── Activate License ──────────────────────────────── │
+│ Starter Key:  [________________________] [Activate]  │
+│ Enterprise:   [Upload .lic File]                     │
+└──────────────────────────────────────────────────────┘
+```
+
+**What happens server-side when auto-trial activates:**
+1. `getLicensePayload()` returns null → `activateAutoTrial()` called
+2. `LicensePayload` built with tier=`trial`, orgId=`AUTO-TRIAL`, 14-day expiry
+3. `storeLicense('AUTO-TRIAL', payload)` → writes encrypted `data/license.json`
+4. `refreshLicenseCache(payload)` → takes effect immediately in-process
+5. `logAudit()` records `LICENSE_TRIAL_STARTED` event
+6. On subsequent restarts: `license.json` exists → auto-trial NOT re-triggered
+
+**Important:** Auto-trial activates ONCE. Deleting `data/license.json` manually restarts the trial clock — the system cannot distinguish a genuine fresh install from a manual delete.
+
+---
+
+### 10.2 Vendor-Issued Trial Key (EVAL)
+
+**When to use:** Customer needs > 14 days to evaluate, or needs > 3 seats during evaluation.
+
+**Who:** Vendor sales / support — customer does not need to provide Machine ID.
+
+```bash
+# Calculate expiry = today + 30 days
+$expiry = (Get-Date).AddDays(30).ToString("yyyyMM")
+
+npx tsx tools/genLicense.ts \
+  --tier EVAL \
+  --org TRIAL \
+  --seats 5 \
+  --instances 1 \
+  --expiry $expiry
+
+# Output:
+# Key: QAP-EVAL-TRIAL-202506-005-001-3F9A
+# Tier: trial | Seats: 5 | No machine binding | Expires: end of month
+```
+
+**Send to customer:** Key string via email. Customer activates via Admin → License (same as Starter).
+
+**When customer activates EVAL key over an existing auto-trial:**
+- `storeLicense('QAP-EVAL-...', payload)` overwrites `data/license.json`
+- Auto-trial is replaced by vendor trial immediately
+- No restart required
+
+**Complete journey with EVAL key:**
+```
+Days 1–30 — Full evaluation with 5 seats:
   ✓ Recorder, Debugger, Scheduler all enabled
   ✓ Up to 5 concurrent users
   ✓ Unlimited projects
-  ✓ No machine binding (can reinstall, re-image freely)
   ✗ SSO, API Access, White-label disabled
 
-Day 25 — Trial banner (always shown):
+Day 25 — Banner:
   "📋 Trial License — expires in 5 days. Purchase a license →"
 
-Day 30 — Trial expires:
-  Read-only mode activates
-  Red banner: "Your trial has expired. Contact vendor to purchase."
-
-Customer contacts vendor → vendor issues .lic → customer upgrades
+Day 30 — Expires → read-only → customer activates real license
 ```
 
 ---
@@ -1103,6 +1222,23 @@ The following table explains what happens if a customer attempts each known atta
 ---
 
 ## 18. Testing Checklist — Customer Admin
+
+### Auto-Trial (Fresh Install)
+- [ ] Delete `data/license.json` if exists → restart server → console shows auto-trial message
+- [ ] `data/license.json` created automatically with `key = AUTO-TRIAL`
+- [ ] Admin logs in successfully (seat check skipped)
+- [ ] Orange banner visible on all pages: "Free Trial — 14 days remaining"
+- [ ] Admin → License shows `[TRIAL (AUTO)]` badge + activate form visible
+- [ ] All features accessible: recorder, debugger, scheduler, API keys
+- [ ] SSO and white-label not accessible (blocked by tier)
+- [ ] Create 3 projects → all succeed
+- [ ] Create 4th project → upgrade CTA (maxProjects = 3)
+- [ ] 3 concurrent logins → all succeed; 4th login → seat limit error
+- [ ] Activate a real license key over auto-trial → auto-trial replaced immediately
+- [ ] Restart server with `license.json` present → auto-trial NOT re-triggered
+- [ ] Set system clock to day 15 → trial expired → read-only mode → activate real key → exits read-only
+- [ ] Trial expiry logged as `LICENSE_EXPIRED` in audit log
+- [ ] `GET /api/admin/license` returns `isAutoTrial: true`, `trialDaysLeft: N`
 
 ### Activation
 - [ ] Copy Machine ID before any license — full 32-char hex displayed

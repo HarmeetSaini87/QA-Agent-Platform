@@ -6174,10 +6174,27 @@ function _renderLicensePanel(data, machine, audit, sessions) {
 
   // Show status block
   statusBlock.style.display   = '';
-  activateBlock.style.display = 'none';
+
+  // Auto-trial: show activate form alongside status so admin can enter key
+  activateBlock.style.display = data.isAutoTrial ? '' : 'none';
+
+  // Trial banner
+  const existingBanner = document.getElementById('lic-trial-banner');
+  if (existingBanner) existingBanner.remove();
+  if (data.isAutoTrial) {
+    const days   = data.trialDaysLeft ?? 0;
+    const urgent = days <= 3;
+    const banner = document.createElement('div');
+    banner.id    = 'lic-trial-banner';
+    banner.style.cssText = `margin-bottom:14px;padding:10px 14px;border-radius:6px;font-size:.82rem;display:flex;align-items:center;gap:10px;background:${urgent ? '#450a0a' : '#431407'};border:1px solid ${urgent ? '#dc2626' : '#ea580c'};color:${urgent ? '#fca5a5' : '#fdba74'}`;
+    banner.innerHTML = `<span style="font-size:1.1rem">${urgent ? '🔴' : '🟠'}</span>
+      <span><strong>${days} day${days !== 1 ? 's' : ''} left on your free trial.</strong>
+      Enter a license key below to continue using the platform after the trial ends.</span>`;
+    statusBlock.insertAdjacentElement('afterbegin', banner);
+  }
 
   const tierBadge = document.getElementById('lic-tier-badge');
-  tierBadge.textContent = data.tier.toUpperCase();
+  tierBadge.textContent = data.isAutoTrial ? 'TRIAL (AUTO)' : data.tier.toUpperCase();
   tierBadge.className   = `lic-badge lic-badge-${data.tier}`;
 
   document.getElementById('lic-org-name').textContent = data.orgName || data.orgId;
@@ -6443,8 +6460,17 @@ async function licenseCheckBanner() {
       banner.className = 'lic-error';
       banner.style.display = 'flex';
       document.body.classList.add('lic-readonly');  // P1-10
+    } else if (data.isAutoTrial) {
+      const days   = data.trialDaysLeft ?? data.daysLeft;
+      const urgent = days <= 3;
+      banner.innerHTML = `${urgent ? '🔴' : '🟠'} <strong>Free Trial — ${days} day${days !== 1 ? 's' : ''} remaining.</strong> &nbsp;
+        <a onclick="switchTab('admin');setTimeout(()=>adminSubTab('license',document.querySelector('.sub-tab:nth-child(4)')),100)" href="#"
+           style="color:inherit;font-weight:600;text-decoration:underline">Activate your license key &rarr;</a>`;
+      banner.className = urgent ? 'lic-error' : 'lic-warn';
+      banner.style.display = 'flex';
+      document.body.classList.remove('lic-readonly');
     } else if (data.tier === 'trial') {
-      // P3-09: Trial banner — always shown during evaluation period
+      // Vendor-issued trial key
       banner.innerHTML = `&#128203; <strong>Trial License</strong> &mdash; expires in <strong>${data.daysLeft} day${data.daysLeft !== 1 ? 's' : ''}</strong>. <a href="mailto:sales@qa-agent.io" style="color:inherit;font-weight:600;margin-left:4px">Purchase a license &rarr;</a>`;
       banner.className = 'lic-info';
       banner.style.display = 'flex';

@@ -29,6 +29,7 @@ import { generateCodegenSpec, generateDebugSpec } from '../utils/codegenGenerato
 import {
   validateLicenseKey, validateLicFile, storeLicense, loadStoredLicense,
   getLicensePayload, refreshLicenseCache, clearLicenseCache,
+  activateAutoTrial, isAutoTrial, trialDaysRemaining, AUTO_TRIAL_DAYS,
   isFeatureEnabled, recordLogin, recordLogout, getSeatsUsed, isSeatAvailable,
   getMachineId, checkMachineBinding, transferLicense, checkExpiryTick,
   checkStoredLicFile, syncSeatsFromSessions, getSeatUsageRatio,
@@ -3514,13 +3515,15 @@ app.get('/api/admin/license', requireAuth, requireAdmin, (_req: Request, res: Re
     orgName:          p.orgName,
     seats:            p.seats,
     seatsUsed:        getSeatsUsed(),
-    seatRatio:        getSeatUsageRatio(),   // P2-04: fraction 0–1 or -1 (unlimited)
+    seatRatio:        getSeatUsageRatio(),
     maxInstances:     p.maxInstances,
     expiresAt:        p.expiresAt,
     daysLeft,
     expired:          expires < now,
     features:         p.features,
-    featureOverrides: p.featureOverrides ?? {},   // P4-01: vendor-signed per-feature overrides
+    featureOverrides: p.featureOverrides ?? {},
+    isAutoTrial:      isAutoTrial(),          // true = running on built-in 14-day trial
+    trialDaysLeft:    isAutoTrial() ? trialDaysRemaining() : null,
   });
 });
 
@@ -3757,6 +3760,24 @@ server.listen(PORT, '0.0.0.0', async () => {
   }
 
   await seedDefaults();
+
+  // Auto-Trial: if no license exists, activate a 14-day trial automatically.
+  // Allows the first admin to log in, explore all features, and activate a
+  // real license key before the trial expires — no chicken-and-egg on fresh install.
+  if (!getLicensePayload()) {
+    const trial = activateAutoTrial();
+    const days  = AUTO_TRIAL_DAYS;
+    logger.info('═══════════════════════════════════════════════════════');
+    logger.info(`[license] No license found — auto-trial activated (${days} days).`);
+    logger.info(`[license] Trial expires: ${trial.expiresAt.slice(0, 10)}`);
+    logger.info('[license] Features: recorder, debugger, scheduler, apiAccess (3 seats, 3 projects)');
+    logger.info('[license] Go to Admin → License to activate your license key.');
+    logger.info('═══════════════════════════════════════════════════════');
+    logAudit({ userId: null, username: null, action: 'LICENSE_TRIAL_STARTED', resourceType: 'license', resourceId: null, details: `expires=${trial.expiresAt.slice(0,10)}`, ip: null });
+  } else if (isAutoTrial()) {
+    const days = trialDaysRemaining();
+    logger.warn(`[license] Trial license active — ${days} day(s) remaining. Activate a license key via Admin → License.`);
+  }
 
   // P2-03: Rehydrate in-memory seat map from persisted SQLite sessions on startup.
   // Prevents seat count resetting to 0 after server restart while users are still logged in.

@@ -391,6 +391,53 @@ export function clearLicenseCache(): void {
   _cachedPayload = undefined;
 }
 
+// ── Auto-Trial (Option A) ─────────────────────────────────────────────────────
+// Called at server startup when no license.json exists.
+// Activates a 14-day local trial — all features, 3 seats, no machine binding.
+// The trial key sentinel 'AUTO-TRIAL' is never validated as a real key.
+
+export const AUTO_TRIAL_DAYS = 14;
+
+export function activateAutoTrial(): LicensePayload {
+  const expiresAt = new Date();
+  expiresAt.setDate(expiresAt.getDate() + AUTO_TRIAL_DAYS);
+
+  const payload: LicensePayload = {
+    tier:         'trial',
+    orgId:        'AUTO-TRIAL',
+    orgName:      'Trial',
+    seats:        3,
+    maxInstances: 1,
+    expiresAt:    expiresAt.toISOString(),
+    features: {
+      recorder:    true,
+      debugger:    true,
+      scheduler:   true,
+      sso:         false,
+      apiAccess:   true,
+      whiteLabel:  false,
+      auditDays:   30,
+      maxProjects: 3,
+    },
+  };
+
+  storeLicense('AUTO-TRIAL', payload);
+  refreshLicenseCache(payload);
+  return payload;
+}
+
+export function isAutoTrial(): boolean {
+  const stored = loadStoredLicense();
+  return stored?.key === 'AUTO-TRIAL';
+}
+
+export function trialDaysRemaining(): number {
+  const p = getLicensePayload();
+  if (!p || p.tier !== 'trial') return 0;
+  const ms = new Date(p.expiresAt).getTime() - Date.now();
+  return Math.max(0, Math.ceil(ms / (1000 * 60 * 60 * 24)));
+}
+
 // Periodic expiry enforcement — call from server on an interval.
 // Returns true if license just transitioned from valid → expired.
 export function checkExpiryTick(): boolean {
