@@ -4674,7 +4674,7 @@ async function histCompare() {
   if (ids.length !== 2) return;
   // Fetch full run records
   const [r1, r2] = await Promise.all(ids.map(id =>
-    fetch(`/api/report/${encodeURIComponent(id)}`).then(r => r.json())
+    fetch(`/api/run/${encodeURIComponent(id)}`).then(r => r.json())
   ));
   _histRenderComparison(r1, r2);
 }
