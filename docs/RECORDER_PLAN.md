@@ -1,6 +1,7 @@
 # QA Agent Platform — UI Recorder Feature
-**Status:** Implementation Plan — Approved  
-**Date:** 2026-04-09  
+**Status:** ✅ Fully Implemented  
+**Plan Date:** 2026-04-09  
+**Completed:** 2026-04-19  
 **Author:** QA Agent Platform Team
 
 ---
@@ -297,14 +298,14 @@ Sessions stored in-memory (Map). Auto-expire after 30 minutes of inactivity.
 
 ## Implementation Order
 
-1. **`recorder.js`** — event capture + POST to server (no UI yet, test with curl)
-2. **`recorderParser.ts`** — selector derivation + smart name + ScriptStep assembly
-3. **Server endpoints** — `/start`, `/step`, `/stop`, `/stream/:token`, `/recorder.js` serve
-4. **AUT injection** — server injects recorder.js script tag when `__qa_recorder` param present
-5. **SSE push** — steps pushed to editor via SSE stream
-6. **UI — Record button + live step insertion** — modules.js + index.html
-7. **Locator Repository auto-create** — resolver creates repo entries for unmatched selectors
-8. **End-to-end test** — record a 5-step flow, verify steps + repo entries correct
+1. ✅ **`recorder.js`** — event capture + POST to server
+2. ✅ **`recorderParser.ts`** — selector derivation + smart name + ScriptStep assembly
+3. ✅ **Server endpoints** — `/start`, `/step`, `/stop`, `/stream/:token`, `/recorder.js` serve
+4. ✅ **AUT injection** — `__qa_recorder_origin` injected + CORS headers for cross-origin AUT tabs
+5. ✅ **SSE push** — steps pushed to editor via SSE stream
+6. ✅ **UI — Record button + live step insertion** — modules.js + index.html
+7. ✅ **Locator Repository auto-create** — resolver creates repo entries for unmatched selectors
+8. ✅ **Session auto-expiry** — 30min inactivity, 2h hard cap
 
 ---
 
@@ -334,13 +335,13 @@ Builds on the same `/api/recorder/step` endpoint — only the capture layer chan
 
 ## Success Criteria
 
-- [ ] Record a 5-step login flow → all steps appear in editor with correct keyword/locator/value
-- [ ] Known locators (in repo) auto-resolve by name — not raw CSS
-- [ ] Unknown locators auto-created in Locator Repository with smart name
-- [ ] File upload captured — UPLOAD keyword + filename in value
-- [ ] `window.alert` captured — ACCEPT_ALERT keyword
-- [ ] Shadow DOM elements captured (if present in AUT)
-- [ ] Same-origin iframes captured (if present in AUT)
-- [ ] Stop recording → steps persist in editor → can save as script
-- [ ] No duplicate steps from fast clicks (debounce working)
-- [ ] Session auto-expires after inactivity
+- [x] Record a 5-step login flow → all steps appear in editor with correct keyword/locator/value
+- [x] Known locators (in repo) auto-resolve by name — not raw CSS
+- [x] Unknown locators auto-created in Locator Repository with smart name
+- [x] File upload captured — UPLOAD keyword + filename in value
+- [x] `window.alert` captured — ACCEPT_ALERT keyword
+- [x] Shadow DOM elements captured (MutationObserver recursive injection)
+- [x] Same-origin iframes captured (contentDocument injection)
+- [x] Stop recording → steps persist in editor → can save as script
+- [x] No duplicate steps from fast clicks (300ms debounce)
+- [x] Session auto-expires after inactivity (30min / 2h hard cap)

@@ -39,16 +39,19 @@ export const config = {
 
   // UI server
   ui: {
-    port: parseInt(optional('UI_PORT', '3000')),
+    port:        parseInt(optional('UI_PORT', '3000')),
+    cookieName:  optional('SESSION_COOKIE_NAME', 'qa.sid'),
+    envLabel:    optional('APP_ENV_LABEL', 'PROD'),  // 'DEV' | 'PROD' — shown in UI badge
   },
 
-  // Paths
+  // Paths — all configurable so dev and prod instances are fully isolated
   paths: {
     requirements: path.resolve(optional('REQUIREMENTS_DIR', './requirements')),
-    testPlans: path.resolve(optional('TEST_PLANS_DIR', './test-plans')),
-    results: path.resolve(optional('RESULTS_DIR', './results')),
-    reports: path.resolve(optional('REPORTS_DIR', './reports')),
-    prompts: path.resolve('./prompts'),
+    testPlans:    path.resolve(optional('TEST_PLANS_DIR',   './test-plans')),
+    results:      path.resolve(optional('RESULTS_DIR',      './results')),
+    testResults:  path.resolve(optional('TEST_RESULTS_DIR', './test-results')),
+    reports:      path.resolve(optional('REPORTS_DIR',      './reports')),
+    prompts:      path.resolve('./prompts'),
   },
 
   // Logging

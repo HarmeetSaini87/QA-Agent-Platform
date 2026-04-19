@@ -94,6 +94,47 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       break;
     }
 
+    case 'INJECT_DIALOG_PATCHER': {
+      // Content script asks us to patch window.alert/confirm/prompt in the PAGE's
+      // main world. We use chrome.scripting.executeScript({ world: 'MAIN' }) which
+      // is CSP-safe — no inline script needed.
+      const tabId   = sender.tab?.id;
+      const frameId = sender.frameId ?? 0;
+      if (!tabId) break;
+      chrome.scripting.executeScript({
+        target: { tabId, frameIds: [frameId] },
+        world:  'MAIN',
+        func: () => {
+          if (window.__qaDialogPatched) return;
+          window.__qaDialogPatched = true;
+          const _fire = (type, value, smartName) =>
+            document.dispatchEvent(new CustomEvent('__qa_dialog', { detail: { type, value, smartName } }));
+          const _alert   = window.alert.bind(window);
+          const _confirm = window.confirm.bind(window);
+          const _prompt  = window.prompt.bind(window);
+          window.alert = function (msg) {
+            _alert(msg);
+            _fire('ACCEPT_ALERT', String(msg ?? ''), 'Alert Dialog');
+          };
+          window.confirm = function (msg) {
+            const result = _confirm(msg);
+            _fire(result ? 'ACCEPT_DIALOG' : 'DISMISS_DIALOG', String(msg ?? ''), 'Confirm Dialog');
+            return result;
+          };
+          window.prompt = function (msg, def) {
+            const result = _prompt(msg, def);
+            if (result !== null) {
+              _fire('HANDLE_PROMPT', String(result ?? ''), 'Prompt Dialog');
+            } else {
+              _fire('DISMISS_DIALOG', String(msg ?? ''), 'Prompt Dismissed');
+            }
+            return result;
+          };
+        },
+      }).catch(err => console.warn('[QA Recorder] Dialog patcher injection failed:', err.message));
+      break;
+    }
+
     case 'GET_CURRENT_TAB':
       chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
         sendResponse({ tab: tabs[0] || null });

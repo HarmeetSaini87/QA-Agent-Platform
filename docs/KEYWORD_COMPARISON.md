@@ -649,200 +649,91 @@ This single implementation would unlock EVALUATE as a full data-manipulation sys
 ### Wave A — Variable Store System (HIGHEST PRIORITY — closes 50+ gaps)
 > Prerequisite for Waves B, C, D. All retrieval keywords are useless without a store to write into.
 
-- [ ] **KW-A1** Add `SET VARIABLE` keyword to `src/data/keywords.json`
-  - Fields: name (variable name), value (expression or static text), scope (session | global)
-  - Codegen: writes result to `__sessionVars[name]` or `__globalVars[name]`
-  - UI: keyword dropdown + name input + scope toggle
+- [x] **KW-A1** Add `SET VARIABLE` keyword to `src/data/keywords.json` ✅ (prior session)
+- [x] **KW-A2** Add `{{var.name}}` token support in all step value fields ✅ (prior session)
+- [x] **KW-A3** Session scope (`__sessionVars`) — current script only ✅ (prior session)
 
-- [ ] **KW-A2** Add `{{var.name}}` token support in all step value fields
-  - Token resolved at runtime from `__sessionVars` and `__globalVars`
-  - Scope lookup order: session → global
-  - Token visible in Dynamic Token picker in the Value Source tab
-
-- [ ] **KW-A3** Session scope (`__sessionVars`) — current script only
-  - Map initialised at script start, cleared on completion
-  - Populated by: SET VARIABLE (session), GET ATTRIBUTE, CALL API response, EVALUATE result
-
-- [ ] **KW-A4** Global scope (`__globalVars`) — suite-wide, persists across scripts
-  - Map passed through all scripts in a suite run via RunRecord context
-  - Set with: SET VARIABLE (global)
+- [x] **KW-A4** Global scope (`__globalVars`) — suite-wide, persists across scripts ✅ 2026-04-19
+  - Module-level `const __globalVars` in generated spec — shared across all test() blocks
+  - Set with: SET VARIABLE (🌐 Global scope) or 📌 Pin with Global scope
+  - Read with: `{{var.name}}` token or Variable tab dropdown — session vars checked first, global fallback
   - Used for: login token from Script 1 → reused in Script 5
 
-- [ ] **KW-A5** `storeAs` field on existing retrieval keywords (wires into `__sessionVars`)
-  - EVALUATE → storeAs
-  - ASSERT TEXT (retrieve mode, no assertion) → storeAs
-  - GET ATTRIBUTE (new keyword, see Wave B) → storeAs
+- [x] **KW-A5** `storeAs` / pin field on steps — wires into `__sessionVars` or `__globalVars` ✅ 2026-04-19
 
 ---
 
 ### Wave B — Retrieval Keywords (depends on Wave A for storeAs)
 
-- [ ] **KW-B1** Add `GET ATTRIBUTE` keyword
-  - Retrieves a named attribute from an element and stores it via `storeAs`
-  - Codegen: `const _v = await page.locator(loc).getAttribute(attr); __sessionVars[storeAs] = _v;`
-
-- [ ] **KW-B2** Add `GET CURRENT URL` keyword
-  - Retrieves current page URL, stores via `storeAs`
-  - Competitor: `GetCurrentUrl`
-
-- [ ] **KW-B3** Add `GET ALERT TEXT` keyword
-  - Reads text from an open browser alert/dialog before accepting/dismissing
-  - Competitor: `AlertText`
-
-- [ ] **KW-B4** Add `GET NETWORK RESPONSE` keyword
-  - Captures API response body from `page.waitForResponse()` and stores via `storeAs`
-  - Competitor: `GetResponseFromNetworkLogs`
+- [x] **KW-B1** Add `GET ATTRIBUTE` keyword ✅ 2026-04-19
+- [x] **KW-B2** Add `GET CURRENT URL` keyword ✅ 2026-04-19
+- [x] **KW-B3** Add `GET ALERT TEXT` keyword ✅ 2026-04-19
+- [x] **KW-B4** Add `GET NETWORK RESPONSE` keyword ✅ 2026-04-19
 
 ---
 
 ### Wave C — Action Keywords (independent of Wave A)
 
-- [ ] **KW-C1** Add `RIGHT CLICK` keyword
-  - Codegen: `await page.locator(loc).click({ button: 'right' });`
-
-- [ ] **KW-C2** Add `JS CLICK` keyword
-  - For obscured/hidden elements; Codegen: `await page.locator(loc).evaluate(el => el.click());`
-
-- [ ] **KW-C3** Add `SELECT BY INDEX` keyword
-  - Codegen: `await page.locator(loc).selectOption({ index: N });`
-
-- [ ] **KW-C4** Add `DRAG BY OFFSET` keyword
-  - Codegen: `await page.locator(loc).dragTo(page.locator(loc), { targetPosition: { x, y } });`
-
-- [ ] **KW-C5** Add `CLICK N TIMES` keyword
-  - Value field = repeat count; Codegen: loop N times calling `click()`
-
-- [ ] **KW-C6** Add `HOVER AND CLICK` keyword (combined single step)
-  - Codegen: `await page.locator(loc).hover(); await page.locator(loc).click();`
-
-- [ ] **KW-C7** Add `PROMPT TYPE` keyword
-  - Types into an open browser prompt dialog before accepting
-  - Competitor: `AlertSendKeys`
-
-- [ ] **KW-C8** Add `SWITCH TO WINDOW` keyword
-  - Switch between multiple browser windows/contexts by index or title
-  - Competitor: `SwitchToWindow`
+- [x] **KW-C1** Add `RIGHT CLICK` keyword ✅ 2026-04-19
+- [x] **KW-C2** Add `JS CLICK` keyword ✅ 2026-04-19
+- [x] **KW-C3** Add `SELECT BY INDEX` keyword ✅ 2026-04-19
+- [x] **KW-C4** Add `DRAG BY OFFSET` keyword ✅ 2026-04-19
+- [x] **KW-C5** Add `CLICK N TIMES` keyword ✅ 2026-04-19
+- [x] **KW-C6** Add `HOVER AND CLICK` keyword ✅ 2026-04-19
+- [x] **KW-C7** Add `PROMPT TYPE` keyword ✅ 2026-04-19
+- [x] **KW-C8** Add `SWITCH TO WINDOW` keyword ✅ 2026-04-19
 
 ---
 
 ### Wave D — Wait Keywords (independent)
 
-- [ ] **KW-D1** Add `WAIT ENABLED` keyword
-  - Waits until element becomes interactable/enabled
-  - Codegen: `await page.locator(loc).waitFor({ state: 'visible' }); await expect(page.locator(loc)).toBeEnabled();`
-  - Competitor: `WaitForElementIsEnabled`
-
-- [ ] **KW-D2** Add `WAIT TEXT` keyword
-  - Waits until element's text contains expected value
-  - Codegen: `await expect(page.locator(loc)).toContainText(val, { timeout: 10000 });`
-  - Competitor: `WaitForElementTillTextContains`
-
-- [ ] **KW-D3** Add `WAIT ALERT` keyword
-  - Waits until a browser alert/dialog is present
-  - Competitor: `WaitForAlertIsPresent`
-
-- [ ] **KW-D4** Add `WAIT DISABLED` keyword
-  - Waits until element becomes disabled
-  - Competitor: `WaitForElementIsDisabled`
+- [x] **KW-D1** Add `WAIT ENABLED` keyword ✅ 2026-04-19
+- [x] **KW-D2** Add `WAIT TEXT` keyword ✅ 2026-04-19
+- [x] **KW-D3** Add `WAIT ALERT` keyword ✅ 2026-04-19
+- [x] **KW-D4** Add `WAIT DISABLED` keyword ✅ 2026-04-19
 
 ---
 
 ### Wave E — Assertion Keywords (independent, high value)
 
-- [ ] **KW-E1** Add `ASSERT NOT CONTAINS` keyword
-  - Assert element text does NOT contain value
-  - Competitor: `AssertNotContains`
-
-- [ ] **KW-E2** Add `ASSERT COUNT GT` keyword (Greater Than)
-  - Assert element count > N
-  - Competitor: `AssertElementCountGreaterThan`
-
-- [ ] **KW-E3** Add `ASSERT COUNT LT` keyword (Less Than)
-  - Assert element count < N
-  - Competitor: `AssertElementCountLessThan`
-
-- [ ] **KW-E4** Add `ASSERT GREATER THAN` keyword (numeric)
-  - Assert numeric value extracted from element > N
-  - Competitor: `AssertGreaterThan`
-
-- [ ] **KW-E5** Add `ASSERT LESS THAN` keyword (numeric)
-  - Competitor: `AssertLessThan`
-
-- [ ] **KW-E6** Add `ASSERT URL NOT` keyword
-  - Assert current URL does NOT contain text
-  - Competitor: `AssertUrlNotContains`
-
-- [ ] **KW-E7** Add `ASSERT TITLE NOT` keyword
-  - Assert page title does NOT contain text
-  - Competitor: `AssertTitleNotContains`
-
-- [ ] **KW-E8** Add `ASSERT ATTR NOT` keyword
-  - Assert element attribute does NOT contain text
-  - Competitor: `AssertElementAttributeNotContains`
-
-- [ ] **KW-E9** Add `ASSERT ATTR CONTAINS` keyword (partial match)
-  - Our current `ASSERT ATTRIBUTE` only supports exact match
-  - Competitor: `AssertElementAttributeContains`
+- [x] **KW-E1** Add `ASSERT NOT CONTAINS` keyword ✅ 2026-04-19
+- [x] **KW-E2** Add `ASSERT COUNT GT` keyword ✅ 2026-04-19
+- [x] **KW-E3** Add `ASSERT COUNT LT` keyword ✅ 2026-04-19
+- [x] **KW-E4** Add `ASSERT GREATER THAN` keyword ✅ 2026-04-19
+- [x] **KW-E5** Add `ASSERT LESS THAN` keyword ✅ 2026-04-19
+- [x] **KW-E6** Add `ASSERT URL NOT` keyword ✅ 2026-04-19
+- [x] **KW-E7** Add `ASSERT TITLE NOT` keyword ✅ 2026-04-19
+- [x] **KW-E8** Add `ASSERT ATTR NOT` keyword ✅ 2026-04-19
+- [x] **KW-E9** Add `ASSERT ATTR CONTAINS` keyword ✅ 2026-04-19
 
 ---
 
 ### Wave F — CALL API Keyword (major feature)
 > Independent of Wave A but pairs well — API response → store via storeAs.
 
-- [ ] **KW-F1** Add `CALL API` keyword to `keywords.json`
-  - Fields: method (GET/POST/PUT/DELETE/PATCH), URL (supports `{{var.x}}`), headers (JSON), body (JSON)
-  - Expected status field (optional assertion)
-  - `storeAs` field → saves response body JSON string to session variable
-
-- [ ] **KW-F2** Codegen for `CALL API`
-  - Uses Node.js `fetch()` (native in Node 18+)
-  - Stores response body, status, headers in `__sessionVars`
-
-- [ ] **KW-F3** UI — `CALL API` step editor
-  - Custom step editor for CALL API (not generic value field)
-  - Method selector dropdown + URL input + JSON body editor (textarea) + expected status input
+- [x] **KW-F1** Add `CALL API` keyword to `keywords.json` ✅ 2026-04-19
+- [x] **KW-F2** Codegen for `CALL API` ✅ 2026-04-19
+- [ ] **KW-F3** UI — `CALL API` step editor (custom fields: method selector, URL, body textarea, headers)
 
 ---
 
 ### Wave G — File / Download Verification (lower priority)
 
-- [ ] **KW-G1** Add `ASSERT FILE DOWNLOADED` keyword
-  - Verifies a file with given name exists in Playwright download folder after a download action
-  - Codegen: uses `page.waitForEvent('download')` with Promise.all pattern
-  - Competitor: `IsFileExistOnDownloadFolder`
+- [x] **KW-G1** Add `ASSERT FILE DOWNLOADED` keyword ✅ 2026-04-19
+- [x] **KW-G2** Add `ASSERT DOWNLOAD COUNT` keyword ✅ 2026-04-19
 
-- [ ] **KW-G2** Add `ASSERT DOWNLOAD COUNT` keyword
-  - Verifies N files were downloaded
-  - Competitor: `FileCountOnDownloadFolder`
-
-- [ ] **KW-G3** Add `READ EXCEL VALUE` keyword
-  - Reads a value from an uploaded Excel file at a given row/column
-  - Stores via `storeAs`
-  - Requires: `xlsx` npm package
-  - Competitor: `SaveExcelColumnValueInSessionVariable`
-
-- [ ] **KW-G4** Add `ASSERT EXCEL ROW COUNT` keyword
-  - Asserts row count of a downloaded/uploaded Excel file
-  - Operators: equals / greater than / less than
-  - Competitor: `ExcelRowCountShouldBe` / `ExcelRowCountShouldBeGreaterThan` / `ExcelRowCountShouldBeLessThan`
-
-- [ ] **KW-G5** Add `READ PDF TEXT` keyword
-  - Extracts text from a downloaded PDF for assertion
-  - Requires: `pdf-parse` npm package
+- [x] **KW-G3** Add `READ EXCEL VALUE` keyword ✅ 2026-04-19
+- [x] **KW-G4** Add `ASSERT EXCEL ROW COUNT` keyword ✅ 2026-04-19
+- [x] **KW-G5** Add `READ PDF TEXT` keyword ✅ 2026-04-19
   - Competitor: `ReadPdfFile`
 
 ---
 
 ### Wave H — Dynamic Token Enhancements (low effort, high value)
 
-- [ ] **KW-H1** Custom date format token: `{{date.format('DD/MM/YYYY')}}`
-  - Competitor: `Date.FormatDateTemplate`
-
-- [ ] **KW-H2** Date offset token: `{{date.add(7,'days')}}`, `{{date.subtract(1,'month')}}`
-  - Competitor: `Date.getDate` (with offset)
-
-- [ ] **KW-H3** `{{date.diff(date1, date2, 'days')}}` — date difference token
-  - Competitor: `Date.GetDateDifference`
+- [x] **KW-H1** `{{date.format('DD/MM/YYYY')}}` token ✅ 2026-04-19
+- [x] **KW-H2** `{{date.add(N,'unit')}}` / `{{date.subtract(N,'unit')}}` tokens ✅ 2026-04-19
+- [x] **KW-H3** `{{date.diff('date1','date2','unit')}}` token ✅ 2026-04-19
 
 ---
 

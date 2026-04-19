@@ -9,6 +9,7 @@ Read this entire file before taking any action. These rules are non-negotiable.
 > **📋 See [docs/RECORDER_PLAN.md](docs/RECORDER_PLAN.md) for the UI Recorder feature implementation plan (2026-04-09): live step capture, locator auto-resolution, shadow DOM, browser dialogs, file upload.**
 > **📋 See [docs/LICENSING_PLAN.md](docs/LICENSING_PLAN.md) for the full commercial licensing plan (2026-04-11): 3 tiers, 3 phases, P1 is active — license key infra, feature gates, seat enforcement, Admin UI panel.**
 > **📋 See [docs/KEYWORD_COMPARISON.md](docs/KEYWORD_COMPARISON.md) for the competitor keyword gap register (2026-04-10): 60 gaps across 8 sections, 8 implementation waves — starts after Licensing Phase 1.**
+> **📋 See [docs/SELF_HEALING_PLAN.md](docs/SELF_HEALING_PLAN.md) for the AI Self-Healing Locator feature plan (2026-04-11): 5 phases, 28 tasks — Phase 1 (Locator Enrichment) is ACTIVE.**
 
 ---
 

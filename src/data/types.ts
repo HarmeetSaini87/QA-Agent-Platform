@@ -43,18 +43,86 @@ export interface ProjectCredential {
   value: string;
 }
 
+// ── Self-Healing Locator types ────────────────────────────────────────────────
+
+export interface LocatorAlternative {
+  selector:     string;
+  selectorType: string;
+  confidence:   number;   // 0–100
+}
+
+export interface HealingProfile {
+  tag:          string;
+  text:         string | null;
+  ariaLabel:    string | null;
+  role:         string | null;
+  classes:      string[];
+  placeholder:  string | null;
+  testId:       string | null;
+  parentTag:    string | null;
+  parentId:     string | null;
+  parentClass:  string | null;
+  domDepth:     number;
+  siblingIndex: number;
+  capturedAt:   string;
+  capturedFrom: 'recorder' | 'prescan' | 'manual';
+}
+
+export interface HealingStats {
+  healCount:      number;
+  lastHealedAt:   string | null;
+  lastHealedFrom: string | null;
+  lastHealedBy:   'auto' | 'approved' | null;
+}
+
+export interface PageModel {
+  id:           string;
+  projectId:    string;
+  pageKey:      string;   // normalised URL pattern e.g. /patients/:id/records
+  pageName:     string;
+  locatorIds:   string[];
+  capturedAt:   string;
+  capturedFrom: 'recorder' | 'prescan';
+}
+
+export interface HealingProposal {
+  id:              string;
+  projectId:       string;
+  locatorId:       string;
+  locatorName:     string;
+  scriptId:        string;
+  scriptTitle:     string;
+  stepOrder:       number;
+  oldSelector:     string;
+  oldSelectorType: string;
+  newSelector:     string;
+  newSelectorType: string;
+  confidence:      number;
+  healedAt:        string;
+  status:          'auto-applied' | 'pending-review' | 'approved' | 'rejected';
+  reviewedBy?:     string;
+  reviewedAt?:     string;
+  screenshotPath?: string;
+}
+
 export interface Locator {
-  id:          string;
-  name:        string;           // human-readable alias e.g. "Login Button"
-  selector:    string;           // actual CSS/XPath/id
-  selectorType: 'css' | 'xpath' | 'id' | 'name' | 'text' | 'testid' | 'role' | 'label' | 'placeholder';
-  pageModule:  string;           // e.g. "Mediation Config - Gateway Type"
-  projectId:   string | null;    // scoped to project or global
-  description: string;
-  draft?:      boolean;          // true = recorder-created, not yet saved to a script
-  createdBy:   string;
-  createdAt:   string;
-  updatedAt:   string;
+  id:             string;
+  name:           string;           // human-readable alias e.g. "Login Button"
+  selector:       string;           // actual CSS/XPath/id
+  selectorType:   'css' | 'xpath' | 'id' | 'name' | 'text' | 'testid' | 'role' | 'label' | 'placeholder';
+  pageModule:     string;           // e.g. "Mediation Config - Gateway Type"
+  projectId:      string | null;    // scoped to project or global
+  description:    string;
+  draft?:         boolean;          // true = recorder-created, not yet saved to a script
+  createdBy:      string;
+  createdAt:      string;
+  updatedAt:      string;
+  // ── Self-Healing fields (optional — populated by recorder v4+) ────────────
+  importanceScore?:  number;               // 0–100 stability rating
+  alternatives?:     LocatorAlternative[]; // fallback selectors with confidence scores
+  healingProfile?:   HealingProfile;       // element fingerprint for similarity matching
+  healingStats?:     HealingStats;         // runtime heal event counters
+  pageKey?:          string | null;        // normalised URL at time of recording
 }
 
 export interface CommonFunction {
@@ -70,11 +138,16 @@ export interface CommonFunction {
 }
 
 export interface FunctionStep {
-  order:    number;
-  keyword:  string;
-  detail:   string;
-  selector: string | null;
-  value:    string | null;
+  order:       number;
+  keyword:     string;
+  // Locator fields — mirror ScriptStep but use 'selector' (not 'locator') for the value
+  locatorName: string | null;   // human-readable name, e.g. "Username"
+  locatorType: string;          // css | xpath | id | name | testid | role | label | text
+  selector:    string | null;   // actual locator value for the chosen type
+  description: string;
+  // Legacy fields (kept for backward-compatibility with old data)
+  detail?:  string;
+  value?:   string | null;
 }
 
 // ── Test Script ───────────────────────────────────────────────────────────────
@@ -105,7 +178,7 @@ export interface ScriptStep {
   screenshot:    boolean;
   // ── Variable Store (session scope) ────────────────────────────────────────
   storeAs?:      string;         // variable name to save result into e.g. "patientId"
-  storeScope?:   'session';      // session = current script only (global added later)
+  storeScope?:   'session' | 'global';  // session = current script only; global = shared across suite
   storeSource?:  'text' | 'value' | 'attr' | 'js';  // only for SET VARIABLE keyword
   storeAttrName?: string;        // attribute name when storeSource = 'attr'
 }
@@ -140,7 +213,35 @@ export interface CommonData {
   updatedAt:   string;
 }
 
+// ── API Key ───────────────────────────────────────────────────────────────────
+
+export interface ApiKey {
+  id:          string;
+  name:        string;        // human label e.g. "ADO Pipeline — QA"
+  keyHash:     string;        // SHA-256 hex of the raw key — never store raw
+  prefix:      string;        // first 8 chars of raw key shown in UI for identification
+  projectId:   string | null; // null = all projects
+  createdBy:   string;
+  createdAt:   string;
+  lastUsedAt:  string | null;
+  expiresAt:   string | null; // ISO or null = never
+}
+
 // ── Test Suite ────────────────────────────────────────────────────────────────
+
+export interface SuiteHookStep {
+  order:       number;
+  keyword:     string;
+  locator:     string;   // raw selector or locator name
+  value:       string;
+  description: string;
+}
+
+export interface OverlayHandler {
+  type:   'alert' | 'confirm' | 'prompt' | 'any';  // dialog type to handle
+  action: 'accept' | 'dismiss';                     // what to do
+  text?:  string;                                   // for prompt: text to type before accepting
+}
 
 export interface TestSuite {
   id:            string;
@@ -150,6 +251,11 @@ export interface TestSuite {
   scriptIds:     string[];       // ordered list of TestScript IDs
   environmentId: string | null;  // selected environment for execution
   retries:       0 | 1 | 2;     // Playwright --retries flag (0 = disabled)
+  beforeEachSteps: SuiteHookStep[];  // run before every test() block
+  afterEachSteps:  SuiteHookStep[];  // run after every test() block (on top of built-in afterEach)
+  fastMode:        boolean;          // cache auth state once via storageState — skips re-login per test
+  fastModeSteps:   SuiteHookStep[];  // login steps to run once in beforeAll to capture auth state
+  overlayHandlers: OverlayHandler[]; // auto-handle unexpected dialogs/overlays during any test
   createdBy:     string;
   createdAt:     string;
   modifiedBy:    string;
@@ -197,3 +303,38 @@ export const DEFAULT_SETTINGS: AppSettings = {
   appName:               'QA Agent Platform',
   maxFailedLogins:       5,
 };
+
+// ── Licensing ─────────────────────────────────────────────────────────────────
+
+// P4-01: Boolean feature keys — can be individually overridden in a .lic file
+export type FeatureKey = 'recorder' | 'debugger' | 'scheduler' | 'sso' | 'apiAccess' | 'whiteLabel';
+
+export interface LicensePayload {
+  tier:         'starter' | 'team' | 'enterprise' | 'trial';
+  orgId:        string;
+  orgName:      string;
+  seats:        number;        // -1 = unlimited
+  maxInstances: number;        // -1 = unlimited; how many machines may activate this key
+  expiresAt:    string;        // ISO date string
+  machineId?:   string;        // P3-02: signed into .lic — tamper-proof machine binding
+  features: {
+    recorder:    boolean;
+    debugger:    boolean;
+    scheduler:   boolean;
+    sso:         boolean;
+    apiAccess:   boolean;
+    whiteLabel:  boolean;
+    auditDays:   number;       // -1 = unlimited
+    maxProjects: number;       // -1 = unlimited
+  };
+  // P4-01: Vendor-signed per-feature overrides — applied on top of tier defaults.
+  // Enables granting or revoking individual features independent of tier.
+  // Only respected in RSA-signed .lic files — HMAC keys cannot carry overrides.
+  featureOverrides?: Partial<Record<FeatureKey, boolean>>;
+  // P3-08: Enterprise white-label config (optional — Enterprise .lic only)
+  whiteLabelConfig?: {
+    appName:      string;
+    logoUrl?:     string;
+    primaryColor?: string;   // CSS hex e.g. "#3b82f6"
+  };
+}

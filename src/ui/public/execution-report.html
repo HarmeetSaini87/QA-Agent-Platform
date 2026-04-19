@@ -7,306 +7,609 @@
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+    :root {
+      --primary:      #059669;
+      --primary-lt:   #10b981;
+      --primary-dk:   #047857;
+      --primary-bg:   #ecfdf5;
+      --success:      #22c55e;
+      --danger:       #ef4444;
+      --warning:      #f59e0b;
+      --info:         #3b82f6;
+      --dark:         #1e293b;
+      --g50:  #f8fafc; --g100: #f1f5f9; --g200: #e2e8f0;
+      --g300: #cbd5e1; --g400: #94a3b8; --g500: #64748b;
+      --g600: #475569; --g700: #334155;
+      --radius: 12px; --radius-sm: 8px;
+      --shadow:    0 4px 6px -1px rgb(0 0 0/.1), 0 2px 4px -2px rgb(0 0 0/.1);
+      --shadow-lg: 0 10px 15px -3px rgb(0 0 0/.1), 0 4px 6px -4px rgb(0 0 0/.1);
+      --shadow-xl: 0 20px 25px -5px rgb(0 0 0/.15), 0 8px 10px -6px rgb(0 0 0/.1);
+    }
+
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: #1e1e2e;
-      color: #d4d4d4;
+      font-size: 14px;
+      line-height: 1.6;
+      background: linear-gradient(135deg, var(--g100) 0%, var(--primary-bg) 100%);
       min-height: 100vh;
+      color: var(--g700);
     }
 
-    /* ── Toolbar ── */
+    /* ── Toolbar ─────────────────────────────────────────────────────────── */
     .toolbar {
-      background: #252535;
-      border-bottom: 1px solid #2d3748;
-      padding: 12px 24px;
+      background: var(--dark);
+      border-bottom: 1px solid var(--g700);
+      padding: 10px 24px;
       display: flex;
       align-items: center;
-      gap: 12px;
+      gap: 10px;
       position: sticky;
       top: 0;
-      z-index: 100;
-      print-color-adjust: exact;
+      z-index: 200;
     }
-    .toolbar-title { font-size: 15px; font-weight: 600; color: #e2e8f0; flex: 1; }
-    .toolbar-sub   { font-size: 12px; color: #858585; }
-    .btn {
-      padding: 7px 16px;
+    .toolbar-brand { font-size: 13px; font-weight: 700; color: var(--primary-lt); flex: 1; letter-spacing: 0.02em; }
+    .toolbar-sub   { font-size: 11px; color: var(--g400); margin-top: 1px; }
+    .tbtn {
+      padding: 6px 14px;
       border-radius: 6px;
-      font-size: 13px;
-      font-weight: 500;
+      font-size: 12px;
+      font-weight: 600;
       cursor: pointer;
-      border: 1px solid transparent;
-      transition: background 0.15s;
+      border: 1px solid var(--g600);
+      background: var(--g700);
+      color: var(--g200);
+      transition: all 0.15s;
+      white-space: nowrap;
     }
-    .btn-secondary {
-      background: #2d3748;
-      color: #d4d4d4;
-      border-color: #4a5568;
-    }
-    .btn-secondary:hover { background: #3a4a60; }
-    .btn-primary {
-      background: #0e7490;
+    .tbtn:hover { background: var(--g600); border-color: var(--g400); }
+    .tbtn-primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+    .tbtn-primary:hover { background: var(--primary-lt); border-color: var(--primary-lt); }
+
+    /* ── Hero header ──────────────────────────────────────────────────────── */
+    .report-hero {
+      background: linear-gradient(135deg, var(--primary) 0%, #0d9488 50%, var(--primary-dk) 100%);
       color: #fff;
-      border-color: #0e7490;
-    }
-    .btn-primary:hover { background: #0b6480; }
-
-    /* ── Page body ── */
-    .page { max-width: 1100px; margin: 0 auto; padding: 28px 24px; }
-
-    /* ── Loading / Error ── */
-    .center-msg { text-align: center; padding: 80px 24px; color: #858585; font-size: 14px; }
-
-    /* ── Section headings ── */
-    .section-title {
-      font-size: 11px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      color: #9cdcfe;
-      margin: 32px 0 12px;
-      padding-bottom: 6px;
-      border-bottom: 1px solid #2d3748;
-    }
-
-    /* ── Summary grid ── */
-    .summary-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
-      gap: 12px;
-    }
-    .summary-item {
-      background: #252535;
-      border: 1px solid #2d3748;
-      border-radius: 8px;
-      padding: 12px 14px;
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-    }
-    .summary-lbl { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: #858585; }
-    .summary-val { font-size: 13px; color: #e2e8f0; word-break: break-all; }
-
-    /* ── Metrics row ── */
-    .metrics-row { display: flex; gap: 12px; flex-wrap: wrap; }
-    .metric {
-      flex: 1;
-      min-width: 100px;
-      background: #252535;
-      border: 1px solid #2d3748;
-      border-radius: 10px;
-      padding: 18px 12px;
+      padding: 36px 24px 30px;
       text-align: center;
-    }
-    .metric-val { font-size: 36px; font-weight: 700; line-height: 1; color: #d4d4d4; }
-    .metric-lbl { font-size: 11px; color: #858585; margin-top: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
-    .metric-pass .metric-val { color: #4ec9b0; }
-    .metric-fail .metric-val { color: #f48771; }
-    .metric-skip .metric-val { color: #dcdcaa; }
-    .metric-rate .metric-val { color: #9cdcfe; }
-
-    /* ── Progress bar ── */
-    .progress-wrap { margin-top: 20px; }
-    .progress-bar-bg { background: #2d3748; border-radius: 4px; height: 8px; overflow: hidden; }
-    .progress-bar-fill { height: 100%; border-radius: 4px; background: #4ec9b0; transition: width 0.4s; }
-    .progress-label { font-size: 11px; color: #858585; margin-top: 4px; }
-
-    /* ── Table ── */
-    .report-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    .report-table th {
-      background: #252535;
-      padding: 10px 12px;
-      text-align: left;
-      font-size: 11px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      color: #858585;
-      border-bottom: 1px solid #2d3748;
-      white-space: nowrap;
-    }
-    .report-table td {
-      padding: 10px 12px;
-      border-bottom: 1px solid #1a1f2e;
-      vertical-align: top;
-    }
-    .report-table tr:hover td { background: #1e2535; }
-
-    /* ── Status badges ── */
-    .badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-      padding: 3px 9px;
-      border-radius: 12px;
-      font-size: 11px;
-      font-weight: 600;
-      white-space: nowrap;
-    }
-    .badge-pass  { background: rgba(78,201,176,.15); color: #4ec9b0; border: 1px solid rgba(78,201,176,.3); }
-    .badge-fail  { background: rgba(244,135,113,.15); color: #f48771; border: 1px solid rgba(244,135,113,.3); }
-    .badge-skip  { background: rgba(220,186,38,.15);  color: #dcdcaa; border: 1px solid rgba(220,186,38,.3); }
-    .badge-run   { background: rgba(220,186,38,.15);  color: #dcdcaa; border: 1px solid rgba(220,186,38,.3); }
-
-    /* ── Failure detail panel ── */
-    .failure-block {
-      margin-top: 8px;
-      background: #1a0e0e;
-      border: 1px solid rgba(244,135,113,.25);
-      border-radius: 6px;
+      position: relative;
       overflow: hidden;
     }
-    .failure-header {
-      background: rgba(244,135,113,.12);
-      padding: 6px 10px;
-      font-size: 11px;
-      font-weight: 600;
-      color: #f48771;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
+    .report-hero::before {
+      content: '';
+      position: absolute; top: -50%; left: -50%;
+      width: 200%; height: 200%;
+      background: radial-gradient(circle, rgba(255,255,255,.08) 0%, transparent 60%);
+      animation: pulse 15s ease-in-out infinite;
     }
-    .failure-body {
-      padding: 10px;
-      font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
-      font-size: 11.5px;
-      color: #f48771cc;
-      white-space: pre-wrap;
-      word-break: break-word;
-      max-height: 220px;
-      overflow-y: auto;
-      line-height: 1.5;
+    @keyframes pulse { 0%,100%{transform:scale(1);opacity:.5} 50%{transform:scale(1.1);opacity:.25} }
+    .report-hero h1 { font-size: 28px; font-weight: 700; letter-spacing: -.4px; position: relative; text-shadow: 0 2px 4px rgba(0,0,0,.25); }
+    .report-hero-sub { margin-top: 6px; font-size: 14px; opacity: .85; position: relative; }
+
+    /* ── Page container ───────────────────────────────────────────────────── */
+    .page { max-width: 1280px; margin: 0 auto; padding: 28px 24px 60px; }
+    .center-msg { text-align: center; padding: 80px 24px; color: var(--g500); font-size: 14px; }
+
+    /* ── Stats dashboard (TTA-style) ──────────────────────────────────────── */
+    .stats-dashboard {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 16px;
+      margin-bottom: 20px;
     }
-    .screenshot-wrap { margin-top: 10px; padding: 0 10px 10px; }
-    .screenshot-wrap img {
-      max-width: 100%;
-      border-radius: 4px;
-      border: 1px solid #2d3748;
+    .stat-card {
+      background: #fff;
+      border-radius: var(--radius);
+      padding: 22px 18px;
+      box-shadow: var(--shadow);
+      border-left: 4px solid var(--primary);
+      transition: transform .2s, box-shadow .2s;
+    }
+    .stat-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-lg); }
+    .stat-card.passed { border-left-color: var(--success); }
+    .stat-card.failed { border-left-color: var(--danger); }
+    .stat-card.skipped{ border-left-color: var(--g400); }
+    .stat-card.rate   { border-left-color: var(--info); }
+    .stat-val { font-size: 34px; font-weight: 700; color: var(--dark); line-height: 1; }
+    .stat-lbl { font-size: 12px; color: var(--g500); text-transform: uppercase; letter-spacing: .5px; margin-top: 6px; font-weight: 600; }
+
+    /* ── Meta strip ───────────────────────────────────────────────────────── */
+    .meta-strip {
+      background: #fff;
+      border-radius: var(--radius);
+      padding: 14px 20px;
+      margin-bottom: 20px;
+      box-shadow: var(--shadow);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 20px;
+      align-items: center;
+    }
+    .meta-item { display: flex; align-items: center; gap: 8px; }
+    .meta-lbl  { font-size: 11px; color: var(--g500); text-transform: uppercase; letter-spacing: .5px; font-weight: 600; }
+    .env-pill  {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 4px 12px; border-radius: 20px;
+      font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px;
+      background: linear-gradient(135deg, var(--primary-lt), var(--primary));
+      color: #fff; box-shadow: 0 2px 8px rgba(16,185,129,.3);
+    }
+    .browser-pill {
+      background: var(--g100); color: var(--g700);
+      border: 1px solid var(--g200);
+      display: inline-flex; align-items: center; padding: 4px 12px;
+      border-radius: 20px; font-size: 11px; font-weight: 600;
+    }
+
+    /* ── Section titles (kept from original) ──────────────────────────────── */
+    .section-title {
+      font-size: 11px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 1px; color: var(--primary-dk);
+      margin: 28px 0 12px;
+      padding-bottom: 6px;
+      border-bottom: 2px solid var(--g200);
+      display: flex; align-items: center; gap: 8px;
+    }
+    .section-title-count {
+      font-size: 10px; font-weight: 400; color: var(--g500);
+      background: var(--g100); padding: 1px 7px; border-radius: 10px;
+      text-transform: none; letter-spacing: 0;
+    }
+
+    /* ── Execution summary grid (kept) ────────────────────────────────────── */
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 10px;
+    }
+    .summary-item {
+      background: #fff;
+      border: 1px solid var(--g200);
+      border-radius: var(--radius-sm);
+      padding: 12px 14px;
+      display: flex; flex-direction: column; gap: 3px;
+      box-shadow: 0 1px 2px rgba(0,0,0,.04);
+    }
+    .summary-lbl { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: var(--g500); }
+    .summary-val { font-size: 13px; color: var(--dark); word-break: break-all; font-weight: 500; }
+
+    /* ── Metrics row (kept) ────────────────────────────────────────────────── */
+    .metrics-row { display: flex; gap: 12px; flex-wrap: wrap; }
+    .metric {
+      flex: 1; min-width: 100px;
+      background: #fff; border: 1px solid var(--g200);
+      border-radius: var(--radius); padding: 18px 12px;
+      text-align: center; box-shadow: 0 1px 2px rgba(0,0,0,.04);
+      transition: transform .2s, box-shadow .2s;
+    }
+    .metric:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
+    .metric-val { font-size: 34px; font-weight: 700; color: var(--dark); line-height: 1; }
+    .metric-lbl { font-size: 11px; color: var(--g500); margin-top: 6px; text-transform: uppercase; letter-spacing: .5px; }
+    .metric-pass .metric-val { color: #16a34a; }
+    .metric-fail .metric-val { color: #dc2626; }
+    .metric-skip .metric-val { color: #d97706; }
+    .metric-rate .metric-val { color: var(--info); }
+
+    /* ── Progress bar (kept) ───────────────────────────────────────────────── */
+    .progress-wrap { margin-top: 18px; }
+    .progress-bar-bg { background: var(--g200); border-radius: 4px; height: 8px; overflow: hidden; }
+    .progress-bar-fill { height: 100%; border-radius: 4px; background: var(--success); transition: width .5s; }
+    .progress-label { font-size: 11px; color: var(--g500); margin-top: 4px; }
+
+    /* ── Status badges ────────────────────────────────────────────────────── */
+    .badge {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 4px 10px; border-radius: 20px;
+      font-size: 11px; font-weight: 700; white-space: nowrap; letter-spacing: .3px;
+    }
+    .badge-pass  { background: linear-gradient(135deg,#22c55e,#16a34a); color:#fff; box-shadow:0 2px 6px rgba(34,197,94,.3); }
+    .badge-fail  { background: linear-gradient(135deg,#ef4444,#dc2626); color:#fff; box-shadow:0 2px 6px rgba(239,68,68,.3); }
+    .badge-skip  { background: var(--g200); color: var(--g600); }
+    .badge-run   { background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; }
+    .badge-done  { background: linear-gradient(135deg,#22c55e,#16a34a); color:#fff; }
+
+    /* ── Filter bar ───────────────────────────────────────────────────────── */
+    .filter-bar {
+      display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+      margin-bottom: 14px;
+    }
+    .filter-search {
+      flex: 1; min-width: 200px; max-width: 340px;
+      padding: 8px 12px; border: 1px solid var(--g300);
+      border-radius: 20px; font-size: 13px; color: var(--g700);
+      background: #fff; outline: none;
+      transition: border-color .15s, box-shadow .15s;
+    }
+    .filter-search:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(5,150,105,.12); }
+    .filter-pills { display: flex; gap: 6px; flex-wrap: wrap; }
+    .filter-pill {
+      padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: 600;
+      cursor: pointer; border: 1.5px solid var(--g300);
+      background: #fff; color: var(--g600);
+      transition: all .15s;
+    }
+    .filter-pill:hover { border-color: var(--primary); color: var(--primary); }
+    .filter-pill.active { background: var(--primary); border-color: var(--primary); color: #fff; box-shadow: 0 2px 6px rgba(5,150,105,.3); }
+    .filter-pill.pass-pill.active { background: #16a34a; border-color: #16a34a; }
+    .filter-pill.fail-pill.active { background: #dc2626; border-color: #dc2626; }
+    .filter-pill.skip-pill.active { background: var(--g500); border-color: var(--g500); }
+    .filter-count { font-size: 11px; color: var(--g500); margin-left: auto; white-space: nowrap; }
+
+    /* ── Test case table ──────────────────────────────────────────────────── */
+    .tc-table-wrap {
+      background: #fff;
+      border-radius: var(--radius);
+      box-shadow: var(--shadow-lg);
+      overflow: hidden;
+      border: 1px solid var(--g200);
+    }
+    .tc-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .tc-table thead { background: linear-gradient(135deg, var(--dark) 0%, var(--g700) 100%); }
+    .tc-table th {
+      padding: 12px 14px; text-align: left; font-weight: 600;
+      font-size: 11px; text-transform: uppercase; letter-spacing: .5px;
+      color: var(--g300); white-space: nowrap; border: none;
+    }
+    .tc-table td {
+      padding: 12px 14px; border-bottom: 1px solid var(--g100);
+      vertical-align: middle;
+    }
+    .tc-table tbody tr.tc-main-row { background: #fff; transition: background .15s; cursor: pointer; }
+    .tc-table tbody tr.tc-main-row:nth-child(4n+3) { background: var(--g50); }
+    .tc-table tbody tr.tc-main-row:hover { background: var(--primary-bg) !important; }
+    .tc-table tbody tr.tc-main-row.failed { border-left: 3px solid var(--danger); }
+    .tc-table tbody tr.tc-main-row.passed { border-left: 3px solid transparent; }
+    .tc-expand-icon { display: inline-block; width: 18px; color: var(--g400); font-size: 10px; transition: transform .25s; vertical-align: middle; }
+    .tc-main-row.open .tc-expand-icon { transform: rotate(90deg); }
+    .tc-id-badge {
+      display: inline-block; font-family: monospace; font-size: 11px;
+      background: #e0e7ff; color: #3730a3;
+      border-radius: 4px; padding: 1px 6px; white-space: nowrap;
+    }
+    /* ── Per-row artifact buttons (Screenshot / Video / Trace) ──────────────── */
+    .tc-btn {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 5px 11px; border-radius: 20px;
+      font-size: 11px; font-weight: 700; letter-spacing: .2px;
+      text-decoration: none; cursor: pointer;
+      transition: all .15s; white-space: nowrap; border: 1.5px solid transparent;
+    }
+    /* Screenshot — green */
+    .tc-btn-ss  { background: var(--primary-bg); color: var(--primary-dk); border-color: #6ee7b7; }
+    .tc-btn-ss:not([disabled]):hover  { background: var(--primary); color: #fff; border-color: var(--primary); }
+    /* Video — amber */
+    .tc-btn-vid { background: #fef3c7; color: #92400e; border-color: #fcd34d; }
+    .tc-btn-vid:not([disabled]):hover { background: #f59e0b; color: #fff; border-color: #f59e0b; }
+    /* Trace — purple */
+    .tc-btn-tr  { background: #ede9fe; color: #5b21b6; border-color: #c4b5fd; }
+    .tc-btn-tr:not([disabled]):hover  { background: #7c3aed; color: #fff; border-color: #7c3aed; }
+    /* Inactive (file not captured yet) — greyed, no pointer */
+    .tc-btn-inactive {
+      background: var(--g100) !important; color: var(--g400) !important;
+      border-color: var(--g200) !important; cursor: not-allowed !important;
+      opacity: .7;
+    }
+    .na-pill { font-size: 11px; color: var(--g400); font-style: italic; }
+
+    /* ── Detail expand row ────────────────────────────────────────────────── */
+    .tc-detail-row { display: none; background: var(--g50) !important; cursor: default !important; }
+    .tc-detail-row.open { display: table-row; }
+    .tc-detail-row td { padding: 0 !important; border: none; }
+    .tc-detail-inner {
+      margin: 12px 20px 16px;
+      border-radius: var(--radius);
+      background: #fff;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      border: 1px solid var(--g200);
+    }
+
+    /* ── Collapsible sections inside detail ────────────────────────────────── */
+    .det-section { border-bottom: 1px solid var(--g100); }
+    .det-section:last-child { border-bottom: none; }
+    .det-header {
+      padding: 13px 18px; background: var(--g50);
+      cursor: pointer; font-weight: 600; font-size: 13px;
+      display: flex; align-items: center; gap: 8px;
+      transition: background .15s; user-select: none;
+      color: var(--g700);
+    }
+    .det-header:hover { background: var(--g100); }
+    .det-arrow { font-size: 11px; color: var(--g400); transition: transform .25s; }
+    .det-section.collapsed .det-arrow { transform: rotate(-90deg); }
+    .det-section.collapsed .det-body { display: none; }
+    .det-body { padding: 16px 20px; }
+    .det-header.error-hdr { background: #fef2f2; color: var(--danger); }
+    .det-header.error-hdr:hover { background: #fee2e2; }
+
+    /* ── Error section ────────────────────────────────────────────────────── */
+    .error-box {
+      background: #fef2f2; border: 1px solid #fecaca;
+      border-left: 4px solid var(--danger);
+      border-radius: var(--radius-sm); padding: 14px 16px;
+    }
+    .error-msg-line { color: #b91c1c; font-weight: 600; margin-bottom: 10px; font-size: 13px; }
+    .error-detail-pre {
+      background: var(--dark); color: #fca5a5;
+      font-family: 'Cascadia Code','Fira Code','Consolas',monospace;
+      font-size: 11.5px; padding: 14px; border-radius: var(--radius-sm);
+      white-space: pre-wrap; word-break: break-word;
+      max-height: 300px; overflow-y: auto; line-height: 1.55;
+    }
+    .stack-toggle { margin-top: 10px; }
+    .stack-toggle summary { color: var(--g500); font-size: 12px; cursor: pointer; padding: 4px 0; }
+    .stack-toggle pre {
+      margin-top: 8px; padding: 12px; background: #fffbeb;
+      color: #92400e; font-family: monospace; font-size: 11px;
+      border-radius: var(--radius-sm); border-left: 3px solid var(--warning);
+      max-height: 200px; overflow-y: auto;
+    }
+
+    /* ── Screenshots section ──────────────────────────────────────────────── */
+    .ss-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 16px;
+    }
+    .ss-item {
+      background: var(--g50); border: 1px solid var(--g200);
+      border-radius: var(--radius-sm); overflow: hidden;
+      transition: transform .2s, box-shadow .2s;
       cursor: pointer;
     }
-    .screenshot-caption { font-size: 11px; color: #858585; margin-top: 4px; }
+    .ss-item:hover { transform: translateY(-3px); box-shadow: var(--shadow-lg); }
+    .ss-preview { width: 100%; height: 150px; object-fit: cover; display: block; }
+    .ss-label {
+      padding: 8px 12px; font-size: 11px; font-weight: 600;
+      color: var(--g600); border-top: 1px solid var(--g100);
+    }
+    .diff-strip {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+    }
+    .diff-strip.single { grid-template-columns: 1fr; }
+    .diff-col { display: flex; flex-direction: column; gap: 5px; }
+    .diff-tag {
+      font-size: 10px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .05em;
+    }
+    .diff-tag.before { color: var(--info); }
+    .diff-tag.after  { color: var(--danger); }
+    .diff-col img { width: 100%; border-radius: var(--radius-sm); cursor: pointer; border: 1px solid var(--g200); }
+    .diff-col.after-col img { border-color: #fca5a5; }
 
-    /* ── Visual Diff panel ── */
-    .diff-panel { margin-top: 10px; padding: 0 10px 10px; }
-    .diff-panel-title {
-      font-size: 11px; font-weight: 600; text-transform: uppercase;
-      color: #9cdcfe; letter-spacing: .04em; margin-bottom: 6px;
+    /* ── Steps section ────────────────────────────────────────────────────── */
+    .steps-list { border: 1px solid var(--g200); border-radius: var(--radius-sm); overflow: hidden; }
+    .step-item-wrap { border-bottom: 1px solid var(--g100); }
+    .step-item-wrap:last-child { border-bottom: none; }
+    .step-row {
+      display: flex; align-items: center; gap: 10px;
+      padding: 11px 14px; transition: background .15s;
     }
-    .diff-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 8px;
+    .step-row.clickable { cursor: pointer; }
+    .step-row.clickable:hover { background: var(--g50); }
+    .step-row.fail-step { background: #fef2f2; }
+    .step-row.fail-step:hover { background: #fee2e2 !important; }
+    .step-exp-icon { width: 16px; font-size: 9px; color: var(--g400); transition: transform .2s; flex-shrink: 0; }
+    .step-row.expanded .step-exp-icon { transform: rotate(90deg); }
+    .step-status-icon {
+      width: 24px; height: 24px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 12px; flex-shrink: 0;
     }
-    .diff-grid.single { grid-template-columns: 1fr; }
-    .diff-col { display: flex; flex-direction: column; }
-    .diff-label {
-      font-size: 10px; font-weight: 600; text-transform: uppercase;
-      letter-spacing: .04em; margin-bottom: 4px;
+    .step-status-icon.pass { background: #dcfce7; color: #16a34a; }
+    .step-status-icon.fail { background: #fee2e2; color: #dc2626; }
+    .step-kw {
+      font-size: 11px; font-weight: 700; color: var(--primary-dk);
+      background: var(--primary-bg); padding: 2px 7px; border-radius: 4px;
+      white-space: nowrap; flex-shrink: 0;
     }
-    .diff-label.before { color: #9cdcfe; }
-    .diff-label.after  { color: #f48771; }
-    .diff-col img {
-      width: 100%; border-radius: 4px; cursor: pointer;
-      border: 1px solid #2d3748;
+    .step-name { flex: 1; font-size: 12.5px; color: var(--dark); }
+    .step-dur  {
+      font-size: 11px; font-family: monospace;
+      color: var(--g500); background: var(--g100);
+      padding: 3px 9px; border-radius: 12px; white-space: nowrap; flex-shrink: 0;
     }
-    .diff-col.after-col img { border-color: #f48771; }
+    .step-detail-panel {
+      display: none; background: var(--g50);
+      border-top: 1px solid var(--g100);
+      padding: 12px 14px 12px 64px;
+    }
+    .step-meta-row { display: flex; flex-wrap: wrap; gap: 16px; font-size: 11px; color: var(--g500); margin-bottom: 8px; }
+    .step-ss-thumb { max-height: 120px; border-radius: 4px; border: 1px solid var(--g200); cursor: pointer; }
+    .step-err-line  { font-size: 11.5px; color: #b91c1c; font-family: monospace; background: #fef2f2; padding: 8px 10px; border-radius: 4px; border-left: 3px solid var(--danger); }
 
-    /* ── TC ID badge ── */
-    .tc-id {
-      display: inline-block;
-      font-family: monospace;
-      font-size: 11px;
-      background: #2d3748;
-      color: #9cdcfe;
-      border-radius: 4px;
-      padding: 1px 6px;
-      white-space: nowrap;
+    /* ── Console errors list (Phase A) ─────────────────────────────────────── */
+    .ce-list { display: flex; flex-direction: column; gap: 6px; }
+    .ce-row  { font-size: 11.5px; font-family: monospace; color: #92400e; background: #fffbeb;
+               padding: 7px 10px; border-radius: 4px; border-left: 3px solid #f59e0b;
+               white-space: pre-wrap; word-break: break-all; }
+
+    /* ── Video / Trace section ────────────────────────────────────────────── */
+    .media-row { display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-start; }
+    .media-card {
+      flex: 1; min-width: 220px; background: var(--g50);
+      border: 1px solid var(--g200); border-radius: var(--radius-sm); padding: 14px;
+    }
+    .media-card-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--g500); margin-bottom: 10px; }
+    .media-card video { width: 100%; max-height: 280px; border-radius: 6px; outline: none; }
+    .media-link-btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 8px 14px; border-radius: var(--radius-sm);
+      font-size: 12px; font-weight: 600; text-decoration: none;
+      transition: all .15s; margin-top: 8px;
+    }
+    .media-link-btn.video-btn { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
+    .media-link-btn.video-btn:hover { background: var(--warning); color: #fff; }
+    .media-link-btn.trace-btn { background: #ede9fe; color: #5b21b6; border: 1px solid #c4b5fd; }
+    .media-link-btn.trace-btn:hover { background: #7c3aed; color: #fff; }
+    .not-captured { font-size: 12px; color: var(--g400); font-style: italic; }
+    .pdf-note { font-size: 11px; color: var(--g500); margin-top: 6px; padding: 6px 10px; background: var(--g100); border-radius: 4px; border-left: 2px solid var(--g300); }
+
+    /* ── Export asset note cards (shown in exported HTML instead of server-only media) */
+    .export-asset-note {
+      display: flex; align-items: flex-start; gap: 12px;
+      padding: 14px 16px; border-radius: var(--radius-sm);
+      background: #fffbeb; border: 1px solid #fde68a; border-left: 4px solid var(--warning);
+      font-size: 12.5px; color: #78350f;
+    }
+    .export-asset-note.ean-trace {
+      background: #f5f3ff; border-color: #c4b5fd; border-left-color: #7c3aed; color: #4c1d95;
+    }
+    .ean-icon  { font-size: 22px; flex-shrink: 0; margin-top: 1px; line-height: 1; }
+    .ean-body  { flex: 1; }
+    .ean-title { font-weight: 700; font-size: 13px; margin-bottom: 6px; }
+    .ean-path  {
+      font-family: 'Cascadia Code','Consolas',monospace; font-size: 11px;
+      background: rgba(0,0,0,.06); padding: 3px 8px; border-radius: 4px;
+      margin: 5px 0; word-break: break-all; display: inline-block; max-width: 100%;
+    }
+    .ean-msg   { font-size: 11.5px; opacity: .85; margin-top: 5px; line-height: 1.5; }
+    .ean-msg code { background: rgba(0,0,0,.08); padding: 1px 5px; border-radius: 3px; font-family: monospace; font-size: 11px; }
+    .ean-server-link { display: inline-flex; align-items: center; gap: 5px; margin-top: 8px; padding: 5px 12px; border-radius: 6px; font-size: 11.5px; font-weight: 600; text-decoration: none; background: rgba(0,0,0,.08); color: inherit; transition: background .15s; }
+    .ean-server-link:hover { background: rgba(0,0,0,.14); }
+
+    /* ── Heal events table (kept, adapted) ────────────────────────────────── */
+    .heal-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .heal-table th {
+      background: var(--g100); padding: 10px 12px;
+      text-align: left; font-size: 11px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: .5px;
+      color: var(--g500); border-bottom: 1px solid var(--g200); white-space: nowrap;
+    }
+    .heal-table td { padding: 10px 12px; border-bottom: 1px solid var(--g100); vertical-align: top; }
+    .heal-table tr:hover td { background: var(--g50); }
+    .heal-tier { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 10px; }
+    .heal-auto { background: #ecfdf5; color: var(--primary-dk); border: 1px solid #a7f3d0; }
+    .heal-rev  { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
+
+    /* ── Modal lightbox ───────────────────────────────────────────────────── */
+    .modal {
+      display: none; position: fixed; z-index: 1000;
+      inset: 0; background: rgba(0,0,0,.92);
+      justify-content: center; align-items: center;
+      backdrop-filter: blur(4px);
+    }
+    .modal.open { display: flex; }
+    .modal-img { max-width: 95vw; max-height: 92vh; object-fit: contain; border-radius: var(--radius); box-shadow: var(--shadow-xl); }
+    .modal-close {
+      position: absolute; top: 18px; right: 24px;
+      color: #fff; font-size: 36px; cursor: pointer;
+      line-height: 1; transition: transform .2s, color .2s;
+      background: none; border: none;
+    }
+    .modal-close:hover { color: var(--primary-lt); transform: scale(1.15); }
+
+    /* ── Report footer ────────────────────────────────────────────────────── */
+    .report-footer {
+      text-align: center; padding: 28px 20px;
+      background: linear-gradient(135deg, var(--dark), var(--g700));
+      color: #fff; margin-top: 40px; border-radius: var(--radius);
+      font-size: 13px; opacity: .9;
     }
 
-    /* ── Print styles ── */
+    /* ── Print / PDF ──────────────────────────────────────────────────────── */
     @media print {
-      * {
-        print-color-adjust: exact !important;
-        -webkit-print-color-adjust: exact !important;
-      }
+      *, *::before, *::after { print-color-adjust: exact !important; -webkit-print-color-adjust: exact !important; }
       .toolbar { display: none !important; }
-      .failure-body { max-height: none !important; overflow: visible !important; }
-
-      /* Force white background + dark text everywhere */
-      body, .page { background: #fff !important; color: #111 !important; }
-
-      /* Summary grid cards */
-      .summary-item {
-        background: #f4f6f8 !important;
-        border: 1px solid #d1d5db !important;
-      }
-      .summary-lbl { color: #6b7280 !important; }
-      .summary-val { color: #111 !important; }
-
-      /* Metric cards */
-      .metric { background: #f4f6f8 !important; border: 1px solid #d1d5db !important; }
+      .report-hero { background: var(--primary) !important; -webkit-print-color-adjust: exact !important; }
+      .filter-bar  { display: none !important; }
+      .tbtn        { display: none !important; }
+      body { background: #fff !important; color: #111 !important; font-size: 12px; }
+      .page { padding: 16px !important; }
+      /* Stats */
+      .stat-card { background: #f4f6f8 !important; border: 1px solid #d1d5db !important; box-shadow: none !important; }
+      .stat-val  { color: #111 !important; }
+      .stat-lbl  { color: #6b7280 !important; }
+      /* Meta */
+      .meta-strip { background: #f4f6f8 !important; border: 1px solid #d1d5db !important; box-shadow: none !important; }
+      /* Summary */
+      .summary-item { background: #f4f6f8 !important; border-color: #d1d5db !important; }
+      .summary-lbl  { color: #6b7280 !important; }
+      .summary-val  { color: #111 !important; }
+      /* Metrics */
+      .metric { background: #f4f6f8 !important; border-color: #d1d5db !important; box-shadow: none !important; }
       .metric-lbl { color: #6b7280 !important; }
       .metric-val { color: #111 !important; }
       .metric-pass .metric-val { color: #166534 !important; }
       .metric-fail .metric-val { color: #991b1b !important; }
       .metric-skip .metric-val { color: #92400e !important; }
       .metric-rate .metric-val { color: #1d4ed8 !important; }
-
-      /* Progress bar */
-      .progress-bar-bg { background: #e5e7eb !important; }
-      .progress-bar-fill { background: #16a34a !important; }
-      .progress-label { color: #6b7280 !important; }
-
+      /* Progress */
+      .progress-bar-bg  { background: #e5e7eb !important; }
+      .progress-bar-fill{ background: #16a34a !important; }
+      .progress-label   { color: #6b7280 !important; }
       /* Section titles */
-      .section-title { color: #1d4ed8 !important; border-bottom-color: #d1d5db !important; }
-
+      .section-title { color: #1d4ed8 !important; border-color: #d1d5db !important; }
+      /* Badges */
+      .badge-pass { background: #dcfce7 !important; color: #166534 !important; box-shadow: none !important; }
+      .badge-fail { background: #fee2e2 !important; color: #991b1b !important; box-shadow: none !important; }
+      .badge-skip { background: #f3f4f6 !important; color: #6b7280 !important; }
+      .badge-done { background: #dcfce7 !important; color: #166534 !important; box-shadow: none !important; }
       /* Table */
-      .report-table th { background: #e5e7eb !important; color: #374151 !important; border-bottom-color: #9ca3af !important; }
-      .report-table td { border-bottom-color: #e5e7eb !important; color: #111 !important; }
-      .report-table tr:hover td { background: transparent !important; }
-
-      /* Status badges */
-      .badge-pass { color: #166534 !important; background: #dcfce7 !important; border-color: #86efac !important; }
-      .badge-fail { color: #991b1b !important; background: #fee2e2 !important; border-color: #fca5a5 !important; }
-      .badge-skip { color: #92400e !important; background: #fef3c7 !important; border-color: #fcd34d !important; }
-      .badge-run  { color: #92400e !important; background: #fef3c7 !important; border-color: #fcd34d !important; }
-
-      /* TC ID */
-      .tc-id { background: #e0e7ff !important; color: #3730a3 !important; }
-
-      /* Failure block */
-      .failure-block { background: #fff5f5 !important; border-color: #fca5a5 !important; }
-      .failure-header { background: #fee2e2 !important; color: #991b1b !important; }
-      .failure-body { background: #fff5f5 !important; color: #7f1d1d !important; }
-
-      /* Grey text overrides */
-      [style*="color:#858585"],
-      [style*="color: #858585"] { color: #6b7280 !important; }
-      [style*="color:#4ec9b0"],
-      [style*="color: #4ec9b0"] { color: #166534 !important; }
-      [style*="color:#f48771"],
-      [style*="color: #f48771"] { color: #991b1b !important; }
-      [style*="color:#d4d4d4"],
-      [style*="color: #d4d4d4"] { color: #111 !important; }
+      .tc-table-wrap { box-shadow: none !important; border-color: #d1d5db !important; }
+      .tc-table thead { background: #e5e7eb !important; }
+      .tc-table th { color: #374151 !important; }
+      .tc-table td { border-color: #e5e7eb !important; color: #111 !important; }
+      .tc-table tbody tr.tc-main-row { background: #fff !important; border: none !important; }
+      .tc-table tbody tr.tc-main-row.failed { border-left: 3px solid #ef4444 !important; }
+      .tc-id-badge { background: #e0e7ff !important; color: #3730a3 !important; }
+      .tc-expand-icon { display: none !important; }
+      /* Keep detail rows open in PDF */
+      .tc-detail-row { display: table-row !important; }
+      .det-section.collapsed .det-body { display: block !important; }
+      .step-detail-panel { display: block !important; }
+      /* Error box */
+      .error-box { background: #fff5f5 !important; border-color: #fca5a5 !important; }
+      .error-msg-line { color: #991b1b !important; }
+      .error-detail-pre { background: #fff5f5 !important; color: #7f1d1d !important; max-height: none !important; overflow: visible !important; }
+      /* Heal table */
+      .heal-table th { background: #e5e7eb !important; color: #374151 !important; }
+      .heal-table td { color: #111 !important; }
+      /* PDF notes visible */
+      .pdf-note { display: block !important; }
+      /* Screenshots: keep visible */
+      .ss-preview, .step-ss-thumb { max-height: 200px !important; }
+      /* Hide video player in PDF */
+      video { display: none !important; }
+      /* Det header print */
+      .det-header { background: #f4f6f8 !important; color: #374151 !important; }
+      .det-header.error-hdr { background: #fee2e2 !important; color: #991b1b !important; }
+      /* Footer */
+      .report-footer { background: #e5e7eb !important; color: #374151 !important; }
     }
   </style>
 </head>
 <body>
 
-  <div class="toolbar">
-    <div>
-      <div class="toolbar-title">Execution Report</div>
-      <div class="toolbar-sub" id="tb-sub">Loading…</div>
-    </div>
-    <button class="btn btn-secondary" onclick="window.close()">&#8592; Back</button>
-    <button class="btn btn-secondary" onclick="exportHTML()">&#8681; Export HTML</button>
-    <button class="btn btn-primary"   onclick="window.print()">&#128438; Export PDF</button>
+<!-- ── Toolbar ─────────────────────────────────────────────────── -->
+<div class="toolbar">
+  <div style="flex:1">
+    <div class="toolbar-brand">QA Agent Platform — Execution Report</div>
+    <div class="toolbar-sub" id="tb-sub">Loading…</div>
   </div>
+  <button class="tbtn" onclick="window.close()">&#8592; Back</button>
+  <button class="tbtn" onclick="exportHTML()">&#8681; Export HTML</button>
+  <button class="tbtn tbtn-primary" onclick="window.print()">&#128438; Export PDF</button>
+</div>
 
-  <div class="page" id="page-content">
-    <div class="center-msg" id="loading-msg">Loading report…</div>
-  </div>
+<!-- ── Hero header ────────────────────────────────────────────── -->
+<div class="report-hero" id="hero-header">
+  <h1>Execution Report</h1>
+  <p class="report-hero-sub">QA Agent Platform — Playwright</p>
+</div>
+
+<!-- ── Page content ───────────────────────────────────────────── -->
+<div class="page" id="page-content">
+  <div class="center-msg" id="loading-msg">Loading report…</div>
+</div>
+
+<!-- ── Screenshot modal ───────────────────────────────────────── -->
+<div class="modal" id="ss-modal" onclick="modalClose(event)">
+  <button class="modal-close" onclick="document.getElementById('ss-modal').classList.remove('open')">&#x2715;</button>
+  <img class="modal-img" id="ss-modal-img" src="" alt="Screenshot">
+</div>
 
 <script>
+// ── Bootstrap ────────────────────────────────────────────────────────────────
 const params = new URLSearchParams(location.search);
 const runId  = params.get('runId');
 
@@ -317,6 +620,7 @@ if (!runId) {
 }
 
 async function loadReport(id) {
+  window._runId = id;
   try {
     const res = await fetch(`/api/run/${encodeURIComponent(id)}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -327,6 +631,7 @@ async function loadReport(id) {
   }
 }
 
+// ── Helpers ──────────────────────────────────────────────────────────────────
 function esc(s) {
   return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
@@ -346,8 +651,7 @@ function fmtDuration(startIso, endIso) {
     if (ms < 0) return '—';
     const s = Math.floor(ms / 1000);
     if (s < 60) return `${s}s`;
-    const m = Math.floor(s / 60), rs = s % 60;
-    return `${m}m ${rs}s`;
+    return `${Math.floor(s/60)}m ${s%60}s`;
   } catch { return '—'; }
 }
 
@@ -361,7 +665,7 @@ function statusBadge(status) {
     pass:    '<span class="badge badge-pass">&#10003; Passed</span>',
     fail:    '<span class="badge badge-fail">&#10007; Failed</span>',
     running: '<span class="badge badge-run">&#9679; Running</span>',
-    done:    '<span class="badge badge-pass">&#10003; Completed</span>',
+    done:    '<span class="badge badge-done">&#10003; Completed</span>',
     failed:  '<span class="badge badge-fail">&#10007; Failed</span>',
     skip:    '<span class="badge badge-skip">&#8212; Skipped</span>',
   };
@@ -369,7 +673,7 @@ function statusBadge(status) {
 }
 
 function extractTcId(name) {
-  const m = name?.match(/\[([A-Z]{0,6}_\d+)\]/);
+  const m = (name || '').match(/\[([A-Z]{0,6}_\d+)\]/);
   return m ? m[1] : null;
 }
 
@@ -377,6 +681,20 @@ function cleanTitle(name) {
   return (name || '').replace(/^\s*\[[A-Z_\d]+\]\s*/, '').trim() || name || '—';
 }
 
+function screenshotSrc(p) {
+  if (!p) return '';
+  return `/screenshots/${esc(p.replace('test-results/',''))}`;
+}
+
+// Converts a test-results/... artifact path → server-routed URL for video/trace.
+// Video:  served as video/webm → browser opens natively in new tab.
+// Trace:  served with Content-Disposition attachment → browser downloads as ZIP.
+function artifactSrc(p) {
+  if (!p) return '';
+  return `/test-artifacts/${esc(p.replace('test-results/',''))}`;
+}
+
+// ── Render ───────────────────────────────────────────────────────────────────
 function renderReport(r) {
   const content  = document.getElementById('page-content');
   const passRate = r.total > 0 ? Math.round((r.passed / r.total) * 100) : 0;
@@ -385,214 +703,663 @@ function renderReport(r) {
 
   document.title = `Execution Report — ${shortId}`;
   document.getElementById('tb-sub').textContent =
-    `${esc(r.suiteName || r.planId || shortId)}  ·  ${fmtDate(r.startedAt)}`;
+    `${r.suiteName || r.planId || shortId}  ·  ${fmtDate(r.startedAt)}`;
 
-  const tests = Array.isArray(r.tests) ? r.tests : [];
-  const skipped = r.total - r.passed - r.failed;
+  const tests   = Array.isArray(r.tests) ? r.tests : [];
+  const skipped = Math.max(0, r.total - r.passed - r.failed);
 
-  // ── Test rows
-  const testRows = tests.map((t, i) => {
-    const tcId   = extractTcId(t.name);
-    const title  = cleanTitle(t.name);
-    const status = t.status === 'pass' ? 'pass' : t.status === 'fail' ? 'fail' : 'skip';
+  // ── Stats dashboard ──────────────────────────────────────────────────────
+  const statsHtml = `
+    <div class="stats-dashboard">
+      <div class="stat-card"><div class="stat-val">${r.total||0}</div><div class="stat-lbl">Total Tests</div></div>
+      <div class="stat-card passed"><div class="stat-val" style="color:#16a34a">${r.passed||0}</div><div class="stat-lbl">Passed</div></div>
+      <div class="stat-card failed"><div class="stat-val" style="color:#dc2626">${r.failed||0}</div><div class="stat-lbl">Failed</div></div>
+      <div class="stat-card skipped"><div class="stat-val" style="color:#d97706">${skipped}</div><div class="stat-lbl">Skipped</div></div>
+      <div class="stat-card rate"><div class="stat-val" style="color:#1d4ed8">${passRate}%</div><div class="stat-lbl">Pass Rate</div></div>
+      <div class="stat-card"><div class="stat-val">${dur}</div><div class="stat-lbl">Duration</div></div>
+    </div>`;
 
-    let failureHtml = '';
-    if (status === 'fail') {
-      const errMsg    = esc(t.errorMessage || 'Test failed');
-      const errDetail = esc(t.errorDetail || '');
+  // ── Meta strip ───────────────────────────────────────────────────────────
+  const metaHtml = `
+    <div class="meta-strip">
+      <div class="meta-item"><span class="meta-lbl">Environment</span><span class="env-pill">${esc(r.environmentName||'—')}</span></div>
+      <div class="meta-item"><span class="meta-lbl">Project</span><span class="browser-pill">${esc(r.projectName||'—')}</span></div>
+      <div class="meta-item"><span class="meta-lbl">Suite</span><span style="font-weight:600;color:var(--dark)">${esc(r.suiteName||r.planId||'—')}</span></div>
+      <div class="meta-item"><span class="meta-lbl">Run ID</span><span style="font-family:monospace;font-size:12px;color:var(--g600)">${esc(shortId)}</span></div>
+      <div class="meta-item"><span class="meta-lbl">Executed By</span><span style="font-weight:600;color:var(--dark)">${esc(r.executedBy||'—')}</span></div>
+      <div class="meta-item"><span class="meta-lbl">Started</span><span style="font-size:12px;color:var(--g600)">${fmtDate(r.startedAt)}</span></div>
+    </div>`;
 
-      // Visual diff: prefer before/after pair, fall back to Playwright attachment screenshot
-      const hasBefore = !!t.screenshotBefore;
-      const hasAfter  = !!t.screenshotAfter;
-      const hasDiff   = hasBefore || hasAfter;
-
-      let diffHtml = '';
-      if (hasDiff) {
-        const beforeSrc = hasBefore ? `/screenshots/${esc(t.screenshotBefore.replace('test-results/',''))}` : '';
-        const afterSrc  = hasAfter  ? `/screenshots/${esc(t.screenshotAfter.replace('test-results/',''))}` : '';
-        const gridClass = hasBefore && hasAfter ? 'diff-grid' : 'diff-grid single';
-        diffHtml = `
-          <div class="diff-panel">
-            <div class="diff-panel-title">&#128247; Visual Diff — Failing Step</div>
-            <div class="${gridClass}">
-              ${hasBefore ? `
-              <div class="diff-col">
-                <div class="diff-label before">Before</div>
-                <img src="${beforeSrc}" alt="Before screenshot" onerror="this.parentElement.style.display='none'">
-              </div>` : ''}
-              ${hasAfter ? `
-              <div class="diff-col after-col">
-                <div class="diff-label after">After (Failed)</div>
-                <img src="${afterSrc}" alt="After screenshot" onerror="this.parentElement.style.display='none'">
-              </div>` : ''}
-            </div>
-          </div>`;
-      } else if (t.screenshotPath) {
-        // Fallback: Playwright attachment screenshot (no before/after available)
-        diffHtml = `
-          <div class="screenshot-wrap">
-            <img src="/screenshots/${esc(t.screenshotPath.replace('test-results/',''))}"
-                 alt="Failure screenshot"
-                 onerror="this.parentElement.style.display='none'">
-            <div class="screenshot-caption">Failure screenshot</div>
-          </div>`;
-      }
-
-      failureHtml = `
-        <div class="failure-block">
-          <div class="failure-header">&#9888; Failure Details</div>
-          <div class="failure-body">${errDetail || errMsg}</div>
-          ${diffHtml}
-        </div>`;
-    }
-
-    return `<tr>
-      <td style="text-align:center;color:#858585">${i + 1}</td>
-      <td>${tcId ? `<span class="tc-id">${esc(tcId)}</span>` : '<span style="color:#555">—</span>'}</td>
-      <td style="color:#d4d4d4">${esc(title)}</td>
-      <td>${statusBadge(status)}</td>
-      <td style="color:#858585;white-space:nowrap">${fmtDurationMs(t.durationMs)}</td>
-      <td>${status === 'fail' ? `<div style="color:#f48771;font-size:12px">${esc(t.errorMessage || 'Test failed')}</div>${failureHtml}` : '<span style="color:#555">—</span>'}</td>
-    </tr>`;
-  }).join('');
-
-  content.innerHTML = `
-    <!-- Execution Summary -->
-    <div class="section-title">Execution Summary</div>
+  // ── Execution Summary (mandatory preserved section) ──────────────────────
+  const summaryHtml = `
+    <div class="section-title">&#128203; Execution Summary</div>
     <div class="summary-grid">
-      <div class="summary-item"><span class="summary-lbl">Execution ID</span><span class="summary-val" style="font-family:monospace;font-size:11px">${esc(r.runId || '—')}</span></div>
-      <div class="summary-item"><span class="summary-lbl">Project</span><span class="summary-val">${esc(r.projectName || '—')}</span></div>
-      <div class="summary-item"><span class="summary-lbl">Test Suite</span><span class="summary-val">${esc(r.suiteName || r.planId || '—')}</span></div>
-      <div class="summary-item"><span class="summary-lbl">Environment</span><span class="summary-val">${esc(r.environmentName || '—')}</span></div>
-      <div class="summary-item"><span class="summary-lbl">Executed By</span><span class="summary-val">${esc(r.executedBy || '—')}</span></div>
+      <div class="summary-item"><span class="summary-lbl">Execution ID</span><span class="summary-val" style="font-family:monospace;font-size:11px">${esc(r.runId||'—')}</span></div>
+      <div class="summary-item"><span class="summary-lbl">Project</span><span class="summary-val">${esc(r.projectName||'—')}</span></div>
+      <div class="summary-item"><span class="summary-lbl">Test Suite</span><span class="summary-val">${esc(r.suiteName||r.planId||'—')}</span></div>
+      <div class="summary-item"><span class="summary-lbl">Environment</span><span class="summary-val">${esc(r.environmentName||'—')}</span></div>
+      <div class="summary-item"><span class="summary-lbl">Executed By</span><span class="summary-val">${esc(r.executedBy||'—')}</span></div>
       <div class="summary-item"><span class="summary-lbl">Overall Status</span><span class="summary-val">${statusBadge(r.status)}</span></div>
       <div class="summary-item"><span class="summary-lbl">Start Time</span><span class="summary-val">${fmtDate(r.startedAt)}</span></div>
       <div class="summary-item"><span class="summary-lbl">End Time</span><span class="summary-val">${fmtDate(r.finishedAt)}</span></div>
       <div class="summary-item"><span class="summary-lbl">Duration</span><span class="summary-val">${dur}</span></div>
-    </div>
+    </div>`;
 
-    <!-- Test Metrics -->
-    <div class="section-title">Test Execution Summary</div>
+  // ── Test Execution Summary (mandatory preserved section) ─────────────────
+  const metricsHtml = `
+    <div class="section-title">&#128202; Test Execution Summary</div>
     <div class="metrics-row">
-      <div class="metric"><div class="metric-val">${r.total  || 0}</div><div class="metric-lbl">Total</div></div>
-      <div class="metric metric-pass"><div class="metric-val">${r.passed || 0}</div><div class="metric-lbl">Passed</div></div>
-      <div class="metric metric-fail"><div class="metric-val">${r.failed || 0}</div><div class="metric-lbl">Failed</div></div>
-      <div class="metric metric-skip"><div class="metric-val">${Math.max(0, skipped)}</div><div class="metric-lbl">Skipped</div></div>
+      <div class="metric"><div class="metric-val">${r.total||0}</div><div class="metric-lbl">Total</div></div>
+      <div class="metric metric-pass"><div class="metric-val">${r.passed||0}</div><div class="metric-lbl">Passed</div></div>
+      <div class="metric metric-fail"><div class="metric-val">${r.failed||0}</div><div class="metric-lbl">Failed</div></div>
+      <div class="metric metric-skip"><div class="metric-val">${skipped}</div><div class="metric-lbl">Skipped</div></div>
       <div class="metric metric-rate"><div class="metric-val">${passRate}%</div><div class="metric-lbl">Pass Rate</div></div>
     </div>
     <div class="progress-wrap">
-      <div class="progress-bar-bg">
-        <div class="progress-bar-fill" style="width:${passRate}%"></div>
-      </div>
-      <div class="progress-label">${r.passed || 0} of ${r.total || 0} tests passed</div>
-    </div>
+      <div class="progress-bar-bg"><div class="progress-bar-fill" style="width:${passRate}%"></div></div>
+      <div class="progress-label">${r.passed||0} of ${r.total||0} tests passed</div>
+    </div>`;
 
-    <!-- Test Case Results -->
-    <div class="section-title">Test Case Results</div>
-    ${tests.length ? `
-    <div style="overflow-x:auto">
-      <table class="report-table">
+  // ── Self-Healing Events (mandatory preserved section) ────────────────────
+  const healHtml = (r.healEvents && r.healEvents.length) ? `
+    <div class="section-title">&#129657; Self-Healing Events
+      <span class="section-title-count">${r.healEvents.length} locator${r.healEvents.length!==1?'s':''} auto-healed</span>
+    </div>
+    <div style="overflow-x:auto;border-radius:var(--radius);border:1px solid var(--g200);box-shadow:var(--shadow)">
+      <table class="heal-table">
         <thead>
           <tr>
-            <th style="width:36px">#</th>
-            <th style="width:90px">TC ID</th>
-            <th>Title</th>
-            <th style="width:110px">Status</th>
-            <th style="width:90px">Duration</th>
-            <th>Error / Details</th>
+            <th style="width:60px">Step</th>
+            <th style="width:110px">Keyword</th>
+            <th>Locator Used</th>
+            <th style="width:110px">Type</th>
+            <th style="width:90px">Tier</th>
+            <th style="width:85px">Confidence</th>
+            <th style="width:130px">Healed At</th>
           </tr>
         </thead>
-        <tbody>${testRows}</tbody>
+        <tbody>
+          ${r.healEvents.map(h => {
+            const conf  = h.confidence ?? 0;
+            const auto  = conf >= 75;
+            return `<tr>
+              <td style="text-align:center;color:var(--g500)">${h.stepOrder??'—'}</td>
+              <td><code style="font-size:11.5px;color:var(--primary-dk)">${esc(h.keyword||'—')}</code></td>
+              <td style="font-family:monospace;font-size:11.5px;color:var(--primary);word-break:break-all">${esc(h.healed||'—')}</td>
+              <td style="font-size:12px">${esc(h.healedType||'—')}</td>
+              <td style="text-align:center"><span class="heal-tier ${auto?'heal-auto':'heal-rev'}">${auto?'T2/T3 Auto':'T4 Review'}</span></td>
+              <td style="text-align:center;font-weight:700;font-size:12px;color:${auto?'#16a34a':'#d97706'}">${h.confidence!=null?h.confidence+'%':'—'}</td>
+              <td style="font-size:11.5px;color:var(--g500);white-space:nowrap">${fmtDate(h.at)}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
       </table>
-    </div>` : '<p style="color:#858585;padding:20px 0">No individual test results recorded for this run.</p>'}
+    </div>` : '';
+
+  // ── Test Case Results (mandatory preserved + enhanced) ───────────────────
+  const tcRowsHtml = tests.map((t, i) => buildTestRow(t, i, r)).join('');
+  const tcHtml = `
+    <div class="section-title">&#9989; Test Case Results
+      <span class="section-title-count">${tests.length} test${tests.length!==1?'s':''}</span>
+    </div>
+    ${tests.length ? `
+    <!-- Filter bar -->
+    <div class="filter-bar">
+      <input type="text" class="filter-search" placeholder="&#128269; Search test name…" id="tc-search" oninput="applyFilters()" />
+      <div class="filter-pills">
+        <div class="filter-pill active" data-status="all"   onclick="setFilter(this)">All</div>
+        <div class="filter-pill pass-pill" data-status="pass" onclick="setFilter(this)">&#10003; Passed</div>
+        <div class="filter-pill fail-pill" data-status="fail" onclick="setFilter(this)">&#10007; Failed</div>
+        <div class="filter-pill skip-pill" data-status="skip" onclick="setFilter(this)">&#8212; Skipped</div>
+      </div>
+      <span class="filter-count" id="tc-count">${tests.length} shown</span>
+    </div>
+    <div class="tc-table-wrap">
+      <table class="tc-table">
+        <thead>
+          <tr>
+            <th style="width:36px;text-align:center">#</th>
+            <th style="width:24px"></th>
+            <th style="width:90px">TC ID</th>
+            <th>Test Name</th>
+            <th style="width:120px;text-align:center">Status</th>
+            <th style="width:90px;text-align:center">Duration</th>
+            <th style="width:100px;text-align:center">Screenshot</th>
+            <th style="width:90px;text-align:center">Video</th>
+            <th style="width:90px;text-align:center">Trace</th>
+          </tr>
+        </thead>
+        <tbody id="tc-tbody">${tcRowsHtml}</tbody>
+      </table>
+    </div>` : '<p style="color:var(--g500);padding:20px 0">No individual test results recorded for this run.</p>'}`;
+
+  // ── Assemble ─────────────────────────────────────────────────────────────
+  content.innerHTML = `
+    ${statsHtml}
+    ${metaHtml}
+    ${summaryHtml}
+    ${metricsHtml}
+    ${healHtml}
+    ${tcHtml}
+    <div class="report-footer">
+      <p>QA Agent Platform — Execution Report &nbsp;|&nbsp; Run ID: <code>${esc(r.runId||'—')}</code></p>
+    </div>
   `;
 }
 
-// ── HTML Export ───────────────────────────────────────────────────────────────
-// Clone DOM, strip dark inline color styles, inject light-mode CSS
-function exportHTML() {
-  // Clone content and neutralise dark inline colors
-  const clone = document.getElementById('page-content').cloneNode(true);
-  const darkColorMap = {
-    '#d4d4d4': '#111111',
-    '#858585': '#6b7280',
-    '#4ec9b0': '#166534',
-    '#f48771': '#991b1b',
-    '#9cdcfe': '#1d4ed8',
-    '#dcdcaa': '#92400e',
-    'color:#555': 'color:#6b7280',
-  };
-  // Walk all elements and fix inline color styles
-  clone.querySelectorAll('[style]').forEach(el => {
-    let style = el.getAttribute('style');
-    for (const [dark, light] of Object.entries(darkColorMap)) {
-      style = style.replaceAll(dark, light);
-    }
-    el.setAttribute('style', style);
-  });
+// ── Build one test row pair (main + detail) ───────────────────────────────────
+function buildTestRow(t, i, r) {
+  const tcId   = extractTcId(t.name);
+  const title  = cleanTitle(t.name);
+  const status = t.status === 'pass' ? 'pass' : t.status === 'fail' ? 'fail' : 'skip';
+  const rowId  = `tc-${i}`;
 
-  const html = `<!DOCTYPE html>
+  // ── Screenshot button — always shown; active when a path is captured ──────
+  const hasSS     = !!(t.screenshotPath || t.screenshotBefore || t.screenshotAfter);
+  const ssPrimary = screenshotSrc(t.screenshotAfter || t.screenshotBefore || t.screenshotPath);
+  const ssCell    = hasSS
+    ? `<button class="tc-btn tc-btn-ss" onclick="openModal('${ssPrimary}');event.stopPropagation()" title="View screenshot">
+         &#128247; View
+       </button>`
+    : `<button class="tc-btn tc-btn-ss tc-btn-inactive" disabled title="No screenshot captured">
+         &#128247; View
+       </button>`;
+
+  // ── Video button — always shown; active when a path is captured ───────────
+  const videoCell = t.videoPath
+    ? `<a class="tc-btn tc-btn-vid" href="${artifactSrc(t.videoPath)}" target="_blank"
+          data-vpath="${esc(t.videoPath)}" onclick="event.stopPropagation()"
+          title="Open video in new tab">&#9654; Play</a>`
+    : `<button class="tc-btn tc-btn-vid tc-btn-inactive" disabled title="No video captured">
+         &#9654; Play
+       </button>`;
+
+  // ── Trace button — always shown; active when a path is captured ───────────
+  const traceCell = t.tracePath
+    ? `<a class="tc-btn tc-btn-tr" href="${artifactSrc(t.tracePath)}" download
+          data-tpath="${esc(t.tracePath)}" onclick="event.stopPropagation()"
+          title="Download trace ZIP">&#128229; Trace</a>`
+    : `<button class="tc-btn tc-btn-tr tc-btn-inactive" disabled title="No trace captured">
+         &#128229; Trace
+       </button>`;
+
+  // Detail row content
+  const detailHtml = buildDetailPanel(t, i, status);
+
+  // Auto-open failed test detail rows
+  const detailOpenClass = status === 'fail' ? 'open' : '';
+  const mainOpenClass   = status === 'fail' ? 'open' : '';
+
+  return `
+    <tr class="tc-main-row ${status}ed ${mainOpenClass}" data-status="${status}" data-title="${esc(title.toLowerCase())}" onclick="toggleDetail('${rowId}',this)">
+      <td style="text-align:center;color:var(--g400);font-size:12px">${i+1}</td>
+      <td style="text-align:center"><span class="tc-expand-icon">&#9654;</span></td>
+      <td>${tcId ? `<span class="tc-id-badge">${esc(tcId)}</span>` : '<span style="color:var(--g400)">—</span>'}</td>
+      <td style="color:var(--dark);font-weight:500">${esc(title)}</td>
+      <td style="text-align:center">${statusBadge(status)}</td>
+      <td style="text-align:center;color:var(--g500);font-size:12px;white-space:nowrap">${fmtDurationMs(t.durationMs)}</td>
+      <td style="text-align:center">${ssCell}</td>
+      <td style="text-align:center">${videoCell}</td>
+      <td style="text-align:center">${traceCell}</td>
+    </tr>
+    <tr class="tc-detail-row ${detailOpenClass}" id="detail-${rowId}">
+      <td colspan="9">
+        <div class="tc-detail-inner">${detailHtml}</div>
+      </td>
+    </tr>`;
+}
+
+// ── Build detail panel sections ───────────────────────────────────────────────
+function buildDetailPanel(t, i, status) {
+  const sections = [];
+
+  // ── Error details (for failed tests) ──
+  if (status === 'fail') {
+    const errMsg    = esc(t.errorMessage || 'Test failed');
+    const errDetail = esc(t.errorDetail  || '');
+    sections.push(`
+      <div class="det-section">
+        <div class="det-header error-hdr" onclick="toggleDetSection(this)">
+          <span class="det-arrow">&#9660;</span>
+          &#9888; Error Details
+        </div>
+        <div class="det-body">
+          <div class="error-box">
+            <div class="error-msg-line">&#10007; ${errMsg}</div>
+            ${errDetail ? `<div class="error-detail-pre">${errDetail}</div>` : ''}
+          </div>
+        </div>
+      </div>`);
+  }
+
+  // ── Steps (if step data exists on TestEvent) ──
+  if (t.steps && t.steps.length) {
+    const stepsHtml = t.steps.map((s, si) => buildStepRow(s, i, si)).join('');
+    sections.push(`
+      <div class="det-section ${status !== 'fail' ? 'collapsed' : ''}">
+        <div class="det-header" onclick="toggleDetSection(this)">
+          <span class="det-arrow">&#9660;</span>
+          &#128196; Step Details
+          <span style="margin-left:auto;font-size:11px;font-weight:400;color:var(--g500)">${t.steps.length} steps</span>
+        </div>
+        <div class="det-body" style="padding:0">
+          <div class="steps-list">${stepsHtml}</div>
+        </div>
+      </div>`);
+  }
+
+  // ── Screenshots ──
+  const hasBefore = !!t.screenshotBefore;
+  const hasAfter  = !!t.screenshotAfter;
+  const hasSingle = !!t.screenshotPath;
+  if (hasBefore || hasAfter || hasSingle) {
+    let ssContent = '';
+    if (hasBefore || hasAfter) {
+      const beforeSrc = hasBefore ? screenshotSrc(t.screenshotBefore) : '';
+      const afterSrc  = hasAfter  ? screenshotSrc(t.screenshotAfter)  : '';
+      ssContent = `
+        <div class="diff-strip ${hasBefore && hasAfter ? '' : 'single'}">
+          ${hasBefore ? `<div class="diff-col"><div class="diff-tag before">&#128247; Before</div>
+            <img src="${beforeSrc}" alt="Before" loading="lazy" onclick="openModal('${beforeSrc}')" onerror="this.closest('.diff-col').style.display='none'"></div>` : ''}
+          ${hasAfter  ? `<div class="diff-col after-col"><div class="diff-tag after">&#9888; After (Failed)</div>
+            <img src="${afterSrc}" alt="After" loading="lazy" onclick="openModal('${afterSrc}')" onerror="this.closest('.diff-col').style.display='none'"></div>` : ''}
+        </div>`;
+    } else {
+      const src = screenshotSrc(t.screenshotPath);
+      ssContent = `
+        <div class="ss-grid">
+          <div class="ss-item" onclick="openModal('${src}')">
+            <img class="ss-preview" src="${src}" alt="Failure screenshot" loading="lazy" onerror="this.closest('.ss-item').style.display='none'">
+            <div class="ss-label">&#128247; Failure Screenshot</div>
+          </div>
+        </div>`;
+    }
+    sections.push(`
+      <div class="det-section ${status !== 'fail' ? 'collapsed' : ''}">
+        <div class="det-header" onclick="toggleDetSection(this)">
+          <span class="det-arrow">&#9660;</span>
+          &#128247; Screenshots
+        </div>
+        <div class="det-body">${ssContent}</div>
+      </div>`);
+  }
+
+  // Video & Trace are accessed via the row-level Play / Trace buttons.
+  // No separate section needed in the expanded detail panel.
+
+  // ── Failure Screenshot (Phase A: afterEach full-page capture) ──
+  if (t.failureScreenshotPath) {
+    const src = screenshotSrc(t.failureScreenshotPath);
+    sections.push(`
+      <div class="det-section">
+        <div class="det-header" onclick="toggleDetSection(this)">
+          <span class="det-arrow">&#9660;</span>
+          &#128247; Failure Screenshot (full page)
+        </div>
+        <div class="det-body">
+          <div class="ss-grid">
+            <div class="ss-item" onclick="openModal('${src}')">
+              <img class="ss-preview" src="${src}" alt="Failure Screenshot" loading="lazy" onerror="this.closest('.ss-item').style.display='none'">
+              <div class="ss-label">Full-page capture at point of failure</div>
+            </div>
+          </div>
+        </div>
+      </div>`);
+  }
+
+  // ── Console Errors (Phase A: JS errors + page exceptions collected during test) ──
+  if (t.consoleErrors && t.consoleErrors.length) {
+    const errRows = t.consoleErrors.map(e => `<div class="ce-row">${esc(e)}</div>`).join('');
+    sections.push(`
+      <div class="det-section">
+        <div class="det-header error-hdr" onclick="toggleDetSection(this)">
+          <span class="det-arrow">&#9660;</span>
+          &#9888; Console Errors (${t.consoleErrors.length})
+        </div>
+        <div class="det-body">
+          <div class="ce-list">${errRows}</div>
+        </div>
+      </div>`);
+  }
+
+  return sections.join('') || '<div style="padding:20px;color:var(--g500);font-size:13px">No additional details available.</div>';
+}
+
+// ── Build individual step row ─────────────────────────────────────────────────
+function buildStepRow(s, testIdx, stepIdx) {
+  const stepId    = `step-${testIdx}-${stepIdx}`;
+  const status    = s.status === 'pass' ? 'pass' : 'fail';
+  const hasMeta   = s.startTime || s.durationMs || s.videoTimestamp;
+  const hasSS     = !!s.screenshotPath;
+  const hasErr    = status === 'fail' && s.errorMessage;
+  const clickable = hasMeta || hasSS || hasErr;
+
+  const detailContent = clickable ? `
+    <div class="step-detail-panel" id="${stepId}-detail">
+      ${hasMeta ? `<div class="step-meta-row">
+        ${s.startTime ? `<span>&#128336; Started: ${esc(s.startTime)}</span>` : ''}
+        ${s.durationMs != null ? `<span>&#9201; Duration: ${fmtDurationMs(s.durationMs)}</span>` : ''}
+        ${s.videoTimestamp ? `<span>&#127916; Video: ${esc(s.videoTimestamp)}</span>` : ''}
+      </div>` : ''}
+      ${hasSS ? `<div style="margin-bottom:8px">
+        <img class="step-ss-thumb" src="${screenshotSrc(s.screenshotPath)}" alt="Step screenshot"
+             loading="lazy" onclick="openModal('${screenshotSrc(s.screenshotPath)}')"
+             onerror="this.style.display='none'">
+      </div>` : ''}
+      ${hasErr ? `<div class="step-err-line">${esc(s.errorMessage)}</div>` : ''}
+    </div>` : '';
+
+  return `
+    <div class="step-item-wrap">
+      <div class="step-row ${clickable?'clickable':''} ${status==='fail'?'fail-step':''}"
+           onclick="${clickable?`toggleStep('${stepId}',this)`:''}" id="${stepId}">
+        <span class="step-exp-icon">${clickable?'&#9654;':''}</span>
+        <span class="step-status-icon ${status}">${status==='pass'?'&#10003;':'&#10007;'}</span>
+        ${s.keyword ? `<span class="step-kw">${esc(s.keyword)}</span>` : ''}
+        <span class="step-name">${esc(s.description || s.name || `Step ${stepIdx+1}`)}</span>
+        ${s.durationMs != null ? `<span class="step-dur">${fmtDurationMs(s.durationMs)}</span>` : ''}
+      </div>
+      ${detailContent}
+    </div>`;
+}
+
+// ── Toggle functions ──────────────────────────────────────────────────────────
+function toggleDetail(rowId, rowEl) {
+  const detRow = document.getElementById(`detail-${rowId}`);
+  if (!detRow) return;
+  const isOpen = detRow.classList.contains('open');
+  detRow.classList.toggle('open', !isOpen);
+  rowEl.classList.toggle('open', !isOpen);
+}
+
+function toggleDetSection(headerEl) {
+  headerEl.closest('.det-section').classList.toggle('collapsed');
+}
+
+function toggleStep(stepId, rowEl) {
+  const panel = document.getElementById(`${stepId}-detail`);
+  if (!panel) return;
+  const open = panel.style.display === 'block';
+  panel.style.display = open ? 'none' : 'block';
+  rowEl.classList.toggle('expanded', !open);
+}
+
+// ── Filter ────────────────────────────────────────────────────────────────────
+let _activeFilter = 'all';
+
+function setFilter(pillEl) {
+  document.querySelectorAll('.filter-pill').forEach(p => p.classList.remove('active'));
+  pillEl.classList.add('active');
+  _activeFilter = pillEl.dataset.status;
+  applyFilters();
+}
+
+function applyFilters() {
+  const search = (document.getElementById('tc-search')?.value || '').toLowerCase();
+  const rows   = document.querySelectorAll('#tc-tbody .tc-main-row');
+  let shown = 0;
+  rows.forEach(row => {
+    const status  = row.dataset.status;
+    const title   = row.dataset.title || '';
+    const matchStatus = _activeFilter === 'all' || status === _activeFilter;
+    const matchSearch = !search || title.includes(search);
+    const visible = matchStatus && matchSearch;
+    row.style.display = visible ? '' : 'none';
+    // Also hide/show the corresponding detail row
+    const detRow = row.nextElementSibling;
+    if (detRow && detRow.classList.contains('tc-detail-row')) {
+      detRow.style.display = visible && detRow.classList.contains('open') ? 'table-row' : visible ? '' : 'none';
+      if (!visible) detRow.style.display = 'none';
+    }
+    if (visible) shown++;
+  });
+  const countEl = document.getElementById('tc-count');
+  if (countEl) countEl.textContent = `${shown} shown`;
+}
+
+// ── Screenshot modal ──────────────────────────────────────────────────────────
+function openModal(src) {
+  if (!src) return;
+  document.getElementById('ss-modal-img').src = src;
+  document.getElementById('ss-modal').classList.add('open');
+}
+
+function modalClose(e) {
+  if (e.target === document.getElementById('ss-modal')) {
+    document.getElementById('ss-modal').classList.remove('open');
+  }
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') document.getElementById('ss-modal')?.classList.remove('open');
+});
+
+// ── HTML Export (async — embeds screenshots, graceful video/trace notes) ──────
+async function exportHTML() {
+  const btn      = document.querySelector('.tbtn[onclick*="exportHTML"]');
+  const origHtml = btn ? btn.innerHTML : '';
+  if (btn) { btn.innerHTML = '&#8987; Preparing…'; btn.disabled = true; }
+
+  try {
+    const contentEl = document.getElementById('page-content');
+    const heroEl    = document.getElementById('hero-header');
+
+    // ── 1. Collect all /screenshots/ URLs from img[src] and openModal() onclicks ──
+    const serverPaths = new Set();
+    contentEl.querySelectorAll('img[src^="/screenshots/"]').forEach(img =>
+      serverPaths.add(img.getAttribute('src'))
+    );
+    contentEl.querySelectorAll('[onclick]').forEach(el => {
+      const oc = el.getAttribute('onclick') || '';
+      // extract every openModal('/screenshots/...') argument
+      [...oc.matchAll(/openModal\('([^']+)'\)/g)].forEach(m => {
+        if (m[1].startsWith('/screenshots/')) serverPaths.add(m[1]);
+      });
+    });
+
+    // ── 2. Fetch each screenshot → FileReader → base64 data URI (parallel) ──
+    const n = serverPaths.size;
+    if (btn) btn.innerHTML = `&#8987; Embedding ${n} screenshot${n !== 1 ? 's' : ''}…`;
+
+    const imgMap = {}; // serverPath → "data:image/..."
+    await Promise.allSettled([...serverPaths].map(async src => {
+      try {
+        const res = await fetch(src);
+        if (!res.ok) return;
+        const blob = await res.blob();
+        imgMap[src] = await new Promise((resolve, reject) => {
+          const r = new FileReader();
+          r.onload  = () => resolve(r.result);
+          r.onerror = reject;
+          r.readAsDataURL(blob);
+        });
+      } catch { /* screenshot fetch failed — img will be absent in export */ }
+    }));
+
+    // ── 3. Clone the rendered page DOM ───────────────────────────────────────
+    if (btn) btn.innerHTML = '&#8987; Building file…';
+    const clone = contentEl.cloneNode(true);
+
+    // ── 4. Swap img[src] server paths → embedded data URIs ──────────────────
+    clone.querySelectorAll('img[src^="/screenshots/"]').forEach(img => {
+      const src = img.getAttribute('src');
+      if (imgMap[src]) { img.setAttribute('src', imgMap[src]); img.removeAttribute('loading'); }
+      else img.setAttribute('alt', '(screenshot not available)');
+    });
+
+    // ── 5. Swap openModal() onclick src strings → embedded data URIs ─────────
+    clone.querySelectorAll('[onclick]').forEach(el => {
+      let oc = el.getAttribute('onclick') || '';
+      for (const [srv, data] of Object.entries(imgMap)) {
+        oc = oc.split(`'${srv}'`).join(`'${data}'`);
+      }
+      el.setAttribute('onclick', oc);
+    });
+
+    // ── 6. Replace video-player-wrap → export note (video can't be embedded) ─
+    const serverOrigin = location.origin; // e.g. http://qa-launchpad.local:3003
+    const reportUrl    = location.href;
+    clone.querySelectorAll('.video-player-wrap').forEach(wrap => {
+      const vpath   = wrap.dataset.vpath || '';
+      const fname   = vpath.split('/').pop() || 'video.webm';
+      const note    = document.createElement('div');
+      note.className = 'export-asset-note';
+      note.innerHTML = `
+        <span class="ean-icon">&#127916;</span>
+        <div class="ean-body">
+          <div class="ean-title">Video Recording</div>
+          ${vpath ? `<code class="ean-path">${esc(vpath)}</code>` : ''}
+          <div class="ean-msg">
+            Videos are stored on the QA server and cannot be embedded in the exported HTML.<br>
+            To watch: open the live report on the server and click <strong>Play</strong>.<br>
+            Or copy <code>${esc(fname)}</code> next to this HTML file and open it directly in your browser.
+          </div>
+          <a class="ean-server-link" href="${esc(reportUrl)}" target="_blank">&#128279; Open live report on server</a>
+        </div>`;
+      wrap.replaceWith(note);
+    });
+
+    // ── 7. Replace trace-dl-wrap → export note (ZIP can't be embedded) ───────
+    clone.querySelectorAll('.trace-dl-wrap').forEach(wrap => {
+      const tpath   = wrap.dataset.tpath || '';
+      const fname   = tpath.split('/').pop() || 'trace.zip';
+      const note    = document.createElement('div');
+      note.className = 'export-asset-note ean-trace';
+      note.innerHTML = `
+        <span class="ean-icon">&#128229;</span>
+        <div class="ean-body">
+          <div class="ean-title">Playwright Trace</div>
+          ${tpath ? `<code class="ean-path">${esc(tpath)}</code>` : ''}
+          <div class="ean-msg">
+            Trace ZIPs are stored on the QA server and cannot be embedded in the exported HTML.<br>
+            To download: open the live report on the server and click <strong>Trace</strong>.<br>
+            Or use <code>playwright show-trace ${esc(fname)}</code> if you have the file locally.
+          </div>
+          <a class="ean-server-link" href="${esc(reportUrl)}" target="_blank">&#128279; Open live report on server</a>
+        </div>`;
+      wrap.replaceWith(note);
+    });
+
+    // ── 8. Replace table-row active video/trace links → inactive buttons ─────
+    clone.querySelectorAll('a.tc-btn-vid[data-vpath]').forEach(a => {
+      const sp = document.createElement('button');
+      sp.className = 'tc-btn tc-btn-vid tc-btn-inactive'; sp.disabled = true;
+      sp.title     = `Server path: ${a.dataset.vpath}`;
+      sp.innerHTML = '&#9654; Play';
+      a.replaceWith(sp);
+    });
+    clone.querySelectorAll('a.tc-btn-tr[data-tpath]').forEach(a => {
+      const sp = document.createElement('button');
+      sp.className = 'tc-btn tc-btn-tr tc-btn-inactive'; sp.disabled = true;
+      sp.title     = `Server path: ${a.dataset.tpath}`;
+      sp.innerHTML = '&#128229; Trace';
+      a.replaceWith(sp);
+    });
+
+    // ── 9. Build the self-contained export HTML document ─────────────────────
+    const css        = document.querySelector('style')?.textContent || '';
+    const exportedAt = new Date().toLocaleString();
+    const runIdShort = (window._runId || 'report').slice(0, 8);
+
+    const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Execution Report</title>
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background:#fff; color:#111; padding:32px; }
-    .section-title { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:1px; color:#1d4ed8; margin:28px 0 12px; padding-bottom:6px; border-bottom:2px solid #e5e7eb; }
-    .summary-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:10px; margin-bottom:8px; }
-    .summary-item { background:#f4f6f8; border:1px solid #d1d5db; border-radius:8px; padding:12px; display:flex; flex-direction:column; gap:4px; }
-    .summary-lbl { font-size:10px; text-transform:uppercase; letter-spacing:0.5px; color:#6b7280; }
-    .summary-val { font-size:13px; color:#111; word-break:break-all; }
-    .metrics-row { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:8px; }
-    .metric { flex:1; min-width:90px; background:#f4f6f8; border:1px solid #d1d5db; border-radius:10px; padding:16px; text-align:center; }
-    .metric-val { font-size:32px; font-weight:700; color:#111; }
-    .metric-lbl { font-size:10px; color:#6b7280; margin-top:4px; text-transform:uppercase; letter-spacing:0.5px; }
-    .metric-pass .metric-val { color:#166534; }
-    .metric-fail .metric-val { color:#991b1b; }
-    .metric-skip .metric-val { color:#92400e; }
-    .metric-rate .metric-val { color:#1d4ed8; }
-    .progress-wrap { margin-top:16px; }
-    .progress-bar-bg { background:#e5e7eb; border-radius:4px; height:8px; }
-    .progress-bar-fill { height:100%; border-radius:4px; background:#16a34a; }
-    .progress-label { font-size:11px; color:#6b7280; margin-top:4px; }
-    table { width:100%; border-collapse:collapse; font-size:13px; margin-top:4px; }
-    th { background:#e5e7eb; padding:10px 12px; text-align:left; font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; color:#374151; border-bottom:2px solid #9ca3af; }
-    td { padding:10px 12px; border-bottom:1px solid #e5e7eb; vertical-align:top; color:#111; }
-    .badge { display:inline-flex; align-items:center; gap:4px; padding:3px 9px; border-radius:12px; font-size:11px; font-weight:600; }
-    .badge-pass { background:#dcfce7; color:#166534; border:1px solid #86efac; }
-    .badge-fail { background:#fee2e2; color:#991b1b; border:1px solid #fca5a5; }
-    .badge-skip { background:#fef3c7; color:#92400e; border:1px solid #fcd34d; }
-    .badge-run  { background:#fef3c7; color:#92400e; border:1px solid #fcd34d; }
-    .tc-id { display:inline-block; font-family:monospace; font-size:11px; background:#e0e7ff; color:#3730a3; border-radius:4px; padding:1px 6px; }
-    .failure-block { margin-top:8px; background:#fff5f5; border:1px solid #fca5a5; border-radius:6px; overflow:hidden; }
-    .failure-header { background:#fee2e2; padding:6px 10px; font-size:11px; font-weight:600; color:#991b1b; text-transform:uppercase; }
-    .failure-body { padding:10px; font-family:monospace; font-size:11px; color:#7f1d1d; white-space:pre-wrap; word-break:break-word; }
-    .screenshot-wrap img { max-width:100%; border-radius:4px; border:1px solid #d1d5db; margin-top:8px; }
-    .screenshot-caption { font-size:11px; color:#6b7280; margin-top:4px; }
-    .diff-panel { padding:8px 10px 10px; }
-    .diff-panel-title { font-size:11px; font-weight:600; color:#1e40af; margin-bottom:6px; }
-    .diff-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
-    .diff-grid.single { grid-template-columns:1fr; }
-    .diff-label { font-size:10px; font-weight:600; margin-bottom:3px; }
-    .diff-label.before { color:#1d4ed8; }
-    .diff-label.after  { color:#991b1b; }
-    .diff-col img { width:100%; border-radius:4px; border:1px solid #d1d5db; }
-    .diff-col.after-col img { border-color:#fca5a5; }
-  </style>
+<meta charset="UTF-8">
+<title>Execution Report — ${esc(runIdShort)}</title>
+<style>${css}
+/* export-specific overrides */
+body { background: #f1f5f9; }
+.export-banner { background: var(--dark); color: var(--g400); padding: 9px 24px; font-size: 11px; display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
+.export-banner b { color: var(--primary-lt); font-size: 12px; }
+.export-banner .eb-note { margin-left: auto; font-style: italic; color: var(--g500); }
+</style>
 </head>
 <body>
-${clone.innerHTML}
-</body></html>`;
+<div class="export-banner">
+  <b>QA Agent Platform — Execution Report</b>
+  <span>Exported: ${exportedAt}</span>
+  <span>Run: <code style="background:rgba(255,255,255,.1);padding:1px 6px;border-radius:4px">${esc(runIdShort)}</code></span>
+  <span class="eb-note">&#128248; Screenshots embedded &bull; &#127916; Video &amp; &#128229; Trace: open live report on server</span>
+</div>
+${heroEl.outerHTML}
+<div class="page">${clone.innerHTML}</div>
+<script>
+// ── Interactive functions preserved in export ────────────────────────────────
+function openModal(src) {
+  if (!src) return;
+  var m = document.getElementById('_xmodal');
+  if (!m) {
+    m = document.createElement('div');
+    m.id = '_xmodal';
+    m.style.cssText = 'display:none;position:fixed;z-index:1000;inset:0;background:rgba(0,0,0,.92);justify-content:center;align-items:center;backdrop-filter:blur(4px)';
+    m.innerHTML = '<button onclick="document.getElementById(\\'_xmodal\\').style.display=\\'none\\';" style="position:absolute;top:18px;right:24px;color:#fff;font-size:36px;cursor:pointer;background:none;border:none;line-height:1">&#x2715;<\\/button><img id="_xmodal_img" style="max-width:95vw;max-height:92vh;object-fit:contain;border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,.5)">';
+    document.body.appendChild(m);
+    m.addEventListener('click', function(e){ if(e.target===m) m.style.display='none'; });
+  }
+  m.querySelector('#_xmodal_img').src = src;
+  m.style.display = 'flex';
+}
+function toggleDetail(id, el) {
+  var d = document.getElementById('detail-' + id);
+  if (!d) return;
+  var o = d.classList.contains('open');
+  d.classList.toggle('open', !o);
+  el.classList.toggle('open', !o);
+}
+function toggleDetSection(h) { h.closest('.det-section').classList.toggle('collapsed'); }
+function toggleStep(id, el) {
+  var p = document.getElementById(id + '-detail');
+  if (!p) return;
+  var o = p.style.display === 'block';
+  p.style.display = o ? 'none' : 'block';
+  el.classList.toggle('expanded', !o);
+}
+var _af = 'all';
+function setFilter(pill) {
+  document.querySelectorAll('.filter-pill').forEach(function(p){ p.classList.remove('active'); });
+  pill.classList.add('active');
+  _af = pill.dataset.status;
+  applyFilters();
+}
+function applyFilters() {
+  var q = (document.getElementById('tc-search') ? document.getElementById('tc-search').value : '').toLowerCase();
+  var rows = document.querySelectorAll('#tc-tbody .tc-main-row');
+  var n = 0;
+  rows.forEach(function(row) {
+    var ms = _af === 'all' || row.dataset.status === _af;
+    var mt = !q || (row.dataset.title || '').includes(q);
+    var vis = ms && mt;
+    row.style.display = vis ? '' : 'none';
+    var det = row.nextElementSibling;
+    if (det && det.classList.contains('tc-detail-row')) {
+      det.style.display = !vis ? 'none' : (det.classList.contains('open') ? '' : 'none');
+    }
+    if (vis) n++;
+  });
+  var c = document.getElementById('tc-count');
+  if (c) c.textContent = n + ' shown';
+}
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') { var m = document.getElementById('_xmodal'); if (m) m.style.display = 'none'; }
+});
+<\/script>
+</body>
+</html>`;
 
-  const blob = new Blob([html], { type: 'text/html' });
-  const url  = URL.createObjectURL(blob);
-  const a    = document.createElement('a');
-  const shortId = (params.get('runId') || 'report').slice(0, 8);
-  a.href     = url;
-  a.download = `execution-report-${shortId}.html`;
-  a.click();
-  URL.revokeObjectURL(url);
+    // ── 10. Trigger download ──────────────────────────────────────────────────
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url;
+    a.download = `execution-report-${runIdShort}.html`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 90000);
+
+  } catch (err) {
+    alert('Export failed: ' + err.message);
+  } finally {
+    if (btn) { btn.innerHTML = origHtml || '&#8681; Export HTML'; btn.disabled = false; }
+  }
 }
 </script>
 </body>

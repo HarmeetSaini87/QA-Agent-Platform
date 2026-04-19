@@ -135,13 +135,15 @@ function switchTab(tab) {
   document.querySelectorAll('.panel').forEach(p => p.classList.toggle('active', p.id === `panel-${tab}`));
   document.getElementById('topbar-title').textContent = {
     scripts: 'Test Script Builder', suites: 'Test Suite',
+    execution: 'Execution',
     locators: 'Locator Repository', functions: 'Common Functions',
     commondata: 'Common Data', history: 'Execution History',
     flaky: 'Flaky Test Detection',
     projects: 'Projects', admin: 'Admin Panel',
   }[tab] ?? tab;
-  if (tab === 'history') histLoad();
-  if (tab === 'flaky')   flakyLoad();
+  if (tab === 'history')   histLoad();
+  if (tab === 'flaky')     flakyLoad();
+  if (tab === 'execution') execLoad();
   hideRunPanel();
 }
 
@@ -810,4 +812,54 @@ switchTab = function(tab) {
 };
 
 // ── Init ──────────────────────────────────────────────────────────────────────
+
+// Environment badge — fetch /api/env and show DEV/PROD label in topbar
+(async function _initEnvBadge() {
+  try {
+    const res  = await fetch('/api/env');
+    if (!res.ok) return;
+    const data = await res.json();
+    const badge = document.getElementById('env-badge');
+    if (!badge) return;
+    const label = (data.label || 'PROD').toUpperCase();
+    badge.textContent = label;
+    badge.className   = `env-badge ${label === 'DEV' ? 'env-dev' : 'env-prod'}`;
+    badge.style.display = '';
+  } catch { /* silently ignore — badge stays hidden */ }
+})();
+
 connectWS();
+
+// P1-09: Check license status on app load (admin session only)
+(async function _licBannerInit() {
+  try {
+    const me = await fetch('/api/auth/me');
+    if (!me.ok) return;
+    const { role } = await me.json();
+    if (role === 'admin') licenseCheckBanner();
+  } catch { /* silently ignore */ }
+})();
+
+// P3-08: Apply white-label branding from /api/branding (Enterprise .lic only)
+(async function _applyBranding() {
+  try {
+    const res = await fetch('/api/branding');
+    if (!res.ok) return;
+    const { appName, logoUrl, primaryColor } = await res.json();
+    if (appName && appName !== 'QA Agent Platform') {
+      document.title = appName;
+      const nameEl = document.getElementById('nav-app-name');
+      if (nameEl) nameEl.textContent = appName;
+    }
+    if (logoUrl) {
+      const logoEl = document.createElement('img');
+      logoEl.src   = logoUrl;
+      logoEl.style.cssText = 'height:28px;margin-right:8px;vertical-align:middle';
+      const nameEl = document.getElementById('nav-app-name');
+      if (nameEl) nameEl.prepend(logoEl);
+    }
+    if (primaryColor && /^#[0-9a-fA-F]{6}$/.test(primaryColor)) {
+      document.documentElement.style.setProperty('--primary', primaryColor);
+    }
+  } catch { /* silently ignore */ }
+})();

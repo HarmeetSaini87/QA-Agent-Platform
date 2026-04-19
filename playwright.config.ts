@@ -23,9 +23,9 @@ export default defineConfig({
   use: {
     baseURL: process.env.APP_BASE_URL,
     headless: isCI ? true : process.env.HEADLESS === 'true',
-    screenshot: (process.env.SCREENSHOT_MODE as 'always' | 'only-on-failure' | 'off') || 'only-on-failure',
-    video: 'retain-on-failure',
-    trace: 'retain-on-failure',
+    screenshot: (process.env.SCREENSHOT_MODE as 'on' | 'only-on-failure' | 'off') || 'on',
+    video: 'on',
+    trace: 'on',
     slowMo: isCI ? 0 : 300,
     actionTimeout: 15000,
     navigationTimeout: 30000,
@@ -38,5 +38,7 @@ export default defineConfig({
     },
   ],
 
-  outputDir: 'test-results/',
+  // PW_OUTPUT_DIR is injected per-run by the server (test-results/<runId>).
+  // This isolates each run's artifacts so they are never wiped by a subsequent run.
+  outputDir: process.env.PW_OUTPUT_DIR || 'test-results',
 });

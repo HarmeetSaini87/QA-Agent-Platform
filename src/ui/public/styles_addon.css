@@ -3,6 +3,81 @@
    NEW MODULES: Auth, Admin, Projects, Locators, Functions
    ══════════════════════════════════════════════════════════════════════════ */
 
+/* ── Locator sync-fail banner (script + function list pages) ────────────── */
+.sync-fail-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  background: #fffbeb;
+  border: 1px solid #f59e0b;
+  border-left: 4px solid #f59e0b;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #78350f;
+  line-height: 1.5;
+}
+.sync-fail-icon {
+  flex-shrink: 0;
+  font-size: 16px;
+  margin-top: 1px;
+}
+.sync-fail-msg {
+  flex: 1;
+}
+.sync-fail-close {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #92400e;
+  font-size: 15px;
+  line-height: 1;
+  padding: 0 2px;
+  opacity: 0.7;
+}
+.sync-fail-close:hover { opacity: 1; }
+
+/* ── Locator sync-fail badge inside step card ────────────────────────────── */
+.sync-fail-step-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: 10px;
+  background: #fef3c7;
+  border: 1px solid #f59e0b;
+  color: #92400e;
+  font-size: 11px;
+  font-weight: 600;
+  margin-top: 4px;
+  cursor: default;
+}
+
+/* ── Environment badge (topbar) ─────────────────────────────────────────── */
+.env-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  line-height: 1.6;
+}
+.env-badge.env-dev {
+  background: #fff3cd;
+  color: #92400e;
+  border: 1px solid #fbbf24;
+}
+.env-badge.env-prod {
+  background: #f3f4f6;
+  color: #374151;
+  border: 1px solid #d1d5db;
+}
+
 /* ── UI Recorder ────────────────────────────────────────────────────────── */
 @keyframes recorderPulse {
   0%, 100% { opacity: 1; }
@@ -307,7 +382,10 @@
   background: #fff; border-radius: 12px; box-shadow: 0 24px 64px rgba(0,0,0,.2);
   width: 100%; display: flex; flex-direction: column; animation: slideUp .2s ease;
 }
-.modal-wide { max-width: 700px; }
+.modal-wide { max-width: 800px; }
+/* Suite modal needs extra height for the two-zone script picker */
+#modal-suite .modal { max-height: calc(100vh - 32px); }
+#modal-suite .modal-body { max-height: calc(100vh - 180px); }
 
 .modal-header {
   display: flex; align-items: center; justify-content: space-between;
@@ -595,6 +673,7 @@
 @keyframes fc-spin { to { transform: rotate(360deg); } }
 
 /* ── Pin badge ───────────────────────────────────────────────────────────── */
+/* ── Session pin badge (purple) ──────────────────────────────────────────── */
 .step-pin-badge {
   display: flex; align-items: center; gap: 6px;
   background: #f5f3ff; border: 1px solid #c4b5fd; border-radius: 5px;
@@ -606,6 +685,27 @@
 .pin-badge-clear { background: none; border: none; cursor: pointer; color: #9ca3af; font-size: 13px; padding: 0 2px; line-height: 1; }
 .pin-badge-clear:hover { color: var(--danger); }
 
+/* ── Global pin badge (teal) ─────────────────────────────────────────────── */
+.step-pin-badge.step-pin-badge-global { background: #f0fdfa; border-color: #5eead4; color: #0f766e; }
+.step-pin-badge.step-pin-badge-global code { color: #0d9488; background: #ccfbf1; }
+.pin-scope-tag {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase;
+  padding: 1px 5px; border-radius: 3px; margin-left: 4px;
+  background: #ede9fe; color: #7c3aed;
+}
+.step-pin-badge-global .pin-scope-tag { background: #ccfbf1; color: #0d9488; }
+
+/* ── Scope toggle (SET VARIABLE + Pin modal) ─────────────────────────────── */
+.setvar-scope-toggle { display: flex; gap: 6px; }
+.setvar-scope-opt {
+  flex: 1; display: flex; align-items: center; gap: 5px; cursor: pointer;
+  border: 1px solid var(--neutral-200); border-radius: 5px; padding: 5px 8px;
+  font-size: 12px; user-select: none; transition: border-color 0.15s, background 0.15s;
+}
+.setvar-scope-opt input[type="radio"] { accent-color: #7c3aed; cursor: pointer; }
+.setvar-scope-opt.active { border-color: #7c3aed; background: #f5f3ff; color: #5b21b6; font-weight: 600; }
+.setvar-scope-opt:has(input[value="global"]).active { border-color: #0d9488; background: #f0fdfa; color: #0f766e; }
+
 /* ── Variable tab & panel ────────────────────────────────────────────────── */
 .value-toggle-btn.value-toggle-var        { color: #7c3aed; }
 .value-toggle-btn.value-toggle-var.active { background: #7c3aed; color: #fff; border-color: #7c3aed; }
@@ -616,6 +716,19 @@
 .se-setvar-fields { padding: 4px 0; }
 .setvar-hint { background: #f5f3ff; border: 1px solid #c4b5fd; border-radius: 4px; padding: 3px 8px; margin-top: 4px; }
 .setvar-hint code { font-family: monospace; font-size: 11px; color: #7c3aed; background: #ede9fe; padding: 0 3px; border-radius: 3px; }
+
+/* ── Pin modal overlay ───────────────────────────────────────────────────── */
+#pin-modal-overlay {
+  position: fixed; inset: 0; z-index: 9999;
+  background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center;
+}
+.pin-modal-box {
+  background: var(--bg-card, #fff); border-radius: 10px; box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+  padding: 20px 24px; min-width: 340px; max-width: 420px; width: 100%;
+}
+.pin-modal-title { font-size: 14px; font-weight: 700; margin-bottom: 14px; color: var(--text-primary, #111); }
+.pin-modal-body  { margin-bottom: 16px; }
+.pin-modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .script-step-row { position: relative; }
 
 /* ── Step help label & tooltip ──────────────────────────────────────────── */
@@ -1328,3 +1441,200 @@
 .btn.btn-danger:hover {
   background: rgba(244,135,113,.3);
 }
+
+/* ── Locator Repo sub-tabs ────────────────────────────────────────────────── */
+.loc-subtab {
+  padding: 8px 18px;
+  font-size: 13px;
+  font-weight: 500;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--neutral-400);
+  cursor: pointer;
+  margin-bottom: -2px;
+  transition: color .15s, border-color .15s;
+}
+.loc-subtab:hover { color: var(--neutral-100); }
+.loc-subtab-active {
+  color: var(--primary);
+  border-bottom-color: var(--primary);
+}
+
+/* Healing Proposal status badges */
+.prop-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 99px;
+  font-size: 10px;
+  font-weight: 600;
+}
+.prop-badge-auto    { background: rgba(124,58,237,.18); color: #a78bfa; }
+.prop-badge-pending { background: rgba(234,179,8,.15);  color: #eab308; }
+.prop-badge-ok      { background: rgba(78,201,176,.15); color: #4ec9b0; }
+.prop-badge-reject  { background: rgba(244,135,113,.15);color: #f48771; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   P5: Pre-Scan Health Grid
+   ══════════════════════════════════════════════════════════════════════════ */
+.ps-row {
+  display: grid;
+  grid-template-columns: 22px 1fr 100px 42px;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 5px;
+  background: rgba(255,255,255,.025);
+  margin-bottom: 3px;
+}
+.ps-icon   { font-size: 13px; text-align: center; }
+.ps-name   { font-size: 12px; color: var(--neutral-200,#ccc); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ps-bar-wrap { background: rgba(255,255,255,.06); border-radius: 3px; height: 6px; overflow: hidden; }
+.ps-bar    { height: 100%; border-radius: 3px; transition: width .4s ease; }
+.ps-score  { font-size: 11px; font-weight: 700; text-align: right; font-family: monospace; }
+.ps-chip   { display: inline-block; font-size: 10.5px; font-weight: 600; border-radius: 3px; padding: 1px 7px; margin-left: 4px; }
+.ps-healthy  { background: rgba(78,201,176,.15);  color: #4ec9b0; }
+.ps-degraded { background: rgba(234,179,8,.15);   color: #eab308; }
+.ps-broken   { background: rgba(244,135,113,.15); color: #f48771; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   T4 Human Review — Heal Proposal Card
+   ══════════════════════════════════════════════════════════════════════════ */
+.t4-modal-backdrop {
+  position: fixed; inset: 0; z-index: 9999;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0,0,0,.65); backdrop-filter: blur(3px);
+}
+.t4-modal-box {
+  background: var(--bg-card, #1e1e2e);
+  border: 1px solid rgba(234,179,8,.45);
+  border-radius: 10px;
+  box-shadow: 0 0 0 1px rgba(234,179,8,.15), 0 20px 60px rgba(0,0,0,.6);
+  padding: 24px 28px;
+  max-width: 640px; width: 95%;
+  display: flex; flex-direction: column; gap: 14px;
+}
+.t4-modal-header {
+  display: flex; align-items: flex-start; gap: 12px;
+}
+.t4-heal-icon { font-size: 26px; line-height: 1; flex-shrink: 0; }
+.t4-modal-title   { font-size: 15px; font-weight: 700; color: #eab308; }
+.t4-modal-subtitle{ font-size: 11.5px; color: var(--neutral-400,#858585); margin-top: 2px; }
+.t4-tier-badge {
+  margin-left: auto; flex-shrink: 0;
+  background: rgba(234,179,8,.15); color: #eab308;
+  border: 1px solid rgba(234,179,8,.35);
+  border-radius: 4px; padding: 2px 8px;
+  font-size: 10px; font-weight: 700; letter-spacing: .06em; white-space: nowrap;
+}
+.t4-info-row {
+  display: flex; align-items: center; gap: 10px;
+  background: rgba(255,255,255,.03); border-radius: 6px; padding: 8px 12px;
+}
+.t4-label { font-size: 11px; color: var(--neutral-400,#858585); width: 110px; flex-shrink: 0; }
+.t4-value { font-size: 12.5px; color: var(--neutral-200,#ccc); }
+.t4-mono  { font-family: monospace; }
+.t4-code  {
+  font-family: monospace; font-size: 11.5px; border-radius: 4px; padding: 2px 7px;
+  max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  display: inline-block;
+}
+.t4-code-broken    { background: rgba(244,135,113,.12); color: #f48771; border: 1px solid rgba(244,135,113,.25); }
+.t4-code-candidate { background: rgba(78,201,176,.10);  color: #4ec9b0; border: 1px solid rgba(78,201,176,.25); }
+.t4-type-pill {
+  font-size: 10px; background: rgba(255,255,255,.07); color: var(--neutral-400,#858585);
+  border-radius: 3px; padding: 1px 5px; white-space: nowrap;
+}
+.t4-score-chip {
+  font-size: 11px; font-weight: 700; white-space: nowrap;
+  background: rgba(78,201,176,.12); color: #4ec9b0;
+  border-radius: 3px; padding: 1px 6px;
+}
+.t4-override-row {
+  display: flex; align-items: center; gap: 10px;
+  background: rgba(255,255,255,.03); border-radius: 6px; padding: 8px 12px;
+}
+.t4-input {
+  background: var(--bg-input,#12121e); border: 1px solid var(--border,#2a2a3a);
+  color: var(--neutral-100,#e0e0e0); border-radius: 5px; padding: 5px 9px;
+  font-size: 12px; font-family: monospace;
+  transition: border-color .15s;
+}
+.t4-input:focus { outline: none; border-color: #eab308; }
+.t4-input-wide { flex: 1; min-width: 0; }
+.t4-input-type { width: 110px; cursor: pointer; }
+.t4-hint {
+  font-size: 11px; color: var(--neutral-500,#666); margin: -4px 0;
+  padding: 0 2px;
+}
+.t4-actions {
+  display: flex; gap: 10px; padding-top: 4px;
+}
+.t4-btn {
+  flex: 1; padding: 9px 0; border: none; border-radius: 6px;
+  font-size: 13px; font-weight: 600; cursor: pointer; transition: opacity .15s, filter .15s;
+}
+.t4-btn:hover   { filter: brightness(1.1); }
+.t4-btn:active  { filter: brightness(.92); }
+.t4-btn:disabled{ opacity: .4; cursor: not-allowed; filter: none; }
+.t4-btn-approve { background: #4ec9b0; color: #0d1117; }
+.t4-btn-reject  { background: rgba(244,135,113,.15); color: #f48771; border: 1px solid rgba(244,135,113,.35); }
+
+/* ── P1: License banner + panel ──────────────────────────────────────────── */
+#license-banner {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
+  padding: 8px 20px; font-size: 0.82rem; font-weight: 500;
+  text-align: center; display: flex; align-items: center; justify-content: center; gap: 12px;
+}
+#license-banner.lic-warn  { background: #78624a; color: #ffd180; }
+#license-banner.lic-error { background: #6b2a2a; color: #ff8a80; }
+#license-banner.lic-info  { background: #1e3a5f; color: #82cfff; }
+#license-banner a         { color: inherit; text-decoration: underline; cursor: pointer; }
+
+.lic-badge {
+  display: inline-block; padding: 2px 10px; border-radius: 20px;
+  font-size: 0.72rem; font-weight: 700; letter-spacing: .5px; text-transform: uppercase;
+}
+.lic-badge-starter    { background: rgba(100,100,100,.25); color: #aaa; }
+.lic-badge-team       { background: rgba(79,140,201,.2);   color: #4f8cc9; }
+.lic-badge-enterprise { background: rgba(255,193,7,.15);   color: #ffc107; }
+
+.lic-chip {
+  display: inline-block; padding: 2px 10px; border-radius: 20px;
+  font-size: 0.75rem; background: rgba(255,255,255,.08); color: var(--text-muted);
+}
+.lic-chip-blue  { background: rgba(79,140,201,.15); color: #82cfff; }
+.lic-chip-green { background: rgba(78,201,176,.15); color: #4ec9b0; }
+.lic-chip-amber { background: rgba(229,192,21,.15);  color: #e5c015; }
+.lic-chip-red   { background: rgba(244,135,113,.15); color: #f48771; }
+
+.lic-feature-chip {
+  display: inline-block; padding: 2px 8px; border-radius: 4px;
+  font-size: 0.72rem; background: rgba(78,201,176,.12); color: #4ec9b0;
+  border: 1px solid rgba(78,201,176,.2);
+}
+
+/* Read-only mode — P1-10 */
+body.lic-readonly .run-suite-btn,
+body.lic-readonly .btn-record,
+body.lic-readonly [data-readonly-disabled="true"] {
+  opacity: .4 !important; pointer-events: none !important; cursor: not-allowed !important;
+}
+body.lic-readonly .run-suite-btn::after { content: ' (License expired)'; font-size:.75em; }
+
+/* ── Suite Hook step rows ──────────────────────────────────────────────────── */
+.hook-step-row {
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 6px; border-radius: 5px;
+  background: var(--neutral-50, #f9fafb);
+  border: 1px solid var(--neutral-200, #e5e7eb);
+}
+.hook-step-row:hover { background: var(--neutral-100, #f3f4f6); }
+.hook-step-num {
+  flex: 0 0 20px; font-size: 11px; font-weight: 700;
+  color: var(--neutral-400, #9ca3af); text-align: center;
+}
+.hook-kw-sel  { flex: 0 0 160px; font-size: 12px !important; padding: 3px 6px !important; height: 28px !important; }
+.hook-loc-inp,
+.hook-val-inp,
+.hook-desc-inp { flex: 1; font-size: 12px !important; padding: 3px 7px !important; height: 28px !important; }

@@ -5,6 +5,10 @@
  */
 'use strict';
 
+function _escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
 // ── Auth bootstrap ─────────────────────────────────────────────────────────────
 
 let currentUser = null;   // { userId, username, role }
@@ -74,6 +78,8 @@ function adminSubTab(name, btn) {
   if (name === 'users')    usersLoad();
   if (name === 'audit')    auditLoad();
   if (name === 'settings') settingsLoad();
+  if (name === 'license')  licenseLoad();
+  if (name === 'apikeys')  apikeyLoad();
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -527,8 +533,19 @@ function locatorRender() {
     const isAuto = (l.description || '').toLowerCase().includes('auto-captured');
     const autoTag = isAuto ? `<span class="badge" style="background:#7c3aed;color:#fff;font-size:10px;margin-left:4px">Auto</span>` : '';
     const truncSel = l.selector.length > 60 ? `<span title="${escHtml(l.selector)}">${escHtml(l.selector.substring(0, 60))}…</span>` : escHtml(l.selector);
+    // Stability badge — only shown when importanceScore is present (recorder v4+)
+    let stabilityBadge = '';
+    if (l.importanceScore != null) {
+      const score = l.importanceScore;
+      const dot   = score >= 80 ? '🟢' : score >= 50 ? '🟡' : '🔴';
+      const label = score >= 80 ? 'Stable' : score >= 50 ? 'Moderate' : 'Fragile';
+      const altCount = l.alternatives?.length ?? 0;
+      const altTip   = altCount ? ` · ${altCount} alt${altCount > 1 ? 's' : ''}` : '';
+      const pageKeyTip = l.pageKey ? ` · ${l.pageKey}` : '';
+      stabilityBadge = `<span title="Stability score: ${score}/100${altTip}${pageKeyTip}" style="margin-left:5px;font-size:11px;cursor:default">${dot} <span style="font-size:10px;color:var(--neutral-500)">${label}</span></span>`;
+    }
     return `<tr>
-      <td><strong>${escHtml(l.name)}</strong>${autoTag}</td>
+      <td><strong>${escHtml(l.name)}</strong>${autoTag}${stabilityBadge}</td>
       <td><code style="font-size:11px">${truncSel}</code></td>
       <td><span class="badge badge-tester">${escHtml(l.selectorType)}</span></td>
       <td>${escHtml(l.pageModule || '—')}</td>
@@ -553,6 +570,91 @@ function locatorRender() {
       <span style="font-size:13px">Page ${_locPage + 1} / ${totalPages}</span>
       <button class="tbl-btn" onclick="_locPageGo(1)" ${_locPage >= totalPages - 1 ? 'disabled' : ''}>Next &#8594;</button>`;
   }
+}
+
+// ── Locator sub-tab switching ─────────────────────────────────────────────────
+function locSubTab(tab) {
+  const isRepo = tab === 'repo';
+  document.getElementById('loc-subpanel-repo').style.display       = isRepo ? '' : 'none';
+  document.getElementById('loc-subpanel-proposals').style.display  = isRepo ? 'none' : '';
+  document.getElementById('loc-subtab-repo').classList.toggle('loc-subtab-active', isRepo);
+  document.getElementById('loc-subtab-proposals').classList.toggle('loc-subtab-active', !isRepo);
+  if (!isRepo) proposalLoad();
+}
+
+// ── Healing Proposals ─────────────────────────────────────────────────────────
+let _allProposals = [];
+
+async function proposalLoad() {
+  if (!currentProjectId) return;
+  try {
+    const res = await fetch(`/api/proposals?projectId=${encodeURIComponent(currentProjectId)}`);
+    _allProposals = await res.json();
+    proposalRender();
+    // Update pending count badge on the sub-tab
+    const pending = _allProposals.filter(p => p.status === 'pending-review').length;
+    const cntEl = document.getElementById('loc-proposal-count');
+    if (cntEl) {
+      cntEl.textContent = pending;
+      cntEl.style.display = pending ? '' : 'none';
+    }
+  } catch { /* ignore */ }
+}
+
+function proposalRender() {
+  const filterStatus = document.getElementById('loc-prop-filter')?.value ?? '';
+  const tbody = document.getElementById('prop-tbody');
+  if (!tbody) return;
+
+  const items = filterStatus
+    ? _allProposals.filter(p => p.status === filterStatus)
+    : _allProposals;
+
+  if (!items.length) {
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--neutral-400);padding:20px">No proposals found</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = items.map(p => {
+    const statusBadge = {
+      'auto-applied':   `<span class="prop-badge prop-badge-auto">Auto Applied</span>`,
+      'pending-review': `<span class="prop-badge prop-badge-pending">Pending Review</span>`,
+      'approved':       `<span class="prop-badge prop-badge-ok">Approved</span>`,
+      'rejected':       `<span class="prop-badge prop-badge-reject">Rejected</span>`,
+    }[p.status] || `<span class="prop-badge">${escHtml(p.status)}</span>`;
+
+    const scoreColor = p.confidence >= 75 ? '#4ec9b0' : p.confidence >= 50 ? '#eab308' : '#f48771';
+    const truncOld = p.oldSelector?.length > 50 ? `<span title="${escHtml(p.oldSelector)}">${escHtml(p.oldSelector.substring(0,50))}…</span>` : escHtml(p.oldSelector || '—');
+    const truncNew = p.newSelector?.length > 50 ? `<span title="${escHtml(p.newSelector)}">${escHtml(p.newSelector.substring(0,50))}…</span>` : escHtml(p.newSelector || '—');
+    const healedAt = p.healedAt ? new Date(p.healedAt).toLocaleString() : '—';
+
+    const actionBtns = p.status === 'pending-review'
+      ? `<button class="tbl-btn" style="color:#4ec9b0" onclick="proposalReview('${escHtml(p.id)}','approved')">✓ Approve</button>
+         <button class="tbl-btn del" onclick="proposalReview('${escHtml(p.id)}','rejected')">✗ Reject</button>`
+      : `<span style="font-size:11px;color:var(--neutral-500)">${escHtml(p.reviewedBy || '')} ${p.reviewedAt ? new Date(p.reviewedAt).toLocaleDateString() : ''}</span>`;
+
+    return `<tr>
+      <td><strong>${escHtml(p.locatorName || p.locatorId)}</strong></td>
+      <td><code style="font-size:11px">${truncOld}</code></td>
+      <td><code style="font-size:11px;color:${scoreColor}">${truncNew}</code></td>
+      <td style="text-align:center;font-weight:600;color:${scoreColor}">${p.confidence}</td>
+      <td>${statusBadge}</td>
+      <td style="font-size:11px">${healedAt}</td>
+      <td>${actionBtns}</td>
+    </tr>`;
+  }).join('');
+}
+
+async function proposalReview(id, action) {
+  try {
+    const res = await fetch(`/api/proposals/${encodeURIComponent(id)}/review`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action }),
+    });
+    if (!res.ok) { const e = await res.json(); alert(e.error || 'Review failed'); return; }
+    await proposalLoad(); // Refresh
+  } catch { alert('Network error'); }
 }
 
 function _locPageGo(delta) {
@@ -735,33 +837,15 @@ async function fnEdit(id) {
   document.getElementById('fn-desc').value       = fn.description || '';
   const container = document.getElementById('fn-steps-container');
   container.innerHTML = '';
-  (fn.steps || []).forEach(s => fnAddStep(s));
+  (fn.steps || []).forEach(s => fnAddStep(s, true));
+  fnReorderNums(); // one call after all steps inserted
   modClearAlert('fn-modal-alert');
   openModal('modal-function');
 }
 
-function fnAddStep(step = {}) {
+function fnAddStep(step = {}, _skipReorder = false) {
   const container = document.getElementById('fn-steps-container');
   const idx = container.querySelectorAll('.fn-step-card').length;
-
-  // GOTO excluded — URL navigation should not be inside reusable functions
-  const kwOptions = scriptKeywords.categories.map(cat => {
-    const opts = cat.keywords
-      .filter(kw => kw.key !== 'GOTO' && kw.key !== 'CALL FUNCTION')
-      .map(kw =>
-        `<option value="${escHtml(kw.key)}"` +
-        ` data-nl="${kw.needsLocator}" data-nv="${kw.needsValue}" data-hint="${escHtml(kw.valueHint)}"` +
-        ` data-help="${escHtml(kw.helpLabel || '')}" data-tooltip-json="${escHtml(JSON.stringify(kw.tooltip || {}))}"` +
-        ` data-auto="false"` +
-        `${step.keyword === kw.key ? ' selected' : ''}>${escHtml(kw.label)}</option>`
-      ).join('');
-    return opts ? `<optgroup label="${escHtml(cat.name)}">${opts}</optgroup>` : '';
-  }).join('');
-
-  const locTypes = (scriptKeywords.locatorTypes || []);
-  const locTypeOpts = locTypes.map(lt =>
-    `<option value="${escHtml(lt.value)}"${step.locatorType === lt.value ? ' selected' : ''}>${escHtml(lt.label)}</option>`
-  ).join('');
 
   const curKw    = _seKwGet(step.keyword);
   const needsLoc = curKw ? curKw.needsLocator : true;
@@ -780,7 +864,7 @@ function fnAddStep(step = {}) {
     </div>
     <div class="step-row-header">
       <span class="step-num">${idx + 1}</span>
-      <select class="fm-select fn-step-kw-select" style="flex:1;font-size:12.5px" onchange="fnStepKwChange(this)">${kwOptions}</select>
+      <select class="fm-select fn-step-kw-select" style="flex:1;font-size:12.5px" onchange="fnStepKwChange(this)">${_kwOptionsFnHtml}</select>
     </div>
     <div class="step-help-row"${helpLbl ? '' : ' style="display:none"'}>
       <span class="step-help-label">${escHtml(helpLbl)}</span>
@@ -806,7 +890,7 @@ function fnAddStep(step = {}) {
         </div>
         <div style="display:flex;gap:6px;align-items:start">
           <div class="field" style="margin:0;flex-shrink:0;width:130px"><label style="font-size:11px">Locator Type</label>
-            <select class="fm-select fn-step-loc-type" style="font-size:11.5px">${locTypeOpts}</select>
+            <select class="fm-select fn-step-loc-type" style="font-size:11.5px">${_locTypeOptsHtml}</select>
           </div>
           <div class="field" style="margin:0;flex:1"><label style="font-size:11px">Locator Value</label>
             <input class="fm-input fn-step-selector" style="font-size:12px;font-family:monospace"
@@ -820,9 +904,13 @@ function fnAddStep(step = {}) {
              value="${escHtml(step.description ?? step.detail ?? '')}" />
     </div>`;
 
+  // Set keyword + locator type selections via JS
+  row.querySelector('.fn-step-kw-select').value = step.keyword || '';
+  row.querySelector('.fn-step-loc-type').value  = step.locatorType || 'css';
+
   container.appendChild(row);
   fnStepKwChange(row.querySelector('.fn-step-kw-select'));
-  fnReorderNums();
+  if (!_skipReorder) fnReorderNums();
 }
 
 function fnStepKwChange(sel) {
@@ -917,16 +1005,24 @@ async function fnSave() {
   const data   = await res.json();
   if (!res.ok) { modAlert('fn-modal-alert','error', data.error || 'Error'); return; }
 
-  // Auto-sync locators to Locator Repository (map selector→locator for shared sync fn)
-  await _syncLocatorsToRepo(steps.map(s => ({
+  // Close modal + refresh list immediately — don't wait for locator sync
+  const stepsForSync = steps.map(s => ({
     locatorName: s.locatorName,
     locator: s.selector,
     locatorType: s.locatorType,
     description: s.description,
-  })));
-
+  }));
+  _syncFailedLocators.clear();
   fnCloseModal();
   await fnLoad();
+
+  // Background locator sync — surfaces failures as banner
+  _syncLocatorsToRepo(stepsForSync).then(failed => {
+    if (failed.length) {
+      _syncFailedLocators = new Set(failed);
+      _showSyncFailBanner(failed, 'function');
+    }
+  }).catch(() => {});
 }
 
 async function fnDelete(id, name) {
@@ -949,11 +1045,12 @@ const _HIDE_PROJ_DROPDOWN_TABS = new Set(['projects', 'admin']);
 function onModuleTabSwitch(tab) {
   if (tab === 'admin')     usersLoad();
   if (tab === 'projects')  projLoad();
-  if (tab === 'locators')   locatorLoad();
+  if (tab === 'locators')   { locatorLoad(); proposalLoad(); }
   if (tab === 'functions')  fnLoad();
   if (tab === 'commondata') cdLoad();
-  if (tab === 'scripts')    scriptLoad();
+  if (tab === 'scripts')    { scriptLoad(); _debugSessionsPollStart(); }
   if (tab === 'suites')     suiteLoad();
+  if (tab === 'execution')  execLoad();
   if (tab === 'admin' && !_panelLoaded.has('admin')) adminSubTab('users', document.querySelector('.sub-tab'));
   _panelLoaded.add(tab);
 
@@ -1059,6 +1156,7 @@ function onProjectChange() {
   cdLoad();
   histLoad();
   flakyLoad();
+  execLoad();
 }
 
 function _toggleModuleAddButtons(enabled) {
@@ -1083,11 +1181,55 @@ async function locatorLoadScoped() {
 
 let scriptKeywords = { categories: [], dynamicTokens: [] };
 
+// ── Keyword option HTML caches — built once after keywordsLoad(), reused per step ──
+let _kwOptionsScriptHtml = '';  // script steps: all kws except GOTO
+let _kwOptionsFnHtml     = '';  // fn steps: all kws except GOTO + CALL FUNCTION
+let _locTypeOptsHtml     = '';  // locator type options (same for both)
+
+// Locators that failed to sync on last save — shown as step-level badges on re-open
+let _syncFailedLocators = new Set();
+
+function _buildKwCaches() {
+  if (_kwOptionsScriptHtml) return; // already built
+  _kwOptionsScriptHtml = scriptKeywords.categories.map(cat => {
+    const opts = cat.keywords
+      .filter(kw => kw.key !== 'GOTO')
+      .map(kw =>
+        `<option value="${escHtml(kw.key)}"` +
+        ` data-nl="${kw.needsLocator}" data-nv="${kw.needsValue}" data-hint="${escHtml(kw.valueHint || '')}"` +
+        ` data-help="${escHtml(kw.helpLabel || '')}" data-tooltip-json="${escHtml(JSON.stringify(kw.tooltip || {}))}"` +
+        ` data-auto="${kw.autoFromProject ? 'true' : 'false'}"` +
+        `>${escHtml(kw.label)}</option>`
+      ).join('');
+    return opts ? `<optgroup label="${escHtml(cat.name)}">${opts}</optgroup>` : '';
+  }).join('');
+
+  _kwOptionsFnHtml = scriptKeywords.categories.map(cat => {
+    const opts = cat.keywords
+      .filter(kw => kw.key !== 'GOTO' && kw.key !== 'CALL FUNCTION')
+      .map(kw =>
+        `<option value="${escHtml(kw.key)}"` +
+        ` data-nl="${kw.needsLocator}" data-nv="${kw.needsValue}" data-hint="${escHtml(kw.valueHint || '')}"` +
+        ` data-help="${escHtml(kw.helpLabel || '')}" data-tooltip-json="${escHtml(JSON.stringify(kw.tooltip || {}))}"` +
+        ` data-auto="false"` +
+        `>${escHtml(kw.label)}</option>`
+      ).join('');
+    return opts ? `<optgroup label="${escHtml(cat.name)}">${opts}</optgroup>` : '';
+  }).join('');
+
+  _locTypeOptsHtml = (scriptKeywords.locatorTypes || []).map(lt =>
+    `<option value="${escHtml(lt.value)}">${escHtml(lt.label)}</option>`
+  ).join('');
+}
+
 async function keywordsLoad() {
   if (scriptKeywords.categories.length) return;
   try {
     const res = await fetch('/api/keywords/playwright');
-    if (res.ok) scriptKeywords = await res.json();
+    if (res.ok) {
+      scriptKeywords = await res.json();
+      _buildKwCaches();
+    }
   } catch { /* non-fatal */ }
 }
 
@@ -1190,6 +1332,8 @@ function scriptRender() {
       </div>
     </div>
     ${pgHtml}`;
+  // Re-apply debug badges after DOM is rebuilt
+  _debugApplyBadges();
 }
 
 function _scriptPageGo(delta) {
@@ -1246,7 +1390,8 @@ async function scriptOpenEditor(id = null) {
       document.getElementById('se-meta-modifiedby').textContent = sc.modifiedBy || '—';
       document.getElementById('se-meta-modifiedat').textContent = formatDate(sc.modifiedAt);
     }
-    (sc.steps || []).forEach(step => scriptAddStep(step));
+    (sc.steps || []).forEach(step => scriptAddStep(step, null, true));
+    scriptReorderNums(); // one call after all steps inserted
   } else {
     document.getElementById('se-component').value = '';
     document.getElementById('se-title').value      = '';
@@ -1409,29 +1554,10 @@ function _seKwGet(key) {
   return null;
 }
 
-function scriptAddStep(step = {}, insertBeforeRow = null) {
+function scriptAddStep(step = {}, insertBeforeRow = null, _skipReorder = false) {
   const container = document.getElementById('se-steps-container');
   document.getElementById('se-steps-hint').style.display = 'none';
   const idx = container.querySelectorAll('.script-step-row').length;
-
-  // GOTO is excluded from Test Script steps — URL navigation is handled by explicit step values
-  const kwOptions = scriptKeywords.categories.map(cat => {
-    const opts = cat.keywords
-      .filter(kw => kw.key !== 'GOTO')
-      .map(kw =>
-        `<option value="${escHtml(kw.key)}"` +
-        ` data-nl="${kw.needsLocator}" data-nv="${kw.needsValue}" data-hint="${escHtml(kw.valueHint)}"` +
-        ` data-help="${escHtml(kw.helpLabel || '')}" data-tooltip-json="${escHtml(JSON.stringify(kw.tooltip || {}))}"` +
-        ` data-auto="false"` +
-        `${step.keyword === kw.key ? ' selected' : ''}>${escHtml(kw.label)}</option>`
-      ).join('');
-    return opts ? `<optgroup label="${escHtml(cat.name)}">${opts}</optgroup>` : '';
-  }).join('');
-
-  const locTypes = (scriptKeywords.locatorTypes || []);
-  const locTypeOpts = locTypes.map(lt =>
-    `<option value="${escHtml(lt.value)}"${step.locatorType === lt.value ? ' selected' : ''}>${escHtml(lt.label)}</option>`
-  ).join('');
 
   const valMode   = step.valueMode || 'static';   // 'static' | 'dynamic' | 'commondata' | 'testdata'
   const isDyn     = valMode === 'dynamic';
@@ -1477,7 +1603,7 @@ function scriptAddStep(step = {}, insertBeforeRow = null) {
     </div>
     <div class="step-row-header">
       <span class="step-num">${idx + 1}</span>
-      <select class="fm-select se-step-kw-select" style="flex:1;font-size:12.5px" onchange="scriptStepKwChange(this)">${kwOptions}</select>
+      <select class="fm-select se-step-kw-select" style="flex:1;font-size:12.5px" onchange="scriptStepKwChange(this)">${_kwOptionsScriptHtml}</select>
       <label class="step-screenshot-lbl">
         <input type="checkbox" class="se-step-screenshot"${step.screenshot ? ' checked' : ''} /> Screenshot
       </label>
@@ -1486,8 +1612,8 @@ function scriptAddStep(step = {}, insertBeforeRow = null) {
       <span class="step-help-label">${escHtml(helpLbl)}</span>
       <span class="step-tooltip-trigger" data-tooltip-json="${escHtml(tipJson)}" onmouseenter="_kwTipShow(this)" onmouseleave="_kwTipHide()"${tipJson ? '' : ' style="display:none"'}>?</span>
     </div>
-    <div class="step-pin-badge${step.storeAs ? '' : ' step-pin-badge-hidden'}" data-store-as="${escHtml(step.storeAs||'')}" data-store-source="${escHtml(step.storeSource||'text')}" data-store-attr="${escHtml(step.storeAttrName||'')}">
-      <span class="pin-badge-label">📌 Saved as <code>{{var.${escHtml(step.storeAs||'')}}}</code></span>
+    <div class="step-pin-badge${step.storeAs ? '' : ' step-pin-badge-hidden'}${step.storeScope==='global' ? ' step-pin-badge-global' : ''}" data-store-as="${escHtml(step.storeAs||'')}" data-store-scope="${escHtml(step.storeScope||'session')}" data-store-source="${escHtml(step.storeSource||'text')}" data-store-attr="${escHtml(step.storeAttrName||'')}">
+      <span class="pin-badge-label">${step.storeScope==='global' ? '🌐' : '📌'} Saved as <code>{{var.${escHtml(step.storeAs||'')}}}</code><span class="pin-scope-tag">${step.storeScope==='global' ? 'Global' : 'Session'}</span></span>
       <button type="button" class="pin-badge-clear" onclick="scriptStepPinClear(this)" title="Remove variable">✕</button>
     </div>
     <div class="se-step-auto-badge"${isAuto ? '' : ' style="display:none"'}>
@@ -1510,7 +1636,7 @@ function scriptAddStep(step = {}, insertBeforeRow = null) {
         </div>
         <div style="display:flex;gap:6px;align-items:start">
           <div class="field" style="margin:0;flex-shrink:0;width:130px"><label style="font-size:11px">Locator Type</label>
-            <select class="fm-select se-step-loc-type" style="font-size:11.5px">${locTypeOpts}</select>
+            <select class="fm-select se-step-loc-type" style="font-size:11.5px">${_locTypeOptsHtml}</select>
           </div>
           <div class="field" style="margin:0;flex:1"><label style="font-size:11px">Locator Value</label>
             <input class="fm-input se-step-selector" style="flex:1;font-size:12px;font-family:monospace"
@@ -1631,9 +1757,23 @@ function scriptAddStep(step = {}, insertBeforeRow = null) {
                    placeholder="e.g. patientId" value="${escHtml(step.storeAs||'')}"
                    oninput="_setVarNameHint(this)" pattern="[A-Za-z0-9_]+" title="Letters, numbers and _ only"/>
           </div>
+          <div class="field" style="margin:0;min-width:160px">
+            <label style="font-size:11px">Scope</label>
+            <div class="setvar-scope-toggle">
+              <label class="setvar-scope-opt${(step.storeScope||'session')==='session'?' active':''}">
+                <input type="radio" name="setvar-scope-${step.id||'new'}" class="se-setvar-scope" value="session" ${(step.storeScope||'session')==='session'?'checked':''} onchange="_setVarScopeChanged(this)"/>
+                📌 Session
+              </label>
+              <label class="setvar-scope-opt${step.storeScope==='global'?' active':''}">
+                <input type="radio" name="setvar-scope-${step.id||'new'}" class="se-setvar-scope" value="global" ${step.storeScope==='global'?'checked':''} onchange="_setVarScopeChanged(this)"/>
+                🌐 Global
+              </label>
+            </div>
+          </div>
         </div>
         <div class="setvar-hint" style="font-size:11px;color:var(--neutral-500);margin-top:5px;display:${step.storeAs?'block':'none'}">
           Use <code>{{var.${escHtml(step.storeAs||'')}}}</code> in any later step's value field
+          <span class="setvar-scope-hint">${step.storeScope==='global' ? ' — 🌐 visible across all scripts in this suite' : ' — 📌 visible only within this script'}</span>
         </div>
         <div class="se-setvar-js-wrap" style="${step.storeSource==='js'?'margin-top:6px':'display:none'}">
           <label style="font-size:11px">JavaScript Expression</label>
@@ -1646,13 +1786,29 @@ function scriptAddStep(step = {}, insertBeforeRow = null) {
              value="${escHtml(step.description ?? '')}" />
     </div>`;
 
+  // Set keyword + locator type selections via JS (avoids per-step option string rebuild)
+  row.querySelector('.se-step-kw-select').value = step.keyword || '';
+  row.querySelector('.se-step-loc-type').value  = step.locatorType || 'css';
+
+  // Sync-fail badge — shown when this step's locator failed to sync on last save
+  if (step.locatorName && _syncFailedLocators.has(step.locatorName)) {
+    const locField = row.querySelector('.se-step-locator .field');
+    if (locField) {
+      const badge = document.createElement('span');
+      badge.className = 'sync-fail-step-badge';
+      badge.title = `"${step.locatorName}" could not be saved to the Locator Repository. Open Locator Repository to add it manually.`;
+      badge.textContent = '⚠ Repo sync failed';
+      locField.appendChild(badge);
+    }
+  }
+
   if (insertBeforeRow) {
     container.insertBefore(row, insertBeforeRow);
   } else {
     container.appendChild(row);
   }
   scriptStepKwChange(row.querySelector('.se-step-kw-select'));
-  scriptReorderNums();
+  if (!_skipReorder) scriptReorderNums();
   // If restoring a commondata step, pre-load CD options
   if (valMode === 'commondata') _loadCdOptions(row);
   // If restoring a variable step, pre-load variable options
@@ -1937,34 +2093,69 @@ function scriptStepToggleVal(btn, mode) {
 function _loadVarOptions(row) {
   const sel = row.querySelector('.se-step-var-select');
   if (!sel) return;
-  // Collect all storeAs names from steps that come BEFORE this row
   const container = document.getElementById('se-steps-container');
   if (!container) return;
-  const allRows  = [...container.querySelectorAll('.script-step-row')];
-  const thisIdx  = allRows.indexOf(row);
-  const vars = [];
+  const allRows = [...container.querySelectorAll('.script-step-row')];
+  const thisIdx = allRows.indexOf(row);
+
+  // Session vars — only from EARLIER steps in THIS script
+  const sessionVars = [];
   for (let i = 0; i < thisIdx; i++) {
     const badge = allRows[i].querySelector('.step-pin-badge');
-    if (badge && badge.dataset.storeAs) vars.push(badge.dataset.storeAs);
-    // Also from SET VARIABLE steps
+    if (badge && badge.dataset.storeAs && badge.dataset.storeScope !== 'global') {
+      sessionVars.push(badge.dataset.storeAs);
+    }
     const kw = allRows[i].querySelector('.se-step-kw-select')?.value || '';
     if (kw === 'SET VARIABLE') {
-      const n = allRows[i].querySelector('.se-setvar-name')?.value?.trim();
-      if (n) vars.push(n);
+      const scope = allRows[i].querySelector('.se-setvar-scope:checked')?.value || 'session';
+      if (scope !== 'global') {
+        const n = allRows[i].querySelector('.se-setvar-name')?.value?.trim();
+        if (n) sessionVars.push(n);
+      }
     }
   }
+
+  // Global vars — from ALL steps in ALL scripts (any index), storeScope === 'global'
+  const globalVars = [];
+  allRows.forEach(r => {
+    const badge = r.querySelector('.step-pin-badge');
+    if (badge && badge.dataset.storeAs && badge.dataset.storeScope === 'global') {
+      if (!globalVars.includes(badge.dataset.storeAs)) globalVars.push(badge.dataset.storeAs);
+    }
+    const kw = r.querySelector('.se-step-kw-select')?.value || '';
+    if (kw === 'SET VARIABLE') {
+      const scope = r.querySelector('.se-setvar-scope:checked')?.value || 'session';
+      if (scope === 'global') {
+        const n = r.querySelector('.se-setvar-name')?.value?.trim();
+        if (n && !globalVars.includes(n)) globalVars.push(n);
+      }
+    }
+  });
+
   const savedVal = sel.dataset.savedVar || sel.value || '';
   const noHint   = row.querySelector('.var-no-vars-hint');
   const useHint  = row.querySelector('.var-usage-hint');
-  if (!vars.length) {
+
+  if (!sessionVars.length && !globalVars.length) {
     sel.innerHTML = '<option value="">— no variables yet —</option>';
     if (noHint) noHint.style.display = '';
     if (useHint) useHint.style.display = 'none';
     return;
   }
   if (noHint) noHint.style.display = 'none';
-  sel.innerHTML = '<option value="">— pick a variable —</option>' +
-    vars.map(v => `<option value="${escHtml(v)}"${v===savedVal?' selected':''}>${escHtml(v)}</option>`).join('');
+
+  let html = '<option value="">— pick a variable —</option>';
+  if (sessionVars.length) {
+    html += `<optgroup label="📌 This Script (session)">`;
+    html += sessionVars.map(v => `<option value="${escHtml(v)}"${v===savedVal?' selected':''}>${escHtml(v)}</option>`).join('');
+    html += `</optgroup>`;
+  }
+  if (globalVars.length) {
+    html += `<optgroup label="🌐 Suite — all scripts (global)">`;
+    html += globalVars.map(v => `<option value="${escHtml(v)}"${v===savedVal?' selected':''}>${escHtml(v)}</option>`).join('');
+    html += `</optgroup>`;
+  }
+  sel.innerHTML = html;
   sel.dataset.savedVar = '';
   _varSelectChanged(sel);
 }
@@ -1983,32 +2174,86 @@ function _varSelectChanged(sel) {
 // ── 📌 Pin icon handlers ───────────────────────────────────────────────────────
 
 function scriptStepPinOpen(btn) {
-  const row    = btn.closest('.script-step-row');
-  const badge  = row.querySelector('.step-pin-badge');
-  const curName = badge?.dataset.storeAs || '';
-  const name = window.prompt('Save this step\'s value as a variable.\n\nEnter a variable name (letters, numbers, _ only):\ne.g. patientId, orderId, searchTerm', curName);
-  if (name === null) return; // cancelled
-  const clean = name.trim().replace(/[^A-Za-z0-9_]/g, '');
-  if (!clean) {
-    // Treat empty as "clear pin"
-    scriptStepPinClear(btn);
-    return;
-  }
-  // Save into badge dataset
-  if (badge) {
-    badge.dataset.storeAs = clean;
-    badge.querySelector('.pin-badge-label').innerHTML = `📌 Saved as <code>{{var.${escHtml(clean)}}}</code>`;
-    badge.classList.remove('step-pin-badge-hidden');
-  }
-  btn.classList.add('step-pin-active');
+  const row      = btn.closest('.script-step-row');
+  const badge    = row.querySelector('.step-pin-badge');
+  const curName  = badge?.dataset.storeAs || '';
+  const curScope = badge?.dataset.storeScope || 'session';
+
+  // Build inline modal
+  const existing = document.getElementById('pin-modal-overlay');
+  if (existing) existing.remove();
+
+  const overlay = document.createElement('div');
+  overlay.id = 'pin-modal-overlay';
+  overlay.innerHTML = `
+    <div class="pin-modal-box">
+      <div class="pin-modal-title">📌 Save Step Value as Variable</div>
+      <div class="pin-modal-body">
+        <label style="font-size:11px;font-weight:600">Variable Name</label>
+        <input id="pin-modal-name" class="fm-input" style="font-size:13px;font-family:monospace;margin-top:4px"
+               placeholder="e.g. patientId" value="${escHtml(curName)}" pattern="[A-Za-z0-9_]+" autocomplete="off"/>
+        <div style="margin-top:10px">
+          <label style="font-size:11px;font-weight:600;display:block;margin-bottom:6px">Scope</label>
+          <div class="setvar-scope-toggle">
+            <label class="setvar-scope-opt${curScope==='session'?' active':''}">
+              <input type="radio" name="pin-scope" value="session" ${curScope==='session'?'checked':''}/> 📌 Session
+              <span style="font-size:10px;display:block;color:var(--neutral-500);margin-top:2px">This script only</span>
+            </label>
+            <label class="setvar-scope-opt${curScope==='global'?' active':''}">
+              <input type="radio" name="pin-scope" value="global" ${curScope==='global'?'checked':''}/> 🌐 Global
+              <span style="font-size:10px;display:block;color:var(--neutral-500);margin-top:2px">All scripts in suite</span>
+            </label>
+          </div>
+        </div>
+      </div>
+      <div class="pin-modal-actions">
+        <button type="button" class="tbl-btn" id="pin-modal-cancel">Cancel</button>
+        <button type="button" class="tbl-btn tbl-btn-primary" id="pin-modal-save">Save Variable</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  // Scope radio active style
+  overlay.querySelectorAll('input[name="pin-scope"]').forEach(r => {
+    r.addEventListener('change', () => {
+      overlay.querySelectorAll('.setvar-scope-opt').forEach(l => l.classList.remove('active'));
+      r.closest('.setvar-scope-opt')?.classList.add('active');
+    });
+  });
+
+  document.getElementById('pin-modal-cancel').onclick = () => overlay.remove();
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+
+  document.getElementById('pin-modal-save').onclick = () => {
+    const nameVal  = document.getElementById('pin-modal-name').value.trim().replace(/[^A-Za-z0-9_]/g, '');
+    const scopeVal = overlay.querySelector('input[name="pin-scope"]:checked')?.value || 'session';
+    overlay.remove();
+    if (!nameVal) { scriptStepPinClear(btn); return; }
+    if (badge) {
+      badge.dataset.storeAs    = nameVal;
+      badge.dataset.storeScope = scopeVal;
+      const icon = scopeVal === 'global' ? '🌐' : '📌';
+      const scopeTag = scopeVal === 'global' ? 'Global' : 'Session';
+      badge.querySelector('.pin-badge-label').innerHTML =
+        `${icon} Saved as <code>{{var.${escHtml(nameVal)}}}</code><span class="pin-scope-tag">${scopeTag}</span>`;
+      badge.classList.remove('step-pin-badge-hidden');
+      badge.classList.toggle('step-pin-badge-global', scopeVal === 'global');
+    }
+    btn.classList.add('step-pin-active');
+  };
+
+  // Focus the name input
+  setTimeout(() => document.getElementById('pin-modal-name')?.focus(), 50);
 }
 
 function scriptStepPinClear(btn) {
   const row   = btn.closest('.script-step-row');
   const badge = row.querySelector('.step-pin-badge');
   if (badge) {
-    badge.dataset.storeAs = '';
+    badge.dataset.storeAs    = '';
+    badge.dataset.storeScope = 'session';
     badge.classList.add('step-pin-badge-hidden');
+    badge.classList.remove('step-pin-badge-global');
   }
   row.querySelector('.step-pin-icon')?.classList.remove('step-pin-active');
 }
@@ -2034,6 +2279,19 @@ function _setVarNameHint(inp) {
   const v = inp.value.trim();
   if (v) { code.textContent = `{{var.${v}}}`; hint.style.display = 'block'; }
   else   { hint.style.display = 'none'; }
+}
+
+function _setVarScopeChanged(radio) {
+  const row       = radio.closest('.script-step-row');
+  const isGlobal  = radio.value === 'global';
+  // Update active style on scope labels
+  row.querySelectorAll('.setvar-scope-opt').forEach(l => l.classList.remove('active'));
+  radio.closest('.setvar-scope-opt')?.classList.add('active');
+  // Update hint text
+  const scopeHint = row.querySelector('.setvar-scope-hint');
+  if (scopeHint) scopeHint.textContent = isGlobal
+    ? ' — 🌐 visible across all scripts in this suite'
+    : ' — 📌 visible only within this script';
 }
 
 // ── FILE CHOOSER widget ───────────────────────────────────────────────────────
@@ -2319,7 +2577,7 @@ function scriptStepClone(btn) {
     description:   row.querySelector('.se-step-desc')?.value?.trim() || '',
     screenshot:    row.querySelector('.se-step-screenshot')?.checked || false,
     storeAs:       badge?.dataset.storeAs || undefined,
-    storeScope:    badge?.dataset.storeAs ? 'session' : undefined,
+    storeScope:    badge?.dataset.storeAs ? (badge.dataset.storeScope || 'session') : undefined,
     storeSource:   row.querySelector('.se-setvar-source')?.value || undefined,
     storeAttrName: row.querySelector('.se-setvar-attr')?.value?.trim() || undefined,
   };
@@ -2427,7 +2685,9 @@ async function scriptSave() {
       description:   row.querySelector('.se-step-desc')?.value?.trim() || '',
       screenshot:    row.querySelector('.se-step-screenshot')?.checked || false,
       storeAs:       isSetVar ? storeVarName : (storeAs || undefined),
-      storeScope:    (isSetVar || storeAs) ? 'session' : undefined,
+      storeScope:    isSetVar
+        ? (row.querySelector('.se-setvar-scope:checked')?.value || 'session')
+        : (storeAs ? (badge?.dataset.storeScope || 'session') : undefined),
       storeSource:   isSetVar ? storeSource : undefined,
       storeAttrName: storeAttr || undefined,
     };
@@ -2450,45 +2710,84 @@ async function scriptSave() {
   const data   = await res.json();
   if (!res.ok) { modAlert('script-editor-alert', 'error', data.error || 'Error saving script'); return; }
 
-  // Auto-sync locators to Locator Repository
-  await _syncLocatorsToRepo(steps);
-
+  // Close editor + refresh list immediately — don't wait for locator sync
+  const stepsForSync = steps;
+  _syncFailedLocators.clear();
   scriptEditorClose();
   await scriptLoad();
+
+  // Background locator sync — surfaces failures as banner + step badges on re-open
+  _syncLocatorsToRepo(stepsForSync).then(failed => {
+    if (failed.length) {
+      _syncFailedLocators = new Set(failed);
+      _showSyncFailBanner(failed, 'script');
+    }
+  }).catch(() => {});
 }
 
 async function _syncLocatorsToRepo(steps) {
-  for (const step of steps) {
-    if (!step.locatorName || !step.locator) continue;
-    // Check if locator with same name already exists
-    const existing = allLocators.find(l => l.name === step.locatorName);
-    if (existing) {
-      // Update if selector or type changed
-      if (existing.selector !== step.locator || existing.selectorType !== step.locatorType) {
-        await fetch(`/api/locators/${existing.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ selector: step.locator, selectorType: step.locatorType }),
-        });
+  const failed = [];
+  const tasks = steps
+    .filter(step => step.locatorName && step.locator)
+    .map(async step => {
+      try {
+        const existing = allLocators.find(l => l.name === step.locatorName);
+        if (existing) {
+          if (existing.selector !== step.locator || existing.selectorType !== step.locatorType) {
+            const res = await fetch(`/api/locators/${existing.id}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ selector: step.locator, selectorType: step.locatorType }),
+            });
+            if (!res.ok) failed.push(step.locatorName);
+          }
+        } else {
+          const res = await fetch('/api/locators', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              name: step.locatorName,
+              selector: step.locator,
+              selectorType: step.locatorType,
+              projectId: currentProjectId || null,
+              pageModule: '',
+              description: `Auto-synced from step: ${step.description || ''}`.trim(),
+            }),
+          });
+          if (!res.ok) failed.push(step.locatorName);
+        }
+      } catch {
+        failed.push(step.locatorName);
       }
-    } else {
-      // Create new locator in repo
-      await fetch('/api/locators', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: step.locatorName,
-          selector: step.locator,
-          selectorType: step.locatorType,
-          projectId: currentProjectId || null,
-          pageModule: '',
-          description: `Auto-synced from script step: ${step.description || ''}`.trim(),
-        }),
-      });
-    }
-  }
-  // Refresh locator list after sync
-  await locatorLoadScoped();
+    });
+  await Promise.all(tasks);
+  try { await locatorLoadScoped(); } catch { /* non-fatal */ }
+  return failed;
+}
+
+function _showSyncFailBanner(failedNames, context) {
+  // Remove any stale banner first
+  document.getElementById('locator-sync-fail-banner')?.remove();
+
+  const count   = failedNames.length;
+  const names   = failedNames.map(n => `<strong>${escHtml(n)}</strong>`).join(', ');
+  const subject = context === 'function' ? 'Function' : 'Script';
+  const panelId = context === 'function' ? 'panel-functions' : 'panel-scripts';
+
+  const banner = document.createElement('div');
+  banner.id        = 'locator-sync-fail-banner';
+  banner.className = 'sync-fail-banner';
+  banner.innerHTML = `
+    <span class="sync-fail-icon">⚠</span>
+    <span class="sync-fail-msg">
+      ${subject} saved — <strong>${count}</strong> locator${count > 1 ? 's' : ''} failed to sync to Locator Repository: ${names}.
+      Open the <strong>Locator Repository</strong> tab to add ${count > 1 ? 'them' : 'it'} manually,
+      or re-open this ${subject.toLowerCase()} to see the affected step${count > 1 ? 's' : ''} highlighted.
+    </span>
+    <button class="sync-fail-close" onclick="this.closest('.sync-fail-banner').remove()" title="Dismiss">✕</button>`;
+
+  const panel = document.getElementById(panelId);
+  if (panel) panel.prepend(banner);
 }
 
 async function scriptDelete(id, title) {
@@ -2505,6 +2804,180 @@ let allSuites      = [];
 let editingSuiteId = null;
 let currentSuiteId = null;
 
+// ── Suite Hooks state ─────────────────────────────────────────────────────────
+let _hookBefore    = []; // [{ keyword, locator, value, description }]
+let _hookAfter     = [];
+let _hookFastMode  = []; // login steps for Fast Mode beforeAll
+
+// Keywords allowed in hooks (excludes CALL FUNCTION, GOTO, SET VARIABLE, DATE TOKEN, CALL API, file keywords)
+const HOOK_EXCLUDED_KW = new Set([
+  'CALL FUNCTION','GOTO','SET VARIABLE','DATE TOKEN','CALL API',
+  'ASSERT FILE DOWNLOADED','ASSERT DOWNLOAD COUNT','READ EXCEL VALUE',
+  'ASSERT EXCEL ROW COUNT','READ PDF TEXT',
+]);
+
+function _hookKeywords() {
+  const all = [];
+  for (const cat of (scriptKeywords.categories || [])) {
+    for (const kw of (cat.keywords || [])) {
+      if (!HOOK_EXCLUDED_KW.has(kw.key)) all.push(kw);
+    }
+  }
+  return all;
+}
+
+function fastModeToggle() {
+  const on = document.getElementById('sm-fast-mode')?.checked;
+  const body = document.getElementById('sm-fast-mode-body');
+  if (body) body.style.display = on ? '' : 'none';
+}
+
+function _hookRender(which) {
+  const arr     = which === 'before' ? _hookBefore : which === 'after' ? _hookAfter : _hookFastMode;
+  const listId  = which === 'fastmode' ? 'hook-fastmode-list'  : `hook-${which}-list`;
+  const emptyId = which === 'fastmode' ? 'hook-fastmode-empty' : `hook-${which}-empty`;
+  const listEl  = document.getElementById(listId);
+  const emptyEl = document.getElementById(emptyId);
+  if (!listEl) return;
+
+  // Remove all step rows (keep the empty placeholder)
+  listEl.querySelectorAll('.hook-step-row').forEach(el => el.remove());
+
+  if (arr.length === 0) {
+    if (emptyEl) emptyEl.style.display = '';
+    return;
+  }
+  if (emptyEl) emptyEl.style.display = 'none';
+
+  const kws = _hookKeywords();
+  arr.forEach((step, idx) => {
+    const kw      = kws.find(k => k.key === step.keyword) || null;
+    const needLoc = kw ? kw.needsLocator : true;
+    const needVal = kw ? kw.needsValue   : true;
+    const valHint = kw ? (kw.valueHint || '') : '';
+
+    const row = document.createElement('div');
+    row.className = 'hook-step-row';
+    row.dataset.which = which;
+    row.dataset.idx   = idx;
+    row.innerHTML = `
+      <div class="hook-step-num">${idx + 1}</div>
+      <select class="hook-kw-sel fm-input" style="flex:0 0 160px;font-size:12px" onchange="_hookKwChange('${which}',${idx},this)">
+        ${kws.map(k => `<option value="${escHtml(k.key)}"${k.key === step.keyword ? ' selected' : ''}>${escHtml(k.label)}</option>`).join('')}
+      </select>
+      <input class="hook-loc-inp fm-input" style="flex:1;font-size:12px;${needLoc?'':'opacity:.4'}" placeholder="Locator / selector"
+             value="${escHtml(step.locator || '')}" ${needLoc?'':'disabled'}
+             oninput="_hookFieldChange('${which}',${idx},'locator',this.value)" />
+      <input class="hook-val-inp fm-input" style="flex:1;font-size:12px;${needVal?'':'opacity:.4'}" placeholder="${escHtml(valHint || 'Value')}"
+             value="${escHtml(step.value || '')}" ${needVal?'':'disabled'}
+             oninput="_hookFieldChange('${which}',${idx},'value',this.value)" />
+      <input class="hook-desc-inp fm-input" style="flex:1;font-size:12px" placeholder="Description (optional)"
+             value="${escHtml(step.description || '')}"
+             oninput="_hookFieldChange('${which}',${idx},'description',this.value)" />
+      <button class="tbl-btn del" title="Remove step" onclick="_hookRemoveStep('${which}',${idx})">✕</button>
+    `;
+    listEl.appendChild(row);
+  });
+}
+
+function hookAddStep(which) {
+  const arr = which === 'before' ? _hookBefore : which === 'after' ? _hookAfter : _hookFastMode;
+  const kws = _hookKeywords();
+  const first = kws[0];
+  arr.push({ keyword: first?.key || 'CLICK', locator: '', value: '', description: '' });
+  _hookRender(which);
+}
+
+function _hookRemoveStep(which, idx) {
+  const arr = which === 'before' ? _hookBefore : which === 'after' ? _hookAfter : _hookFastMode;
+  arr.splice(idx, 1);
+  _hookRender(which);
+}
+
+function _hookFieldChange(which, idx, field, val) {
+  const arr = which === 'before' ? _hookBefore : which === 'after' ? _hookAfter : _hookFastMode;
+  if (arr[idx]) arr[idx][field] = val;
+}
+
+function _hookKwChange(which, idx, sel) {
+  const arr = which === 'before' ? _hookBefore : which === 'after' ? _hookAfter : _hookFastMode;
+  if (arr[idx]) arr[idx].keyword = sel.value;
+  _hookRender(which); // re-render to update locator/value enabled state
+}
+
+function _hookInit(beforeSteps, afterSteps, fastModeOn, fastSteps) {
+  _hookBefore   = (beforeSteps || []).map(s => ({ keyword: s.keyword || 'CLICK', locator: s.locator || '', value: s.value || '', description: s.description || '' }));
+  _hookAfter    = (afterSteps  || []).map(s => ({ keyword: s.keyword || 'CLICK', locator: s.locator || '', value: s.value || '', description: s.description || '' }));
+  _hookFastMode = (fastSteps   || []).map(s => ({ keyword: s.keyword || 'FILL',  locator: s.locator || '', value: s.value || '', description: s.description || '' }));
+  const chk  = document.getElementById('sm-fast-mode');
+  const body = document.getElementById('sm-fast-mode-body');
+  if (chk)  chk.checked = !!fastModeOn;
+  if (body) body.style.display = fastModeOn ? '' : 'none';
+  _hookRender('before');
+  _hookRender('after');
+  _hookRender('fastmode');
+}
+
+// ── Overlay Handlers state ────────────────────────────────────────────────────
+let _overlayHandlers = []; // [{ type, action, text }]
+
+function overlayAddHandler() {
+  _overlayHandlers.push({ type: 'any', action: 'accept', text: '' });
+  _overlayRender();
+}
+
+function _overlayRemove(idx) {
+  _overlayHandlers.splice(idx, 1);
+  _overlayRender();
+}
+
+function _overlayChange(idx, field, val) {
+  if (_overlayHandlers[idx]) _overlayHandlers[idx][field] = val;
+  if (field === 'action') _overlayRender(); // re-render to show/hide text field
+}
+
+function _overlayRender() {
+  const listEl  = document.getElementById('overlay-handler-list');
+  const emptyEl = document.getElementById('overlay-handler-empty');
+  if (!listEl) return;
+  listEl.querySelectorAll('.overlay-row').forEach(el => el.remove());
+
+  if (_overlayHandlers.length === 0) {
+    if (emptyEl) emptyEl.style.display = '';
+    return;
+  }
+  if (emptyEl) emptyEl.style.display = 'none';
+
+  _overlayHandlers.forEach((h, idx) => {
+    const showText = h.action === 'accept' && h.type === 'prompt';
+    const row = document.createElement('div');
+    row.className = 'overlay-row hook-step-row';
+    row.innerHTML = `
+      <div class="hook-step-num">${idx + 1}</div>
+      <select class="fm-input" style="flex:0 0 110px;font-size:12px" onchange="_overlayChange(${idx},'type',this.value)">
+        <option value="any"     ${h.type==='any'     ?'selected':''}>Any dialog</option>
+        <option value="alert"   ${h.type==='alert'   ?'selected':''}>alert()</option>
+        <option value="confirm" ${h.type==='confirm' ?'selected':''}>confirm()</option>
+        <option value="prompt"  ${h.type==='prompt'  ?'selected':''}>prompt()</option>
+      </select>
+      <span style="font-size:12px;color:var(--neutral-500);flex:0 0 auto">&#8594;</span>
+      <select class="fm-input" style="flex:0 0 100px;font-size:12px" onchange="_overlayChange(${idx},'action',this.value)">
+        <option value="accept"  ${h.action==='accept' ?'selected':''}>Accept</option>
+        <option value="dismiss" ${h.action==='dismiss'?'selected':''}>Dismiss</option>
+      </select>
+      <input class="fm-input" style="flex:1;font-size:12px;display:${showText?'block':'none'}" placeholder="Prompt text (optional)"
+             value="${escHtml(h.text||'')}" oninput="_overlayChange(${idx},'text',this.value)" />
+      <button class="tbl-btn del" onclick="_overlayRemove(${idx})" title="Remove">✕</button>
+    `;
+    listEl.appendChild(row);
+  });
+}
+
+function _overlayInit(handlers) {
+  _overlayHandlers = (handlers || []).map(h => ({ type: h.type || 'any', action: h.action || 'accept', text: h.text || '' }));
+  _overlayRender();
+}
+
 async function suiteLoad() {
   const emptyEl = document.getElementById('suite-list-empty');
   const listEl  = document.getElementById('suite-list');
@@ -2517,6 +2990,7 @@ async function suiteLoad() {
   const res = await fetch(`/api/suites?projectId=${encodeURIComponent(currentProjectId)}`);
   allSuites = await res.json();
   suiteRender();
+  execLoad(); // keep execution tab suite dropdown in sync
 }
 
 function suiteRender() {
@@ -2529,15 +3003,14 @@ function suiteRender() {
   emptyEl.style.display = 'none';
   if (!filtered.length) { listEl.innerHTML = '<div class="builder-hint">No suites match the filter.</div>'; return; }
   listEl.innerHTML = filtered.map(s => `
-    <div class="suite-card" onclick="suiteOpenDetail('${escHtml(s.id)}')">
+    <div class="suite-card">
       <div class="suite-card-header">
         <div style="flex:1">
           <div class="suite-name">${escHtml(s.name)}</div>
           ${s.description ? `<div style="font-size:12.5px;color:var(--neutral-500);margin-top:3px">${escHtml(s.description)}</div>` : ''}
           <div class="suite-meta">${(s.scriptIds||[]).length} script${(s.scriptIds||[]).length !== 1 ? 's' : ''} · By ${escHtml(s.createdBy || '—')} · ${formatDate(s.createdAt)}</div>
         </div>
-        <div style="flex-shrink:0;display:flex;gap:6px;align-items:center" onclick="event.stopPropagation()">
-          <button class="tbl-btn run-btn" data-suite-run="${escHtml(s.id)}" onclick="suiteRunFromCard('${escHtml(s.id)}',this)">&#9654; Run</button>
+        <div style="flex-shrink:0;display:flex;gap:6px;align-items:center">
           <button class="tbl-btn" onclick="suiteEditById('${escHtml(s.id)}')">Edit</button>
           <button class="tbl-btn del" onclick="suiteDelete('${escHtml(s.id)}','${escHtml(s.name)}')">Delete</button>
         </div>
@@ -2560,14 +3033,387 @@ function _populateEnvDropdown(selectedEnvId = '') {
   });
 }
 
+// ── Suite Modal — state ───────────────────────────────────────────────────────
+let _smSelectedIds  = [];   // ordered list of selected script ids (Zone B)
+let _smCheckedIds   = new Set(); // checkboxes ticked in Zone A (for bulk-add)
+let _smPage         = 1;
+let _smPageSize     = 10;
+let _smSortCol      = 'tcid';
+let _smSortDir      = 'asc';  // 'asc' | 'desc'
+let _smFiltered     = [];   // filtered+sorted slice of allScripts for Zone A
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function _smTcId(s) { return s.tcId || s.id || ''; }
+
+function _smApplyFilter() {
+  const qTcid  = (document.getElementById('sm-filter-tcid')?.value      ?? '').toLowerCase().trim();
+  const qTitle = (document.getElementById('sm-filter-title')?.value     ?? '').toLowerCase().trim();
+  const qComp  = (document.getElementById('sm-filter-component')?.value ?? '').toLowerCase().trim();
+  const qTag   = (document.getElementById('sm-filter-tag')?.value       ?? '').toLowerCase().trim();
+  let list = allScripts.filter(s => {
+    if (qTcid  && !(_smTcId(s)).toLowerCase().includes(qTcid))         return false;
+    if (qTitle && !(s.title     || '').toLowerCase().includes(qTitle))  return false;
+    if (qComp  && !(s.component || '').toLowerCase().includes(qComp))   return false;
+    if (qTag   && !(s.tag       || '').toLowerCase().includes(qTag))    return false;
+    return true;
+  });
+  // Sort
+  list.sort((a, b) => {
+    let va, vb;
+    if (_smSortCol === 'tcid')      { va = _smTcId(a);     vb = _smTcId(b); }
+    else if (_smSortCol === 'title')     { va = a.title     || ''; vb = b.title     || ''; }
+    else if (_smSortCol === 'component') { va = a.component || ''; vb = b.component || ''; }
+    else                                 { va = _smTcId(a);        vb = _smTcId(b); }
+    const cmp = va.localeCompare(vb, undefined, { numeric: true });
+    return _smSortDir === 'asc' ? cmp : -cmp;
+  });
+  _smFiltered = list;
+  _smPage = 1;  // reset to first page on filter/sort change
+}
+
+function _smRenderSortIndicators() {
+  ['tcid','title','component'].forEach(col => {
+    const el = document.getElementById(`sm-sort-${col}`);
+    if (!el) return;
+    if (col === _smSortCol) el.textContent = _smSortDir === 'asc' ? '▲' : '▼';
+    else el.textContent = '';
+  });
+}
+
+function _smRenderZoneA() {
+  const el = document.getElementById('sm-script-list');
+  if (!el) return;
+
+  const totalPages = Math.max(1, Math.ceil(_smFiltered.length / _smPageSize));
+  if (_smPage > totalPages) _smPage = totalPages;
+  const start = (_smPage - 1) * _smPageSize;
+  const page  = _smFiltered.slice(start, start + _smPageSize);
+
+  // Count label
+  const countEl = document.getElementById('sm-script-count');
+  if (countEl) countEl.textContent = `${_smFiltered.length} script${_smFiltered.length !== 1 ? 's' : ''}`;
+
+  // Pagination controls
+  const prevBtn = document.getElementById('sm-prev-btn');
+  const nextBtn = document.getElementById('sm-next-btn');
+  const pageLabel = document.getElementById('sm-page-label');
+  if (prevBtn)  prevBtn.disabled  = _smPage <= 1;
+  if (nextBtn)  nextBtn.disabled  = _smPage >= totalPages;
+  if (pageLabel) pageLabel.textContent = `Page ${_smPage} of ${totalPages}`;
+
+  if (!page.length) {
+    el.innerHTML = `<div style="padding:12px 10px;color:var(--neutral-400);font-size:13px;text-align:center">${allScripts.length ? 'No scripts match the search.' : 'No scripts in this project yet.'}</div>`;
+    _smUpdateBulkBar();
+    return;
+  }
+
+  const selectedSet = new Set(_smSelectedIds);
+  // Remove checked ids that are no longer on the current page (page changed / filter changed)
+  const pageIds = new Set(page.map(s => s.id));
+  _smCheckedIds = new Set([..._smCheckedIds].filter(id => pageIds.has(id)));
+
+  el.innerHTML = page.map(s => {
+    const already  = selectedSet.has(s.id);
+    const checked  = _smCheckedIds.has(s.id);
+    return `<div style="display:grid;grid-template-columns:32px 110px 1fr 130px 110px;align-items:center;border-bottom:1px solid var(--neutral-100);${already ? 'opacity:.45;' : ''}"
+                 onmouseover="this.style.background='var(--brand-light)'" onmouseout="this.style.background=''">
+      <div style="padding:7px 8px;display:flex;align-items:center;justify-content:center">
+        <input type="checkbox" class="sm-row-chk" data-id="${escHtml(s.id)}"
+               ${checked ? 'checked' : ''} ${already ? 'disabled' : ''}
+               onchange="smRowCheckChange(this)" />
+      </div>
+      <div style="padding:7px 10px;font-size:12px;color:var(--neutral-500);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(_smTcId(s))}</div>
+      <div style="padding:7px 10px;font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(s.title)}">${escHtml(s.title)}</div>
+      <div style="padding:7px 10px;font-size:12px;color:var(--neutral-500);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(s.component || '—')}</div>
+      <div style="padding:7px 10px;font-size:12px;color:var(--neutral-500);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(s.tag || '—')}</div>
+    </div>`;
+  }).join('');
+
+  // Sync select-all checkbox state
+  const allChk = document.getElementById('sm-chk-all');
+  if (allChk) {
+    const available = page.filter(s => !selectedSet.has(s.id));
+    const checkedCount = available.filter(s => _smCheckedIds.has(s.id)).length;
+    allChk.checked       = available.length > 0 && checkedCount === available.length;
+    allChk.indeterminate = checkedCount > 0 && checkedCount < available.length;
+  }
+  _smUpdateBulkBar();
+}
+
+let _smbCheckedIds = new Set(); // checkboxes ticked in Zone B (for bulk-remove)
+
+function _smbUpdateBulkBar() {
+  const bar     = document.getElementById('smb-bulk-bar');
+  const countEl = document.getElementById('smb-bulk-count');
+  const n = _smbCheckedIds.size;
+  if (!bar) return;
+  if (n > 0) {
+    bar.style.display = 'flex';
+    if (countEl) countEl.textContent = `${n} selected`;
+  } else {
+    bar.style.display = 'none';
+  }
+}
+
+function smbRowCheckChange(chk) {
+  const id = chk.dataset.id;
+  if (chk.checked) _smbCheckedIds.add(id);
+  else             _smbCheckedIds.delete(id);
+  // Sync select-all checkbox
+  const allChk = document.getElementById('smb-chk-all');
+  if (allChk) {
+    const n = _smSelectedIds.length;
+    const checked = _smbCheckedIds.size;
+    allChk.checked       = n > 0 && checked === n;
+    allChk.indeterminate = checked > 0 && checked < n;
+  }
+  _smbUpdateBulkBar();
+}
+
+function smbToggleSelectAll() {
+  const allChk = document.getElementById('smb-chk-all');
+  if (allChk?.checked) {
+    _smSelectedIds.forEach(id => _smbCheckedIds.add(id));
+  } else {
+    _smbCheckedIds.clear();
+  }
+  document.querySelectorAll('#sm-selected-list .smb-row-chk').forEach(chk => {
+    chk.checked = _smbCheckedIds.has(chk.dataset.id);
+  });
+  _smbUpdateBulkBar();
+}
+
+function smbRemoveSelected() {
+  if (!_smbCheckedIds.size) return;
+  _smSelectedIds = _smSelectedIds.filter(id => !_smbCheckedIds.has(id));
+  _smbCheckedIds.clear();
+  _smRenderZoneA();  // re-enable Add buttons for removed scripts
+  _smRenderZoneB();
+}
+
+function smbDeselectAll() {
+  _smbCheckedIds.clear();
+  document.querySelectorAll('#sm-selected-list .smb-row-chk').forEach(chk => { chk.checked = false; });
+  const allChk = document.getElementById('smb-chk-all');
+  if (allChk) { allChk.checked = false; allChk.indeterminate = false; }
+  _smbUpdateBulkBar();
+}
+
+function _smRenderZoneB() {
+  const el    = document.getElementById('sm-selected-list');
+  const empty = document.getElementById('sm-selected-empty');
+  const countEl = document.getElementById('sm-selected-count');
+  if (!el) return;
+  if (countEl) countEl.textContent = _smSelectedIds.length ? `(${_smSelectedIds.length})` : '';
+
+  if (!_smSelectedIds.length) {
+    _smbCheckedIds.clear();
+    _smbUpdateBulkBar();
+    if (empty) empty.style.display = '';
+    [...el.children].forEach(c => { if (c.id !== 'sm-selected-empty') c.remove(); });
+    return;
+  }
+  if (empty) empty.style.display = 'none';
+
+  const scriptMap = Object.fromEntries(allScripts.map(s => [s.id, s]));
+  const n = _smSelectedIds.length;
+  const checkedCount = [..._smbCheckedIds].filter(id => _smSelectedIds.includes(id)).length;
+
+  el.innerHTML =
+    // Select-all header row
+    `<div id="sm-selected-empty" style="display:none"></div>
+     <div style="display:flex;align-items:center;gap:6px;padding:4px 10px;background:var(--neutral-50);border-bottom:1px solid var(--neutral-200);border-radius:4px 4px 0 0">
+       <input type="checkbox" id="smb-chk-all" title="Select / deselect all"
+              ${checkedCount === n ? 'checked' : ''}
+              onchange="smbToggleSelectAll()" />
+       <span style="font-size:11.5px;color:var(--neutral-500);flex:1">Select all</span>
+     </div>` +
+    _smSelectedIds.map((id, idx) => {
+      const s = scriptMap[id];
+      if (!s) return '';
+      const isFirst   = idx === 0;
+      const isLast    = idx === n - 1;
+      const isChecked = _smbCheckedIds.has(id);
+      return `<div style="display:flex;align-items:center;gap:6px;padding:5px 10px;border-bottom:1px solid var(--neutral-100);${isChecked ? 'background:var(--red-50,#fff1f2);' : ''}">
+        <input type="checkbox" class="smb-row-chk" data-id="${escHtml(id)}"
+               ${isChecked ? 'checked' : ''} onchange="smbRowCheckChange(this)" />
+        <span style="font-size:12px;color:var(--neutral-400);min-width:22px;text-align:right">${idx + 1}</span>
+        <span style="font-size:12px;color:var(--neutral-500);min-width:76px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(_smTcId(s))}</span>
+        <span style="flex:1;font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(s.title)}">${escHtml(s.title)}</span>
+        <button class="tbl-btn" title="Move up"   ${isFirst ? 'disabled' : ''} onclick="smMoveScript(${idx},-1)">↑</button>
+        <button class="tbl-btn" title="Move down" ${isLast  ? 'disabled' : ''} onclick="smMoveScript(${idx}, 1)">↓</button>
+        <button class="tbl-btn del" title="Remove" onclick="smRemoveScript('${escHtml(id)}')">×</button>
+      </div>`;
+    }).join('');
+
+  // Set indeterminate state if partially selected
+  const allChk = document.getElementById('smb-chk-all');
+  if (allChk) {
+    allChk.checked       = checkedCount === n && n > 0;
+    allChk.indeterminate = checkedCount > 0 && checkedCount < n;
+  }
+  _smbUpdateBulkBar();
+}
+
+function smAddScript(id) {
+  if (_smSelectedIds.includes(id)) return;
+  _smSelectedIds.push(id);
+  _smCheckedIds.delete(id);
+  _smRenderZoneA();
+  _smRenderZoneB();
+}
+
+function smRowCheckChange(chk) {
+  const id = chk.dataset.id;
+  if (chk.checked) _smCheckedIds.add(id);
+  else             _smCheckedIds.delete(id);
+  _smUpdateBulkBar();
+  // sync select-all checkbox
+  const selectedSet = new Set(_smSelectedIds);
+  const start  = (_smPage - 1) * _smPageSize;
+  const page   = _smFiltered.slice(start, start + _smPageSize);
+  const available = page.filter(s => !selectedSet.has(s.id));
+  const checkedCount = available.filter(s => _smCheckedIds.has(s.id)).length;
+  const allChk = document.getElementById('sm-chk-all');
+  if (allChk) {
+    allChk.checked       = available.length > 0 && checkedCount === available.length;
+    allChk.indeterminate = checkedCount > 0 && checkedCount < available.length;
+  }
+}
+
+function smToggleSelectAll() {
+  const allChk = document.getElementById('sm-chk-all');
+  const selectedSet = new Set(_smSelectedIds);
+  const start  = (_smPage - 1) * _smPageSize;
+  const page   = _smFiltered.slice(start, start + _smPageSize);
+  const available = page.filter(s => !selectedSet.has(s.id));
+  if (allChk?.checked) {
+    available.forEach(s => _smCheckedIds.add(s.id));
+  } else {
+    available.forEach(s => _smCheckedIds.delete(s.id));
+  }
+  // Re-render checkboxes without rebuilding the full table
+  document.querySelectorAll('#sm-script-list .sm-row-chk').forEach(chk => {
+    const id = chk.dataset.id;
+    if (!chk.disabled) chk.checked = _smCheckedIds.has(id);
+  });
+  _smUpdateBulkBar();
+}
+
+function smAddSelected() {
+  const toAdd = [..._smCheckedIds].filter(id => !_smSelectedIds.includes(id));
+  toAdd.forEach(id => _smSelectedIds.push(id));
+  _smCheckedIds.clear();
+  _smRenderZoneA();
+  _smRenderZoneB();
+}
+
+function smDeselectAll() {
+  _smCheckedIds.clear();
+  document.querySelectorAll('#sm-script-list .sm-row-chk').forEach(chk => { if (!chk.disabled) chk.checked = false; });
+  const allChk = document.getElementById('sm-chk-all');
+  if (allChk) { allChk.checked = false; allChk.indeterminate = false; }
+  _smUpdateBulkBar();
+}
+
+function _smUpdateBulkBar() {
+  const bar      = document.getElementById('sm-bulk-bar');
+  const countEl  = document.getElementById('sm-bulk-count');
+  const n = _smCheckedIds.size;
+  if (!bar) return;
+  if (n > 0) {
+    bar.style.display = 'flex';
+    if (countEl) countEl.textContent = `${n} script${n !== 1 ? 's' : ''} selected`;
+  } else {
+    bar.style.display = 'none';
+  }
+}
+
+function smRemoveScript(id) {
+  _smSelectedIds = _smSelectedIds.filter(x => x !== id);
+  _smbCheckedIds.delete(id);
+  _smRenderZoneA();
+  _smRenderZoneB();
+}
+
+function smMoveScript(idx, dir) {
+  const newIdx = idx + dir;
+  if (newIdx < 0 || newIdx >= _smSelectedIds.length) return;
+  const arr = [..._smSelectedIds];
+  [arr[idx], arr[newIdx]] = [arr[newIdx], arr[idx]];
+  _smSelectedIds = arr;
+  _smRenderZoneB();
+}
+
+function smSort(col) {
+  if (_smSortCol === col) _smSortDir = _smSortDir === 'asc' ? 'desc' : 'asc';
+  else { _smSortCol = col; _smSortDir = 'asc'; }
+  _smApplyFilter();
+  _smRenderSortIndicators();
+  _smRenderZoneA();
+}
+
+function smScriptSearch() {
+  _smApplyFilter();
+  _smRenderZoneA();
+}
+
+function smPagePrev() { if (_smPage > 1) { _smPage--; _smRenderZoneA(); } }
+function smPageNext() {
+  const totalPages = Math.max(1, Math.ceil(_smFiltered.length / _smPageSize));
+  if (_smPage < totalPages) { _smPage++; _smRenderZoneA(); }
+}
+function smPageSizeChange() {
+  const sel = document.getElementById('sm-page-size');
+  _smPageSize = parseInt(sel?.value || '10', 10);
+  _smPage = 1;
+  _smRenderZoneA();
+}
+
+// ── Open / Edit modal ─────────────────────────────────────────────────────────
+function smClearFilters() {
+  ['sm-filter-tcid','sm-filter-title','sm-filter-component','sm-filter-tag'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+  smScriptSearch();
+}
+
+function _smInit(selectedIds) {
+  _smSelectedIds = [...selectedIds];
+  _smCheckedIds  = new Set();
+  _smbCheckedIds = new Set();
+  _smPage     = 1;
+  _smPageSize = 10;
+  _smSortCol  = 'tcid';
+  _smSortDir  = 'asc';
+  ['sm-filter-tcid','sm-filter-title','sm-filter-component','sm-filter-tag'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+  const pageSizeSel = document.getElementById('sm-page-size');
+  if (pageSizeSel) pageSizeSel.value = '10';
+  _smApplyFilter();
+  _smRenderSortIndicators();
+  _smRenderZoneA();
+  _smRenderZoneB();
+}
+
 function suiteOpenModal(id = null) {
   editingSuiteId = id;
+  currentSuiteId = null;
   modClearAlert('suite-modal-alert');
   document.getElementById('suite-modal-title').textContent = id ? 'Edit Test Suite' : 'New Test Suite';
-  if (!id) { document.getElementById('sm-name').value = ''; document.getElementById('sm-desc').value = ''; document.getElementById('sm-retries').value = '0'; }
-  document.getElementById('sm-script-filter').value = '';
+  if (!id) {
+    document.getElementById('sm-name').value = '';
+    document.getElementById('sm-desc').value = '';
+    document.getElementById('sm-retries').value = '0';
+    // Hide schedules for new suites (no ID yet)
+    const schedWrap = document.getElementById('sm-sched-wrap');
+    if (schedWrap) schedWrap.style.display = 'none';
+    _hookInit([], [], false, []);
+    _overlayInit([]);
+  }
   _populateEnvDropdown('');
-  suiteScriptFilterRender(id ? null : []);
+  _smInit(id ? (allSuites.find(x => x.id === id)?.scriptIds || []) : []);
   openModal('modal-suite');
 }
 
@@ -2575,49 +3421,45 @@ async function suiteEditById(id) {
   const s = allSuites.find(x => x.id === id);
   if (!s) return;
   editingSuiteId = id;
+  currentSuiteId = id;
   document.getElementById('suite-modal-title').textContent = 'Edit Test Suite';
   document.getElementById('sm-name').value = s.name;
   document.getElementById('sm-desc').value = s.description || '';
   document.getElementById('sm-retries').value = String(s.retries ?? 0);
-  document.getElementById('sm-script-filter').value = '';
   _populateEnvDropdown(s.environmentId || '');
   modClearAlert('suite-modal-alert');
-  suiteScriptFilterRender(s.scriptIds || []);
+  _smInit(s.scriptIds || []);
+  _hookInit(s.beforeEachSteps || [], s.afterEachSteps || [], s.fastMode || false, s.fastModeSteps || []);
+  _overlayInit(s.overlayHandlers || []);
+
+  // Show and load schedules section (edit only)
+  const schedWrap = document.getElementById('sm-sched-wrap');
+  if (schedWrap) {
+    schedWrap.style.display = '';
+    // Populate sched-env from project environments
+    const project = allProjects.find(p => p.id === currentProjectId);
+    const schedEnvSel = document.getElementById('sched-env');
+    if (schedEnvSel && project) {
+      const envs = project.environments || [];
+      schedEnvSel.innerHTML = '<option value="">— Select —</option>' +
+        envs.map(e => `<option value="${escHtml(e.id)}"${e.id === s.environmentId ? ' selected' : ''}>${escHtml(e.name)}</option>`).join('');
+    }
+    schedFormHide();
+    await schedLoad();
+  }
+
   openModal('modal-suite');
 }
 
-function suiteScriptFilterRender(selectedIds = null) {
-  const q  = (document.getElementById('sm-script-filter')?.value ?? '').toLowerCase();
-  const el = document.getElementById('sm-script-list');
-  if (!el) return;
-  if (selectedIds === null && editingSuiteId) {
-    selectedIds = allSuites.find(x => x.id === editingSuiteId)?.scriptIds || [];
-  } else if (selectedIds === null) {
-    selectedIds = [];
-  }
-  const filtered = allScripts.filter(s => !q || s.title.toLowerCase().includes(q));
-  if (!filtered.length) {
-    el.innerHTML = '<div style="padding:10px;color:var(--neutral-400);font-size:13px">No scripts in this project yet.</div>';
-    return;
-  }
-  el.innerHTML = filtered.map(s => `
-    <label style="display:flex;align-items:center;gap:8px;padding:7px 10px;cursor:pointer;border-radius:5px;transition:background .1s"
-           onmouseover="this.style.background='var(--brand-light)'" onmouseout="this.style.background=''">
-      <input type="checkbox" class="sm-script-chk" value="${escHtml(s.id)}"${selectedIds.includes(s.id) ? ' checked' : ''} />
-      <div style="flex:1">
-        <div style="font-size:13px;font-weight:600">${escHtml(s.title)}</div>
-        <div style="font-size:11.5px;color:var(--neutral-400)">${s.steps.length} steps ·
-          <span class="badge badge-${escHtml(s.priority)}">${escHtml(s.priority)}</span></div>
-      </div>
-    </label>`).join('');
-}
+// Legacy alias kept so any other callers still work
+function suiteScriptFilterRender() { smScriptSearch(); }
 
 async function suiteSave() {
   modClearAlert('suite-modal-alert');
   const name = document.getElementById('sm-name').value.trim();
   if (!name)             { modAlert('suite-modal-alert', 'error', 'Suite name is required'); return; }
   if (!currentProjectId) { modAlert('suite-modal-alert', 'error', 'Select a project first'); return; }
-  const scriptIds     = [...document.querySelectorAll('#sm-script-list .sm-script-chk:checked')].map(c => c.value);
+  const scriptIds     = [..._smSelectedIds];   // Zone B order is authoritative
   const environmentId = document.getElementById('sm-env')?.value || null;
   const retries = parseInt(document.getElementById('sm-retries')?.value || '0', 10);
   const body = {
@@ -2626,6 +3468,11 @@ async function suiteSave() {
     scriptIds,
     environmentId: environmentId || null,
     retries:       [0,1,2].includes(retries) ? retries : 0,
+    beforeEachSteps: _hookBefore.map((s, i)   => ({ order: i + 1, keyword: s.keyword, locator: s.locator, value: s.value, description: s.description })),
+    afterEachSteps:  _hookAfter.map((s, i)    => ({ order: i + 1, keyword: s.keyword, locator: s.locator, value: s.value, description: s.description })),
+    fastMode:        !!(document.getElementById('sm-fast-mode')?.checked),
+    fastModeSteps:   _hookFastMode.map((s, i) => ({ order: i + 1, keyword: s.keyword, locator: s.locator, value: s.value, description: s.description })),
+    overlayHandlers: _overlayHandlers.map(h => ({ type: h.type, action: h.action, text: h.text || '' })),
   };
   const method = editingSuiteId ? 'PUT'  : 'POST';
   const url    = editingSuiteId ? `/api/suites/${editingSuiteId}` : '/api/suites';
@@ -2642,82 +3489,10 @@ async function suiteDelete(id, name) {
   await suiteLoad();
 }
 
-function suiteCloseModal() { closeModal('modal-suite'); editingSuiteId = null; }
+function suiteCloseModal() { closeModal('modal-suite'); editingSuiteId = null; currentSuiteId = null; }
 
-async function suiteOpenDetail(id) {
-  const res  = await fetch(`/api/suites/${id}`);
-  const data = await res.json();
-  if (!res.ok) return;
-  currentSuiteId = id;
-
-  const _setText = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
-  _setText('suite-detail-title', data.name);
-  _setText('suite-detail-desc',  data.description || '');
-  _setText('suite-script-count', `${(data.scriptIds||[]).length} script${(data.scriptIds||[]).length !== 1 ? 's' : ''}`);
-
-  const project  = allProjects.find(p => p.id === data.projectId);
-  const infoEl = document.getElementById('suite-detail-info');
-  if (infoEl) {
-    const projName = project?.name || data.projectId;
-    const env      = (project?.environments || []).find(e => e.id === data.environmentId);
-    const envLabel = env ? `${env.name} — ${env.url}` : (project?.environments?.[0] ? `${project.environments[0].name} — ${project.environments[0].url} (default)` : '—');
-    infoEl.innerHTML = `
-      <div><strong>Project:</strong> ${escHtml(projName)}</div>
-      <div><strong>Default Env:</strong> ${escHtml(envLabel)}</div>
-      <div><strong>Created by:</strong> ${escHtml(data.createdBy || '—')} &middot; ${formatDate(data.createdAt)}</div>
-      <div><strong>Modified by:</strong> ${escHtml(data.modifiedBy || '—')} &middot; ${formatDate(data.modifiedAt)}</div>
-      <div><strong>Auto-Retry:</strong> ${data.retries ? `${data.retries}x on failure` : 'Disabled'}</div>`;
-  }
-
-  // Populate run-time environment selector
-  const runEnvSel = document.getElementById('suite-run-env');
-  if (runEnvSel && project) {
-    const envs = project.environments || [];
-    runEnvSel.innerHTML = '<option value="">— Select Environment —</option>' +
-      envs.map(e => `<option value="${escHtml(e.id)}"${e.id === data.environmentId ? ' selected' : ''}>${escHtml(e.name)} — ${escHtml(e.url)}</option>`).join('');
-  }
-
-  const scriptsEl = document.getElementById('suite-detail-scripts');
-  const scripts   = data.scripts || [];
-  scriptsEl.innerHTML = !scripts.length
-    ? '<div class="builder-hint">No scripts in this suite.</div>'
-    : scripts.map(sc => `
-      <div class="suite-script-block">
-        <div class="suite-script-header" onclick="suiteToggleScript(this)">
-          <input type="checkbox" class="suite-script-chk" value="${escHtml(sc.id)}"
-                 onclick="event.stopPropagation()" onchange="suiteCheckChanged()" />
-          <span class="suite-script-chevron">&#9658;</span>
-          <span style="font-weight:600;font-size:13px;flex:1">${escHtml(sc.title)}</span>
-          <span class="badge badge-${escHtml(sc.priority)}" style="flex-shrink:0">${escHtml(sc.priority)}</span>
-          <span style="font-size:12px;color:var(--neutral-400);flex-shrink:0;margin-left:6px">${sc.steps.length} steps</span>
-        </div>
-        <div class="suite-script-steps">
-          ${(sc.steps || []).map(step => `
-            <div class="suite-step-line">
-              <span class="suite-step-num">${step.order}</span>
-              <span class="suite-step-kw">${escHtml(step.keyword)}</span>
-              ${step.locator     ? `<span class="suite-step-loc">${escHtml(step.locator)}</span>` : ''}
-              ${step.value       ? `<span class="suite-step-val">${escHtml(step.value)}</span>` : ''}
-              ${step.description ? `<span style="color:var(--neutral-400);font-size:11.5px">${escHtml(step.description)}</span>` : ''}
-              ${step.screenshot  ? '<span class="suite-step-ss">&#x1F4F7;</span>' : ''}
-            </div>`).join('')}
-        </div>
-      </div>`).join('');
-
-  document.getElementById('suite-run-card').style.display = 'none';
-  document.getElementById('suite-bulk-remove-btn').style.display = 'none';
-  document.getElementById('suite-detail-overlay').style.display = 'flex';
-
-  // Populate schedule env selector + load schedules
-  const schedEnvSel = document.getElementById('sched-env');
-  if (schedEnvSel && project) {
-    const envs = project.environments || [];
-    schedEnvSel.innerHTML = '<option value="">— Select —</option>' +
-      envs.map(e => `<option value="${escHtml(e.id)}"${e.id === data.environmentId ? ' selected' : ''}>${escHtml(e.name)}</option>`).join('');
-  }
-  schedFormHide();
-  await schedLoad();
-}
+// suiteOpenDetail removed — suite detail overlay is no longer used.
+// Schedules are now loaded inside the Edit Suite modal via _schedLoadForModal().
 
 // ══════════════════════════════════════════════════════════════════════════════
 // Scheduled Runs
@@ -2833,187 +3608,433 @@ async function schedDelete(id) {
   await schedLoad();
 }
 
-function suiteDetailClose() {
-  document.getElementById('suite-detail-overlay').style.display = 'none';
-  currentSuiteId = null;
-}
+// suite detail overlay functions removed — use Execution tab to run suites.
 
-function suiteDetailEdit() {
-  if (!currentSuiteId) return;
-  suiteDetailClose();
-  suiteEditById(currentSuiteId);
-}
+// ══════════════════════════════════════════════════════════════════════════════
+// Execution Module
+// ══════════════════════════════════════════════════════════════════════════════
 
-function suiteToggleScript(header) {
-  const chevron = header.querySelector('.suite-script-chevron');
-  const steps   = header.nextElementSibling;
-  const isOpen  = header.classList.toggle('open');
-  if (chevron) chevron.classList.toggle('open', isOpen);
-  if (steps)   steps.classList.toggle('open', isOpen);
-}
+let _execLastRunId   = null;   // last runId launched from Execution tab
+let _execPollTimer   = null;
+let _execPollStopped = false;
 
-function suiteCheckChanged() {
-  const anyChecked = !!document.querySelector('#suite-detail-scripts .suite-script-chk:checked');
-  const btn = document.getElementById('suite-bulk-remove-btn');
-  if (btn) btn.style.display = anyChecked ? '' : 'none';
-}
+async function execLoad() {
+  const noProj  = document.getElementById('exec-no-project');
+  const body    = document.getElementById('exec-body');
+  const suiteSel = document.getElementById('exec-suite-sel');
+  if (!suiteSel) return;
 
-function suiteSelectAll(checked) {
-  document.querySelectorAll('#suite-detail-scripts .suite-script-chk').forEach(c => c.checked = checked);
-  const btn = document.getElementById('suite-bulk-remove-btn');
-  if (btn) btn.style.display = checked ? '' : 'none';
-}
-
-async function suiteRemoveSelected() {
-  if (!currentSuiteId) return;
-  const toRemove = new Set(
-    [...document.querySelectorAll('#suite-detail-scripts .suite-script-chk:checked')].map(c => c.value)
-  );
-  if (!toRemove.size) { alert('Select at least one script to remove.'); return; }
-  if (!confirm(`Remove ${toRemove.size} script(s) from suite?`)) return;
-  const s = allSuites.find(x => x.id === currentSuiteId);
-  if (!s) return;
-  const newIds = (s.scriptIds || []).filter(id => !toRemove.has(id));
-  const res = await fetch(`/api/suites/${currentSuiteId}`, {
-    method: 'PUT', headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ ...s, scriptIds: newIds }),
-  });
-  if (res.ok) { await suiteLoad(); await suiteOpenDetail(currentSuiteId); }
-}
-
-async function suiteRunFromCard(suiteId, btn) {
-  btn.disabled = true;
-  btn.textContent = '⏳…';
-  currentSuiteId = suiteId;
-  await suiteOpenDetail(suiteId);
-  btn.disabled = false;
-  btn.innerHTML = '&#9654; Run';
-  suiteRun();
-}
-
-async function suiteRun() {
-  if (!currentSuiteId) return;
-  const runBtn   = document.getElementById('suite-run-btn');
-  const runCard  = document.getElementById('suite-run-card');
-  const logEl    = document.getElementById('suite-run-output');
-  const statusEl = document.getElementById('suite-run-status');
-  const statsEl  = document.getElementById('suite-run-stats');
-  const rlEl     = document.getElementById('suite-report-link');
-  const anchorEl = document.getElementById('suite-report-anchor');
-
-  runBtn.disabled = true;
-  runBtn.textContent = '⏳ Running…';
-  runCard.style.display = '';
-  if (statusEl) statusEl.textContent = '⏳ Starting…';
-  if (statsEl)  statsEl.textContent  = '';
-  if (logEl)    logEl.innerHTML      = '<div style="color:#858585">Connecting…</div>';
-  if (rlEl)     rlEl.style.display   = 'none';
-
-  const runEnvId = document.getElementById('suite-run-env')?.value || null;
-  if (!runEnvId) {
-    runBtn.disabled = false; runBtn.textContent = '▶ Run Suite';
-    if (statusEl) statusEl.textContent = '';
-    if (logEl)    logEl.innerHTML = '';
-    runCard.style.display = 'none';
-    alert('Please select an Environment before running the suite.');
+  if (!currentProjectId) {
+    if (noProj) noProj.style.display = '';
+    if (body)   body.style.display   = 'none';
     return;
   }
-  const res  = await fetch(`/api/suites/${currentSuiteId}/run`, {
+  if (noProj) noProj.style.display = 'none';
+  if (body)   body.style.display   = '';
+
+  // Populate suite dropdown
+  const suites = allSuites.filter(s => s.projectId === currentProjectId)
+    .sort((a, b) => a.name.localeCompare(b.name));
+  suiteSel.innerHTML = '<option value="">— Select Suite —</option>' +
+    suites.map(s => `<option value="${escHtml(s.id)}">${escHtml(s.name)}</option>`).join('');
+
+  // Reset env dropdown
+  document.getElementById('exec-env-sel').innerHTML = '<option value="">— Select Environment —</option>';
+
+  // Hide scripts, disable run, hide report
+  document.getElementById('exec-scripts-wrap').style.display = 'none';
+  document.getElementById('exec-run-btn').disabled = true;
+  document.getElementById('exec-report-btn').style.display = 'none';
+  document.getElementById('exec-progress-wrap').style.display = 'none';
+  document.getElementById('exec-run-hint').textContent = 'Select a suite and environment to run';
+}
+
+function execOnSuiteChange() {
+  const suiteId  = document.getElementById('exec-suite-sel')?.value;
+  const envSel   = document.getElementById('exec-env-sel');
+  const scriptsWrap = document.getElementById('exec-scripts-wrap');
+  const scriptList  = document.getElementById('exec-script-list');
+  const countEl     = document.getElementById('exec-script-count');
+  const runBtn      = document.getElementById('exec-run-btn');
+  const hintEl      = document.getElementById('exec-run-hint');
+
+  if (!suiteId) {
+    envSel.innerHTML = '<option value="">— Select Environment —</option>';
+    scriptsWrap.style.display = 'none';
+    runBtn.disabled = true;
+    hintEl.textContent = 'Select a suite and environment to run';
+    return;
+  }
+
+  const suite   = allSuites.find(s => s.id === suiteId);
+  const project = allProjects.find(p => p.id === currentProjectId);
+  const envs    = project?.environments || [];
+
+  // Populate environment dropdown
+  envSel.innerHTML = '<option value="">— Select Environment —</option>' +
+    envs.map(e => `<option value="${escHtml(e.id)}"${e.id === suite?.environmentId ? ' selected' : ''}>${escHtml(e.name)} — ${escHtml(e.url)}</option>`).join('');
+
+  // Show scripts
+  const scriptIds = suite?.scriptIds || [];
+  const scriptMap = Object.fromEntries(allScripts.map(s => [s.id, s]));
+  const scripts   = scriptIds.map(id => scriptMap[id]).filter(Boolean);
+
+  if (countEl) countEl.textContent = `(${scripts.length})`;
+
+  if (!scripts.length) {
+    scriptList.innerHTML = '<div style="padding:12px 10px;color:var(--neutral-400);font-size:13px;text-align:center">No scripts in this suite.</div>';
+  } else {
+    scriptList.innerHTML = scripts.map((s, idx) => `
+      <div style="display:grid;grid-template-columns:32px 90px 1fr 80px;align-items:center;border-bottom:1px solid var(--neutral-100)">
+        <div style="padding:7px 8px;font-size:12px;color:var(--neutral-400)">${idx + 1}</div>
+        <div style="padding:7px 8px;font-size:12px;color:var(--neutral-500)">${escHtml(_smTcId(s))}</div>
+        <div style="padding:7px 8px;font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(s.title)}">${escHtml(s.title)}</div>
+        <div style="padding:7px 8px;font-size:12px;color:var(--neutral-400)">${s.steps.length} steps</div>
+      </div>`).join('');
+  }
+  scriptsWrap.style.display = '';
+
+  // Update run button state
+  _execUpdateRunBtn();
+}
+
+function _execUpdateRunBtn() {
+  const suiteId = document.getElementById('exec-suite-sel')?.value;
+  const envId   = document.getElementById('exec-env-sel')?.value;
+  const runBtn  = document.getElementById('exec-run-btn');
+  const hintEl  = document.getElementById('exec-run-hint');
+  const ready   = !!(suiteId && envId);
+  runBtn.disabled = !ready;
+  hintEl.textContent = ready ? '' : (!suiteId ? 'Select a suite first' : 'Select an environment to run');
+}
+
+async function execRun() {
+  const suiteId = document.getElementById('exec-suite-sel')?.value;
+  const envId   = document.getElementById('exec-env-sel')?.value;
+  if (!suiteId || !envId) { alert('Select a suite and environment first.'); return; }
+
+  // Stop any previous poll
+  _execPollStopped = true;
+  clearTimeout(_execPollTimer);
+
+  const runBtn    = document.getElementById('exec-run-btn');
+  const reportBtn = document.getElementById('exec-report-btn');
+  const progressWrap = document.getElementById('exec-progress-wrap');
+  const statusEl  = document.getElementById('exec-run-status');
+  const metaEl    = document.getElementById('exec-run-meta');
+  const progressBar = document.getElementById('exec-progress-bar');
+  const resultsTable = document.getElementById('exec-results-table');
+  const resultsBody  = document.getElementById('exec-results-body');
+  const summaryEl    = document.getElementById('exec-summary');
+
+  runBtn.disabled = true;
+  runBtn.innerHTML = '⏳ Starting…';
+  reportBtn.style.display = 'none';
+  progressWrap.style.display = '';
+  resultsTable.style.display = 'none';
+  resultsBody.innerHTML = '';
+  summaryEl.style.display = 'none';
+  if (statusEl)  statusEl.textContent = '⏳ Starting…';
+  if (metaEl)    metaEl.textContent   = '';
+  if (progressBar) progressBar.style.width = '0%';
+
+  const res  = await fetch(`/api/suites/${suiteId}/run`, {
     method: 'POST', headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ environmentId: runEnvId }),
+    body: JSON.stringify({ environmentId: envId }),
   });
   const data = await res.json();
   if (!res.ok) {
-    runBtn.disabled = false; runBtn.textContent = '▶ Run Suite';
+    runBtn.disabled = false;
+    runBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="vertical-align:-2px"><polygon points="5 3 19 12 5 21 5 3"/></svg> Run Suite';
     if (statusEl) statusEl.textContent = '✗ Failed to start';
-    if (logEl)    logEl.innerHTML = `<div style="color:#f48771">${escHtml(data.error || 'Error')}</div>`;
     return;
   }
 
-  const { runId, queued, queuePosition } = data;
-  if (logEl) logEl.innerHTML = '';
+  const { runId } = data;
+  _execLastRunId   = runId;
+  _execPollStopped = false;
 
-  if (queued) {
-    runBtn.textContent = '⏳ Queued…';
-    if (statusEl) statusEl.textContent = `⏳ Queued — position ${queuePosition} (waiting for a free slot)`;
-    if (logEl) logEl.innerHTML = `<div style="color:#dcdcaa">Run queued — will start automatically when a slot is available (position ${queuePosition}).</div>`;
-  } else {
-    if (statusEl) statusEl.textContent = '⏳ Running…';
+  // Render known tests as pending immediately
+  const suite     = allSuites.find(s => s.id === suiteId);
+  const scriptMap = Object.fromEntries(allScripts.map(s => [s.id, s]));
+  const scripts   = (suite?.scriptIds || []).map(id => scriptMap[id]).filter(Boolean);
+
+  function _execRenderResultsTable(tests) {
+    if (!tests?.length && !scripts.length) return;
+    resultsTable.style.display = '';
+    const rows = tests?.length
+      ? tests.map(t => {
+          const colour = t.status === 'pass' ? '#4ec9b0' : '#f48771';
+          const icon   = t.status === 'pass' ? '✓' : '✗';
+          const dur    = t.durationMs != null ? `${(t.durationMs / 1000).toFixed(1)}s` : '';
+          return `<div style="display:grid;grid-template-columns:1fr 90px 80px;border-bottom:1px solid var(--neutral-100)">
+            <div style="padding:7px 10px;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(t.name)}">${escHtml(t.name)}</div>
+            <div style="padding:7px 10px;font-size:12px;font-weight:700;color:${colour}">${icon} ${t.status}</div>
+            <div style="padding:7px 10px;font-size:12px;color:var(--neutral-400)">${dur}</div>
+          </div>`;
+        }).join('')
+      : scripts.map(s => `
+          <div style="display:grid;grid-template-columns:1fr 90px 80px;border-bottom:1px solid var(--neutral-100);opacity:.5">
+            <div style="padding:7px 10px;font-size:12.5px">${escHtml(s.title)}</div>
+            <div style="padding:7px 10px;font-size:12px;color:var(--neutral-400)">pending</div>
+            <div style="padding:7px 10px;font-size:12px;color:var(--neutral-400)">—</div>
+          </div>`).join('');
+    resultsBody.innerHTML = rows;
   }
 
-  // Use HTTP polling — works through any proxy without WS upgrade support
-  let seenLines = 0;
-  let pollTimer = null;
-  let stopped   = false;
+  _execRenderResultsTable(null);
 
-  async function poll() {
-    if (stopped) return;
+  async function execPoll() {
+    if (_execPollStopped) return;
     try {
-      const r = await fetch(`/api/run/${runId}`);
-      if (!r.ok) {
-        pollTimer = setTimeout(poll, 1500);
-        return;
-      }
+      const r   = await fetch(`/api/run/${runId}`);
+      if (!r.ok) { _execPollTimer = setTimeout(execPoll, 1500); return; }
       const rec = await r.json();
 
-      // Show queued status while waiting
-      if (rec.status === 'queued') {
-        if (statusEl) statusEl.textContent = `⏳ Queued — waiting for a free slot…`;
-        pollTimer = setTimeout(poll, 1500);
+      const total  = rec.total  || scripts.length || 1;
+      const done   = (rec.passed || 0) + (rec.failed || 0);
+      const pct    = Math.min(100, Math.round((done / total) * 100));
+      if (progressBar) progressBar.style.width = `${pct}%`;
+      if (metaEl) metaEl.textContent = rec.status === 'running' ? `${done} / ${total}` : '';
+
+      if (rec.tests?.length) _execRenderResultsTable(rec.tests);
+
+      if (rec.status === 'running' || rec.status === 'queued' || !rec.status) {
+        if (statusEl) statusEl.textContent = rec.status === 'queued' ? '⏳ Queued…' : '⏳ Running…';
+        // P4: poll for T4 heal proposal — spec pauses and writes pending-heal.json
+        fetch(`/api/debug/heal-pending?runId=${encodeURIComponent(runId)}`)
+          .then(r => r.ok ? r.json() : null)
+          .then(proposal => {
+            if (proposal) showT4ProposalCard(proposal, runId);
+            else hideT4ProposalCard();
+          }).catch(() => {});
+        // P5-E: poll for prescan health results (written by spec beforeAll)
+        fetch(`/api/prescan?runId=${encodeURIComponent(runId)}`)
+          .then(r => r.ok ? r.json() : null)
+          .then(data => { if (data?.locators?.length) renderPrescanHealth(data); })
+          .catch(() => {});
+        _execPollTimer = setTimeout(execPoll, 1500);
         return;
       }
 
-      // Transitioned from queued → running: clear the queue message
-      if (rec.status === 'running' && logEl && logEl.querySelector('[data-queued]')) {
-        logEl.innerHTML = '';
-        seenLines = 0;
-      }
-      if (rec.status === 'running') {
-        runBtn.textContent = '⏳ Running…';
-        if (statusEl) statusEl.textContent = '⏳ Running…';
-      }
-
-      // Append only new lines (server returns last 100; track by index)
-      if (logEl && Array.isArray(rec.output)) {
-        const newLines = rec.output.slice(seenLines);
-        for (const line of newLines) {
-          const colour = /\s+✓|\s+passed/i.test(line)  ? '#4ec9b0'
-                       : /\s+✗|\s+failed|error/i.test(line) ? '#f48771'
-                       : /warn/i.test(line)             ? '#dcdcaa'
-                       : '#d4d4d4';
-          const div = document.createElement('div');
-          div.style.color = colour;
-          div.textContent = line;
-          logEl.appendChild(div);
-          logEl.scrollTop = logEl.scrollHeight;
-        }
-        seenLines += newLines.length;
-      }
-
-      const p = rec.passed || 0, f = rec.failed || 0, t = rec.total || 0;
-      if (statsEl) statsEl.textContent = `${p} passed · ${f} failed · ${t} total`;
-
-      if (rec.status === 'running' || rec.status === undefined) {
-        pollTimer = setTimeout(poll, 1500);
-        return;
-      }
-
-      // Run finished
-      stopped = true;
-      runBtn.disabled = false; runBtn.textContent = '▶ Run Suite';
+      // Finished
+      _execPollStopped = true;
+      if (progressBar) progressBar.style.width = '100%';
+      const p = rec.passed || 0, f = rec.failed || 0;
       const ok = f === 0 && rec.exitCode === 0;
-      if (statusEl) statusEl.textContent = ok
-        ? `✓ Done — ${p} passed`
-        : `✗ Done — ${p} passed, ${f} failed`;
-      if (rlEl && anchorEl) { anchorEl.href = `/execution-report?runId=${encodeURIComponent(runId)}`; rlEl.style.display = ''; }
+      if (statusEl) statusEl.textContent = ok ? `✓ Passed — ${p} tests` : `✗ Done — ${p} passed, ${f} failed`;
+      summaryEl.style.display = '';
+      summaryEl.innerHTML = `<strong style="color:${ok ? 'var(--green-600,#16a34a)' : 'var(--red-600,#dc2626)'}">${p} passed</strong> · <strong style="color:${f ? 'var(--red-600,#dc2626)' : 'inherit'}">${f} failed</strong> · ${rec.total || 0} total`;
 
-    } catch (err) {
-      // Network error — keep retrying
-      pollTimer = setTimeout(poll, 2000);
+      if (rec.tests?.length) _execRenderResultsTable(rec.tests);
+
+      runBtn.disabled = false;
+      runBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="vertical-align:-2px"><polygon points="5 3 19 12 5 21 5 3"/></svg> Run Suite';
+      reportBtn.style.display = '';
+
+      // Refresh history badge
+      if (typeof histLoad === 'function') histLoad();
+
+    } catch { _execPollTimer = setTimeout(execPoll, 2000); }
+  }
+
+  execPoll();
+}
+
+function execViewReport() {
+  if (_execLastRunId) window.open(`/execution-report?runId=${encodeURIComponent(_execLastRunId)}`, '_blank');
+}
+
+// ── P5-E: Pre-Scan Health Grid ────────────────────────────────────────────────
+function renderPrescanHealth(data) {
+  const wrap    = document.getElementById('exec-prescan-wrap');
+  const grid    = document.getElementById('exec-prescan-grid');
+  const pageEl  = document.getElementById('exec-prescan-page');
+  const sumEl   = document.getElementById('exec-prescan-summary');
+  if (!wrap || !grid) return;
+
+  const locators = data.locators || [];
+  const healthy  = locators.filter(l => l.status === 'healthy').length;
+  const degraded = locators.filter(l => l.status === 'degraded').length;
+  const broken   = locators.filter(l => l.status === 'broken').length;
+
+  if (pageEl) pageEl.textContent = data.pageKey || '';
+  if (sumEl)  sumEl.innerHTML =
+    `<span class="ps-chip ps-healthy">${healthy} healthy</span>` +
+    (degraded ? `<span class="ps-chip ps-degraded">${degraded} degraded</span>` : '') +
+    (broken   ? `<span class="ps-chip ps-broken">${broken} broken</span>`   : '');
+
+  grid.innerHTML = locators.map(l => {
+    const icon  = l.status === 'healthy' ? '🟢' : l.status === 'degraded' ? '🟡' : '🔴';
+    const score = l.score != null ? `${Math.round(l.score)}%` : '—';
+    const barW  = Math.max(0, Math.min(100, Math.round(l.score || 0)));
+    const barC  = l.status === 'healthy' ? '#4ec9b0' : l.status === 'degraded' ? '#eab308' : '#f48771';
+    return `<div class="ps-row">
+      <span class="ps-icon">${icon}</span>
+      <span class="ps-name" title="${escHtml(l.selector || '')}">${escHtml(l.name)}</span>
+      <div class="ps-bar-wrap"><div class="ps-bar" style="width:${barW}%;background:${barC}"></div></div>
+      <span class="ps-score" style="color:${barC}">${score}</span>
+    </div>`;
+  }).join('');
+
+  wrap.style.display = '';
+}
+
+// ── P5-F: Validate Locators (manual prescan trigger) ─────────────────────────
+async function validateLocators() {
+  if (!currentProjectId) { alert('Select a project first.'); return; }
+
+  // Build env URL list from current project
+  const proj = (window._allProjects || []).find(p => p.id === currentProjectId);
+  const envs = proj?.environments || [];
+  const modal = document.getElementById('prescan-modal');
+  if (!modal) return;
+
+  // Populate env dropdown
+  const sel = document.getElementById('prescan-env-sel');
+  if (sel) {
+    if (envs.length) {
+      sel.innerHTML = envs.map(e => `<option value="${escHtml(e.url)}">${escHtml(e.name)} — ${escHtml(e.url)}</option>`).join('');
+    } else {
+      const fallbackUrl = proj?.appUrl || '';
+      sel.innerHTML = `<option value="${escHtml(fallbackUrl)}">${escHtml(fallbackUrl || 'Project URL')}</option>`;
     }
   }
 
-  poll();
+  document.getElementById('prescan-results').innerHTML = '';
+  document.getElementById('prescan-results-wrap').style.display = 'none';
+  modal.style.display = 'flex';
+}
+
+function prescanModalClose() {
+  const modal = document.getElementById('prescan-modal');
+  if (modal) modal.style.display = 'none';
+}
+
+async function prescanRun() {
+  const sel = document.getElementById('prescan-env-sel');
+  const url = sel?.value?.trim();
+  if (!url) { alert('Select an environment URL.'); return; }
+
+  const runBtn = document.getElementById('prescan-run-btn');
+  if (runBtn) { runBtn.disabled = true; runBtn.textContent = 'Scanning…'; }
+
+  try {
+    const res = await fetch('/api/prescan-trigger', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectId: currentProjectId, url }),
+    });
+    if (!res.ok) { const e = await res.json(); alert(e.error || 'Prescan failed'); return; }
+    const { scanId } = await res.json();
+
+    // Poll for results
+    const poll = async () => {
+      const r = await fetch(`/api/prescan?runId=${encodeURIComponent(scanId)}`).catch(() => null);
+      if (!r?.ok) { setTimeout(poll, 1500); return; }
+      const data = await r.json().catch(() => null);
+      if (!data) { setTimeout(poll, 1500); return; }
+
+      // Render in modal
+      const wrap = document.getElementById('prescan-results-wrap');
+      const grid = document.getElementById('prescan-results');
+      if (!grid || !wrap) return;
+
+      const locators = data.locators || [];
+      grid.innerHTML = locators.length
+        ? locators.map(l => {
+            const icon  = l.status === 'healthy' ? '🟢' : l.status === 'degraded' ? '🟡' : '🔴';
+            const score = l.score != null ? `${Math.round(l.score)}%` : '—';
+            const barW  = Math.max(0, Math.min(100, Math.round(l.score || 0)));
+            const barC  = l.status === 'healthy' ? '#4ec9b0' : l.status === 'degraded' ? '#eab308' : '#f48771';
+            return `<div class="ps-row">
+              <span class="ps-icon">${icon}</span>
+              <span class="ps-name" title="${escHtml(l.selector || '')}">${escHtml(l.name)}</span>
+              <div class="ps-bar-wrap"><div class="ps-bar" style="width:${barW}%;background:${barC}"></div></div>
+              <span class="ps-score" style="color:${barC}">${score}</span>
+            </div>`;
+          }).join('')
+        : `<div style="color:var(--neutral-400);font-size:12px;padding:8px">No locators with healing profiles found for this page (${escHtml(data.pageKey || '')}). Record some interactions first.</div>`;
+      wrap.style.display = '';
+      if (runBtn) { runBtn.disabled = false; runBtn.textContent = 'Scan'; }
+    };
+    setTimeout(poll, 2000); // give Playwright a head start
+  } catch { alert('Network error during prescan trigger'); if (runBtn) { runBtn.disabled = false; runBtn.textContent = 'Scan'; } }
+}
+
+// ── T4 Heal Proposal Card ─────────────────────────────────────────────────────
+let _t4ActiveProposal = null;
+
+function showT4ProposalCard(proposal, runId) {
+  if (_t4ActiveProposal?.at === proposal.at) return; // already showing this one
+  _t4ActiveProposal = { ...proposal, runId };
+
+  const modal = document.getElementById('t4-heal-modal');
+  if (!modal) return;
+
+  // Populate fields
+  const el = id => document.getElementById(id);
+  if (el('t4-step-info'))  el('t4-step-info').textContent  = `Step ${proposal.stepOrder} — ${proposal.keyword}`;
+  if (el('t4-tier-badge')) el('t4-tier-badge').textContent = proposal.isAssert ? 'ASSERT (forced T4)' : 'T3 score < 75';
+  if (el('t4-old-sel'))    el('t4-old-sel').textContent    = proposal.oldSelector  || '(unknown — locator not found)';
+  if (el('t4-cand-sel'))   el('t4-cand-sel').textContent   = proposal.candidateSelector || '(no candidate found)';
+  if (el('t4-cand-type'))  el('t4-cand-type').textContent  = proposal.candidateSelectorType || '';
+  if (el('t4-score'))      el('t4-score').textContent      = proposal.candidateSelector ? `${Math.round(proposal.score)}%` : '—';
+
+  const approveBtn = el('t4-approve-btn');
+  if (approveBtn) approveBtn.disabled = !proposal.candidateSelector;
+
+  // Pre-fill override input with candidate selector
+  const overrideInput = el('t4-override-sel');
+  if (overrideInput) overrideInput.value = proposal.candidateSelector || '';
+  const overrideType = el('t4-override-type');
+  if (overrideType) overrideType.value = proposal.candidateSelectorType || 'css';
+
+  modal.style.display = 'flex';
+}
+
+function hideT4ProposalCard() {
+  _t4ActiveProposal = null;
+  const modal = document.getElementById('t4-heal-modal');
+  if (modal) modal.style.display = 'none';
+}
+
+async function respondT4Heal(action) {
+  if (!_t4ActiveProposal) return;
+  const p = _t4ActiveProposal;
+
+  // On approve, use override input if user edited it
+  let selector    = p.candidateSelector;
+  let selectorType = p.candidateSelectorType || 'css';
+  if (action === 'approve') {
+    const overrideInput = document.getElementById('t4-override-sel');
+    const overrideType  = document.getElementById('t4-override-type');
+    if (overrideInput?.value?.trim()) selector     = overrideInput.value.trim();
+    if (overrideType?.value?.trim())  selectorType = overrideType.value.trim();
+    if (!selector) { alert('No candidate selector available — cannot approve. You can type one in the override field.'); return; }
+  }
+
+  try {
+    const res = await fetch('/api/debug/heal-respond', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        runId:          p.runId,
+        action,
+        selector:       action === 'approve' ? selector : undefined,
+        selectorType:   action === 'approve' ? selectorType : undefined,
+        locatorId:      p.locatorId,
+        stepOrder:      p.stepOrder,
+        keyword:        p.keyword,
+        oldSelector:    p.oldSelector,
+        oldSelectorType: p.candidateSelectorType,
+        score:          p.score,
+        projectId:      currentProjectId,
+      }),
+    });
+    if (!res.ok) { const e = await res.json(); alert(e.error || 'Failed to send response'); return; }
+    hideT4ProposalCard();
+  } catch { alert('Network error sending heal response'); }
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -3133,6 +4154,8 @@ window.addEventListener('DOMContentLoaded', async () => {
     _appSwitchTab(tab);
     onModuleTabSwitch(tab);
     _guardCheck(tab);   // enforce project selection on every tab switch
+    // Stop polling active debug sessions when leaving the scripts tab
+    if (tab !== 'scripts') _debugSessionsPollStop();
   };
 
   // Re-bind nav-item clicks so new wrapper is used
@@ -3237,9 +4260,13 @@ function histRender() {
     const reportBtn = isDone
       ? `<button class="btn btn-secondary btn-xs" onclick="histOpenReport('${escHtml(r.runId)}')">&#128196; View Report</button>`
       : `<span style="color:#858585;font-size:11px">In Progress</span>`;
+    // Self-healing badge — only shown when at least 1 T2 heal occurred during this run
+    const healBadge = (r.healCount && r.healCount > 0)
+      ? `<span title="${r.healCount} step(s) auto-healed by T2 Alternatives Fallback" style="margin-left:5px;background:#7c3aed;color:#fff;border-radius:3px;padding:1px 5px;font-size:10px;cursor:default">🩹 Healed ${r.healCount}</span>`
+      : '';
     return `<tr>
       <td><code style="font-size:11px">${escHtml(shortId)}</code></td>
-      <td>${suite}</td>
+      <td>${suite}${healBadge}</td>
       <td>${statusBadge}</td>
       <td style="text-align:center">${r.total  || 0}</td>
       <td style="text-align:center;color:#4ec9b0">${r.passed || 0}</td>
@@ -3398,6 +4425,65 @@ let _debugSseSource     = null;  // SSE EventSource (primary push channel)
 // Step state per order: 'pending' | 'active' | 'done' | 'skipped' | 'error'
 const _debugStepState = {};
 
+// ── Active debug sessions — parallel awareness ────────────────────────────────
+// Map of scriptId → { sessionId, username, startedAt, environmentName }
+// Polled every 5s from GET /api/debug/sessions so the script list can show
+// "🔴 Being debugged by X" badges on rows where another user has an active session.
+let _activeDebugSessions = {};   // scriptId → session info (or {} if none)
+let _debugSessionsPollTimer = null;
+
+function _debugSessionsPollStart() {
+  if (_debugSessionsPollTimer) return; // already running
+  _debugSessionsFetch();
+  _debugSessionsPollTimer = setInterval(_debugSessionsFetch, 5000);
+}
+
+function _debugSessionsPollStop() {
+  if (_debugSessionsPollTimer) { clearInterval(_debugSessionsPollTimer); _debugSessionsPollTimer = null; }
+}
+
+async function _debugSessionsFetch() {
+  if (!currentProjectId) return;
+  try {
+    const r = await fetch(`/api/debug/sessions?projectId=${encodeURIComponent(currentProjectId)}`, { credentials: 'include' });
+    if (!r.ok) return;
+    const sessions = await r.json();
+    // Rebuild map: scriptId → first active session info for that script
+    const map = {};
+    for (const s of sessions) {
+      if (!map[s.scriptId]) map[s.scriptId] = s;
+    }
+    _activeDebugSessions = map;
+    _debugApplyBadges();
+  } catch { /* network hiccup — keep stale data */ }
+}
+
+function _debugApplyBadges() {
+  // Inject or remove "being debugged" badges on each visible script row
+  document.querySelectorAll('.script-tbl-row').forEach(row => {
+    const scriptId = row.dataset.id;
+    const existing = row.querySelector('.debug-active-badge');
+    const session  = _activeDebugSessions[scriptId];
+    if (session && session.sessionId !== _debugSessionId) {
+      // Another user (or this user in another tab) is debugging this script
+      if (!existing) {
+        const badge = document.createElement('span');
+        badge.className = 'debug-active-badge';
+        badge.title = `Being debugged by ${session.username} since ${new Date(session.startedAt).toLocaleTimeString()}${session.environmentName ? ' (' + session.environmentName + ')' : ''}`;
+        badge.textContent = '🔴';
+        badge.style.cssText = 'margin-left:4px;cursor:default;font-size:13px;vertical-align:middle';
+        const titleCell = row.querySelector('td:nth-child(3)');
+        if (titleCell) titleCell.appendChild(badge);
+      } else {
+        // Update tooltip in case username/time changed
+        existing.title = `Being debugged by ${session.username} since ${new Date(session.startedAt).toLocaleTimeString()}${session.environmentName ? ' (' + session.environmentName + ')' : ''}`;
+      }
+    } else if (existing) {
+      existing.remove();
+    }
+  });
+}
+
 // Called when user clicks "Debug" button on a script row
 function debugOpen(scriptId) {
   _debugScriptId = scriptId;
@@ -3467,12 +4553,80 @@ async function debugStart() {
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
+    if (res.status === 409 && err.code === 'DUPLICATE_OWN_SESSION') {
+      // Same user already has this script open in another tab/window
+      const since = err.since ? new Date(err.since).toLocaleTimeString() : '?';
+      const choice = confirm(
+        `You already have an active debug session for this script (started ${since}).\n\n` +
+        `Click OK to close this dialog and continue your existing session,\n` +
+        `or Cancel to stop the old session and start a fresh one.`
+      );
+      if (choice) {
+        // Rejoin existing session — set sessionId and re-open overlay
+        debugClose();
+        _debugSessionId = err.sessionId;
+        document.getElementById('debug-overlay').style.display = 'flex';
+        document.getElementById('debug-overlay-title').textContent = `Debugger — ${script.title}`;
+        _debugOpenSse(err.sessionId);
+        if (typeof wsSubscribe === 'function') wsSubscribe(err.sessionId);
+        _debugStartPolling();
+        _debugStartHeartbeat();
+        return;
+      } else {
+        // Stop the old session then fall through to start fresh after a brief wait
+        await fetch('/api/debug/continue', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId: err.sessionId, action: 'stop' })
+        }).catch(() => {});
+        // Small pause to let the process terminate before spawning a new one
+        await new Promise(r => setTimeout(r, 800));
+        // Retry start
+        const retry = await fetch('/api/debug/start', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ scriptId: _debugScriptId, environmentId: envId })
+        });
+        if (!retry.ok) {
+          const e2 = await retry.json().catch(() => ({}));
+          alert(`Failed to start debugger: ${e2.error || retry.statusText}`);
+          debugClose();
+          return;
+        }
+        const data2 = await retry.json();
+        _debugSessionId  = data2.sessionId;
+        _debugTotalSteps = data2.totalSteps;
+        _debugSetStatus('starting');
+        _debugOpenSse(data2.sessionId);
+        if (typeof wsSubscribe === 'function') wsSubscribe(data2.sessionId);
+        _debugStartPolling();
+        window.addEventListener('beforeunload', () => {
+          if (_debugSessionId) navigator.sendBeacon('/api/debug/stop', JSON.stringify({ sessionId: _debugSessionId, action: 'stop' }));
+        });
+        _debugStartHeartbeat();
+        _debugSessionsFetch(); // refresh badges
+        return;
+      }
+    }
     alert(`Failed to start debugger: ${err.error || res.statusText}`);
     debugClose();
     return;
   }
 
-  const { sessionId, totalSteps } = await res.json();
+  const { sessionId, totalSteps, otherDebuggers } = await res.json();
+
+  // Non-blocking notice: other users are also debugging this script right now
+  if (otherDebuggers && otherDebuggers.length > 0) {
+    const names = otherDebuggers.map(d => `• ${d.username} (since ${new Date(d.since).toLocaleTimeString()})`).join('\n');
+    // Show as a dismissible notice in the debugger header rather than a blocking alert
+    const noticeEl = document.getElementById('dbg-parallel-notice');
+    if (noticeEl) {
+      noticeEl.textContent = `⚠ Also being debugged by: ${otherDebuggers.map(d => d.username).join(', ')}`;
+      noticeEl.style.display = '';
+      setTimeout(() => { if (noticeEl) noticeEl.style.display = 'none'; }, 8000);
+    } else {
+      // Fallback for older markup — non-blocking console warning
+      console.info('[debugger] Parallel debug notice:\n' + names);
+    }
+  }
   _debugSessionId  = sessionId;
   _debugTotalSteps = totalSteps;
   _debugSetStatus('starting');
@@ -3661,9 +4815,12 @@ async function _debugPoll() {
 function _debugOnStep({ stepIdx, keyword, locator, value, screenshotPath, screenshotBase64 }) {
   console.log(`[debugger:step] Received step data: stepIdx=${stepIdx}, keyword=${keyword}, screenshotPath=${screenshotPath}`);
 
-  // Mark previous active step as done
+  // Mark previous active step as done.
+  // Also clear any 'failed' state on steps we've moved past — if we're receiving a
+  // new step event beyond a failed step, the retry must have succeeded.
   _debugStepMeta.forEach(s => {
     if (_debugStepState[s.order] === 'active') _debugStepState[s.order] = 'done';
+    if (_debugStepState[s.order] === 'failed' && s.order < stepIdx) _debugStepState[s.order] = 'done';
   });
 
   _debugStepState[stepIdx] = 'active';
@@ -3701,6 +4858,8 @@ function _debugOnDone({ status }) {
   _debugSetProgress(status === 'stopped' ? 'Stopped by user' : status === 'error' ? 'Finished with errors' : 'Completed ✓');
   _debugSetControls(false);
   document.getElementById('dbg-btn-stop').disabled = true;
+  // Refresh the parallel-debug badges so the red dot clears on this script's row
+  setTimeout(_debugSessionsFetch, 500);
 }
 
 // Called when a step throws — shows error panel + inline edit, marks step red
@@ -3818,6 +4977,14 @@ async function _debugApplyRetry(stepIdx, stepNum) {
   const panel = document.getElementById('dbg-error-panel');
   if (panel) panel.style.display = 'none';
 
+  // Immediately flip the failed step back to 'active' so the step list shows a
+  // blue/active indicator while the retry is in flight (not stuck on red).
+  const failedEntry = _debugStepMeta.find(s => _debugStepState[s.order] === 'failed');
+  if (failedEntry) {
+    _debugStepState[failedEntry.order] = 'active';
+    _debugRenderSteps();
+  }
+
   _debugSetStatus('running');
   _debugSetProgress(`Retrying step ${stepNum} of ${_debugTotalSteps}…`);
 
@@ -3841,8 +5008,13 @@ async function debugContinue(action) {
   _debugSetControls(false);
 
   if (action === 'skip') {
-    const activeStep = _debugStepMeta.find(s => _debugStepState[s.order] === 'active');
-    if (activeStep) _debugStepState[activeStep.order] = 'skipped';
+    // Mark both 'active' and 'failed' steps as skipped — a failed step can be skipped
+    // via the "Skip Step" button in the error panel, so its state must be updated here.
+    _debugStepMeta.forEach(s => {
+      if (_debugStepState[s.order] === 'active' || _debugStepState[s.order] === 'failed') {
+        _debugStepState[s.order] = 'skipped';
+      }
+    });
     _debugRenderSteps();
   }
 
@@ -4152,12 +5324,17 @@ async function recorderStop() {
   _recorderCloseSse();
   _recorderToken = null;
 
+  let recordedSteps = [];
   try {
-    await fetch('/api/recorder/stop', {
+    const stopRes = await fetch('/api/recorder/stop', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({ token }),
     });
+    if (stopRes.ok) {
+      const stopData = await stopRes.json();
+      recordedSteps = stopData.steps || [];
+    }
   } catch { /* ignore — server will auto-expire */ }
 
   // Reset UI
@@ -4167,6 +5344,289 @@ async function recorderStop() {
   if (status) { status.style.display = 'none'; }
 
   console.info('[Recorder] Stopped. Steps are in the editor — review and save.');
+
+  // CR6 — Intelligent Step Grouping: analyse recorded steps for reusable patterns
+  if (recordedSteps.length >= 3 && currentProjectId) {
+    try {
+      const anaRes = await fetch('/api/recorder/analyse', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ projectId: currentProjectId, steps: recordedSteps }),
+      });
+      if (anaRes.ok) {
+        const { patterns } = await anaRes.json();
+        if (patterns && patterns.length > 0) {
+          _cr6ShowSuggestions(patterns, recordedSteps.length);
+        }
+      }
+    } catch (err) {
+      console.warn('[Recorder] Pattern analysis failed:', err);
+    }
+  }
+}
+
+// ── CR6 — Intelligent Step Grouping (Common Function suggestions) ─────────────
+
+/**
+ * Show a suggestion card for each detected pattern.
+ * patterns: array from /api/recorder/analyse
+ * recordedStepsTotal: count of steps added during this recording session
+ */
+function _cr6ShowSuggestions(patterns, recordedStepsTotal) {
+  // Process patterns one by one (queue them so user handles each sequentially)
+  let idx = 0;
+  function showNext() {
+    if (idx >= patterns.length) return;
+    _cr6ShowCard(patterns[idx], recordedStepsTotal, () => { idx++; showNext(); });
+  }
+  showNext();
+}
+
+/**
+ * Show a single pattern suggestion card overlay.
+ * onDone: callback when user accepts or keeps (dismisses) this card.
+ */
+function _cr6ShowCard(pattern, recordedStepsTotal, onDone) {
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:10000;display:flex;align-items:center;justify-content:center';
+
+  const isDuplicate = !!pattern.duplicateFnId;
+  const stepsList   = pattern.steps.map((s, i) =>
+    `<li style="padding:3px 0;color:var(--neutral-300);font-size:12px">
+       <span style="color:var(--purple-400);font-weight:600">${escHtml(s.keyword)}</span>
+       ${s.locatorName || s.locator ? `<span style="color:var(--neutral-500);margin:0 4px">→</span><span style="font-family:monospace;font-size:11px">${escHtml(s.locatorName || s.locator || '')}</span>` : ''}
+       ${s.value ? `<span style="color:var(--neutral-500);margin:0 4px">=</span><span style="font-family:monospace;font-size:11px;color:var(--green-400)">${escHtml(String(s.value))}</span>` : ''}
+     </li>`
+  ).join('');
+
+  const dupWarning = isDuplicate
+    ? `<div style="margin:10px 0;padding:8px 10px;background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3);border-radius:6px;font-size:12px;color:#f59e0b">
+         ⚠ An identical Common Function already exists. Accepting will reuse it without creating a duplicate.
+       </div>`
+    : '';
+
+  overlay.innerHTML = `
+    <div class="modal-box" style="max-width:520px;padding:24px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+        <span style="font-size:18px">🧩</span>
+        <span style="font-weight:700;font-size:15px;color:var(--text-primary)">Reusable Pattern Detected</span>
+      </div>
+      <div style="font-size:12px;color:var(--neutral-400);margin-bottom:14px">
+        This sequence of <strong>${pattern.steps.length} steps</strong> appears in
+        <strong>${pattern.matchCount}</strong> other script${pattern.matchCount !== 1 ? 's' : ''} in this project.
+        Extract it as a Common Function to avoid duplication.
+      </div>
+      ${dupWarning}
+      <div style="margin-bottom:14px">
+        <label style="font-size:12px;color:var(--neutral-300);font-weight:600;display:block;margin-bottom:6px">Function Name</label>
+        <input id="cr6-fn-name" class="fm-input" style="width:100%" placeholder="e.g. Login Flow"
+               value="${escHtml(pattern.suggestedName)}" ${isDuplicate ? 'disabled' : ''} />
+        <div style="margin-top:4px">
+          <label style="font-size:12px;color:var(--neutral-300);font-weight:600;display:block;margin-bottom:4px">Identifier</label>
+          <input id="cr6-fn-ident" class="fm-input" style="width:100%;font-family:monospace" placeholder="e.g. login_flow"
+                 value="${escHtml(_cr6ToIdentifier(pattern.suggestedName))}" ${isDuplicate ? 'disabled' : ''} />
+        </div>
+      </div>
+      <div style="margin-bottom:16px">
+        <div style="font-size:12px;color:var(--neutral-400);margin-bottom:6px;font-weight:600">Steps in this group:</div>
+        <ul style="list-style:none;margin:0;padding:0;border:1px solid var(--border);border-radius:6px;padding:8px 12px;max-height:180px;overflow-y:auto;background:var(--surface-2)">
+          ${stepsList}
+        </ul>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn btn-outline btn-sm" id="cr6-keep-btn">Keep as-is</button>
+        <button class="btn btn-primary btn-sm" id="cr6-accept-btn" style="background:#7c3aed;border-color:#7c3aed">
+          ${isDuplicate ? '🔗 Reuse Existing Function' : '✓ Extract as Common Function'}
+        </button>
+      </div>
+    </div>`;
+
+  document.body.appendChild(overlay);
+
+  // Auto-derive identifier as user types name
+  if (!isDuplicate) {
+    const nameInp  = overlay.querySelector('#cr6-fn-name');
+    const identInp = overlay.querySelector('#cr6-fn-ident');
+    nameInp.addEventListener('input', () => {
+      identInp.value = _cr6ToIdentifier(nameInp.value);
+    });
+  }
+
+  overlay.querySelector('#cr6-keep-btn').onclick = () => {
+    document.body.removeChild(overlay);
+    onDone();
+  };
+
+  overlay.querySelector('#cr6-accept-btn').onclick = async () => {
+    const nameInp  = overlay.querySelector('#cr6-fn-name');
+    const identInp = overlay.querySelector('#cr6-fn-ident');
+    const fnName   = isDuplicate ? pattern.suggestedName : (nameInp?.value.trim() || '');
+    const fnIdent  = isDuplicate ? '' : (identInp?.value.trim() || '');
+
+    if (!isDuplicate && !fnName) { nameInp.style.borderColor = 'red'; nameInp.focus(); return; }
+    if (!isDuplicate && !fnIdent) { identInp.style.borderColor = 'red'; identInp.focus(); return; }
+
+    const acceptBtn = overlay.querySelector('#cr6-accept-btn');
+    acceptBtn.disabled = true;
+    acceptBtn.textContent = 'Saving…';
+
+    try {
+      await _cr6AcceptPattern(pattern, recordedStepsTotal, fnName, fnIdent, isDuplicate);
+      document.body.removeChild(overlay);
+      onDone();
+    } catch (err) {
+      acceptBtn.disabled = false;
+      acceptBtn.textContent = isDuplicate ? '🔗 Reuse Existing Function' : '✓ Extract as Common Function';
+      alert('Failed to extract: ' + (err.message || err));
+    }
+  };
+}
+
+/** Convert a display name to a valid identifier (alphanumeric + underscores) */
+function _cr6ToIdentifier(name) {
+  return (name || '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+}
+
+/**
+ * Accept a pattern: create (or reuse) a CommonFunction, then replace the
+ * matched rows in the script editor with a single CALL FUNCTION step.
+ */
+async function _cr6AcceptPattern(pattern, recordedStepsTotal, fnName, fnIdent, isDuplicate) {
+  let fnId, fnNameResolved;
+
+  if (isDuplicate) {
+    // Reuse existing function — look up by id
+    fnId = pattern.duplicateFnId;
+    fnNameResolved = pattern.suggestedName;
+  } else {
+    // ── Last-chance duplicate guard (client-side) ─────────────────────────────
+    // The server's analyse endpoint may have been called before a prior pattern
+    // was accepted this session. Check allFunctions now (freshly loaded) to
+    // prevent creating a function that is identical or a subset/superset of one
+    // that already exists.
+    function _cr6Fp(step) {
+      // CommonFunction steps use `selector`; script/recorded steps use `locator`
+      const raw = (step.locatorName || step.locator || step.selector || step.detail || '').trim();
+      return `${(step.keyword || '').toUpperCase()}|${raw.toLowerCase().replace(/^[#.]/, '')}`;
+    }
+    const candidateFpArr = pattern.steps.map(_cr6Fp);
+    const candidateFpStr = candidateFpArr.join('::');
+
+    const existingFn = allFunctions.find(f => {
+      if (f.projectId && f.projectId !== currentProjectId) return false;
+      const fnFpArr = (f.steps || []).map(_cr6Fp);
+      const fnFpStr = fnFpArr.join('::');
+      if (fnFpStr === candidateFpStr) return true;  // exact
+
+      // Candidate contained inside existing fn
+      const cLen = candidateFpArr.length, fLen = fnFpArr.length;
+      if (fLen >= cLen) {
+        for (let fi = 0; fi <= fLen - cLen; fi++) {
+          if (fnFpArr.slice(fi, fi + cLen).join('::') === candidateFpStr) return true;
+        }
+      }
+      // Existing fn contained inside candidate
+      if (fLen >= 2 && fLen <= cLen) {
+        for (let ci = 0; ci <= cLen - fLen; ci++) {
+          if (candidateFpArr.slice(ci, ci + fLen).join('::') === fnFpStr) return true;
+        }
+      }
+      return false;
+    });
+
+    if (existingFn) {
+      // Silent reuse — don't create a duplicate
+      fnId = existingFn.id;
+      fnNameResolved = existingFn.name;
+    } else {
+      // Create new CommonFunction (steps only — no values in fn definition)
+      // Exact replication of all locator fields from the script step into the function step.
+      // ScriptStep uses 'locator' for the value; FunctionStep stores it as 'selector'.
+      // Every other field is copied verbatim — no defaults, no coercion.
+      const fnSteps = pattern.steps.map((s, i) => ({
+        order:       i + 1,
+        keyword:     s.keyword,
+        locatorName: s.locatorName ?? null,
+        locatorType: s.locatorType ?? 'css',
+        selector:    s.locator    ?? s.selector ?? null,  // script uses 'locator', fn uses 'selector'
+        description: s.description ?? '',
+      }));
+
+      const body = {
+        name:        fnName,
+        identifier:  fnIdent,
+        description: `Auto-extracted from recording — ${pattern.matchCount} matching script${pattern.matchCount !== 1 ? 's' : ''}`,
+        steps:       fnSteps,
+        projectId:   currentProjectId || null,
+      };
+
+      const res = await fetch('/api/functions', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      fnId           = data.id;
+      fnNameResolved = fnName;
+
+      // Refresh the in-memory allFunctions list so CALL FUNCTION picker finds the new fn
+      await fnLoad();
+    }
+  }
+
+  // ── Replace matched DOM rows with a single CALL FUNCTION step ────────────────
+  // The recorded steps were appended to the end of any pre-existing editor rows.
+  // So recorded step at index i → DOM row at (totalRows - recordedStepsTotal + i).
+  const allRows = [...document.querySelectorAll('#se-steps-container .script-step-row')];
+  const offset  = allRows.length - recordedStepsTotal;
+
+  const domStart = offset + pattern.startIndex;
+  const domEnd   = offset + pattern.endIndex;
+
+  // The row that will follow the replacement (used as insert-before anchor)
+  const anchorRow = allRows[domEnd + 1] || null;
+
+  // Remove matched rows (in reverse order to keep indices stable)
+  for (let i = domEnd; i >= domStart; i--) {
+    if (allRows[i]) allRows[i].remove();
+  }
+
+  // Build fnStepValues — pre-populate with values captured during recording
+  const fnStepValues = pattern.steps.reduce((acc, s, fi) => {
+    if (s.value != null && s.value !== '') {
+      acc.push({
+        fnStepIdx: fi,
+        valueMode: s.valueMode || 'static',
+        value:     s.value,
+        testData:  s.testData  || [],
+      });
+    }
+    return acc;
+  }, []);
+
+  // Insert a CALL FUNCTION step at the same position
+  const callFnStep = {
+    keyword:      'CALL FUNCTION',
+    value:        fnNameResolved,
+    valueMode:    'static',
+    fnStepValues,
+    locator:      null,
+    locatorName:  null,
+    locatorType:  'css',
+    description:  `Call: ${fnNameResolved}`,
+    screenshot:   false,
+    testData:     [],
+  };
+  scriptAddStep(callFnStep, anchorRow);
+
+  // Re-number all steps
+  scriptReorderNums();
+
+  console.info(`[CR6] Replaced steps ${pattern.startIndex}–${pattern.endIndex} with CALL FUNCTION "${fnNameResolved}"`);
 }
 
 // ── Environment picker (for projects with multiple environments) ──────────────
@@ -4328,4 +5788,487 @@ function _recorderApplyLocatorEdit(btn) {
   rowEl.style.transition = 'background 0.2s';
   rowEl.style.background = 'rgba(34,197,94,0.15)';
   setTimeout(() => { rowEl.style.background = ''; }, 1000);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// API KEY MANAGEMENT
+// ══════════════════════════════════════════════════════════════════════════════
+
+let _apikeyRawKey = null;
+
+async function apikeyLoad() {
+  const res  = await fetch('/api/admin/apikeys');
+  const keys = await res.json();
+  const tbody = document.getElementById('apikey-tbody');
+  if (!tbody) return;
+  const projects = await _getProjects();
+  tbody.innerHTML = keys.length === 0
+    ? '<tr><td colspan="6" style="text-align:center;color:var(--text-muted)">No API keys yet.</td></tr>'
+    : keys.map(k => {
+        const proj = projects.find(p => p.id === k.projectId);
+        return `<tr>
+          <td><strong>${escHtml(k.name)}</strong></td>
+          <td><code>${escHtml(k.prefix)}…</code></td>
+          <td>${proj ? escHtml(proj.name) : 'All projects'}</td>
+          <td>${k.expiresAt ? formatDate(k.expiresAt) : 'Never'}</td>
+          <td>${k.lastUsedAt ? formatDate(k.lastUsedAt) : '—'}</td>
+          <td><button class="btn btn-danger btn-sm" onclick="apikeyDelete('${k.id}')">Revoke</button></td>
+        </tr>`;
+      }).join('');
+}
+
+async function _getProjects() {
+  try { const r = await fetch('/api/projects'); return await r.json(); } catch { return []; }
+}
+
+function apikeyOpenModal() {
+  _apikeyRawKey = null;
+  document.getElementById('ak-name').value = '';
+  document.getElementById('ak-expires').value = '';
+  document.getElementById('apikey-modal-alert').innerHTML = '';
+  document.getElementById('apikey-result-block').style.display = 'none';
+  document.getElementById('apikey-form-block').style.display = '';
+  document.getElementById('ak-save-btn').style.display = '';
+  // Populate project dropdown
+  _getProjects().then(projects => {
+    const sel = document.getElementById('ak-project');
+    sel.innerHTML = '<option value="">All projects</option>' +
+      projects.map(p => `<option value="${p.id}">${escHtml(p.name)}</option>`).join('');
+  });
+  document.getElementById('modal-apikey').style.display = 'flex';
+}
+
+function apikeyCloseModal() {
+  document.getElementById('modal-apikey').style.display = 'none';
+  if (_apikeyRawKey) apikeyLoad();
+}
+
+function apikeyCopyKey() {
+  if (_apikeyRawKey) navigator.clipboard.writeText(_apikeyRawKey).catch(() => {});
+}
+
+async function apikeySave() {
+  const name      = document.getElementById('ak-name').value.trim();
+  const projectId = document.getElementById('ak-project').value || null;
+  const expiresIn = document.getElementById('ak-expires').value;
+  const alert     = document.getElementById('apikey-modal-alert');
+
+  if (!name) { alert.innerHTML = '<div class="alert alert-error">Name is required.</div>'; return; }
+
+  let expiresAt = null;
+  if (expiresIn) {
+    const days = parseInt(expiresIn);
+    const d = new Date();
+    d.setDate(d.getDate() + days);
+    expiresAt = d.toISOString();
+  }
+
+  const res  = await fetch('/api/admin/apikeys', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, projectId, expiresAt }) });
+  const data = await res.json();
+  if (!res.ok) { alert.innerHTML = `<div class="alert alert-error">${escHtml(data.error || 'Error')}</div>`; return; }
+
+  _apikeyRawKey = data.key;
+  document.getElementById('apikey-raw-display').textContent = data.key;
+  document.getElementById('apikey-result-block').style.display = '';
+  document.getElementById('apikey-form-block').style.display = 'none';
+  document.getElementById('ak-save-btn').style.display = 'none';
+}
+
+async function apikeyDelete(id) {
+  if (!confirm('Revoke this API key? Any pipelines using it will stop working.')) return;
+  await fetch(`/api/admin/apikeys/${id}`, { method: 'DELETE' });
+  apikeyLoad();
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// P1: LICENSE MANAGEMENT
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function licenseLoad() {
+  try {
+    const [licRes, machineRes, auditRes, sessionsRes] = await Promise.all([
+      fetch('/api/admin/license'),
+      fetch('/api/admin/license/machine'),
+      fetch('/api/admin/license/audit'),
+      fetch('/api/admin/license/sessions'),
+    ]);
+    const data     = licRes.ok       ? await licRes.json()       : { activated: false };
+    const machine  = machineRes.ok   ? await machineRes.json()   : null;
+    const audit    = auditRes.ok     ? await auditRes.json()     : [];
+    const sessData = sessionsRes.ok  ? await sessionsRes.json()  : { sessions: [], seatsUsed: 0 };
+
+    // P3-05: Always populate Machine ID display (needed before activation)
+    const machineDisplay = document.getElementById('lic-machineid-display');
+    if (machineDisplay) {
+      machineDisplay.textContent = machine
+        ? (machine.currentMachineId ?? machine.currentMachineIdHint ?? '—')
+        : '(unavailable)';
+    }
+
+    _renderLicensePanel(data, machine, audit, sessData.sessions ?? []);
+  } catch (err) {
+    console.error('[licenseLoad] error:', err);
+    const machineDisplay = document.getElementById('lic-machineid-display');
+    if (machineDisplay && machineDisplay.textContent === 'Loading…') {
+      machineDisplay.textContent = '(error loading)';
+    }
+  }
+}
+
+// P3-05: Copy full Machine ID to clipboard
+async function licenseCopyMachineId() {
+  const el = document.getElementById('lic-machineid-display');
+  const id = el?.textContent?.trim() ?? '';
+  if (!id || id === 'Loading…') return;
+  try {
+    await navigator.clipboard.writeText(id);
+    const btn = document.getElementById('lic-copy-machineid-btn');
+    if (btn) { btn.textContent = 'Copied!'; setTimeout(() => { btn.textContent = 'Copy Machine ID'; }, 2000); }
+  } catch {
+    prompt('Copy this Machine ID and send it to your vendor:', id);
+  }
+}
+
+function _renderLicensePanel(data, machine, audit, sessions) {
+  const statusBlock   = document.getElementById('lic-status-block');
+  const activateBlock = document.getElementById('lic-activate-block');
+  const alertEl       = document.getElementById('license-alert');
+  if (!statusBlock || !activateBlock) return;
+  alertEl.innerHTML = '';
+
+  const preActivateEl = document.getElementById('lic-machineid-preactivate');
+  if (!data.activated) {
+    statusBlock.style.display   = 'none';
+    activateBlock.style.display = '';
+    if (preActivateEl) preActivateEl.style.display = '';
+    return;
+  }
+  if (preActivateEl) preActivateEl.style.display = 'none';
+
+  // Show status block
+  statusBlock.style.display   = '';
+  activateBlock.style.display = 'none';
+
+  const tierBadge = document.getElementById('lic-tier-badge');
+  tierBadge.textContent = data.tier.toUpperCase();
+  tierBadge.className   = `lic-badge lic-badge-${data.tier}`;
+
+  document.getElementById('lic-org-name').textContent = data.orgName || data.orgId;
+
+  const expiryChip = document.getElementById('lic-expiry-chip');
+  if (data.expired) {
+    expiryChip.textContent = 'EXPIRED';
+    expiryChip.className   = 'lic-chip lic-chip-red';
+  } else if (data.daysLeft <= 14) {
+    expiryChip.textContent = `Expires in ${data.daysLeft} days`;
+    expiryChip.className   = 'lic-chip lic-chip-amber';
+  } else {
+    expiryChip.textContent = `Expires ${new Date(data.expiresAt).toLocaleDateString()}`;
+    expiryChip.className   = 'lic-chip lic-chip-green';
+  }
+
+  const seatsChip = document.getElementById('lic-seats-chip');
+  seatsChip.textContent = data.seats === -1
+    ? 'Unlimited seats'
+    : `${data.seatsUsed} / ${data.seats} seats`;
+  seatsChip.className = 'lic-chip lic-chip-blue';
+
+  const featList = document.getElementById('lic-features-list');
+  const f        = data.features || {};
+  const ov       = data.featureOverrides || {};   // P4-01: vendor-signed overrides
+  const labels   = { recorder: 'Recorder', debugger: 'Debugger', scheduler: 'Scheduler',
+    sso: 'SSO', apiAccess: 'API Access', whiteLabel: 'White-label' };
+
+  // Effective value = override (if present) else tier default
+  featList.innerHTML = Object.entries(labels).map(([k, label]) => {
+    const effective = k in ov ? ov[k] : f[k];
+    const isOverride = k in ov;
+    if (!effective) return '';
+    const addOnBadge = isOverride && !f[k]
+      ? ` <sup title="Granted by vendor add-on" style="color:var(--accent);font-size:.65rem;font-weight:700">+</sup>`
+      : '';
+    return `<span class="lic-feature-chip">${label}${addOnBadge}</span>`;
+  }).join('');
+
+  // P4-01: Show revoked features (tier has it, override removes it)
+  const revokedEl = document.getElementById('lic-revoked-features');
+  if (revokedEl) {
+    const revoked = Object.entries(labels)
+      .filter(([k]) => k in ov && ov[k] === false && f[k] === true)
+      .map(([, label]) => `<span class="lic-feature-chip" style="text-decoration:line-through;opacity:.5">${label}</span>`);
+    revokedEl.innerHTML = revoked.length
+      ? `<div style="margin-top:6px;font-size:.72rem;color:var(--text-muted)">Revoked by vendor: ${revoked.join('')}</div>`
+      : '';
+  }
+
+  // P1-EG-06: Machine binding status
+  const machineEl = document.getElementById('lic-machine-block');
+  if (machineEl && machine) {
+    const bound   = machine.boundMachineId;
+    const match   = machine.match;
+    const matchBadge = match === true
+      ? `<span class="lic-chip lic-chip-green" style="font-size:.72rem">Bound ✓</span>`
+      : match === false
+        ? `<span class="lic-chip lic-chip-red" style="font-size:.72rem">Mismatch ⚠</span>`
+        : `<span class="lic-chip" style="font-size:.72rem">Unbound</span>`;
+    machineEl.innerHTML = `
+      <div style="margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,.07)">
+        <div style="font-size:.78rem;color:var(--text-muted);margin-bottom:6px">Machine Binding</div>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <code style="font-size:.78rem;color:var(--text-secondary)">${_escHtml(bound ? machine.boundMachineIdHint : machine.currentMachineIdHint)}</code>
+          ${matchBadge}
+          ${match === false ? `<button class="btn btn-outline btn-sm" onclick="licenseTransfer()" style="color:var(--warning)">Transfer to this machine</button>` : ''}
+        </div>
+        ${data.maxInstances && data.maxInstances !== -1 ? `<div style="font-size:.72rem;color:var(--text-muted);margin-top:4px">Max ${data.maxInstances} server instance${data.maxInstances === 1 ? '' : 's'} allowed</div>` : ''}
+      </div>`;
+  }
+
+  // P2-02: Active Seat Dashboard
+  const sessionsEl = document.getElementById('lic-sessions-block');
+  if (sessionsEl) {
+    const activeSessions = Array.isArray(sessions) ? sessions : [];
+    const seatsUsed  = data.seatsUsed  ?? 0;
+    const seatsTotal = data.seats === -1 ? '∞' : (data.seats ?? '—');
+    const ratio      = data.seatRatio  ?? -1;
+    const barPct     = ratio === -1 ? 0 : Math.min(100, Math.round(ratio * 100));
+    const barColor   = ratio >= 0.9 ? '#ef4444' : ratio >= 0.8 ? '#f59e0b' : '#22c55e';
+
+    sessionsEl.innerHTML = `
+      <div style="margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,.07)">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <div style="font-size:.78rem;color:var(--text-muted)">Active Sessions &mdash; ${seatsUsed} of ${seatsTotal} seats</div>
+          <button class="btn btn-outline btn-sm" onclick="licenseLoad()" style="font-size:.72rem;padding:3px 8px">Refresh</button>
+        </div>
+        ${ratio !== -1 ? `
+        <div style="height:6px;background:rgba(255,255,255,.08);border-radius:3px;margin-bottom:10px;overflow:hidden">
+          <div style="height:100%;width:${barPct}%;background:${barColor};border-radius:3px;transition:width .3s"></div>
+        </div>` : ''}
+        ${activeSessions.length === 0
+          ? `<div style="font-size:.78rem;color:var(--text-muted);padding:8px 0">No active sessions</div>`
+          : `<table style="width:100%;font-size:.74rem;border-collapse:collapse">
+              <thead><tr>
+                <th style="text-align:left;color:var(--text-muted);padding:4px 6px;border-bottom:1px solid rgba(255,255,255,.07)">User</th>
+                <th style="text-align:left;color:var(--text-muted);padding:4px 6px;border-bottom:1px solid rgba(255,255,255,.07)">Role</th>
+                <th style="text-align:left;color:var(--text-muted);padding:4px 6px;border-bottom:1px solid rgba(255,255,255,.07)">Logged in</th>
+                <th style="text-align:left;color:var(--text-muted);padding:4px 6px;border-bottom:1px solid rgba(255,255,255,.07)">Last active</th>
+                <th style="text-align:left;color:var(--text-muted);padding:4px 6px;border-bottom:1px solid rgba(255,255,255,.07)">IP</th>
+                <th style="padding:4px 6px;border-bottom:1px solid rgba(255,255,255,.07)"></th>
+              </tr></thead>
+              <tbody>
+                ${activeSessions.map(s => `<tr>
+                  <td style="padding:5px 6px;color:var(--text-secondary);font-weight:${s.isCurrent?'600':'400'}">${_escHtml(s.username||'—')}${s.isCurrent?' <span style="font-size:.68rem;color:#60a5fa">(you)</span>':''}</td>
+                  <td style="padding:5px 6px"><span class="badge badge-${s.role||'tester'}">${_escHtml(s.role||'—')}</span></td>
+                  <td style="padding:5px 6px;color:var(--text-muted)">${s.loginAt ? new Date(s.loginAt).toLocaleTimeString() : '—'}</td>
+                  <td style="padding:5px 6px;color:var(--text-muted)">${s.lastActivity ? new Date(s.lastActivity).toLocaleTimeString() : '—'}</td>
+                  <td style="padding:5px 6px;color:var(--text-muted)">${_escHtml(s.ip||'—')}</td>
+                  <td style="padding:5px 6px">
+                    ${s.isCurrent ? '' : `<button class="tbl-btn del" onclick="licenseRevokeSession('${_escHtml(s.sessionId)}','${_escHtml(s.username||'')}')" title="Force logout">Revoke</button>`}
+                  </td>
+                </tr>`).join('')}
+              </tbody>
+            </table>`}
+      </div>`;
+    sessionsEl.style.display = '';
+  }
+
+  // P3-11: License Audit Log
+  const auditEl = document.getElementById('lic-audit-block');
+  if (auditEl && Array.isArray(audit) && audit.length > 0) {
+    const ACTION_LABELS = {
+      LICENSE_ACTIVATED:   '&#9989; Activated',
+      LICENSE_DEACTIVATED: '&#128683; Deactivated',
+      LICENSE_TRANSFERRED: '&#128260; Transferred',
+      LICENSE_EXPIRED:     '&#128308; Expired',
+    };
+    auditEl.innerHTML = `
+      <details style="margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,.07)">
+        <summary style="cursor:pointer;font-size:.78rem;color:var(--text-muted);user-select:none">License Audit Log (${audit.length} events)</summary>
+        <table style="width:100%;margin-top:8px;font-size:.74rem;border-collapse:collapse">
+          <thead><tr>
+            <th style="text-align:left;color:var(--text-muted);padding:4px 6px;border-bottom:1px solid rgba(255,255,255,.07)">Time</th>
+            <th style="text-align:left;color:var(--text-muted);padding:4px 6px;border-bottom:1px solid rgba(255,255,255,.07)">Event</th>
+            <th style="text-align:left;color:var(--text-muted);padding:4px 6px;border-bottom:1px solid rgba(255,255,255,.07)">User</th>
+            <th style="text-align:left;color:var(--text-muted);padding:4px 6px;border-bottom:1px solid rgba(255,255,255,.07)">Details</th>
+          </tr></thead>
+          <tbody>
+            ${audit.map(e => `<tr>
+              <td style="padding:4px 6px;color:var(--text-secondary)">${new Date(e.ts || e.timestamp || '').toLocaleString()}</td>
+              <td style="padding:4px 6px">${ACTION_LABELS[e.action] || _escHtml(e.action)}</td>
+              <td style="padding:4px 6px;color:var(--text-secondary)">${_escHtml(e.username || e.userId || '—')}</td>
+              <td style="padding:4px 6px;color:var(--text-secondary)">${_escHtml(e.details || '')}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </details>`;
+    auditEl.style.display = '';
+  } else if (auditEl) {
+    auditEl.style.display = 'none';
+  }
+}
+
+async function licenseActivate() {
+  const key   = (document.getElementById('lic-key-input').value || '').trim();
+  const alert = document.getElementById('license-alert');
+  if (!key) { alert.innerHTML = '<div class="alert alert-error">Enter a license key</div>'; return; }
+  alert.innerHTML = '<div class="alert alert-info">Activating…</div>';
+  const res  = await fetch('/api/admin/license/activate', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body:   JSON.stringify({ key }),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    alert.innerHTML = `<div class="alert alert-error">${escHtml(data.error)}</div>`;
+    return;
+  }
+  alert.innerHTML = `<div class="alert alert-success">License activated — ${data.tier.toUpperCase()} tier for ${_escHtml(data.orgName)}</div>`;
+  document.getElementById('lic-key-input').value = '';
+  licenseLoad();
+  licenseCheckBanner();
+}
+
+async function licenseActivateFile() {
+  const fileInput = document.getElementById('lic-file-input');
+  const file = fileInput.files[0];
+  if (!file) return;
+  const alert = document.getElementById('license-alert');
+  alert.innerHTML = '<div class="alert alert-info">Uploading .lic file…</div>';
+  const form = new FormData();
+  form.append('licFile', file);
+  const res  = await fetch('/api/admin/license/activate', { method: 'POST', body: form });
+  const data = await res.json();
+  fileInput.value = '';
+  if (!res.ok) {
+    alert.innerHTML = `<div class="alert alert-error">${escHtml(data.error)}</div>`;
+    return;
+  }
+  alert.innerHTML = `<div class="alert alert-success">License activated — ${data.tier.toUpperCase()} tier</div>`;
+  licenseLoad();
+  licenseCheckBanner();
+}
+
+// P2-02: Force-logout a session (frees a seat)
+async function licenseRevokeSession(sessionId, username) {
+  if (!confirm(`Force-logout ${username || 'this user'}? Their current work may be lost.`)) return;
+  const res = await fetch(`/api/admin/license/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' });
+  const data = await res.json();
+  if (!res.ok) { alert(data.error || 'Failed to revoke session'); return; }
+  licenseLoad();
+}
+
+// P3-07: Download seat audit report CSV
+function licenseExportSeatReport() {
+  const a = document.createElement('a');
+  a.href = '/api/admin/license/seat-report';
+  a.download = `seat-report-${new Date().toISOString().slice(0,10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
+async function licenseDeactivate() {
+  if (!confirm('Deactivate license? The platform will continue in dev mode.')) return;
+  await fetch('/api/admin/license', { method: 'DELETE' });
+  licenseLoad();
+  licenseCheckBanner();
+}
+
+async function licenseTransfer() {
+  if (!confirm('Transfer this license to the current machine?\n\nThis will re-bind the license to this machine\'s hardware fingerprint. The previous machine will no longer be able to use this license.')) return;
+  const alert = document.getElementById('license-alert');
+  alert.innerHTML = '<div class="alert alert-info">Transferring license…</div>';
+  const res  = await fetch('/api/admin/license/transfer', { method: 'POST' });
+  const data = await res.json();
+  if (!res.ok) {
+    alert.innerHTML = `<div class="alert alert-error">${escHtml(data.error)}</div>`;
+    return;
+  }
+  alert.innerHTML = `<div class="alert alert-success">License transferred and bound to this machine.</div>`;
+  licenseLoad();
+}
+
+// P1-09 / P3-09: Check license status — show banner + read-only mode (P1-10)
+async function licenseCheckBanner() {
+  const banner = document.getElementById('license-banner');
+  if (!banner) return;
+  try {
+    const res = await fetch('/api/admin/license');
+    if (!res.ok) { banner.style.display = 'none'; return; }
+    const data = await res.json();
+    if (!data.activated) { banner.style.display = 'none'; document.body.classList.remove('lic-readonly'); return; }
+
+    // P2-04: 80% seat warning — shown to admin only
+    if (data.seatRatio !== -1 && data.seatRatio >= 0.8 && !data.expired) {
+      const pct = Math.round(data.seatRatio * 100);
+      const used = data.seatsUsed, total = data.seats;
+      document.getElementById('license-banner-seats')?.remove?.();
+      const seatBanner = document.createElement('div');
+      seatBanner.id = 'license-banner-seats';
+      seatBanner.className = 'lic-warn';
+      seatBanner.style.cssText = 'display:flex;margin-bottom:4px';
+      seatBanner.innerHTML = `&#9888;&#65039; <strong>${used} of ${total} seats</strong> in use (${pct}%) &mdash; consider upgrading your license.`;
+      banner.parentNode?.insertBefore(seatBanner, banner);
+    } else {
+      document.getElementById('license-banner-seats')?.remove?.();
+    }
+
+    if (data.expired) {
+      banner.innerHTML = '&#128308; Your QA Agent Platform license has <strong>expired</strong>. Contact your vendor to renew.';
+      banner.className = 'lic-error';
+      banner.style.display = 'flex';
+      document.body.classList.add('lic-readonly');  // P1-10
+    } else if (data.tier === 'trial') {
+      // P3-09: Trial banner — always shown during evaluation period
+      banner.innerHTML = `&#128203; <strong>Trial License</strong> &mdash; expires in <strong>${data.daysLeft} day${data.daysLeft !== 1 ? 's' : ''}</strong>. <a href="mailto:sales@qa-agent.io" style="color:inherit;font-weight:600;margin-left:4px">Purchase a license &rarr;</a>`;
+      banner.className = 'lic-info';
+      banner.style.display = 'flex';
+      document.body.classList.remove('lic-readonly');
+    } else if (data.daysLeft <= 14) {
+      banner.innerHTML = `&#9888;&#65039; License expires in <strong>${data.daysLeft} day${data.daysLeft !== 1 ? 's' : ''}</strong> &mdash; contact your vendor to renew.`;
+      banner.className = 'lic-warn';
+      banner.style.display = 'flex';
+      document.body.classList.remove('lic-readonly');
+    } else {
+      banner.style.display = 'none';
+      document.body.classList.remove('lic-readonly');
+    }
+  } catch {
+    banner.style.display = 'none';
+  }
+}
+
+// P3-10: Global 402 upgrade CTA handler — wrap fetch() calls that might hit feature gates
+// Usage: const data = await fetchWithUpgradeCTA('/api/schedules', opts);
+async function fetchWithUpgradeCTA(url, opts) {
+  const res = await fetch(url, opts);
+  if (res.status === 402) {
+    const body = await res.json().catch(() => ({}));
+    const upgradeTier = (body.upgrade || 'enterprise');
+    const tierLabel   = upgradeTier === 'team' ? 'Team' : 'Enterprise';
+    const feature     = body.feature || 'this feature';
+    showUpgradeCTA(feature, tierLabel);
+    return null;  // caller checks null to abort
+  }
+  return res;
+}
+
+function showUpgradeCTA(feature, tierLabel) {
+  const existing = document.getElementById('upgrade-cta-modal');
+  if (existing) existing.remove();
+  const modal = document.createElement('div');
+  modal.id = 'upgrade-cta-modal';
+  modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:center;justify-content:center';
+  modal.innerHTML = `
+    <div style="background:#1e2433;border:1px solid #3b4560;border-radius:8px;padding:32px;max-width:420px;text-align:center">
+      <div style="font-size:32px;margin-bottom:12px">&#128274;</div>
+      <h3 style="color:#e2e8f0;margin:0 0 8px">${_escHtml(feature.charAt(0).toUpperCase() + feature.slice(1))} not available</h3>
+      <p style="color:#94a3b8;margin:0 0 20px">This feature requires the <strong style="color:#60a5fa">${_escHtml(tierLabel)}</strong> plan.</p>
+      <p style="color:#64748b;font-size:13px;margin:0 0 24px">Contact your vendor to upgrade your license.</p>
+      <button onclick="document.getElementById('upgrade-cta-modal').remove()"
+        style="background:#3b82f6;color:#fff;border:none;border-radius:6px;padding:10px 24px;cursor:pointer;font-size:14px">
+        Got it
+      </button>
+    </div>`;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
 }

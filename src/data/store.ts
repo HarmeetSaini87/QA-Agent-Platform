@@ -8,7 +8,9 @@
 import * as fs   from 'fs';
 import * as path from 'path';
 
-const DATA_DIR = path.resolve('data');
+// DATA_DIR is configurable via .env so dev and prod instances use separate storage.
+// Default: ./data (preserves existing production behaviour when no .env var is set).
+const DATA_DIR = path.resolve(process.env.DATA_DIR || 'data');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
 // ── Generic helpers ────────────────────────────────────────────────────────────
@@ -60,3 +62,4 @@ export const SCRIPTS     = 'scripts';
 export const SUITES      = 'suites';
 export const COMMON_DATA = 'common_data';
 export const SCHEDULES   = 'schedules';
+export const APIKEYS     = 'apikeys';

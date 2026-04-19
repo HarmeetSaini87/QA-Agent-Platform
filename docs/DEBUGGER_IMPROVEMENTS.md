@@ -403,8 +403,14 @@ After all steps complete, the spec takes a final screenshot and calls `__debugPa
 
 ---
 
-## Future Improvements
+## Future Improvements (Optional Backlog — Not Blocking)
 - [ ] Add metrics/telemetry for cleanup success rate
 - [ ] Implement graceful shutdown with retry logic
 - [ ] Add admin UI to view active debug sessions and force-kill if needed
 - [ ] Auto-cleanup for sessions older than 24 hours
+
+---
+
+## Status Summary (2026-04-19)
+Both Round 1 and Round 2 are fully implemented and verified in `qa-agent-platform-dev`.  
+All checklist items complete. Only the 4 optional backlog items above remain.

@@ -10,7 +10,7 @@
 
 import { v4 as uuidv4 } from 'uuid';
 import { readAll, upsert, LOCATORS } from '../data/store';
-import type { Locator, ScriptStep } from '../data/types';
+import type { Locator, ScriptStep, LocatorAlternative, HealingProfile } from '../data/types';
 
 // ── Raw event shape posted by recorder.js ─────────────────────────────────────
 export interface RecorderEvent {
@@ -26,6 +26,11 @@ export interface RecorderEvent {
   url:          string;
   shadowPath?:  boolean;
   iframeSrc?:   string | null;
+  // ── Self-Healing fields (recorder v4+) ─────────────────────────────────────
+  healingProfile?:   HealingProfile;
+  alternatives?:     LocatorAlternative[];
+  importanceScore?:  number;
+  pageKey?:          string;
 }
 
 // ── Keyword mapping ───────────────────────────────────────────────────────────
@@ -43,6 +48,8 @@ const EVENT_TO_KEYWORD: Record<string, string> = {
   ACCEPT_DIALOG:  'ACCEPT DIALOG',
   HANDLE_PROMPT:  'HANDLE PROMPT',
   ASSERT_VISIBLE: 'ASSERT VISIBLE',  // auto-captured from flash/toast messages
+  ASSERT_TOAST:   'ASSERT TOAST',    // CR4: auto-captured toast with text assertion
+  ASSERT_URL:     'ASSERT URL',      // CR4: auto-captured after SPA navigation
 };
 
 // ── Locator Repository resolution ─────────────────────────────────────────────
@@ -84,8 +91,44 @@ function findLocatorByName(projectId: string, name: string): Locator | undefined
 }
 
 /**
+ * Convert a raw event type into a natural-language verb phrase.
+ * Handles multi-word types like FILE_CHOOSER → "Choose File",
+ * DATE_PICKER → "Set Date", ACCEPT_ALERT → "Accept Alert", etc.
+ */
+function eventTypeToVerb(eventType: string): string {
+  const map: Record<string, string> = {
+    CLICK:          'Click',
+    FILL:           'Fill',
+    SELECT:         'Select',
+    CHECK:          'Check',
+    UNCHECK:        'Uncheck',
+    UPLOAD:         'Upload',
+    FILE_CHOOSER:   'Choose File',
+    DATE_PICKER:    'Set Date',
+    GOTO:           'Navigate To',
+    ACCEPT_ALERT:   'Accept Alert',
+    ACCEPT_DIALOG:  'Accept Dialog',
+    DISMISS_DIALOG: 'Dismiss Dialog',
+    HANDLE_PROMPT:  'Handle Prompt',
+    ASSERT_VISIBLE: 'Assert Visible',
+    ASSERT_TOAST:   'Assert Toast',
+    ASSERT_URL:     'Assert URL',
+    HOVER:          'Hover',
+    FOCUS:          'Focus',
+    DBLCLICK:       'Double Click',
+    RIGHT_CLICK:    'Right Click',
+  };
+  if (map[eventType]) return map[eventType];
+  // Generic: FILE_CHOOSER-style fallback → "File Chooser" (Title Case, underscores → spaces)
+  return eventType
+    .toLowerCase()
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, c => c.toUpperCase());
+}
+
+/**
  * Generate a clean, meaningful locator name.
- * Priority: keyword-prefixed smartName > selector-derived > numbered fallback.
+ * Priority: verb-prefixed smartName > selector-derived > numbered fallback.
  * Filters out junk single-char / HTML-tag-only names.
  */
 function buildLocatorName(
@@ -94,7 +137,7 @@ function buildLocatorName(
   eventType:    string,
   stepNum:      number,
 ): string {
-  const kw = eventType.charAt(0).toUpperCase() + eventType.slice(1).toLowerCase(); // e.g. "Click", "Fill"
+  const verb = eventTypeToVerb(eventType);  // e.g. "Click", "Choose File", "Set Date"
 
   // Clean and validate smartName
   const clean = (smartName || '').trim().replace(/\s+/g, ' ');
@@ -104,34 +147,55 @@ function buildLocatorName(
     || /^\d+$/.test(clean);   // purely numeric
 
   if (!isJunk && clean.length <= 80) {
-    // Prefix with keyword for clarity: "Click Mediation Configuration"
-    const prefixed = `${kw} ${clean}`;
-    return prefixed.substring(0, 80);
+    // Prefix with verb for clarity: "Click Mediation Configuration", "Choose File Upload Area"
+    return `${verb} ${clean}`.substring(0, 80);
   }
 
-  // Derive from selector — extract the meaningful part
-  // ID: #submitBtn → Submit Btn
-  const idMatch = selector.match(/(?:#|@id=["'])([a-zA-Z][\w-]{1,40})/);
+  // Derive a meaningful label from the selector — extract the human-readable part
+  // 1. Stable ID: #submitBtn or @id="submitBtn" → "Submit Btn"
+  const idMatch = selector.match(/(?:^#|@id=["'])([a-zA-Z][\w-]{1,40})/);
   if (idMatch) {
-    return `${kw} ${idMatch[1].replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}`;
+    return `${verb} ${idMatch[1].replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}`;
   }
-  // aria-label or placeholder or name attr
-  const attrMatch = selector.match(/\[(?:aria-label|placeholder|name)="([^"]{2,60})"\]/);
+  // 2. for attribute on label: label[for="FlgEnable"] → "Flg Enable"
+  const forMatch = selector.match(/\[for="([^"]{1,60})"\]/);
+  if (forMatch) {
+    return `${verb} ${forMatch[1].replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}`;
+  }
+  // 3. aria-label, placeholder, name, title attributes
+  const attrMatch = selector.match(/\[(?:aria-label|placeholder|name|title)="([^"]{2,60})"\]/);
   if (attrMatch) {
-    return `${kw} ${attrMatch[1].replace(/\b\w/g, c => c.toUpperCase())}`;
+    return `${verb} ${attrMatch[1].replace(/\b\w/g, c => c.toUpperCase())}`.substring(0, 80);
   }
-  // XPath text: //span[normalize-space(.)="Some Text"]
+  // 4. XPath text: //span[normalize-space(.)="Some Text"]
   const xpathText = selector.match(/normalize-space\(\.\)="([^"]{2,60})"/);
   if (xpathText) {
-    return `${kw} ${xpathText[1]}`.substring(0, 80);
+    return `${verb} ${xpathText[1]}`.substring(0, 80);
   }
-  // testid
-  const testid = selector.match(/data-testid="([^"]+)"/);
+  // 5. data-testid / data-qa / data-cy
+  const testid = selector.match(/data-(?:testid|qa|cy)="([^"]+)"/);
   if (testid) {
-    return `${kw} ${testid[1].replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}`;
+    return `${verb} ${testid[1].replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}`.substring(0, 80);
+  }
+  // 6. aria-controls / aria-owns (custom widget anchors)
+  const ariaControls = selector.match(/aria-controls="([^"]{2,50})"/);
+  if (ariaControls) {
+    return `${verb} ${ariaControls[1].replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}`;
+  }
+  // 7. href-based: a[href="/patients"] → "Patients Link"
+  const hrefMatch = selector.match(/a\[href="([^"]{1,60})"\]/);
+  if (hrefMatch) {
+    const hrefLabel = hrefMatch[1].replace(/^\/+/, '').replace(/[-_/]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    if (hrefLabel) return `${verb} ${hrefLabel} Link`.substring(0, 80);
+  }
+  // 8. Generic type attribute: input[type="submit"] → "Submit Input"
+  const typeMatch = selector.match(/\[type="([^"]{2,30})"\]/);
+  if (typeMatch) {
+    return `${verb} ${typeMatch[1].replace(/\b\w/g, c => c.toUpperCase())}`;
   }
 
-  return `${kw} Element ${stepNum}`;
+  // Numbered fallback — still prefixed with natural verb
+  return `${verb} Element ${stepNum}`;
 }
 
 /**
@@ -140,28 +204,43 @@ function buildLocatorName(
  * Returns the newly created Locator.
  */
 function createLocator(
-  projectId:    string,
-  selector:     string,
-  selectorType: string,
-  smartName:    string,
-  eventType:    string,
-  stepNum:      number,
-  createdBy:    string,
+  projectId:      string,
+  selector:       string,
+  selectorType:   string,
+  smartName:      string,
+  eventType:      string,
+  stepNum:        number,
+  createdBy:      string,
+  healingProfile?: HealingProfile,
+  alternatives?:   LocatorAlternative[],
+  importanceScore?: number,
+  pageKey?:        string,
 ): { loc: Locator; created: boolean } {
   const name = buildLocatorName(smartName, selector, eventType, stepNum);
 
   const loc: Locator = {
-    id:           uuidv4(),
+    id:             uuidv4(),
     name,
     selector,
-    selectorType: mapSelectorType(selectorType),
-    pageModule:   '',
+    selectorType:   mapSelectorType(selectorType),
+    pageModule:     '',
     projectId,
-    description:  'Auto-captured by recorder',
-    draft:        true,   // finalised (deduped) when script is saved
+    description:    'Auto-captured by recorder',
+    draft:          true,   // finalised (deduped) when script is saved
     createdBy,
-    createdAt:    new Date().toISOString(),
-    updatedAt:    new Date().toISOString(),
+    createdAt:      new Date().toISOString(),
+    updatedAt:      new Date().toISOString(),
+    // Self-healing fields
+    importanceScore: importanceScore ?? undefined,
+    alternatives:    alternatives?.length ? alternatives : undefined,
+    healingProfile:  healingProfile ?? undefined,
+    healingStats: {
+      healCount:      0,
+      lastHealedAt:   null,
+      lastHealedFrom: null,
+      lastHealedBy:   null,
+    },
+    pageKey: pageKey ?? null,
   };
   upsert(LOCATORS, loc);
   return { loc, created: true };
@@ -224,6 +303,7 @@ export function parseRecorderEvent(
   // Keywords that don't target a DOM element — no locator needed
   const noLocatorKeywords = new Set([
     'GOTO', 'ACCEPT ALERT', 'ACCEPT DIALOG', 'HANDLE PROMPT',
+    'ASSERT URL', 'ASSERT TOAST', 'WAIT FOR TOAST',
   ]);
 
   let locatorId:   string | null = null;
@@ -244,8 +324,20 @@ export function parseRecorderEvent(
       locatorName = existing.name;
       locator     = existing.selector;
       locatorType = existing.selectorType;
+      // Refresh healing data from recorder v4+ if not yet captured
+      if (event.healingProfile && !existing.healingProfile) {
+        upsert(LOCATORS, {
+          ...existing,
+          healingProfile:  event.healingProfile,
+          alternatives:    event.alternatives?.length ? event.alternatives : existing.alternatives,
+          importanceScore: event.importanceScore ?? existing.importanceScore,
+          pageKey:         event.pageKey ?? existing.pageKey ?? null,
+          healingStats:    existing.healingStats ?? { healCount: 0, lastHealedAt: null, lastHealedFrom: null, lastHealedBy: null },
+          updatedAt:       new Date().toISOString(),
+        });
+      }
     } else {
-      // Step 2: auto-create with decoded selector + type
+      // Step 2: auto-create with decoded selector + type (including healing data from recorder v4+)
       const { loc: newLoc, created } = createLocator(
         projectId,
         decoded.selector,
@@ -254,6 +346,10 @@ export function parseRecorderEvent(
         event.eventType,
         event.stepNum,
         createdBy,
+        event.healingProfile,
+        event.alternatives,
+        event.importanceScore,
+        event.pageKey,
       );
       locatorId      = newLoc.id;
       locatorName    = newLoc.name;
@@ -283,21 +379,30 @@ export function parseRecorderEvent(
 
 // ── Description builder ───────────────────────────────────────────────────────
 function buildDescription(event: RecorderEvent): string {
-  const name = event.smartName || event.selector || '';
+  const name  = event.smartName || event.selector || '';
+  const val   = event.value || '';
+  const verb  = eventTypeToVerb(event.eventType);   // always natural language
   switch (event.eventType) {
-    case 'CLICK':         return name ? `Click ${name}` : 'Click element';
-    case 'FILL':          return name ? `Fill ${name}` : 'Fill input';
-    case 'SELECT':        return name ? `Select ${event.value} in ${name}` : `Select ${event.value}`;
-    case 'CHECK':         return name ? `Check ${name}` : 'Check element';
-    case 'UNCHECK':       return name ? `Uncheck ${name}` : 'Uncheck element';
-    case 'UPLOAD':        return `Upload file: ${event.value}`;
+    case 'CLICK':          return name ? `Click ${name}` : 'Click element';
+    case 'FILL':           return name ? `Fill "${val}" in ${name}` : `Fill "${val}"`;
+    case 'SELECT':         return name ? `Select "${val}" in ${name}` : `Select "${val}"`;
+    case 'CHECK':          return name ? `Check ${name}` : 'Check element';
+    case 'UNCHECK':        return name ? `Uncheck ${name}` : 'Uncheck element';
+    case 'UPLOAD':         return val  ? `Upload file: ${val}` : 'Upload file';
     case 'FILE_CHOOSER':   return name ? `Choose file for ${name}` : 'Choose file';
-    case 'DATE_PICKER':    return name ? `Set date ${event.value} on ${name}` : `Set date ${event.value}`;
-    case 'ASSERT_VISIBLE': return `Assert visible: ${event.value}`;
-    case 'GOTO':           return `Navigate to ${event.value}`;
-    case 'ACCEPT_ALERT':  return `Accept alert: ${event.value}`;
-    case 'ACCEPT_DIALOG': return `Accept confirm dialog: ${event.value}`;
-    case 'HANDLE_PROMPT': return `Handle prompt: ${event.value}`;
-    default:              return event.eventType;
+    case 'DATE_PICKER':    return name ? `Set date "${val}" on ${name}` : `Set date "${val}"`;
+    case 'ASSERT_VISIBLE': return val  ? `Assert visible: ${val}` : 'Assert element visible';
+    case 'ASSERT_TOAST':   return val  ? `Assert toast: "${val}"` : 'Assert toast appeared';
+    case 'ASSERT_URL':     return val  ? `Assert URL contains: ${val}` : 'Assert page URL';
+    case 'GOTO':           return val  ? `Navigate to ${val}` : 'Navigate to page';
+    case 'ACCEPT_ALERT':   return val  ? `Accept alert: ${val}` : 'Accept alert';
+    case 'ACCEPT_DIALOG':  return val  ? `Accept dialog: ${val}` : 'Accept dialog';
+    case 'DISMISS_DIALOG': return val  ? `Dismiss dialog: ${val}` : 'Dismiss dialog';
+    case 'HANDLE_PROMPT':  return val  ? `Handle prompt: ${val}` : 'Handle prompt';
+    case 'HOVER':          return name ? `Hover over ${name}` : 'Hover over element';
+    case 'FOCUS':          return name ? `Focus on ${name}` : 'Focus on element';
+    case 'DBLCLICK':       return name ? `Double-click ${name}` : 'Double-click element';
+    case 'RIGHT_CLICK':    return name ? `Right-click ${name}` : 'Right-click element';
+    default:               return name ? `${verb} ${name}` : verb;
   }
 }

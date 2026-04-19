@@ -8,12 +8,15 @@
   <link rel="stylesheet" href="styles_addon.css" />
 </head>
 <body>
+<!-- P1-09: License expiry / status banner -->
+<div id="license-banner" style="display:none"></div>
+
 <div class="layout">
 
   <!-- ── Sidebar ──────────────────────────────────────────────────────────── -->
   <aside class="sidebar">
     <div class="sidebar-logo">
-      <h1>QA Agent Platform</h1>
+      <h1 id="nav-app-name">QA Agent Platform</h1>
       <span>Powered by Playwright MCP</span>
     </div>
 
@@ -33,6 +36,12 @@
           <path d="M9 12h6M9 16h4"/>
         </svg>
         <span>Test Suite</span>
+      </div>
+      <div class="nav-item" data-tab="execution">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polygon points="5 3 19 12 5 21 5 3"/>
+        </svg>
+        <span>Execution</span>
       </div>
       <div class="nav-section-label">Repository</div>
       <div class="nav-item" data-tab="locators">
@@ -121,6 +130,7 @@
             <option value="">— Select Project —</option>
           </select>
         </div>
+        <span id="env-badge" class="env-badge" style="display:none"></span>
         <button class="btn btn-outline btn-sm" onclick="loadHistory()">↻ Refresh</button>
         <a href="/api/health" target="_blank" class="btn btn-outline btn-sm">API Health</a>
       </div>
@@ -157,6 +167,95 @@
           </div>
           <div id="suite-list-empty" class="builder-hint">Select a project first, then create test suites.</div>
           <div id="suite-list"></div>
+        </div>
+      </div>
+
+      <!-- ══════════════════════════════════════════════════════════════════════
+           Tab: Execution
+           ══════════════════════════════════════════════════════════════════ -->
+      <div class="panel" id="panel-execution">
+        <div class="card" style="max-width:860px;margin:0 auto">
+          <div class="card-title">Run a Test Suite</div>
+
+          <div id="exec-no-project" class="builder-hint">Select a project first.</div>
+
+          <div id="exec-body" style="display:none">
+            <!-- Suite + Environment selectors -->
+            <div class="row-2" style="margin-bottom:14px">
+              <div class="field">
+                <label>Suite <span class="req">*</span></label>
+                <select id="exec-suite-sel" class="fm-input" onchange="execOnSuiteChange()">
+                  <option value="">— Select Suite —</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>Environment <span class="req">*</span></label>
+                <select id="exec-env-sel" class="fm-input" onchange="_execUpdateRunBtn()">
+                  <option value="">— Select Environment —</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Scripts in selected suite -->
+            <div id="exec-scripts-wrap" style="display:none;margin-bottom:16px">
+              <div style="font-size:12.5px;font-weight:700;color:var(--neutral-600);margin-bottom:6px">
+                Scripts in Suite <span id="exec-script-count" style="font-weight:400;color:var(--neutral-400)"></span>
+              </div>
+              <div style="border:1px solid var(--neutral-200);border-radius:7px;overflow:hidden">
+                <div style="display:grid;grid-template-columns:32px 90px 1fr 80px;background:var(--neutral-100);border-bottom:1px solid var(--neutral-200)">
+                  <div style="padding:6px 8px;font-size:11.5px;font-weight:700;color:var(--neutral-600)">#</div>
+                  <div style="padding:6px 8px;font-size:11.5px;font-weight:700;color:var(--neutral-600)">TCID</div>
+                  <div style="padding:6px 8px;font-size:11.5px;font-weight:700;color:var(--neutral-600)">Title</div>
+                  <div style="padding:6px 8px;font-size:11.5px;font-weight:700;color:var(--neutral-600)">Steps</div>
+                </div>
+                <div id="exec-script-list" style="max-height:280px;overflow-y:auto"></div>
+              </div>
+            </div>
+
+            <!-- Action buttons -->
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+              <button id="exec-run-btn" class="btn btn-success" onclick="execRun()" disabled>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="vertical-align:-2px"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                Run Suite
+              </button>
+              <button id="exec-report-btn" class="btn btn-outline" onclick="execViewReport()" style="display:none">
+                View Last Report
+              </button>
+              <span id="exec-run-hint" style="font-size:12px;color:var(--neutral-400)">Select a suite and environment to run</span>
+            </div>
+
+            <!-- Live progress -->
+            <div id="exec-progress-wrap" style="display:none;margin-top:18px">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+                <span style="font-size:13px;font-weight:600;color:var(--neutral-700)" id="exec-run-status">Running…</span>
+                <span style="font-size:12px;color:var(--neutral-400)" id="exec-run-meta"></span>
+              </div>
+              <!-- Progress bar -->
+              <div style="height:6px;background:var(--neutral-200);border-radius:3px;overflow:hidden;margin-bottom:12px">
+                <div id="exec-progress-bar" style="height:100%;background:var(--brand-500);border-radius:3px;width:0%;transition:width .4s ease"></div>
+              </div>
+              <!-- Results table -->
+              <div id="exec-results-table" style="border:1px solid var(--neutral-200);border-radius:7px;overflow:hidden;display:none">
+                <div style="display:grid;grid-template-columns:1fr 90px 80px;background:var(--neutral-100);border-bottom:1px solid var(--neutral-200)">
+                  <div style="padding:6px 10px;font-size:11.5px;font-weight:700;color:var(--neutral-600)">Test Name</div>
+                  <div style="padding:6px 10px;font-size:11.5px;font-weight:700;color:var(--neutral-600)">Status</div>
+                  <div style="padding:6px 10px;font-size:11.5px;font-weight:700;color:var(--neutral-600)">Duration</div>
+                </div>
+                <div id="exec-results-body" style="max-height:320px;overflow-y:auto"></div>
+              </div>
+              <!-- P5: Pre-Scan Health Grid (appears after beforeAll completes) -->
+              <div id="exec-prescan-wrap" style="display:none;margin-top:14px">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+                  <span style="font-size:12px;font-weight:700;color:var(--neutral-600)">Pre-Scan Health</span>
+                  <span id="exec-prescan-page" style="font-size:11px;font-family:monospace;color:var(--neutral-400)"></span>
+                  <span id="exec-prescan-summary" style="font-size:11px;margin-left:auto"></span>
+                </div>
+                <div id="exec-prescan-grid"></div>
+              </div>
+              <!-- Summary row -->
+              <div id="exec-summary" style="display:none;margin-top:10px;font-size:13px;color:var(--neutral-600)"></div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -206,10 +305,18 @@
 
       <!-- ── Tab: Locator Repo ──────────────────────────────────────────── -->
       <div class="panel" id="panel-locators">
-        <div class="card">
+        <!-- Sub-tab nav -->
+        <div style="display:flex;gap:0;border-bottom:2px solid var(--neutral-200);margin-bottom:16px">
+          <button id="loc-subtab-repo" class="loc-subtab loc-subtab-active" onclick="locSubTab('repo')">Locator Repository</button>
+          <button id="loc-subtab-proposals" class="loc-subtab" onclick="locSubTab('proposals')">Healing Proposals <span id="loc-proposal-count" style="display:none;background:#7c3aed;color:#fff;border-radius:10px;padding:0 6px;font-size:11px;margin-left:4px"></span></button>
+        </div>
+
+        <!-- Sub-panel: Locator Repository -->
+        <div id="loc-subpanel-repo" class="card">
           <div class="card-title">
             Locator Repository
-            <button id="btn-add-locator" class="btn btn-primary btn-sm" style="margin-left:auto" onclick="locatorOpenModal()" disabled>+ Add Locator</button>
+            <button class="btn btn-sm" style="margin-left:auto;margin-right:6px;background:rgba(78,201,176,.12);color:#4ec9b0;border:1px solid rgba(78,201,176,.35)" onclick="validateLocators()">&#128269; Validate Locators</button>
+            <button id="btn-add-locator" class="btn btn-primary btn-sm" onclick="locatorOpenModal()" disabled>+ Add Locator</button>
           </div>
           <!-- Filters -->
           <div class="row-2" style="margin-bottom:12px;gap:8px;flex-wrap:wrap">
@@ -243,6 +350,40 @@
             </div>
           </div>
           <div id="loc-pagination" class="loc-pagination"></div>
+        </div>
+
+        <!-- Sub-panel: Healing Proposals -->
+        <div id="loc-subpanel-proposals" class="card" style="display:none">
+          <div class="card-title">
+            Healing Proposals
+            <span style="font-size:12px;color:var(--neutral-400);margin-left:8px;font-weight:400">Auto-generated by T3 Similarity Engine</span>
+            <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
+              <select id="loc-prop-filter" class="filter-input" style="max-width:160px" onchange="proposalRender()">
+                <option value="">All statuses</option>
+                <option value="pending-review">Pending Review</option>
+                <option value="auto-applied">Auto Applied</option>
+                <option value="approved">Approved</option>
+                <option value="rejected">Rejected</option>
+              </select>
+              <button class="btn btn-outline btn-sm" onclick="proposalLoad()">&#8635; Refresh</button>
+            </div>
+          </div>
+          <div class="lt-body-wrap" style="max-height:520px;overflow-y:auto">
+            <table class="data-table" id="prop-table">
+              <thead>
+                <tr>
+                  <th style="min-width:160px">Locator</th>
+                  <th style="min-width:200px">Old Selector</th>
+                  <th style="min-width:200px">New Selector</th>
+                  <th style="min-width:70px">Score</th>
+                  <th style="min-width:90px">Status</th>
+                  <th style="min-width:130px">Healed At</th>
+                  <th style="min-width:140px"></th>
+                </tr>
+              </thead>
+              <tbody id="prop-tbody"></tbody>
+            </table>
+          </div>
         </div>
       </div><!-- /panel-locators -->
 
@@ -445,6 +586,8 @@
           <button class="sub-tab active" onclick="adminSubTab('users',this)">Users</button>
           <button class="sub-tab" onclick="adminSubTab('audit',this)">Audit Log</button>
           <button class="sub-tab" onclick="adminSubTab('settings',this)">Settings</button>
+          <button class="sub-tab" onclick="adminSubTab('license',this)">License</button>
+          <button class="sub-tab" onclick="adminSubTab('apikeys',this)">API Keys</button>
         </div>
 
         <!-- Users sub-panel -->
@@ -524,6 +667,104 @@
           </div>
         </div>
 
+        <!-- License sub-panel (P1-07) -->
+        <div class="sub-panel" id="admin-license">
+          <div class="card" style="max-width:600px">
+            <div class="card-title">License</div>
+            <div id="license-alert" style="margin-bottom:10px"></div>
+
+            <!-- Activation status block (shown when active) -->
+            <div id="lic-status-block" style="display:none;margin-bottom:18px">
+              <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
+                <span id="lic-tier-badge" class="lic-badge"></span>
+                <span id="lic-org-name" style="font-weight:600"></span>
+                <span id="lic-expiry-chip" class="lic-chip"></span>
+                <span id="lic-seats-chip" class="lic-chip lic-chip-blue"></span>
+              </div>
+              <div style="margin-bottom:10px;font-size:0.82rem;color:var(--text-muted)">Features enabled:</div>
+              <div id="lic-features-list" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:4px"></div>
+              <div id="lic-revoked-features"></div>
+              <div id="lic-machine-block" style="margin-top:10px"></div>
+              <div id="lic-sessions-block" style="display:none"></div>
+              <div id="lic-audit-block" style="display:none"></div>
+              <div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap">
+                <button class="btn btn-outline btn-sm" onclick="licenseExportSeatReport()" title="Download CSV of all users and seat usage">Export Seat Report</button>
+                <button class="btn btn-outline btn-sm" onclick="licenseDeactivate()" style="color:var(--error)">Deactivate License</button>
+              </div>
+            </div>
+
+            <!-- P3-05: Machine ID — shown BEFORE activation, needed to request .lic from vendor -->
+            <div id="lic-machineid-preactivate" style="margin-bottom:20px;padding:14px 16px;background:rgba(59,130,246,.07);border:1px solid rgba(59,130,246,.2);border-radius:8px">
+              <div style="font-size:.82rem;font-weight:600;color:#93c5fd;margin-bottom:8px">&#128273; Your Machine ID (required to get a license)</div>
+              <div style="font-size:.78rem;color:var(--text-muted);margin-bottom:10px">
+                Send this ID to your vendor when requesting a license. They will issue a <code>.lic</code> file bound to this machine.
+              </div>
+              <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                <code id="lic-machineid-display" style="font-size:.82rem;color:#e2e8f0;background:rgba(0,0,0,.3);padding:6px 10px;border-radius:4px;letter-spacing:.5px">Loading…</code>
+                <button class="btn btn-outline btn-sm" onclick="licenseCopyMachineId()" id="lic-copy-machineid-btn">Copy Machine ID</button>
+              </div>
+            </div>
+
+            <!-- Activation form (shown when no license) -->
+            <div id="lic-activate-block">
+              <div style="font-size:.82rem;color:var(--text-muted);margin-bottom:14px">
+                <strong style="color:var(--text-secondary)">Starter</strong> — activate with a license key &nbsp;|&nbsp;
+                <strong style="color:var(--text-secondary)">Team / Enterprise</strong> — upload the <code>.lic</code> file from your vendor
+              </div>
+
+              <div class="field">
+                <label>Starter License Key</label>
+                <input id="lic-key-input" placeholder="QAP-STR-MYORG-202612-003-001-XXXX" style="font-family:monospace;letter-spacing:1px" />
+                <span style="font-size:0.78rem;color:var(--text-muted)">Starter tier only — Team/Enterprise require a .lic file</span>
+              </div>
+              <button class="btn btn-primary" style="margin-top:8px" onclick="licenseActivate()">Activate Starter Key</button>
+
+              <div style="margin:20px 0 10px;border-top:1px solid rgba(255,255,255,.07);padding-top:16px">
+                <div style="font-size:.82rem;font-weight:600;color:var(--text-secondary);margin-bottom:8px">Team / Enterprise — Upload .lic File</div>
+                <div style="font-size:.78rem;color:var(--text-muted);margin-bottom:10px">Request your <code>.lic</code> file from your vendor by sending them your Machine ID above.</div>
+                <div class="field-row" style="gap:10px">
+                  <input type="file" id="lic-file-input" accept=".lic" style="display:none" onchange="licenseActivateFile()" />
+                  <button class="btn btn-outline btn-sm" onclick="document.getElementById('lic-file-input').click()">Upload .lic File</button>
+                </div>
+              </div>
+
+              <div style="margin:16px 0 0;font-size:.76rem;color:var(--text-muted)">
+                &#128310; Trial / Evaluation — contact <a href="mailto:sales@qa-agent.io" style="color:#60a5fa">sales@qa-agent.io</a> for a 30-day EVAL key.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- API Keys sub-panel -->
+        <div class="sub-panel" id="admin-apikeys">
+          <div class="card">
+            <div class="card-title">
+              API Keys
+              <button class="btn btn-primary btn-sm" style="margin-left:auto" onclick="apikeyOpenModal()">+ Generate Key</button>
+            </div>
+            <p style="font-size:.82rem;color:var(--text-muted);margin-bottom:12px">
+              API keys allow CI/CD pipelines to trigger suite runs without a browser session.
+              Use <code>Authorization: Bearer &lt;key&gt;</code> on <code>POST /api/suites/:id/run</code>.
+            </p>
+            <div id="apikey-alert" style="margin-bottom:8px"></div>
+            <div class="lt-wrap">
+              <div class="lt-body-wrap">
+                <table class="data-table lt-fixed">
+                  <thead><tr>
+                    <th style="min-width:180px">Name</th>
+                    <th style="min-width:100px">Prefix</th>
+                    <th style="min-width:140px">Project Scope</th>
+                    <th style="min-width:140px">Expires</th>
+                    <th style="min-width:140px">Last Used</th>
+                    <th style="min-width:100px"></th>
+                  </tr></thead>
+                  <tbody id="apikey-tbody"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
       </div><!-- /panel-admin -->
 
     </div><!-- /content -->
@@ -562,6 +803,53 @@
 </div>
 
 <!-- ── Modal: Add/Edit User ───────────────────────────────────────────────── -->
+<!-- API Key Generate Modal -->
+<div class="modal-backdrop" id="modal-apikey" style="display:none">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-header">
+      <span>Generate API Key</span>
+      <button class="modal-close" onclick="apikeyCloseModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="apikey-modal-alert" style="margin-bottom:8px"></div>
+      <!-- New key result (shown after generation) -->
+      <div id="apikey-result-block" style="display:none;margin-bottom:16px">
+        <div style="background:var(--success-bg,#052e16);border:1px solid #16a34a;border-radius:6px;padding:12px">
+          <div style="font-size:.8rem;color:#4ade80;margin-bottom:6px">Key generated — copy it now. It will not be shown again.</div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <code id="apikey-raw-display" style="font-size:.85rem;word-break:break-all;flex:1"></code>
+            <button class="btn btn-outline btn-sm" onclick="apikeyCopyKey()">Copy</button>
+          </div>
+        </div>
+      </div>
+      <!-- Form (hidden after generation) -->
+      <div id="apikey-form-block">
+        <div class="field"><label>Key Name <span class="req">*</span></label><input id="ak-name" placeholder="ADO Pipeline — QA" /></div>
+        <div class="field">
+          <label>Project Scope</label>
+          <select id="ak-project">
+            <option value="">All projects</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Expires</label>
+          <select id="ak-expires">
+            <option value="">Never</option>
+            <option value="30d">30 days</option>
+            <option value="90d">90 days</option>
+            <option value="180d">180 days</option>
+            <option value="365d">1 year</option>
+          </select>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer" id="apikey-modal-footer">
+      <button class="btn btn-outline" onclick="apikeyCloseModal()">Cancel</button>
+      <button class="btn btn-primary" id="ak-save-btn" onclick="apikeySave()">Generate</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-backdrop" id="modal-user" style="display:none">
   <div class="modal">
     <div class="modal-header">
@@ -734,6 +1022,9 @@
       <button class="btn btn-outline btn-sm" onclick="debugClose()">✕ Close</button>
     </div>
   </div>
+
+  <!-- Parallel-debug notice — shown when another user is also debugging this script -->
+  <div id="dbg-parallel-notice" style="display:none;background:#fef3c7;color:#92400e;border-bottom:1px solid #fde68a;padding:6px 16px;font-size:12px;font-weight:500"></div>
 
   <!-- Body: step list (left) + browser view (right) -->
   <div class="debug-body">
@@ -976,13 +1267,203 @@
           <option value="2">2 — Retry twice on failure</option>
         </select>
       </div>
-      <div style="display:flex;align-items:center;gap:8px;margin:12px 0 8px">
-        <span style="font-size:13px;font-weight:700;color:var(--neutral-700)">Add Scripts</span>
-        <input id="sm-script-filter" class="filter-input" style="width:200px;font-size:12px"
-               placeholder="Search scripts…" oninput="suiteScriptFilterRender()" />
+      <!-- ── Add Scripts section ─────────────────────────────────────── -->
+      <div style="margin-top:14px">
+        <div style="font-size:13px;font-weight:700;color:var(--neutral-700);margin-bottom:8px">Add Scripts</div>
+
+        <!-- Zone A: Available scripts table -->
+        <div style="border:1px solid var(--neutral-200);border-radius:7px;overflow:hidden;margin-bottom:12px">
+          <!-- Column headers (sortable) + select-all checkbox -->
+          <div style="display:grid;grid-template-columns:32px 110px 1fr 130px 110px;background:var(--neutral-100);border-bottom:1px solid var(--neutral-200)">
+            <div style="padding:6px 8px;display:flex;align-items:center;justify-content:center">
+              <input type="checkbox" id="sm-chk-all" title="Select / deselect all on this page" onchange="smToggleSelectAll()" />
+            </div>
+            <div style="padding:6px 10px;font-size:11.5px;font-weight:700;color:var(--neutral-600);cursor:pointer;user-select:none;display:flex;align-items:center;gap:4px" onclick="smSort('tcid')">TCID <span id="sm-sort-tcid" style="color:var(--brand-500)">▲</span></div>
+            <div style="padding:6px 10px;font-size:11.5px;font-weight:700;color:var(--neutral-600);cursor:pointer;user-select:none;display:flex;align-items:center;gap:4px" onclick="smSort('title')">Title <span id="sm-sort-title" style="color:var(--brand-500)"></span></div>
+            <div style="padding:6px 10px;font-size:11.5px;font-weight:700;color:var(--neutral-600);cursor:pointer;user-select:none;display:flex;align-items:center;gap:4px" onclick="smSort('component')">Component <span id="sm-sort-component" style="color:var(--brand-500)"></span></div>
+            <div style="padding:6px 10px;font-size:11.5px;font-weight:700;color:var(--neutral-600)">Tag</div>
+          </div>
+          <!-- Per-column filter row -->
+          <div style="display:grid;grid-template-columns:32px 110px 1fr 130px 110px;background:var(--neutral-50);border-bottom:1px solid var(--neutral-200)">
+            <div style="padding:5px 6px;border-right:1px solid var(--neutral-200);display:flex;align-items:center;justify-content:center">
+              <button class="tbl-btn" onclick="smClearFilters()" title="Clear all filters" style="font-size:11px;padding:2px 5px">✕</button>
+            </div>
+            <div style="padding:5px 6px;border-right:1px solid var(--neutral-200)">
+              <input id="sm-filter-tcid" class="filter-input" style="width:100%;font-size:11.5px;padding:3px 6px"
+                     placeholder="Filter TCID…" oninput="smScriptSearch()" />
+            </div>
+            <div style="padding:5px 6px;border-right:1px solid var(--neutral-200)">
+              <input id="sm-filter-title" class="filter-input" style="width:100%;font-size:11.5px;padding:3px 6px"
+                     placeholder="Filter Title…" oninput="smScriptSearch()" />
+            </div>
+            <div style="padding:5px 6px;border-right:1px solid var(--neutral-200)">
+              <input id="sm-filter-component" class="filter-input" style="width:100%;font-size:11.5px;padding:3px 6px"
+                     placeholder="Filter Component…" oninput="smScriptSearch()" />
+            </div>
+            <div style="padding:5px 6px">
+              <input id="sm-filter-tag" class="filter-input" style="width:100%;font-size:11.5px;padding:3px 6px"
+                     placeholder="Filter Tag…" oninput="smScriptSearch()" />
+            </div>
+          </div>
+          <div id="sm-script-list" style="max-height:200px;overflow-y:auto"></div>
+          <!-- Multi-select action bar (shown when checkboxes are ticked) -->
+          <div id="sm-bulk-bar" style="display:none;align-items:center;gap:10px;padding:6px 10px;background:var(--brand-light);border-top:1px solid var(--neutral-200)">
+            <span id="sm-bulk-count" style="font-size:12.5px;font-weight:600;color:var(--brand-700)"></span>
+            <button class="btn btn-primary btn-sm" onclick="smAddSelected()" style="padding:4px 14px;font-size:12px">+ Add Selected to Suite</button>
+            <button class="tbl-btn" onclick="smDeselectAll()" style="font-size:12px">Deselect All</button>
+          </div>
+          <!-- Pagination -->
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 10px;background:var(--neutral-50);border-top:1px solid var(--neutral-200)">
+            <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--neutral-600)">
+              Rows:
+              <select id="sm-page-size" class="fm-input" style="padding:2px 6px;font-size:12px;height:26px;width:60px" onchange="smPageSizeChange()">
+                <option value="10" selected>10</option>
+                <option value="25">25</option>
+                <option value="50">50</option>
+              </select>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px;font-size:12px">
+              <button class="tbl-btn" id="sm-prev-btn" onclick="smPagePrev()" disabled>‹ Prev</button>
+              <span id="sm-page-label" style="color:var(--neutral-600)">Page 1 of 1</span>
+              <button class="tbl-btn" id="sm-next-btn" onclick="smPageNext()" disabled>Next ›</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Zone B: Selected scripts (ordered) -->
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+          <div style="font-size:12.5px;font-weight:700;color:var(--neutral-600)">
+            Selected Scripts <span id="sm-selected-count" style="font-weight:400;color:var(--neutral-400)"></span>
+          </div>
+          <!-- Zone B bulk action bar — visible only when checkboxes are ticked -->
+          <div id="smb-bulk-bar" style="display:none;align-items:center;gap:8px">
+            <span id="smb-bulk-count" style="font-size:12px;font-weight:600;color:var(--red-600,#dc2626)"></span>
+            <button class="tbl-btn del" onclick="smbRemoveSelected()" style="font-size:12px;padding:3px 10px">Remove Selected</button>
+            <button class="tbl-btn" onclick="smbDeselectAll()" style="font-size:12px">Deselect All</button>
+          </div>
+        </div>
+        <div id="sm-selected-list"
+             style="min-height:48px;max-height:220px;overflow-y:auto;border:1px dashed var(--neutral-300);border-radius:6px;padding:4px">
+          <div id="sm-selected-empty" style="padding:12px 10px;color:var(--neutral-400);font-size:12.5px;text-align:center">
+            No scripts selected yet — click + to add
+          </div>
+        </div>
       </div>
-      <div id="sm-script-list"
-           style="max-height:280px;overflow-y:auto;border:1px solid var(--neutral-200);border-radius:6px;padding:4px"></div>
+
+      <!-- ── Fast Mode ────────────────────────────────────────────────── -->
+      <div style="margin-top:18px;border-top:1px solid var(--neutral-200);padding-top:14px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+          <label class="fm-toggle-wrap" style="display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none">
+            <input type="checkbox" id="sm-fast-mode" onchange="fastModeToggle()" style="width:16px;height:16px;cursor:pointer" />
+            <span style="font-size:13px;font-weight:700;color:var(--neutral-700)">&#9889; Fast Mode</span>
+          </label>
+          <span class="info-icon" tabindex="0"
+            data-tooltip="Fast Mode captures login state once before all tests run, then reuses it for every test — no re-login per test.&#10;&#10;How it works:&#10;1. A hidden beforeAll runs your login steps once and saves cookies + local storage.&#10;2. Every test starts already authenticated — skipping the login flow.&#10;&#10;When to use:&#10;• Suites with many scripts that all require login.&#10;• Login is slow (MFA, SSO redirect, CAPTCHA workarounds).&#10;&#10;When NOT to use:&#10;• Tests that validate login/logout flows themselves.&#10;• Tests that need a clean browser state (cookies cleared).&#10;&#10;Tip: Add only the minimal steps needed to reach an authenticated state (Fill username, Fill password, Click login button).">?</span>
+        </div>
+        <div id="sm-fast-mode-body" style="display:none;margin-top:10px">
+          <div style="font-size:12px;color:var(--neutral-500);margin-bottom:8px">Login steps to run once before all tests (captures auth state):</div>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+            <div style="font-size:12.5px;font-weight:600;color:var(--neutral-600)">&#128274; Login Steps (run once)</div>
+            <button class="btn btn-outline btn-sm" style="font-size:11.5px;padding:3px 10px" onclick="hookAddStep('fastmode')">+ Add Step</button>
+          </div>
+          <div id="hook-fastmode-list" style="display:flex;flex-direction:column;gap:4px;min-height:32px;border:1px dashed var(--neutral-300);border-radius:6px;padding:6px">
+            <div id="hook-fastmode-empty" style="color:var(--neutral-400);font-size:12px;text-align:center;padding:6px 0">No login steps — click + Add Step to define the login flow</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Overlay Handlers ─────────────────────────────────────────── -->
+      <div style="margin-top:18px;border-top:1px solid var(--neutral-200);padding-top:14px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+          <span style="font-size:13px;font-weight:700;color:var(--neutral-700)">&#128366; Overlay Handlers</span>
+          <span class="info-icon" tabindex="0"
+            data-tooltip="Overlay Handlers automatically dismiss unexpected browser dialogs (alert, confirm, prompt) that appear during any test in this suite.&#10;&#10;Without a handler: if an unexpected dialog appears, the test will hang until it times out.&#10;&#10;With a handler: the dialog is auto-accepted or dismissed the moment it appears — keeping tests flowing.&#10;&#10;Types:&#10;• alert — alert() dialogs (OK only)&#10;• confirm — confirm() dialogs (OK / Cancel)&#10;• prompt — prompt() dialogs (text input + OK / Cancel)&#10;• any — catch all dialog types&#10;&#10;Tip: Add an 'any → accept' rule as a catch-all, then add specific rules above it for cases that need custom text or dismiss.">?</span>
+          <button class="btn btn-outline btn-sm" style="font-size:11.5px;padding:3px 10px;margin-left:auto" onclick="overlayAddHandler()">+ Add Handler</button>
+        </div>
+        <div style="font-size:12px;color:var(--neutral-500);margin-bottom:10px">Auto-dismiss unexpected dialogs so tests don't hang.</div>
+        <div id="overlay-handler-list" style="display:flex;flex-direction:column;gap:4px;min-height:32px;border:1px dashed var(--neutral-300);border-radius:6px;padding:6px">
+          <div id="overlay-handler-empty" style="color:var(--neutral-400);font-size:12px;text-align:center;padding:6px 0">No handlers — unexpected dialogs will cause tests to hang</div>
+        </div>
+      </div>
+
+      <!-- ── Suite Hooks ──────────────────────────────────────────────── -->
+      <div style="margin-top:18px;border-top:1px solid var(--neutral-200);padding-top:14px">
+        <div style="font-size:13px;font-weight:700;color:var(--neutral-700);margin-bottom:4px">
+          &#9875; Suite Hooks
+          <span class="info-icon" tabindex="0"
+            data-tooltip="Suite Hooks run keyword steps automatically before or after every test in this suite.&#10;&#10;beforeEach — runs before each test (e.g. Login, clear cookies, set state).&#10;afterEach — runs after each test (e.g. Logout, reset data).&#10;&#10;Hook steps use the same keywords as test scripts but run in a shared context — no variable scope, no screenshots.&#10;&#10;Tip: Use beforeEach for login steps instead of repeating them in every script.">?</span>
+        </div>
+        <div style="font-size:12px;color:var(--neutral-500);margin-bottom:12px">Steps that run before / after every test in this suite automatically.</div>
+
+        <!-- beforeEach hook steps -->
+        <div style="margin-bottom:12px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+            <div style="font-size:12.5px;font-weight:600;color:var(--neutral-600)">&#9654; beforeEach Steps</div>
+            <button class="btn btn-outline btn-sm" style="font-size:11.5px;padding:3px 10px" onclick="hookAddStep('before')">+ Add Step</button>
+          </div>
+          <div id="hook-before-list" style="display:flex;flex-direction:column;gap:4px;min-height:32px;border:1px dashed var(--neutral-300);border-radius:6px;padding:6px">
+            <div id="hook-before-empty" style="color:var(--neutral-400);font-size:12px;text-align:center;padding:6px 0">No beforeEach steps — click + Add Step</div>
+          </div>
+        </div>
+
+        <!-- afterEach hook steps -->
+        <div>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+            <div style="font-size:12.5px;font-weight:600;color:var(--neutral-600)">&#9654; afterEach Steps</div>
+            <button class="btn btn-outline btn-sm" style="font-size:11.5px;padding:3px 10px" onclick="hookAddStep('after')">+ Add Step</button>
+          </div>
+          <div id="hook-after-list" style="display:flex;flex-direction:column;gap:4px;min-height:32px;border:1px dashed var(--neutral-300);border-radius:6px;padding:6px">
+            <div id="hook-after-empty" style="color:var(--neutral-400);font-size:12px;text-align:center;padding:6px 0">No afterEach steps — click + Add Step</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Scheduled Runs (Edit mode only) ──────────────────────────── -->
+      <div id="sm-sched-wrap" style="display:none;margin-top:18px;border-top:1px solid var(--neutral-200);padding-top:14px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <div style="font-size:13px;font-weight:700;color:var(--neutral-700)">🕐 Scheduled Runs</div>
+          <button class="btn btn-outline btn-sm" style="font-size:12px" onclick="schedAddShow()">+ Add Schedule</button>
+        </div>
+
+        <!-- Add/Edit form (hidden by default) -->
+        <div id="sched-form" style="display:none;background:var(--surface-1);border:1px solid var(--border);border-radius:6px;padding:14px;margin-bottom:12px">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+            <div>
+              <label class="fm-label">Label</label>
+              <input id="sched-label" class="fm-input" placeholder="e.g. Nightly Regression" />
+            </div>
+            <div>
+              <label class="fm-label">Environment</label>
+              <select id="sched-env" class="fm-input">
+                <option value="">— Select —</option>
+              </select>
+            </div>
+            <div>
+              <label class="fm-label">Frequency</label>
+              <select id="sched-preset" class="fm-input" onchange="schedPresetChange()">
+                <option value="0 9 * * *">Daily at 9am</option>
+                <option value="0 0 * * *">Nightly at midnight</option>
+                <option value="0 9 * * 1-5">Weekdays at 9am</option>
+                <option value="0 */4 * * *">Every 4 hours</option>
+                <option value="0 * * * *">Every hour</option>
+                <option value="custom">Custom cron expression</option>
+              </select>
+            </div>
+            <div id="sched-custom-wrap" style="display:none">
+              <label class="fm-label">Cron Expression <span style="font-size:10px;color:var(--neutral-400)">(UTC, 5-field)</span></label>
+              <input id="sched-cron" class="fm-input" placeholder="0 9 * * 1-5" />
+            </div>
+          </div>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-primary btn-sm" onclick="schedSave()">Save Schedule</button>
+            <button class="btn btn-outline btn-sm" onclick="schedFormHide()">Cancel</button>
+          </div>
+          <input type="hidden" id="sched-edit-id" value="" />
+        </div>
+
+        <!-- Schedules list -->
+        <div id="sched-list"></div>
+      </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="suiteCloseModal()">Cancel</button>
@@ -991,101 +1472,109 @@
   </div>
 </div>
 
-<!-- ══════════════════════════════════════════════════════════════════════
-     Suite Detail — full-page overlay
+<!-- ══════════════════════════════════════════════════════════════════════════
+     P5-F: Validate Locators — Manual Prescan Modal
      ══════════════════════════════════════════════════════════════════════ -->
-<div id="suite-detail-overlay" class="editor-overlay" style="display:none">
-  <div class="editor-header">
-    <button class="tbl-btn" onclick="suiteDetailClose()">← Back</button>
-    <span class="editor-title" id="suite-detail-title">Suite Detail</span>
-    <div style="display:flex;gap:8px;align-items:center;flex-shrink:0">
-      <button class="btn btn-outline btn-sm" onclick="suiteDetailEdit()">Edit Suite</button>
-      <select id="suite-run-env" class="fm-input" style="font-size:12px;height:32px;min-width:180px">
-        <option value="">— Select Environment —</option>
-      </select>
-      <button class="btn btn-primary btn-sm" id="suite-run-btn" onclick="suiteRun()">▶ Run Suite</button>
+<div id="prescan-modal" class="t4-modal-backdrop" style="display:none" onclick="if(event.target===this)prescanModalClose()">
+  <div class="t4-modal-box" style="max-width:560px">
+    <div class="t4-modal-header">
+      <span style="font-size:22px">&#128269;</span>
+      <div>
+        <div class="t4-modal-title" style="color:#4ec9b0">Validate Locators</div>
+        <div class="t4-modal-subtitle">Run a DOM pre-scan against a live environment to check locator health</div>
+      </div>
+      <button onclick="prescanModalClose()" style="margin-left:auto;background:none;border:none;color:var(--neutral-400);font-size:18px;cursor:pointer;padding:0 4px">&times;</button>
+    </div>
+
+    <div class="t4-info-row" style="flex-direction:column;align-items:flex-start;gap:6px">
+      <span class="t4-label" style="width:auto">Environment / URL</span>
+      <select id="prescan-env-sel" class="t4-input" style="width:100%;font-family:inherit"></select>
+    </div>
+
+    <div style="display:flex;gap:8px">
+      <button id="prescan-run-btn" class="t4-btn t4-btn-approve" style="flex:0 0 auto;padding:9px 24px" onclick="prescanRun()">Scan</button>
+      <button class="t4-btn t4-btn-reject" style="flex:0 0 auto;padding:9px 16px" onclick="prescanModalClose()">Cancel</button>
+    </div>
+
+    <div id="prescan-results-wrap" style="display:none">
+      <div style="font-size:11.5px;font-weight:700;color:var(--neutral-500);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em">Locator Health</div>
+      <div id="prescan-results" style="max-height:300px;overflow-y:auto"></div>
     </div>
   </div>
-  <div style="padding:20px;overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:16px">
-    <!-- Top: info row -->
-    <div style="display:grid;grid-template-columns:280px 1fr;gap:16px;align-items:start">
-      <div class="card">
-        <div class="card-title" style="font-size:13px">Suite Info</div>
-        <div id="suite-detail-info" style="font-size:13px;color:var(--neutral-600)"></div>
+</div>
+
+<!-- suite-detail-overlay removed — run suites via the Execution tab -->
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     T4 Human Review — Heal Proposal Card
+     Shown when a running suite encounters a low-confidence T3 result or an
+     ASSERT step failure. Spec pauses until the SDET approves or rejects.
+     ══════════════════════════════════════════════════════════════════════ -->
+<div id="t4-heal-modal" class="t4-modal-backdrop" style="display:none">
+  <div class="t4-modal-box">
+
+    <!-- Header -->
+    <div class="t4-modal-header">
+      <span class="t4-heal-icon">&#129657;</span>
+      <div>
+        <div class="t4-modal-title">Self-Heal Review Required</div>
+        <div class="t4-modal-subtitle">Run is paused — approve or reject before it continues</div>
       </div>
-      <!-- Scripts with collapsible steps -->
-      <div class="card">
-        <div class="card-title" style="font-size:14px">
-          Scripts in Suite
-          <span id="suite-script-count" style="font-size:12px;color:var(--neutral-400);font-weight:400;margin-left:6px"></span>
-          <button id="suite-bulk-remove-btn"
-                  style="margin-left:auto;color:var(--danger);border:1px solid var(--danger);border-radius:5px;background:none;cursor:pointer;padding:4px 10px;font-size:12px;display:none"
-                  onclick="suiteRemoveSelected()">Remove Selected</button>
-        </div>
-        <div id="suite-detail-scripts"></div>
-      </div>
-    </div>
-    <!-- Bottom: full-width run output -->
-    <div class="card" id="suite-run-card" style="display:none">
-      <div class="card-title" style="font-size:13px;display:flex;align-items:center;gap:12px">
-        <span id="suite-run-status">Run Output</span>
-        <span id="suite-run-stats" style="font-size:12px;font-weight:400;color:var(--neutral-500)"></span>
-        <div id="suite-report-link" style="margin-left:auto;display:none">
-          <a id="suite-report-anchor" class="btn btn-primary btn-sm" href="#" target="_blank">📥 View Report</a>
-        </div>
-      </div>
-      <div id="suite-run-output"
-           style="background:#1e1e1e;color:#d4d4d4;font-family:monospace;font-size:12.5px;
-                  padding:12px;border-radius:6px;max-height:320px;overflow-y:auto;
-                  white-space:pre-wrap;word-break:break-all;margin-top:8px"></div>
+      <span id="t4-tier-badge" class="t4-tier-badge">T4</span>
     </div>
 
-    <!-- Schedules card -->
-    <div class="card" id="suite-schedules-card">
-      <div class="card-title" style="font-size:13px;display:flex;align-items:center;gap:10px">
-        <span>🕐 Scheduled Runs</span>
-        <button class="btn btn-outline btn-sm" style="margin-left:auto;font-size:12px" onclick="schedAddShow()">+ Add Schedule</button>
-      </div>
-
-      <!-- Add/Edit form (hidden by default) -->
-      <div id="sched-form" style="display:none;background:var(--surface-1);border:1px solid var(--border);border-radius:6px;padding:14px;margin-bottom:12px">
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
-          <div>
-            <label class="fm-label">Label</label>
-            <input id="sched-label" class="fm-input" placeholder="e.g. Nightly Regression" />
-          </div>
-          <div>
-            <label class="fm-label">Environment</label>
-            <select id="sched-env" class="fm-input">
-              <option value="">— Select —</option>
-            </select>
-          </div>
-          <div>
-            <label class="fm-label">Frequency</label>
-            <select id="sched-preset" class="fm-input" onchange="schedPresetChange()">
-              <option value="0 9 * * *">Daily at 9am</option>
-              <option value="0 0 * * *">Nightly at midnight</option>
-              <option value="0 9 * * 1-5">Weekdays at 9am</option>
-              <option value="0 */4 * * *">Every 4 hours</option>
-              <option value="0 * * * *">Every hour</option>
-              <option value="custom">Custom cron expression</option>
-            </select>
-          </div>
-          <div id="sched-custom-wrap" style="display:none">
-            <label class="fm-label">Cron Expression <span style="font-size:10px;color:var(--neutral-400)">(UTC, 5-field)</span></label>
-            <input id="sched-cron" class="fm-input" placeholder="0 9 * * 1-5" />
-          </div>
-        </div>
-        <div style="display:flex;gap:8px">
-          <button class="btn btn-primary btn-sm" onclick="schedSave()">Save Schedule</button>
-          <button class="btn btn-outline btn-sm" onclick="schedFormHide()">Cancel</button>
-        </div>
-        <input type="hidden" id="sched-edit-id" value="" />
-      </div>
-
-      <!-- Schedules table -->
-      <div id="sched-list"></div>
+    <!-- Step info row -->
+    <div class="t4-info-row">
+      <span class="t4-label">Step</span>
+      <span id="t4-step-info" class="t4-value t4-mono">—</span>
     </div>
+
+    <!-- Old (broken) selector -->
+    <div class="t4-info-row">
+      <span class="t4-label">Broken selector</span>
+      <code id="t4-old-sel" class="t4-code t4-code-broken">—</code>
+    </div>
+
+    <!-- Candidate selector from T3 scan -->
+    <div class="t4-info-row">
+      <span class="t4-label">Best candidate</span>
+      <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0">
+        <code id="t4-cand-sel" class="t4-code t4-code-candidate">—</code>
+        <span class="t4-type-pill" id="t4-cand-type"></span>
+        <span class="t4-score-chip" id="t4-score">—</span>
+      </div>
+    </div>
+
+    <!-- SDET override input -->
+    <div class="t4-override-row">
+      <span class="t4-label">Override selector</span>
+      <div style="display:flex;gap:6px;flex:1">
+        <input id="t4-override-sel"  class="t4-input t4-input-wide" type="text"   placeholder="Paste a working selector…" />
+        <select id="t4-override-type" class="t4-input t4-input-type">
+          <option value="css">css</option>
+          <option value="xpath">xpath</option>
+          <option value="text">text</option>
+          <option value="testid">testid</option>
+          <option value="role">role</option>
+          <option value="label">label</option>
+          <option value="placeholder">placeholder</option>
+          <option value="id">id</option>
+          <option value="name">name</option>
+        </select>
+      </div>
+    </div>
+    <p class="t4-hint">You can approve the candidate above or type your own selector. On approve the Locator Repo is updated automatically.</p>
+
+    <!-- Action buttons -->
+    <div class="t4-actions">
+      <button id="t4-approve-btn" class="t4-btn t4-btn-approve" onclick="respondT4Heal('approve')">
+        &#10003; Approve &amp; Continue
+      </button>
+      <button class="t4-btn t4-btn-reject" onclick="respondT4Heal('reject')">
+        &#10007; Reject (fail step)
+      </button>
+    </div>
+
   </div>
 </div>
 

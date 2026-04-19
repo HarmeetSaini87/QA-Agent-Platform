@@ -187,6 +187,78 @@
             "example": "Locator: #gateway-name-input\nLocator: textarea#description",
             "tip": "Follow with Fill or Type to replace the selected text with a new value."
           }
+        },
+        {
+          "key": "RIGHT CLICK", "label": "Right Click", "needsLocator": true, "needsValue": false, "valueHint": "",
+          "helpLabel": "Right-clicks an element to open its context menu",
+          "tooltip": {
+            "what": "Performs a right-click (secondary click) on the target element. Used to open context menus, custom right-click panels, or inline action menus.",
+            "example": "Locator: #file-row-1  →  right-click to open context menu\nLocator: .grid-row:first-child  →  right-click for row actions",
+            "tip": "Follow with a Click step on the context menu option you want to select."
+          }
+        },
+        {
+          "key": "JS CLICK", "label": "JS Click", "needsLocator": true, "needsValue": false, "valueHint": "",
+          "helpLabel": "Clicks an element using JavaScript — bypasses visibility checks",
+          "tooltip": {
+            "what": "Fires a click event via JavaScript directly on the element. Use when normal Click fails due to the element being overlaid, obscured, or not fully visible to Playwright.",
+            "example": "Locator: #hidden-submit-btn  →  JS click a button behind an overlay\nLocator: .dropdown-item[data-val='X']  →  JS click a non-interactive element",
+            "tip": "Prefer normal Click when possible. Use JS Click only for elements that Playwright cannot reach through normal interaction."
+          }
+        },
+        {
+          "key": "SELECT BY INDEX", "label": "Select By Index", "needsLocator": true, "needsValue": true, "valueHint": "0-based index (e.g. 0 for first option)",
+          "helpLabel": "Selects a dropdown option by its position (0 = first)",
+          "tooltip": {
+            "what": "Selects a <select> option by its 0-based index position rather than by text or value. Use when option text is dynamic or unknown at script-write time.",
+            "example": "Locator: #country-select  Value: 0  →  select first country\nLocator: #priority-ddl   Value: 2  →  select third option",
+            "tip": "Index 0 = first option. Combined with Test Data rows you can select different options across test runs."
+          }
+        },
+        {
+          "key": "DRAG BY OFFSET", "label": "Drag By Offset", "needsLocator": true, "needsValue": true, "valueHint": "x,y offset in pixels (e.g. 100,0 or -50,200)",
+          "helpLabel": "Drags an element by a pixel offset (x, y) from its current position",
+          "tooltip": {
+            "what": "Picks up the target element and moves it by the specified pixel offset (deltaX, deltaY). Use for sliders, resizable panels, or canvas elements where there is no fixed drop target.",
+            "example": "Locator: #slider-handle  Value: 150,0   →  drag right 150px\nLocator: .resize-handle  Value: 0,80    →  drag down 80px",
+            "tip": "Use positive X to drag right, negative X for left. Positive Y drags down, negative Y drags up."
+          }
+        },
+        {
+          "key": "CLICK N TIMES", "label": "Click N Times", "needsLocator": true, "needsValue": true, "valueHint": "Number of clicks (e.g. 3)",
+          "helpLabel": "Clicks an element a specified number of times",
+          "tooltip": {
+            "what": "Clicks the target element N times in sequence with a short delay between each click. Useful for increment/decrement buttons, quantity controls, or rating stars.",
+            "example": "Locator: #qty-increment  Value: 3  →  click + button 3 times\nLocator: .star-rating-btn Value: 4  →  click to give 4 stars",
+            "tip": "Each click includes a short 200ms wait. For rapid multi-click (triple-click to select text) use Select All instead."
+          }
+        },
+        {
+          "key": "HOVER AND CLICK", "label": "Hover & Click", "needsLocator": true, "needsValue": true, "valueHint": "Locator of element to click after hover",
+          "helpLabel": "Hovers over an element then clicks a revealed child element",
+          "tooltip": {
+            "what": "Hovers over the Locator element to reveal hidden children (e.g. a dropdown, tooltip, or action menu), then clicks the element specified in the Value field.",
+            "example": "Locator: .table-row:first-child  Value: .row-action-delete  →  hover row, click Delete\nLocator: #user-avatar            Value: #menu-logout         →  hover avatar, click Logout",
+            "tip": "The Value must be a CSS selector for the element that appears after the hover. It does not use the Locator Repository — type it directly."
+          }
+        },
+        {
+          "key": "PROMPT TYPE", "label": "Prompt Type", "needsLocator": false, "needsValue": true, "valueHint": "Text to type into the prompt, then accept",
+          "helpLabel": "Types text into a browser prompt dialog and accepts it",
+          "tooltip": {
+            "what": "Intercepts a browser window.prompt() dialog, types the given text into it, and accepts it. Used when an action triggers a native browser prompt asking for user input.",
+            "example": "Value: P-20045  →  type patient ID into a prompt dialog\nValue: ConfirmDelete  →  type confirmation word into a prompt",
+            "tip": "Place this step BEFORE the action that triggers the prompt — Playwright must register the handler before the dialog opens."
+          }
+        },
+        {
+          "key": "SWITCH TO WINDOW", "label": "Switch to Window", "needsLocator": false, "needsValue": true, "valueHint": "Window index (0 = first/original) or title substring",
+          "helpLabel": "Switches focus to another open browser window or tab",
+          "tooltip": {
+            "what": "Switches the active page context to another browser window or tab. Use index 0 for the original window, 1 for the second, etc. Or provide a partial title to match by title.",
+            "example": "Value: 1         →  switch to the second opened window\nValue: Patient Portal  →  switch to window whose title contains 'Patient Portal'",
+            "tip": "Always switch back to the main window (Value: 0) when done. Use New Tab Wait before this step if waiting for a window to open."
+          }
         }
       ]
     },
@@ -300,6 +372,105 @@
             "example": "Locator: .notification-panel  Value: updated\nLocator: #activity-log  Value: harmeet logged in",
             "tip": "Use when the element has long content and you only need to verify part of it is present."
           }
+        },
+        {
+          "key": "WAIT FOR TOAST", "label": "Wait For Toast", "needsLocator": false, "needsValue": false, "valueHint": "",
+          "helpLabel": "Waits for any toast / notification message to appear",
+          "tooltip": {
+            "what": "Pauses the test until a toast, snackbar or alert notification appears anywhere on the page. No locator or text value needed — detects any visible notification element.",
+            "example": "No locator or value needed.\nUse after: Save, Submit, Delete, Login — any action that triggers a system message.",
+            "tip": "Use when you only need to confirm a notification appeared but don't need to check its exact text. Use Assert Toast when you need to verify the specific message."
+          }
+        },
+        {
+          "key": "ASSERT TOAST", "label": "Assert Toast", "needsLocator": false, "needsValue": true, "valueHint": "Expected message text (partial match)",
+          "helpLabel": "Waits for a toast message and verifies its text",
+          "tooltip": {
+            "what": "Waits for a toast, snackbar or alert notification to appear and checks that it contains the expected text. No locator needed — scans the full page for any notification element.",
+            "example": "Value: saved successfully  →  after Save button\nValue: deleted  →  after Delete action\nValue: Login failed  →  after bad credentials",
+            "tip": "Partial match — the toast just needs to contain the value, not match exactly. Case-insensitive. Use Wait For Toast instead if the message text varies per run."
+          }
+        },
+        {
+          "key": "ASSERT NOT CONTAINS", "label": "Assert Not Contains", "needsLocator": true, "needsValue": true, "valueHint": "Text that must NOT appear in the element",
+          "helpLabel": "Verifies an element's content does NOT contain the given text",
+          "tooltip": {
+            "what": "Asserts that the target element's text does not include the specified value. Use for negative checks — confirming an error message is gone, a deleted item no longer appears, etc.",
+            "example": "Locator: #error-panel  Value: invalid  →  confirm no error message\nLocator: .patient-list  Value: P-20045  →  confirm deleted patient is removed",
+            "tip": "Pair with Assert Visible first to confirm the element itself is present, then use Assert Not Contains to check its content."
+          }
+        },
+        {
+          "key": "ASSERT COUNT GT", "label": "Assert Count GreaterThan", "needsLocator": true, "needsValue": true, "valueHint": "Minimum count (exclusive, e.g. 0 means at least 1)",
+          "helpLabel": "Verifies the element count is greater than the given number",
+          "tooltip": {
+            "what": "Asserts that the number of matching elements exceeds the given value. Use to confirm at least N results exist — e.g. 'at least 1 search result', 'more than 0 rows in grid'.",
+            "example": "Locator: .search-result-row  Value: 0  →  at least 1 result returned\nLocator: .patient-card       Value: 4  →  more than 4 patients in list",
+            "tip": "Value 0 means 'at least 1 element exists'. This is the most common usage — confirming a list is not empty."
+          }
+        },
+        {
+          "key": "ASSERT COUNT LT", "label": "Assert Count LessThan", "needsLocator": true, "needsValue": true, "valueHint": "Maximum count (exclusive, e.g. 10 means fewer than 10)",
+          "helpLabel": "Verifies the element count is less than the given number",
+          "tooltip": {
+            "what": "Asserts that the number of matching elements is fewer than the given value. Use to enforce upper limits — e.g. 'no more than 5 errors shown', 'fewer than 10 items in queue'.",
+            "example": "Locator: .error-item   Value: 5   →  fewer than 5 errors\nLocator: .queue-entry  Value: 10  →  queue has fewer than 10 items",
+            "tip": "Combine with Assert Count GT to assert a range: count is between N and M."
+          }
+        },
+        {
+          "key": "ASSERT GREATER THAN", "label": "Assert Greater Than", "needsLocator": true, "needsValue": true, "valueHint": "Numeric threshold (e.g. 100)",
+          "helpLabel": "Verifies a numeric value in an element is greater than the threshold",
+          "tooltip": {
+            "what": "Reads the text of the target element, parses it as a number, and asserts it is greater than the given value. Use for price checks, score validations, quantity assertions.",
+            "example": "Locator: #total-price  Value: 0    →  price must be positive\nLocator: #score-badge  Value: 50   →  score must be above 50\nLocator: #stock-count  Value: 100  →  more than 100 in stock",
+            "tip": "Non-numeric characters (£, $, commas) are stripped before comparison. Works for currency, percentages and plain numbers."
+          }
+        },
+        {
+          "key": "ASSERT LESS THAN", "label": "Assert Less Than", "needsLocator": true, "needsValue": true, "valueHint": "Numeric threshold (e.g. 1000)",
+          "helpLabel": "Verifies a numeric value in an element is less than the threshold",
+          "tooltip": {
+            "what": "Reads the text of the target element, parses it as a number, and asserts it is less than the given value. Use for validating caps, limits or maximum allowed values.",
+            "example": "Locator: #error-count   Value: 1    →  zero errors (count < 1)\nLocator: #response-time Value: 500  →  response under 500ms\nLocator: #price-field   Value: 999  →  price below cap",
+            "tip": "Non-numeric characters (£, $, commas) are stripped before comparison."
+          }
+        },
+        {
+          "key": "ASSERT URL NOT", "label": "Assert URL Not", "needsLocator": false, "needsValue": true, "valueHint": "URL or partial URL that must NOT be current",
+          "helpLabel": "Verifies the current page URL does NOT contain the given value",
+          "tooltip": {
+            "what": "Asserts that the browser's current URL does not contain the specified text. Use to confirm a redirect did NOT happen, or that the user is not on an error/login page.",
+            "example": "Value: /login   →  confirm user was NOT redirected to login\nValue: /error   →  confirm no error page appeared\nValue: /403     →  confirm no forbidden page",
+            "tip": "Partial match — just needs to NOT appear anywhere in the URL. Use Assert URL to confirm the expected destination."
+          }
+        },
+        {
+          "key": "ASSERT TITLE NOT", "label": "Assert Title Not", "needsLocator": false, "needsValue": true, "valueHint": "Text that must NOT appear in the page title",
+          "helpLabel": "Verifies the page title does NOT contain the given text",
+          "tooltip": {
+            "what": "Asserts that the browser tab title does not contain the specified value. Use to confirm an error page or wrong section did not load.",
+            "example": "Value: 404       →  confirm page title is not a 404 error\nValue: Forbidden →  confirm user has access\nValue: Login     →  confirm user is still authenticated",
+            "tip": "Partial match against the full page title. Case-sensitive."
+          }
+        },
+        {
+          "key": "ASSERT ATTR NOT", "label": "Assert Attr Not", "needsLocator": true, "needsValue": true, "valueHint": "attributeName=unexpectedValue",
+          "helpLabel": "Verifies an element's attribute does NOT have the given value",
+          "tooltip": {
+            "what": "Asserts that an element's attribute value does NOT equal the expected value. Use to confirm a state change happened — e.g. 'aria-disabled is no longer true', 'class no longer contains active'.",
+            "example": "Locator: #save-btn   Value: disabled=true   →  button is no longer disabled\nLocator: #menu-item  Value: aria-selected=false  →  item is now selected",
+            "tip": "Format: attributeName=unexpectedValue. The assertion passes if the attribute does not exist OR has a different value."
+          }
+        },
+        {
+          "key": "ASSERT ATTR CONTAINS", "label": "Assert Attr Contains", "needsLocator": true, "needsValue": true, "valueHint": "attributeName=partialValue",
+          "helpLabel": "Verifies an element's attribute contains the given partial value",
+          "tooltip": {
+            "what": "Asserts that an element's attribute value contains (partial match) the expected text. Most useful for class attribute checks where a class name is one of many.",
+            "example": "Locator: #nav-patients  Value: class=active     →  tab has the active class\nLocator: #status-badge  Value: class=badge-green →  badge has green styling\nLocator: #modal         Value: class=visible     →  modal is open",
+            "tip": "Format: attributeName=partialValue. For class checks, just include the class name fragment — no need for the full class string."
+          }
         }
       ]
     },
@@ -358,6 +529,42 @@
             "what": "Pauses the test until a network response matching the URL pattern is received. Useful after form submits that call an API in the background.",
             "example": "Value: /api/gateways  →  wait for gateway list to reload\nValue: /api/users/save  →  wait for save API to respond",
             "tip": "Use when the page updates via AJAX without a full reload. Partial URL match is fine — /api/gateways matches any URL containing that path."
+          }
+        },
+        {
+          "key": "WAIT ENABLED", "label": "Wait Enabled", "needsLocator": true, "needsValue": false, "valueHint": "",
+          "helpLabel": "Waits until a button or input becomes enabled (not disabled)",
+          "tooltip": {
+            "what": "Pauses the test until the target element is no longer disabled. Extremely common after form fill — the Save/Submit button only activates once required fields are valid.",
+            "example": "Locator: #save-btn  →  wait until Save is enabled before clicking\nLocator: #submit-form  →  wait until form submit becomes active",
+            "tip": "Always use before Click on a button that starts disabled. Prevents click-on-disabled errors that silently fail without this wait."
+          }
+        },
+        {
+          "key": "WAIT TEXT", "label": "Wait For Text", "needsLocator": true, "needsValue": true, "valueHint": "Text to wait for inside the element",
+          "helpLabel": "Waits until an element's text contains the expected value",
+          "tooltip": {
+            "what": "Pauses the test until the target element contains the specified text. Essential for async updates where element text changes after an API call completes.",
+            "example": "Locator: #status-badge  Value: Approved  →  wait until status changes to Approved\nLocator: .result-count  Value: 24 results  →  wait for search results count to update",
+            "tip": "Text match is partial and case-sensitive by default. Use after actions that trigger background processing (e.g. file processing, batch operations)."
+          }
+        },
+        {
+          "key": "WAIT ALERT", "label": "Wait For Alert", "needsLocator": false, "needsValue": false, "valueHint": "",
+          "helpLabel": "Waits for a browser alert dialog to appear",
+          "tooltip": {
+            "what": "Pauses the test until a native browser alert dialog appears. Use before Accept Dialog or Dismiss Dialog when the alert is triggered asynchronously (e.g. after an API response).",
+            "example": "No locator or value needed.\nUse before: Accept Dialog or Dismiss Dialog\nScenario: delete confirmation alert that appears after a server response",
+            "tip": "For immediate alerts triggered directly by a button click, Accept Dialog placed BEFORE the Click is usually sufficient. Use Wait Alert only for delayed/async alerts."
+          }
+        },
+        {
+          "key": "WAIT DISABLED", "label": "Wait Disabled", "needsLocator": true, "needsValue": false, "valueHint": "",
+          "helpLabel": "Waits until an element becomes disabled",
+          "tooltip": {
+            "what": "Pauses the test until the target element has the disabled attribute. Use in scenarios where an action disables a control (e.g. a Submit button disables after click to prevent double-submit).",
+            "example": "Locator: #submit-btn  →  wait until submit is disabled (processing started)\nLocator: #edit-btn    →  wait until edit button is locked during save",
+            "tip": "Useful for verifying that double-submission protection is working correctly."
           }
         }
       ]
@@ -445,6 +652,47 @@
       ]
     },
     {
+      "name": "Retrieve & Store",
+      "keywords": [
+        {
+          "key": "GET ATTRIBUTE", "label": "Get Attribute", "needsLocator": true, "needsValue": true, "valueHint": "Attribute name (e.g. href, data-id, value)",
+          "helpLabel": "Reads an element attribute and saves it as a variable",
+          "tooltip": {
+            "what": "Reads the specified attribute from the target element and stores the result in a variable. The variable name is set in the 'Save As' field. Use {{var.name}} in any later step to reference it.",
+            "example": "Locator: #patient-row-1  Value: data-patient-id  Save As: patientId\nLocator: .download-link  Value: href            Save As: downloadUrl\nLocator: #status-badge   Value: data-status     Save As: currentStatus",
+            "tip": "Works with any HTML attribute — data-*, aria-*, href, src, class, id. The value is saved as a string. If the attribute does not exist, the variable is set to empty string."
+          }
+        },
+        {
+          "key": "GET CURRENT URL", "label": "Get Current URL", "needsLocator": false, "needsValue": false, "valueHint": "",
+          "helpLabel": "Captures the current page URL and saves it as a variable",
+          "tooltip": {
+            "what": "Reads the browser's current URL and stores the full URL string in a variable. Set the variable name in the 'Save As' field. Useful for capturing redirected URLs or dynamic page links.",
+            "example": "No locator or value needed.\nSave As: currentUrl  →  captures e.g. https://app.example.com/patients/P-20045\nSave As: redirectUrl  →  captures URL after a login redirect",
+            "tip": "Use after navigation or a redirect to capture where the app landed. Reference later with {{var.currentUrl}}."
+          }
+        },
+        {
+          "key": "GET ALERT TEXT", "label": "Get Alert Text", "needsLocator": false, "needsValue": false, "valueHint": "",
+          "helpLabel": "Captures the message text from a browser alert dialog",
+          "tooltip": {
+            "what": "Intercepts the next browser alert dialog, reads its message text, stores it in a variable (Save As field), then dismisses the dialog. Use when you need to assert or log the exact alert message content.",
+            "example": "No locator or value needed.\nSave As: alertMsg  →  captures e.g. 'Patient saved successfully'\nThen: Assert Text on any element using {{var.alertMsg}}",
+            "tip": "Place this step BEFORE the action that triggers the alert — Playwright must register the handler before the dialog opens. The dialog is automatically dismissed after capture."
+          }
+        },
+        {
+          "key": "GET NETWORK RESPONSE", "label": "Get Network Response", "needsLocator": false, "needsValue": true, "valueHint": "URL pattern to intercept (e.g. /api/patients)",
+          "helpLabel": "Waits for an API response and saves the response body as a variable",
+          "tooltip": {
+            "what": "Waits for a network response whose URL contains the given pattern, reads the JSON response body, and stores it as a string in the Save As variable. Use to capture API-generated IDs, tokens or data for use in later steps.",
+            "example": "Value: /api/patients/create  Save As: createResponse  →  captures {patientId:'P-20045',...}\nValue: /api/auth/login      Save As: authResponse    →  captures {token:'abc123',...}",
+            "tip": "The response body is stored as a JSON string. Use EVALUATE in a later step with JSON.parse({{var.createResponse}}) to extract specific fields."
+          }
+        }
+      ]
+    },
+    {
       "name": "Custom",
       "keywords": [
         {
@@ -478,9 +726,9 @@
           "key": "SET VARIABLE", "label": "Set Variable", "needsLocator": false, "needsValue": false, "valueHint": "",
           "helpLabel": "Captures a value from the page and saves it for use in later steps",
           "tooltip": {
-            "what": "Reads a value from the page (element text, input value, or JavaScript expression) and stores it under a name. Use {{var.name}} in any later step's value field to reference it.",
-            "example": "Source: Text on page   Locator: #order-ref   Name: orderId\nSource: Value in field  Locator: #patient-id  Name: patientId\nSource: JavaScript      JS: document.title    Name: pageTitle",
-            "tip": "Use the 📌 pin icon on a FILL or TYPE step to store a value you typed yourself. Use SET VARIABLE only when the value is generated by the page (e.g. auto-created order ID, confirmation number)."
+            "what": "Reads a value from the page (element text, input value, or JavaScript expression) and stores it under a name. Choose 📌 Session scope (this script only) or 🌐 Global scope (shared across all scripts in the suite). Use {{var.name}} in any later step's value field to reference it.",
+            "example": "Source: Text on page   Locator: #order-ref   Name: orderId   Scope: Session\nSource: Value in field  Locator: #patient-id  Name: patientId Scope: Global\nSource: JavaScript      JS: document.title    Name: pageTitle Scope: Session",
+            "tip": "Use 🌐 Global scope when a value created in Script 1 (e.g. patientId) is needed in Script 2 or later. Use 📌 Session scope when the variable is only needed within the same script. Pin icon on FILL/TYPE steps also supports both scopes."
           }
         },
         {
@@ -490,6 +738,127 @@
             "what": "Runs a JavaScript snippet in the browser context. Use for advanced scenarios that cannot be handled by standard keywords.",
             "example": "Value: document.title  →  get page title\nValue: localStorage.clear()  →  clear local storage\nValue: document.querySelector('#hidden-btn').click()",
             "tip": "⚠️ Advanced use only. Use standard keywords wherever possible. Reserve this for edge cases where no other keyword works."
+          }
+        },
+        {
+          "key": "CALL API", "label": "Call API", "needsLocator": false, "needsValue": true, "valueHint": "GET|POST|PUT|DELETE https://url  (body and headers optional)",
+          "helpLabel": "Makes an HTTP API call and optionally saves the response",
+          "tooltip": {
+            "what": "Sends an HTTP request (GET, POST, PUT, DELETE, PATCH) to a URL and optionally saves the response body as a variable. Supports JSON body and custom headers. URL and body values support {{var.name}} tokens.\n\nFormat: METHOD url\nBody (optional): JSON string in description field prefixed with BODY:\nHeaders: JSON string in description field prefixed with HEADERS:",
+            "example": "Value: GET https://api.example.com/patients/{{var.patientId}}  Save As: patientData\nValue: POST https://api.example.com/appointments  Save As: apptResponse\n  BODY: {\"patientId\":\"{{var.patientId}}\",\"date\":\"{{date.add(7,'days')}}\"}\nValue: DELETE https://api.example.com/records/{{var.recordId}}",
+            "tip": "Use Save As (📌 pin) to store the response body. Parse JSON fields in a later EVALUATE step: JSON.parse({{var.apptResponse}}).id. Supports {{var.x}} tokens in URL and body."
+          }
+        },
+        {
+          "key": "DATE TOKEN", "label": "📅 Date Tokens (reference)", "needsLocator": false, "needsValue": false, "valueHint": "",
+          "helpLabel": "Use date tokens in any value field to insert dynamic dates at run time",
+          "tooltip": {
+            "what": "Date tokens are resolved at spec-generation time and replaced with real date values. Use them inside any value field — FILL, ASSERT TEXT, LOG, etc.\n\n{{date.today}} — today's date as YYYY-MM-DD\n{{date.format('DD/MM/YYYY')}} — today in custom format\n{{date.add(7,'days')}} — 7 days from today\n{{date.subtract(1,'month')}} — 1 month ago\n{{date.diff('2026-01-01','2026-04-19','days')}} — days between two dates",
+            "example": "FILL date-of-birth field: {{date.subtract(30,'years')}}\nFILL appointment date:   {{date.add(7,'days')}}\nFILL report period:      {{date.format('MM/YYYY')}}\nLOG: Today is {{date.today}}",
+            "tip": "Supported units: days, months, years, hours. Supported formats: DD, MM, MMM, YYYY, YY, HH, mm, ss — combine freely e.g. 'DD-MMM-YYYY' → 19-Apr-2026."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Files & Downloads",
+      "keywords": [
+        {
+          "key": "ASSERT FILE DOWNLOADED", "label": "Assert File Downloaded", "needsLocator": false, "needsValue": true, "valueHint": "Filename or partial filename (e.g. report.pdf or export)",
+          "helpLabel": "Verifies a file was downloaded after a download action",
+          "tooltip": {
+            "what": "Waits for a download event triggered by the previous action and asserts the downloaded filename contains the expected text. Use after clicking a Download / Export button.",
+            "example": "Value: patient-export.xlsx  →  verify patient export downloaded\nValue: invoice            →  verify any file with 'invoice' in name downloaded\nValue: .pdf               →  verify a PDF was downloaded",
+            "tip": "Place this step immediately after the CLICK step that triggers the download. Partial filename match — you don't need the full name."
+          }
+        },
+        {
+          "key": "ASSERT DOWNLOAD COUNT", "label": "Assert Download Count", "needsLocator": false, "needsValue": true, "valueHint": "Expected number of downloads (e.g. 1)",
+          "helpLabel": "Verifies the exact number of files downloaded in this test",
+          "tooltip": {
+            "what": "Asserts that exactly N download events occurred during this test run. Use after bulk export operations to confirm the expected number of files were generated.",
+            "example": "Value: 1  →  exactly one file downloaded\nValue: 3  →  three files downloaded in a bulk export\nValue: 0  →  no downloads occurred (negative check)",
+            "tip": "Counts downloads from the start of the current test() block. Does not check the file system — checks Playwright's download event counter."
+          }
+        },
+        {
+          "key": "READ EXCEL VALUE", "label": "Read Excel Value", "needsLocator": false, "needsValue": true, "valueHint": "filePath|sheetName|row|col  (e.g. data.xlsx|Sheet1|2|3)",
+          "helpLabel": "Reads a cell value from an Excel file and saves it as a variable",
+          "tooltip": {
+            "what": "Reads a specific cell from an Excel (.xlsx) file on disk and stores the value in a variable (Save As field). Use for data-driven tests where test inputs come from a spreadsheet.",
+            "example": "Value: test-data/patients.xlsx|Sheet1|2|1  Save As: patientName  →  row 2, col 1\nValue: data/orders.xlsx|Orders|1|4         Save As: orderTotal   →  row 1, col 4",
+            "tip": "Row and column numbers are 1-based. Sheet name is case-sensitive. The file path is relative to the project root."
+          }
+        },
+        {
+          "key": "ASSERT EXCEL ROW COUNT", "label": "Assert Excel Row Count", "needsLocator": false, "needsValue": true, "valueHint": "filePath|sheetName|expectedCount  (e.g. export.xlsx|Sheet1|25)",
+          "helpLabel": "Verifies the number of data rows in an Excel sheet",
+          "tooltip": {
+            "what": "Opens an Excel file and counts the number of non-empty rows in the specified sheet. Asserts the count matches the expected value. Use to verify export completeness.",
+            "example": "Value: exports/patient-list.xlsx|Sheet1|50  →  verify 50 patients exported\nValue: reports/daily.xlsx|Data|1           →  verify at least 1 row in daily report",
+            "tip": "Header row is not counted. Only rows with at least one non-empty cell are counted. File path is relative to the project root."
+          }
+        },
+        {
+          "key": "READ PDF TEXT", "label": "Read PDF Text", "needsLocator": false, "needsValue": true, "valueHint": "filePath|textToFind  (e.g. invoice.pdf|Total Amount)",
+          "helpLabel": "Reads text from a PDF file and verifies it contains expected content",
+          "tooltip": {
+            "what": "Opens a PDF file from disk and searches for the expected text anywhere in the document. Use to verify downloaded invoices, reports, or letters contain the correct content.",
+            "example": "Value: downloads/invoice-123.pdf|Total Amount: £450.00  →  verify invoice total\nValue: reports/summary.pdf|Patient ID: P-20045         →  verify patient ID in report",
+            "tip": "Text search is partial and case-sensitive. The PDF must be a text-based PDF (not a scanned image). File path is relative to the project root."
+          }
+        }
+      ]
+    }
+    ,{
+      "name": "Browser Control",
+      "keywords": [
+        {
+          "key": "MOCK RESPONSE",
+          "label": "Mock API Response",
+          "needsLocator": false,
+          "needsValue": true,
+          "valueHint": "urlPattern|statusCode|jsonBody  (e.g. /api/users|200|{\"ok\":true})",
+          "tooltip": {
+            "what": "Intercepts a network request matching the URL pattern and returns a mocked response instead of hitting the real server. Useful for isolating tests from backend availability or testing error states.",
+            "example": "Value: /api/patients|200|{\"data\":[]}  →  returns empty list for patient API\nValue: /api/login|401|{\"error\":\"Unauthorized\"}  →  simulate auth failure",
+            "tip": "The URL pattern is a substring match. Set the mock BEFORE the action that triggers the request. Mock is active for the lifetime of the test."
+          }
+        },
+        {
+          "key": "SET CLOCK",
+          "label": "Set Clock (mock date/time)",
+          "needsLocator": false,
+          "needsValue": true,
+          "valueHint": "ISO date/time string  (e.g. 2026-12-31T23:59:00)",
+          "tooltip": {
+            "what": "Freezes the browser's internal clock to a fixed date and time. Date pickers, countdowns, and any JS using new Date() will see this frozen time for the rest of the test.",
+            "example": "Value: 2026-01-01T00:00:00  →  test New Year's Day logic\nValue: 2026-12-31T23:59:59  →  test end-of-year edge cases",
+            "tip": "Use ISO 8601 format. The clock stays frozen until the test ends. Combine with ASSERT TEXT to verify date-dependent UI elements show the expected value."
+          }
+        },
+        {
+          "key": "SET OFFLINE",
+          "label": "Set Network Offline",
+          "needsLocator": false,
+          "needsValue": true,
+          "valueHint": "true  or  false",
+          "tooltip": {
+            "what": "Simulates a network outage (true) or restores connectivity (false). Use to test how the app behaves when the user loses internet access — offline banners, retry logic, cached content.",
+            "example": "Value: true  →  simulate network loss, then assert offline banner is visible\nValue: false  →  restore connection, then assert data reloads",
+            "tip": "Always restore connectivity (false) before assertions that need the server. Navigation after going offline will fail — this keyword only affects subsequent requests."
+          }
+        },
+        {
+          "key": "ASSERT ARIA",
+          "label": "Assert ARIA Attribute",
+          "needsLocator": true,
+          "needsValue": true,
+          "valueHint": "aria-label=expected  or  role=button  or  aria-expanded=true",
+          "tooltip": {
+            "what": "Asserts that an element has the specified ARIA attribute with the expected value. Use to verify accessibility markup — screen-reader labels, roles, expanded state, disabled state.",
+            "example": "Value: aria-label=Close dialog  →  verify close button is labelled for screen readers\nValue: aria-expanded=true  →  verify accordion panel is open\nValue: aria-disabled=false  →  verify submit button is enabled",
+            "tip": "Format: attributeName=expectedValue. The assertion is exact-match. For partial match use ASSERT ATTR CONTAINS instead."
           }
         }
       ]
@@ -502,7 +871,9 @@
     { "value": "name",    "label": "Name" },
     { "value": "text",    "label": "Text" },
     { "value": "testid",  "label": "data-testid" },
-    { "value": "role",    "label": "ARIA Role" }
+    { "value": "role",    "label": "ARIA Role" },
+    { "value": "nth",     "label": "Nth Element (index)" },
+    { "value": "last",    "label": "Last Element" }
   ],
   "dynamicTokens": [
     { "token": "{{random.text(8)}}",       "label": "Random Text (8 chars)" },

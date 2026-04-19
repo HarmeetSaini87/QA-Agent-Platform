@@ -51,3 +51,4 @@ logs/
 
 # User-uploaded test files (FILE CHOOSER uploads)
 test-files/
+data/*.sqlite

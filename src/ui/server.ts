@@ -22,19 +22,29 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { v4 as uuidv4 } from 'uuid';
 import * as dotenv  from 'dotenv';
 import session      from 'express-session';
+import SQLiteStore  from 'connect-sqlite3';
 import cron         from 'node-cron';
 
 import { generateCodegenSpec, generateDebugSpec } from '../utils/codegenGenerator';
+import {
+  validateLicenseKey, validateLicFile, storeLicense, loadStoredLicense,
+  getLicensePayload, refreshLicenseCache, clearLicenseCache,
+  isFeatureEnabled, recordLogin, recordLogout, getSeatsUsed, isSeatAvailable,
+  getMachineId, checkMachineBinding, transferLicense, checkExpiryTick,
+  checkStoredLicFile, syncSeatsFromSessions, getSeatUsageRatio,
+} from '../utils/licenseManager';
 import { parseRecorderEvent, RecorderEvent }      from '../utils/recorderParser';
+import { scoreCandidates, toLocatorAlternative, T3_AUTO_THRESHOLD, DomCandidate } from '../utils/healingEngine';
+import { upsertPageModel, listPageModels } from '../utils/pageModelManager';
 import { config }  from '../framework/config';
 import { logger }  from '../utils/logger';
 
 // ── Auth + Data imports ────────────────────────────────────────────────────────
 import { seedDefaults }            from '../data/seed';
-import { readAll, upsert, remove, findById, writeAll, USERS, PROJECTS, LOCATORS, FUNCTIONS, AUDIT, SETTINGS, SCRIPTS, SUITES, COMMON_DATA, SCHEDULES } from '../data/store';
-import { User, Project, ProjectEnvironment, Locator, CommonFunction, CommonData, AuditEntry, AppSettings, DEFAULT_SETTINGS, ProjectCredential, TestScript, ScriptStep, TestSuite, ScheduledRun } from '../data/types';
+import { readAll, upsert, remove, findById, writeAll, USERS, PROJECTS, LOCATORS, FUNCTIONS, AUDIT, SETTINGS, SCRIPTS, SUITES, COMMON_DATA, SCHEDULES, APIKEYS } from '../data/store';
+import { User, Project, ProjectEnvironment, Locator, CommonFunction, CommonData, AuditEntry, AppSettings, DEFAULT_SETTINGS, ProjectCredential, TestScript, ScriptStep, TestSuite, ScheduledRun, HealingProposal, LicensePayload, ApiKey } from '../data/types';
 import { hashPassword, verifyPassword, validatePasswordStrength } from '../auth/crypto';
-import { requireAuth, requireAdmin, sanitizeInput }               from '../auth/middleware';
+import { requireAuth, requireAdmin, requireAuthOrApiKey, sanitizeInput } from '../auth/middleware';
 import { logAudit }                                                from '../auth/audit';
 import * as crypto from 'crypto';
 
@@ -90,6 +100,16 @@ if (!fs.existsSync(TEST_FILES_DIR)) fs.mkdirSync(TEST_FILES_DIR, { recursive: tr
 
 type LogLevel = 'info' | 'pass' | 'fail' | 'warn';
 
+interface HealEvent {
+  stepOrder:       number;
+  keyword:         string;
+  locatorId:       string;
+  healed:          string;   // new selector that worked
+  healedType:      string;
+  confidence:      number;
+  at:              string;   // ISO timestamp
+}
+
 interface RunRecord {
   runId:           string;
   planPath:        string;
@@ -112,6 +132,8 @@ interface RunRecord {
   environmentId?:  string;
   environmentName?: string;
   executedBy?:     string;
+  // Self-healing events recorded during this run
+  healEvents?:     HealEvent[];
 }
 
 interface TestEvent {
@@ -123,6 +145,11 @@ interface TestEvent {
   screenshotPath?: string; // relative path to screenshot if captured (Playwright attachment)
   screenshotBefore?: string; // before-action screenshot (visual diff)
   screenshotAfter?:  string; // after-failure screenshot (visual diff)
+  videoPath?:  string; // relative path to video recording (test-results/...)
+  tracePath?:  string; // relative path to trace ZIP (test-results/...)
+  failureScreenshotPath?: string; // afterEach full-page failure screenshot
+  consoleErrors?: string[];       // JS console errors + page exceptions collected during test
+  steps?: { name: string; status: 'pass' | 'fail' | 'skip'; durationMs: number }[]; // Phase B
 }
 
 // ── Debug session types ───────────────────────────────────────────────────────
@@ -132,6 +159,11 @@ interface DebugSession {
   scriptId:       string;
   scriptTitle:    string;
   projectId:      string;
+  // Ownership — who started this session
+  userId:         string;
+  username:       string;
+  environmentId:  string | null;
+  environmentName: string | null;
   status:         'starting' | 'paused' | 'running' | 'done' | 'stopped' | 'error';
   currentStep:    number;   // stepOrder currently paused at
   totalSteps:     number;
@@ -280,6 +312,9 @@ const RE_TEST_LINE  = /(?:ok|x|[✓✔✗✘×√])\s+\d+\s+\[chromium\][^(]*›
 const RE_TOTAL      = /Running (\d+) tests?/;
 const RE_PASS_COUNT = /(\d+) passed/;
 const RE_FAIL_COUNT = /(\d+) failed/;
+// Phase A: console errors emitted by afterEach as structured log line
+// Format: [QA_CONSOLE_ERRORS]:<testIdx>:<json-array>
+const RE_CONSOLE_ERRORS = /\[QA_CONSOLE_ERRORS\]:(\d+):(.+)$/;
 
 function classifyLine(line: string): LogLevel {
   if (RE_TEST_PASS.test(line))                  return 'pass';
@@ -302,7 +337,6 @@ function parseMs(val: string, unit: string): number {
 function parseFailureDetails(record: RunRecord): void {
   const lines     = record.output;
   const failHdr   = /^\s{2,4}\d+\)\s+\[chromium\]/;
-  const screenshotLine = /attachment.*screenshot.*\.png/i;
   const ANSI      = /\x1b\[[0-9;]*m/g;
 
   // Build map: normalized test name → TestEvent
@@ -337,11 +371,22 @@ function parseFailureDetails(record: RunRecord): void {
         if (firstErr) ev.errorMessage = firstErr.trim();
         ev.errorDetail  = block.join('\n');
 
-        // Check for screenshot attachment
-        const ssLine = block.find(l => screenshotLine.test(l));
-        if (ssLine) {
-          const m = ssLine.match(/test-results[^\s]+\.png/i);
-          if (m) ev.screenshotPath = m[0].replace(/\\/g, '/');
+        // Check for screenshot attachment.
+        // Playwright list reporter outputs the header and file path on SEPARATE lines:
+        //   attachment #1: screenshot (image/png) ─────────────────
+        //      test-results\<runId>\<test-name>-chromium\test-failed-1.png
+        // We find the header line, then scan the next 1-2 lines for the file path.
+        const ssHeaderIdx = block.findIndex(l => /attachment.*screenshot.*image\/png/i.test(l));
+        if (ssHeaderIdx >= 0) {
+          for (let pi = ssHeaderIdx + 1; pi < Math.min(ssHeaderIdx + 3, block.length); pi++) {
+            const pathLine = block[pi].trim();
+            if (!pathLine) continue;
+            const m = pathLine.match(/test-results[^\r\n]+\.(png|jpg|jpeg)/i);
+            if (m) {
+              ev.screenshotPath = m[0].replace(/\\/g, '/');
+              break;
+            }
+          }
         }
       }
       continue;
@@ -350,12 +395,75 @@ function parseFailureDetails(record: RunRecord): void {
   }
 }
 
+// ── Failure screenshot attachment (Phase A) ───────────────────────────────────
+// afterEach hook writes FAILED-<testIdx>.png to test-results/<runId>/.
+// Scan for these and attach as failureScreenshotPath on the matching TestEvent.
+
+function attachFailureScreenshots(record: RunRecord): void {
+  const ssDir = path.join(config.paths.testResults, record.runId);
+  if (!fs.existsSync(ssDir)) return;
+
+  const failRe = /^FAILED-(\d+)\.png$/;
+  let files: string[];
+  try { files = fs.readdirSync(ssDir); } catch { return; }
+
+  for (const f of files) {
+    const m = f.match(failRe);
+    if (!m) continue;
+    const idx = parseInt(m[1], 10);
+    const ev  = record.tests[idx];
+    if (ev) ev.failureScreenshotPath = `test-results/${record.runId}/${f}`;
+  }
+}
+
+// ── Phase B: attach test.step() data from Playwright JSON report ──────────────
+// Playwright JSON reporter writes one suite per spec; each test has nested steps.
+// We match tests positionally (record.tests[] order = Playwright run order, workers:1).
+
+function attachStepsFromJson(record: RunRecord, jsonReportPath: string): void {
+  try {
+    if (!fs.existsSync(jsonReportPath)) return;
+    const raw  = fs.readFileSync(jsonReportPath, 'utf8');
+    const report = JSON.parse(raw);
+
+    // Flatten all test results from the report (suites → specs → tests)
+    const pwTests: any[] = [];
+    function collectTests(suites: any[]): void {
+      for (const suite of suites || []) {
+        for (const spec of suite.specs || []) {
+          for (const test of spec.tests || []) {
+            pwTests.push({ title: spec.title, test });
+          }
+        }
+        collectTests(suite.suites || []);
+      }
+    }
+    collectTests(report.suites || []);
+
+    // Match positionally — same order as record.tests[] since workers:1
+    pwTests.forEach((entry, idx) => {
+      const ev = record.tests[idx];
+      if (!ev) return;
+      const result = entry.test?.results?.[0];
+      if (!result) return;
+
+      // Flatten top-level steps only (test.step() wrapping)
+      const steps = (result.steps || []).map((s: any) => ({
+        name:       s.title || '',
+        status:     s.error ? 'fail' : 'pass',
+        durationMs: typeof s.duration === 'number' ? s.duration : 0,
+      }));
+      if (steps.length) ev.steps = steps;
+    });
+  } catch { /* JSON parse / file error — skip gracefully */ }
+}
+
 // ── Visual diff attachment ────────────────────────────────────────────────────
 // Scans test-results/<runId>/ for before/after screenshot pairs and attaches
 // them to the matching TestEvent by testIdx position in record.tests[].
 
 function attachVisualDiff(record: RunRecord): void {
-  const ssDir = path.resolve('test-results', record.runId);
+  const ssDir = path.join(config.paths.testResults, record.runId);
   if (!fs.existsSync(ssDir)) return;
 
   const files = fs.readdirSync(ssDir);
@@ -385,27 +493,97 @@ function attachVisualDiff(record: RunRecord): void {
   }
 
   record.tests.forEach((ev, idx) => {
-    if (ev.status !== 'fail') return;
-
     const beforeSteps = beforeMap.get(idx);
     const afterSteps  = afterMap.get(idx);
 
     if (!beforeSteps && !afterSteps) return;
 
-    // Find the last step that has an after screenshot (= the failing step)
-    if (afterSteps && afterSteps.size > 0) {
-      const lastFailStep = Math.max(...afterSteps.keys());
-      ev.screenshotAfter  = `test-results/${record.runId}/${afterSteps.get(lastFailStep)}`;
-      // Matching before screenshot for the same step
-      if (beforeSteps?.has(lastFailStep)) {
-        ev.screenshotBefore = `test-results/${record.runId}/${beforeSteps.get(lastFailStep)}`;
+    if (ev.status === 'fail') {
+      // Find the last step that has an after screenshot (= the failing step)
+      if (afterSteps && afterSteps.size > 0) {
+        const lastFailStep = Math.max(...afterSteps.keys());
+        ev.screenshotAfter  = `test-results/${record.runId}/${afterSteps.get(lastFailStep)}`;
+        // Matching before screenshot for the same step
+        if (beforeSteps?.has(lastFailStep)) {
+          ev.screenshotBefore = `test-results/${record.runId}/${beforeSteps.get(lastFailStep)}`;
+        }
+      } else if (beforeSteps && beforeSteps.size > 0) {
+        // No after shot captured — use last before shot as context
+        const lastStep = Math.max(...beforeSteps.keys());
+        ev.screenshotBefore = `test-results/${record.runId}/${beforeSteps.get(lastStep)}`;
       }
-    } else if (beforeSteps && beforeSteps.size > 0) {
-      // No after shot captured — use last before shot as context
-      const lastStep = Math.max(...beforeSteps.keys());
-      ev.screenshotBefore = `test-results/${record.runId}/${beforeSteps.get(lastStep)}`;
+    } else {
+      // Passing test — attach the last before-screenshot as visual evidence
+      if (beforeSteps && beforeSteps.size > 0) {
+        const lastStep = Math.max(...beforeSteps.keys());
+        ev.screenshotPath = `test-results/${record.runId}/${beforeSteps.get(lastStep)}`;
+      }
     }
   });
+}
+
+// ── Video & Trace attachment ──────────────────────────────────────────────────
+// After Playwright finishes, each test has its own output subdirectory:
+//   test-results/<runId>/<sanitized-test-title>-chromium/
+//     video.webm    (when video: 'on')
+//     trace.zip     (when trace: 'on')
+// Tests run sequentially (workers: 1), so we match directories to record.tests[]
+// positionally after sorting alphabetically (Playwright names them from test title).
+function attachVideoAndTrace(record: RunRecord): void {
+  const runDir = path.join(config.paths.testResults, record.runId);
+  if (!fs.existsSync(runDir)) return;
+
+  let entries: fs.Dirent[];
+  try { entries = fs.readdirSync(runDir, { withFileTypes: true }); }
+  catch { return; }
+
+  // Playwright creates one subdir per test named <title>-chromium (or -chromium-<retry>)
+  const testDirs = entries
+    .filter(e => e.isDirectory() && /chromium/i.test(e.name))
+    .map(e => e.name)
+    .sort();
+
+  if (!testDirs.length) return;
+
+  record.tests.forEach((ev, idx) => {
+    const dir = testDirs[idx];
+    if (!dir) return;
+
+    const videoFile = path.join(runDir, dir, 'video.webm');
+    const traceFile = path.join(runDir, dir, 'trace.zip');
+
+    if (fs.existsSync(videoFile)) {
+      ev.videoPath = `test-results/${record.runId}/${dir}/video.webm`;
+    }
+    if (fs.existsSync(traceFile)) {
+      ev.tracePath = `test-results/${record.runId}/${dir}/trace.zip`;
+    }
+  });
+}
+
+// Reads the healed.ndjson written by the spec's __tryAlts helper and attaches
+// heal events to the run record. Also persists each event to the global
+// data/healing-log.json for the Locator Repo healing history view.
+function attachHealEvents(record: RunRecord): void {
+  const healFile = path.join(config.paths.testResults, record.runId, 'healed.ndjson');
+  if (!fs.existsSync(healFile)) return;
+
+  const lines = fs.readFileSync(healFile, 'utf-8').trim().split('\n').filter(Boolean);
+  const events: HealEvent[] = [];
+  for (const line of lines) {
+    try { events.push(JSON.parse(line) as HealEvent); } catch { /* malformed line */ }
+  }
+  if (!events.length) return;
+
+  record.healEvents = events;
+
+  // Append to global healing-log.json (NDJSON)
+  const globalLog = path.resolve('data', 'healing-log.ndjson');
+  const withRunId = events.map(e => ({ ...e, runId: record.runId, projectId: record.projectId ?? '' }));
+  try {
+    fs.mkdirSync(path.resolve('data'), { recursive: true });
+    fs.appendFileSync(globalLog, withRunId.map(e => JSON.stringify(e)).join('\n') + '\n', 'utf-8');
+  } catch { /* log write failure is non-fatal */ }
 }
 
 // ── Run spawner (pre-built spec path) ────────────────────────────────────────
@@ -422,10 +600,14 @@ function spawnRunWithSpec(record: RunRecord, specPath: string, headed?: boolean,
   });
 
   const relPath   = path.relative(path.resolve('.'), specPath).replace(/\\/g, '/');
-  const outputDir = `test-results/${runId}`;
+  // Use config.paths.testResults so dev and prod write to their own isolated directories
+  const outputDir = path.join(config.paths.testResults, runId).replace(/\\/g, '/');
   // Pre-create output dir so visual diff screenshots can be written by generated spec
   fs.mkdirSync(path.resolve(outputDir), { recursive: true });
-  const args      = ['playwright', 'test', '--reporter=list', `--output=${outputDir}`];
+  // Phase B: JSON reporter runs alongside list reporter; output file via env var
+  const jsonReportFile = 'pw-report.json'; // relative to cwd; PLAYWRIGHT_JSON_OUTPUT_NAME controls filename
+  const jsonReportPath = path.join(path.resolve(outputDir), jsonReportFile);
+  const args      = ['playwright', 'test', '--reporter=list,json', `--output="${outputDir}"`];
   if (retries > 0) args.push(`--retries=${retries}`);
   args.push(relPath);
 
@@ -437,7 +619,7 @@ function spawnRunWithSpec(record: RunRecord, specPath: string, headed?: boolean,
 
   const proc = cp.spawn('npx', args, {
     cwd:   path.resolve('.'),
-    env:   { ...process.env, CI: '', HEADLESS: runHeadless ? 'true' : 'false' },
+    env:   { ...process.env, CI: '', HEADLESS: runHeadless ? 'true' : 'false', PW_OUTPUT_DIR: outputDir, PLAYWRIGHT_JSON_OUTPUT_NAME: jsonReportPath },
     shell: true,
   });
 
@@ -480,6 +662,18 @@ function spawnRunWithSpec(record: RunRecord, specPath: string, headed?: boolean,
         broadcast(runId, { type: 'run:test',  runId, name, status, durationMs });
         broadcast(runId, { type: 'run:stats', runId, passed: record.passed, failed: record.failed, total: record.total, completed: record.tests.length });
       }
+
+      // Phase A: parse console errors emitted by afterEach structured log
+      const ceMatch = plain.match(RE_CONSOLE_ERRORS);
+      if (ceMatch) {
+        const testIdx = parseInt(ceMatch[1], 10);
+        try {
+          const errors: string[] = JSON.parse(ceMatch[2]);
+          // tests[] may not have this index yet if line arrives before test-line — defer via post-run
+          (record as any).__pendingConsoleErrors = (record as any).__pendingConsoleErrors || {};
+          (record as any).__pendingConsoleErrors[testIdx] = errors;
+        } catch { /* malformed JSON — skip */ }
+      }
     }
   };
 
@@ -498,8 +692,30 @@ function spawnRunWithSpec(record: RunRecord, specPath: string, headed?: boolean,
     // Attach error messages + screenshots to failed test events
     parseFailureDetails(record);
 
+    // Phase A: flush pending console errors collected during the run
+    const pending = (record as any).__pendingConsoleErrors as Record<number, string[]> | undefined;
+    if (pending) {
+      for (const [idxStr, errors] of Object.entries(pending)) {
+        const ev = record.tests[parseInt(idxStr, 10)];
+        if (ev && errors.length) ev.consoleErrors = errors;
+      }
+      delete (record as any).__pendingConsoleErrors;
+    }
+
+    // Phase A: attach afterEach full-page failure screenshots
+    attachFailureScreenshots(record);
+
     // Attach before/after visual diff screenshots to failed test events
     attachVisualDiff(record);
+
+    // Attach video recording and trace ZIP paths to every test event
+    attachVideoAndTrace(record);
+
+    // Phase B: attach test.step() names/status/duration from Playwright JSON report
+    attachStepsFromJson(record, jsonReportPath);
+
+    // Attach T2 self-healing events from healed.ndjson written by the spec
+    attachHealEvents(record);
 
     broadcast(runId, {
       type: 'run:done',
@@ -528,6 +744,33 @@ function spawnRunWithSpec(record: RunRecord, specPath: string, headed?: boolean,
   });
 }
 
+// ── P1-04: requireFeature middleware ──────────────────────────────────────────
+
+// HTTP 402 = Payment Required — signals client to show upgrade CTA (P3-10)
+const UPGRADE_TIER: Record<string, string> = {
+  scheduler: 'team',
+  sso:       'team',
+  apiAccess: 'enterprise',
+  whiteLabel:'enterprise',
+};
+
+function requireFeature(feature: keyof LicensePayload['features']) {
+  return (_req: Request, res: Response, next: NextFunction): void => {
+    if (!isFeatureEnabled(feature)) {
+      const p       = getLicensePayload();
+      const upgrade = UPGRADE_TIER[feature as string] ?? 'enterprise';
+      res.status(402).json({
+        error:   'Feature not available on your license tier',
+        feature,
+        tier:    p?.tier ?? 'none',
+        upgrade,   // client shows "Upgrade to {upgrade}" CTA
+      });
+      return;
+    }
+    next();
+  };
+}
+
 // ── Express app ───────────────────────────────────────────────────────────────
 
 const app = express();
@@ -549,18 +792,29 @@ function getSessionTimeoutMs(): number {
   }
 }
 
+// P2-01: SQLite-backed session store — sessions survive server restarts.
+// connect-sqlite3 factory requires passing the session constructor.
+const SqliteSessionStore = SQLiteStore(session);
 const SESSION_SECRET = process.env.SESSION_SECRET || 'qa-agent-platform-secret-key-2026';
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const sessionStore = new SqliteSessionStore({
+  db:  'sessions.sqlite',
+  dir: path.resolve('data'),
+  table: 'sessions',
+}) as any;
+
 app.use(session({
   secret:            SESSION_SECRET,
   resave:            false,
   saveUninitialized: false,
+  store:             sessionStore,
   cookie: {
     httpOnly: true,
     secure:   false,          // set true if serving over HTTPS
-    maxAge:   getSessionTimeoutMs(), // read from settings at startup
+    maxAge:   getSessionTimeoutMs(),
     sameSite: 'lax',
   },
-  name: 'qa.sid',
+  name: config.ui.cookieName,   // 'qa.sid' prod | 'qa-dev.sid' dev — prevents cookie overlap
 }));
 
 // ── Inactivity timeout enforcement ────────────────────────────────────────────
@@ -681,10 +935,19 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
     return;
   }
 
+  // P1-05: seat enforcement
+  if (!isSeatAvailable(user.id)) {
+    const p = getLicensePayload();
+    res.status(403).json({ error: 'Seat limit reached. All licensed seats are in use.', seatsUsed: getSeatsUsed(), seatsTotal: p?.seats ?? 0 });
+    return;
+  }
+
   req.session.userId   = user.id;
   req.session.username = user.username;
   req.session.role     = user.role;
   req.session.loginAt  = new Date().toISOString();
+  (req.session as unknown as Record<string, unknown>).ip = req.ip ?? null;
+  recordLogin(user.id);
   res.json({ success: true, role: user.role, username: user.username });
 });
 
@@ -711,8 +974,10 @@ app.post('/api/auth/change-password', async (req: Request, res: Response) => {
 });
 
 app.post('/api/auth/logout', (req: Request, res: Response) => {
-  if (req.session?.userId) {
-    logAudit({ userId: req.session.userId, username: req.session.username ?? null, action: 'LOGOUT', resourceType: null, resourceId: null, details: null, ip: req.ip ?? null });
+  const uid = req.session?.userId;
+  if (uid) {
+    logAudit({ userId: uid, username: req.session.username ?? null, action: 'LOGOUT', resourceType: null, resourceId: null, details: null, ip: req.ip ?? null });
+    recordLogout(uid);
   }
   req.session.destroy(() => res.json({ success: true }));
 });
@@ -779,7 +1044,7 @@ app.use('/api', requireAuth);
 
 // ── Run endpoints ─────────────────────────────────────────────────────────────
 
-app.get('/api/run/:runId', (req: Request, res: Response) => {
+app.get('/api/run/:runId', requireAuthOrApiKey, (req: Request, res: Response) => {
   const record = runs.get(req.params.runId);
   if (!record) {
     const runFile = path.join(config.paths.results, `run-${req.params.runId}.json`);
@@ -821,13 +1086,476 @@ app.get('/api/runs', (req: Request, res: Response) => {
     environmentId:   r.environmentId   ?? null,
     environmentName: r.environmentName ?? null,
     executedBy:      r.executedBy      ?? null,
+    healCount:       r.healEvents?.length ?? 0,
   })));
 });
 
 
 
+// Returns the global heal-log (all T2 heal events across all runs for a project)
+app.get('/api/heal-log', requireAuth, (req: Request, res: Response) => {
+  const { projectId, limit: limitStr } = req.query as { projectId?: string; limit?: string };
+  const limitN = Math.min(parseInt(limitStr || '200', 10), 500);
+  const logFile = path.resolve('data', 'healing-log.ndjson');
+  if (!fs.existsSync(logFile)) { res.json([]); return; }
+
+  const lines = fs.readFileSync(logFile, 'utf-8').trim().split('\n').filter(Boolean);
+  let events: any[] = [];
+  for (const line of lines) {
+    try { events.push(JSON.parse(line)); } catch { /* skip */ }
+  }
+  if (projectId) events = events.filter(e => e.projectId === projectId);
+  // Return most recent first
+  events.reverse();
+  res.json(events.slice(0, limitN));
+});
+
+// ── P5: Pre-Scan endpoints ────────────────────────────────────────────────────
+
+// P5-C: POST /api/prescan — called by generated spec beforeAll block
+// Receives live DOM candidates, scores every locator on that page against them,
+// persists the health report to data/prescan/<runId>.json, also upserts PageModel.
+app.post('/api/prescan', requireAuth, (req: Request, res: Response) => {
+  const { projectId, pageKey, candidates, runId } = req.body as {
+    projectId:  string;
+    pageKey:    string;
+    candidates: DomCandidate[];
+    runId:      string;
+  };
+  if (!projectId || !pageKey || !runId) {
+    res.status(400).json({ error: 'projectId, pageKey, and runId are required' }); return;
+  }
+
+  // Find all locators for this project+page that have a healingProfile
+  const locators = readAll<Locator>(LOCATORS).filter(
+    l => l.projectId === projectId &&
+         l.pageKey   === pageKey   &&
+         l.healingProfile != null,
+  );
+
+  const results = locators.map(loc => {
+    const scored = (candidates?.length)
+      ? scoreCandidates(loc.healingProfile!, candidates)
+      : [];
+    const best   = scored[0];
+    const score  = best?.score ?? 0;
+    const status: 'healthy' | 'degraded' | 'broken' =
+      score >= 80 ? 'healthy' : score >= 50 ? 'degraded' : 'broken';
+    return {
+      id:            loc.id,
+      name:          loc.name,
+      selector:      loc.selector,
+      score,
+      status,
+      bestCandidate: best?.bestSelector ?? null,
+    };
+  });
+
+  // Upsert PageModel — associate these locator IDs with the page
+  if (locators.length) {
+    try {
+      upsertPageModel({
+        projectId, pageKey,
+        locatorIds:   locators.map(l => l.id),
+        capturedFrom: 'prescan',
+      });
+    } catch (e) { logger.warn(`[prescan] PageModel upsert failed: ${e}`); }
+  }
+
+  // Persist health report
+  const prescanDir = path.resolve('data', 'prescan');
+  try {
+    fs.mkdirSync(prescanDir, { recursive: true });
+    const report = { runId, projectId, pageKey, scannedAt: new Date().toISOString(), locators: results };
+    fs.writeFileSync(path.join(prescanDir, `${runId}.json`), JSON.stringify(report, null, 2));
+    logger.info(`[prescan] runId=${runId} pageKey=${pageKey} scored=${results.length} locators`);
+    res.json(report);
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// GET /api/prescan — UI polls for prescan results (keyed by runId)
+app.get('/api/prescan', requireAuth, (req: Request, res: Response) => {
+  const { runId } = req.query as { runId?: string };
+  if (!runId) { res.json(null); return; }
+  const file = path.resolve('data', 'prescan', `${runId}.json`);
+  if (!fs.existsSync(file)) { res.json(null); return; }
+  try { res.json(JSON.parse(fs.readFileSync(file, 'utf-8'))); }
+  catch { res.json(null); }
+});
+
+// GET /api/page-models — list PageModels for a project (used by Locator Repo health view)
+app.get('/api/page-models', requireAuth, (req: Request, res: Response) => {
+  const { projectId } = req.query as { projectId?: string };
+  if (!projectId) { res.json([]); return; }
+  try { res.json(listPageModels(projectId)); }
+  catch { res.json([]); }
+});
+
+// P5-F: POST /api/prescan-trigger — Locator Repo "Validate Locators" button
+// Spawns a minimal Playwright prescan spec for a given URL, returns scanId.
+// UI polls GET /api/prescan?runId=<scanId> for results.
+app.post('/api/prescan-trigger', requireAuth, (req: Request, res: Response) => {
+  const { projectId, url, pageKey } = req.body as { projectId: string; url: string; pageKey?: string };
+  if (!projectId || !url) { res.status(400).json({ error: 'projectId and url required' }); return; }
+
+  const scanId  = uuidv4();
+  const pk      = pageKey || (() => {
+    try { const u = new URL(url); return u.pathname.replace(/\/\d+(?=\/|$)/g, '/:id').replace(/\/$/, '') || '/'; }
+    catch { return '/'; }
+  })();
+  const port    = PORT;
+
+  // Write a minimal prescan spec to tests/codegen/
+  const specDir  = path.resolve('tests', 'codegen');
+  const specPath = path.join(specDir, `prescan-${scanId.slice(0,8)}.spec.ts`);
+  const esc      = (s: string) => s.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+
+  const specContent = [
+    `/** Auto-generated Prescan Spec — QA Agent Platform */`,
+    `import { test } from '@playwright/test';`,
+    ``,
+    `// DOM scanner (identical to suite-run preamble)`,
+    `function __qaDomScan() {`,
+    `  const els = document.querySelectorAll('button,a,input,select,textarea,[role],[data-testid],[aria-label]');`,
+    `  const out: any[] = [];`,
+    `  els.forEach((el: any) => {`,
+    `    const st = window.getComputedStyle(el);`,
+    `    if (st.display === 'none' || st.visibility === 'hidden') return;`,
+    `    out.push({`,
+    `      tag: el.tagName.toLowerCase(),`,
+    `      id: el.id || null,`,
+    `      classes: Array.from(el.classList),`,
+    `      text: (el.innerText || el.value || '').slice(0, 80).trim() || null,`,
+    `      ariaLabel: el.getAttribute('aria-label') || null,`,
+    `      role: el.getAttribute('role') || null,`,
+    `      placeholder: el.getAttribute('placeholder') || null,`,
+    `      testId: el.getAttribute('data-testid') || null,`,
+    `      parentTag: el.parentElement?.tagName?.toLowerCase() || null,`,
+    `      parentId: el.parentElement?.id || null,`,
+    `      parentClass: el.parentElement?.className?.split(' ')[0] || null,`,
+    `      domDepth: (() => { let d=0,n=el; while(n.parentElement){d++;n=n.parentElement;} return d; })(),`,
+    `      siblingIndex: Array.from(el.parentElement?.children||[]).indexOf(el),`,
+    `    });`,
+    `  });`,
+    `  return out;`,
+    `}`,
+    ``,
+    `test.describe('Prescan', () => {`,
+    `  test.beforeAll(async ({ browser }) => {`,
+    `    const ctx  = await browser.newContext({ ignoreHTTPSErrors: true });`,
+    `    const page = await ctx.newPage();`,
+    `    try {`,
+    `      await page.goto('${esc(url)}', { waitUntil: 'domcontentloaded', timeout: 20000 });`,
+    `      await page.waitForTimeout(1500);`,
+    `      const candidates = await page.evaluate(__qaDomScan).catch(() => []);`,
+    `      await fetch('http://localhost:${port}/api/prescan', {`,
+    `        method: 'POST',`,
+    `        headers: { 'Content-Type': 'application/json' },`,
+    `        body: JSON.stringify({ projectId: '${projectId}', pageKey: '${pk}', candidates, runId: '${scanId}' }),`,
+    `      }).catch(() => {});`,
+    `    } catch {}`,
+    `    await ctx.close().catch(() => {});`,
+    `  });`,
+    `  test('prescan-noop', async () => { /* results sent in beforeAll */ });`,
+    `});`,
+    ``,
+  ].join('\n');
+
+  try {
+    fs.mkdirSync(specDir, { recursive: true });
+    fs.writeFileSync(specPath, specContent, 'utf-8');
+  } catch (err) {
+    res.status(500).json({ error: `Failed to write prescan spec: ${(err as Error).message}` }); return;
+  }
+
+  // Spawn Playwright headlessly
+  const cp = require('child_process');
+  const relSpec = path.relative(path.resolve('.'), specPath).replace(/\\/g, '/');
+  cp.spawn('npx', ['playwright', 'test', relSpec, '--project=chromium', '--reporter=list'], {
+    cwd:   path.resolve('.'),
+    shell: true,
+    env:   { ...process.env, HEADLESS: 'true', APP_BASE_URL: url },
+    stdio: 'ignore',
+  });
+
+  logger.info(`[prescan-trigger] scanId=${scanId} url=${url} pageKey=${pk}`);
+  res.json({ scanId, pageKey: pk });
+});
+
+// ── T3 Similarity heal endpoint ───────────────────────────────────────────────
+// Called by generated spec when T2 alternatives are exhausted.
+// Receives the live DOM candidates, scores them against the stored HealingProfile,
+// writes a HealingProposal, optionally updates the Locator Repo, and returns the best match.
+app.post('/api/heal', requireAuth, (req: Request, res: Response) => {
+  const { locatorId, profile, candidates, stepOrder, keyword, runId } = req.body as {
+    locatorId:  string;
+    profile:    any;
+    candidates: DomCandidate[];
+    stepOrder:  number;
+    keyword:    string;
+    runId:      string;
+  };
+
+  if (!locatorId || !profile || !candidates?.length) {
+    res.status(400).json({ error: 'locatorId, profile and candidates are required' });
+    return;
+  }
+
+  // Score all candidates
+  const ranked = scoreCandidates(profile, candidates);
+  if (!ranked.length || ranked[0].score < 1) {
+    res.status(404).json({ error: 'No suitable candidate found' });
+    return;
+  }
+
+  const best = ranked[0];
+
+  // Look up the locator entry for project context
+  const locEntry = readAll<Locator>(LOCATORS).find(l => l.id === locatorId);
+
+  // Build HealingProposal record
+  const proposalId = uuidv4();
+  const autoApply  = best.score >= T3_AUTO_THRESHOLD;
+  const proposal: HealingProposal = {
+    id:              proposalId,
+    projectId:       locEntry?.projectId ?? '',
+    locatorId,
+    locatorName:     locEntry?.name ?? locatorId,
+    scriptId:        '',      // not available at this point — filled by future enhancement
+    scriptTitle:     '',
+    stepOrder,
+    oldSelector:     locEntry?.selector ?? '',
+    oldSelectorType: locEntry?.selectorType ?? 'css',
+    newSelector:     best.bestSelector,
+    newSelectorType: best.bestType,
+    confidence:      best.score,
+    healedAt:        new Date().toISOString(),
+    status:          autoApply ? 'auto-applied' : 'pending-review',
+  };
+
+  // Persist proposal to data/proposals/<id>.json
+  const proposalsDir = path.resolve('data', 'proposals');
+  try {
+    fs.mkdirSync(proposalsDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(proposalsDir, `${proposalId}.json`),
+      JSON.stringify(proposal, null, 2),
+    );
+  } catch (err) {
+    logger.warn(`[heal] Failed to write proposal: ${(err as Error).message}`);
+  }
+
+  // Auto-update Locator Repo alternatives if score ≥ threshold
+  if (autoApply && locEntry) {
+    const newAlt = toLocatorAlternative(best);
+    const existingAlts = locEntry.alternatives ?? [];
+    // Avoid duplicates — replace if same selectorType exists with lower confidence
+    const deduped = existingAlts.filter(a => a.selectorType !== newAlt.selectorType || a.confidence >= newAlt.confidence);
+    if (!deduped.find(a => a.selector === newAlt.selector)) {
+      deduped.unshift(newAlt); // prepend — highest confidence first
+    }
+    upsert(LOCATORS, {
+      ...locEntry,
+      alternatives: deduped.slice(0, 10), // keep top 10
+      healingStats: {
+        healCount:      (locEntry.healingStats?.healCount ?? 0) + 1,
+        lastHealedAt:   new Date().toISOString(),
+        lastHealedFrom: locEntry.selector,
+        lastHealedBy:   'auto',
+      },
+      updatedAt: new Date().toISOString(),
+    });
+  }
+
+  logger.info(`[heal] T3 locator=${locatorId} score=${best.score} auto=${autoApply} selector=${best.bestSelector}`);
+
+  res.json({
+    selector:     best.bestSelector,
+    selectorType: best.bestType,
+    score:        best.score,
+    autoApplied:  autoApply,
+    proposalId,
+    breakdown:    best.breakdown,
+  });
+});
+
+// ── Healing Proposals API ─────────────────────────────────────────────────────
+app.get('/api/proposals', requireAuth, (req: Request, res: Response) => {
+  const { projectId, status } = req.query as { projectId?: string; status?: string };
+  const proposalsDir = path.resolve('data', 'proposals');
+  if (!fs.existsSync(proposalsDir)) { res.json([]); return; }
+
+  const proposals: HealingProposal[] = [];
+  for (const f of fs.readdirSync(proposalsDir)) {
+    if (!f.endsWith('.json')) continue;
+    try { proposals.push(JSON.parse(fs.readFileSync(path.join(proposalsDir, f), 'utf-8'))); } catch { /* skip */ }
+  }
+
+  let result = proposals;
+  if (projectId) result = result.filter(p => p.projectId === projectId);
+  if (status)    result = result.filter(p => p.status === status);
+  result.sort((a, b) => b.healedAt.localeCompare(a.healedAt));
+  res.json(result);
+});
+
+// Approve or reject a healing proposal
+app.post('/api/proposals/:id/review', requireAuth, (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { action } = req.body as { action: 'approved' | 'rejected' };
+  const user = req.session as any;
+
+  if (!['approved', 'rejected'].includes(action)) {
+    res.status(400).json({ error: 'action must be approved or rejected' }); return;
+  }
+
+  const filePath = path.resolve('data', 'proposals', `${id}.json`);
+  if (!fs.existsSync(filePath)) { res.status(404).json({ error: 'Proposal not found' }); return; }
+
+  try {
+    const proposal: HealingProposal = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+    proposal.status     = action;
+    proposal.reviewedBy = user?.username ?? 'unknown';
+    proposal.reviewedAt = new Date().toISOString();
+    fs.writeFileSync(filePath, JSON.stringify(proposal, null, 2));
+
+    // On approve — update Locator Repo
+    if (action === 'approved') {
+      const locEntry = readAll<Locator>(LOCATORS).find(l => l.id === proposal.locatorId);
+      if (locEntry) {
+        const newAlt = { selector: proposal.newSelector, selectorType: proposal.newSelectorType, confidence: proposal.confidence };
+        const existingAlts = locEntry.alternatives ?? [];
+        const deduped = existingAlts.filter(a => a.selector !== newAlt.selector);
+        deduped.unshift(newAlt);
+        upsert(LOCATORS, {
+          ...locEntry,
+          alternatives: deduped.slice(0, 10),
+          healingStats: {
+            healCount:      (locEntry.healingStats?.healCount ?? 0) + 1,
+            lastHealedAt:   proposal.reviewedAt!,
+            lastHealedFrom: proposal.oldSelector,
+            lastHealedBy:   'approved',
+          },
+          updatedAt: new Date().toISOString(),
+        });
+      }
+    }
+
+    res.json({ ok: true, proposal });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// ── P4: T4 Human Review Queue — heal-pending / heal-respond ──────────────────
+// P4-B: GET /api/debug/heal-pending — returns pending T4 heal proposal for a running suite
+// The generated spec writes pending-heal.json to test-results/<runId>/ then polls for
+// heal-response.json. The UI polls this endpoint and shows the Proposal Card.
+app.get('/api/debug/heal-pending', requireAuth, (req: Request, res: Response) => {
+  const { runId } = req.query as { runId?: string };
+  if (!runId) { res.json(null); return; }
+  const healFile = path.join(config.paths.testResults, runId, 'pending-heal.json');
+  if (!fs.existsSync(healFile)) { res.json(null); return; }
+  try {
+    res.json(JSON.parse(fs.readFileSync(healFile, 'utf-8')));
+  } catch { res.json(null); }
+});
+
+// P4-D + P4-E: POST /api/debug/heal-respond — receives Approve/Reject from UI
+// Writes heal-response.json so the spec exits its poll loop.
+// On Approve: creates a HealingProposal (status: 'approved') + updates Locator Repo.
+app.post('/api/debug/heal-respond', requireAuth, (req: Request, res: Response) => {
+  const {
+    runId, action, selector, selectorType,
+    locatorId, stepOrder, keyword,
+    oldSelector, oldSelectorType,
+    score, projectId,
+  } = req.body as {
+    runId: string; action: 'approve' | 'reject';
+    selector?: string; selectorType?: string;
+    locatorId?: string; stepOrder?: number; keyword?: string;
+    oldSelector?: string; oldSelectorType?: string;
+    score?: number; projectId?: string;
+  };
+
+  if (!runId || !action) { res.status(400).json({ error: 'runId and action required' }); return; }
+
+  // Write heal-response.json — spec polling this file will unblock immediately
+  const responseFile = path.join(config.paths.testResults, runId, 'heal-response.json');
+  const payload = { action, selector: selector || null, selectorType: selectorType || 'css' };
+  try {
+    fs.writeFileSync(responseFile, JSON.stringify(payload));
+  } catch (err) {
+    res.status(500).json({ error: `Failed to write heal response: ${(err as Error).message}` }); return;
+  }
+
+  // P4-E: On Approve — write HealingProposal + update Locator Repo
+  if (action === 'approve' && selector && locatorId) {
+    const user = (req.session as any)?.username ?? 'unknown';
+    const now  = new Date().toISOString();
+
+    // Create and persist an 'approved' HealingProposal
+    const proposalId = uuidv4();
+    const locEntry   = readAll<Locator>(LOCATORS).find(l => l.id === locatorId);
+    const proposal: HealingProposal = {
+      id:              proposalId,
+      projectId:       projectId ?? locEntry?.projectId ?? '',
+      locatorId,
+      locatorName:     locEntry?.name ?? locatorId,
+      scriptId:        '',          // not known at T4 time
+      scriptTitle:     '',
+      stepOrder:       stepOrder ?? 0,
+      oldSelector:     oldSelector ?? locEntry?.selector ?? '',
+      oldSelectorType: oldSelectorType ?? locEntry?.selectorType ?? 'css',
+      newSelector:     selector,
+      newSelectorType: selectorType ?? 'css',
+      confidence:      score ?? 0,
+      healedAt:        now,
+      status:          'approved',
+      reviewedBy:      user,
+      reviewedAt:      now,
+    };
+
+    const proposalsDir = path.resolve('data', 'proposals');
+    try {
+      fs.mkdirSync(proposalsDir, { recursive: true });
+      fs.writeFileSync(path.join(proposalsDir, `${proposalId}.json`), JSON.stringify(proposal, null, 2));
+    } catch (err) {
+      logger.warn(`[heal-respond] Failed to write proposal: ${(err as Error).message}`);
+    }
+
+    // Update Locator Repo — add new selector to top of alternatives list
+    if (locEntry) {
+      const newAlt = { selector, selectorType: selectorType ?? 'css', confidence: score ?? 0 };
+      const existing = locEntry.alternatives ?? [];
+      const deduped  = existing.filter((a: { selector: string }) => a.selector !== selector);
+      deduped.unshift(newAlt);
+      upsert(LOCATORS, {
+        ...locEntry,
+        alternatives: deduped.slice(0, 10),
+        healingStats: {
+          healCount:      (locEntry.healingStats?.healCount ?? 0) + 1,
+          lastHealedAt:   now,
+          lastHealedFrom: oldSelector ?? locEntry.selector,
+          lastHealedBy:   'approved',
+        },
+      });
+      logger.info(`[heal-respond] T4 approved locator=${locatorId} newSelector=${selector}`);
+    }
+  }
+
+  res.json({ ok: true });
+});
+
 app.get('/api/health', (_req: Request, res: Response) => {
   res.json({ status: 'ok', appBaseURL: config.app.baseURL, port: PORT });
+});
+
+// Returns the environment label so the UI can display the DEV / PROD badge.
+// No auth required — called before login for the badge to appear on the login page too.
+app.get('/api/env', (_req: Request, res: Response) => {
+  res.json({ label: config.ui.envLabel, port: PORT });
 });
 
 // ── Standalone Execution Report page ─────────────────────────────────────────
@@ -988,14 +1716,36 @@ function escapeHtml(s: string): string {
 }
 
 // ── Screenshot file serving ───────────────────────────────────────────────────
-// Serves test-results/**/*.png so the report page can embed screenshots
+// Serves test-results/**/*.png|jpg so the report page can embed screenshots
 app.get('/screenshots/*', requireAuth, (req: Request, res: Response) => {
   const rel = (req.params as any)[0] as string;
-  // Restrict to test-results directory only
-  const abs = path.resolve('test-results', rel);
-  if (!abs.startsWith(path.resolve('test-results'))) { res.status(403).end(); return; }
+  // Restrict to this instance's test-results directory only
+  const base = config.paths.testResults;
+  const abs  = path.resolve(base, rel);
+  if (!abs.startsWith(path.resolve(base))) { res.status(403).end(); return; }
   if (fs.existsSync(abs)) { res.sendFile(abs); return; }
   res.status(404).end();
+});
+
+// ── Test artifact serving (video + trace) ─────────────────────────────────────
+// Serves test-results/**/*.webm (video) and *.zip (trace) for the report page.
+// Video:  opened in a new browser tab via target="_blank" — browser plays it natively.
+// Trace:  downloaded as a ZIP via the Content-Disposition header.
+app.get('/test-artifacts/*', requireAuth, (req: Request, res: Response) => {
+  const rel  = (req.params as any)[0] as string;
+  const base = config.paths.testResults;
+  const abs  = path.resolve(base, rel);
+  // Path traversal guard — must stay inside test-results
+  if (!abs.startsWith(path.resolve(base))) { res.status(403).end(); return; }
+  if (!fs.existsSync(abs)) { res.status(404).end(); return; }
+  if (abs.endsWith('.zip')) {
+    const filename = path.basename(abs);
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Type', 'application/zip');
+  } else if (abs.endsWith('.webm')) {
+    res.setHeader('Content-Type', 'video/webm');
+  }
+  res.sendFile(abs);
 });
 
 // Serves debug-runs/**/*.png for the step-by-step debugger panel
@@ -1186,6 +1936,42 @@ app.delete('/api/admin/users/:id', requireAdmin, (req: Request, res: Response) =
   res.json({ success: true });
 });
 
+// ── Admin: API Key Management ─────────────────────────────────────────────────
+
+app.get('/api/admin/apikeys', requireAdmin, (_req: Request, res: Response) => {
+  const keys = readAll<ApiKey>(APIKEYS).map(k => ({ ...k, keyHash: undefined }));
+  res.json(keys);
+});
+
+app.post('/api/admin/apikeys', requireAdmin, (req: Request, res: Response) => {
+  const { name, projectId, expiresAt } = req.body as any;
+  if (!name) { res.status(400).json({ error: 'name is required' }); return; }
+  const rawKey = crypto.randomBytes(32).toString('hex');
+  const keyHash = crypto.createHash('sha256').update(rawKey).digest('hex');
+  const key: ApiKey = {
+    id:         uuidv4(),
+    name:       sanitizeInput(name),
+    keyHash,
+    prefix:     rawKey.slice(0, 8),
+    projectId:  projectId ?? null,
+    createdBy:  req.session.username ?? 'admin',
+    createdAt:  new Date().toISOString(),
+    lastUsedAt: null,
+    expiresAt:  expiresAt ?? null,
+  };
+  upsert(APIKEYS, key);
+  logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'APIKEY_CREATED', resourceType: 'apikey', resourceId: key.id, details: key.name, ip: req.ip ?? null });
+  // Return raw key ONCE — never stored
+  res.json({ success: true, key: rawKey, prefix: key.prefix, id: key.id });
+});
+
+app.delete('/api/admin/apikeys/:id', requireAdmin, (req: Request, res: Response) => {
+  const removed = remove(APIKEYS, req.params.id);
+  if (!removed) { res.status(404).json({ error: 'API key not found' }); return; }
+  logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'APIKEY_DELETED', resourceType: 'apikey', resourceId: req.params.id, details: null, ip: req.ip ?? null });
+  res.json({ success: true });
+});
+
 // ── Admin: Audit Log ──────────────────────────────────────────────────────────
 
 app.get('/api/admin/audit', requireAdmin, (req: Request, res: Response) => {
@@ -1364,7 +2150,7 @@ app.delete('/api/locators/:id', (req: Request, res: Response) => {
 //   7. Editor POSTs /api/recorder/stop → session marked inactive
 
 // POST /api/recorder/start — create a new recording session
-app.post('/api/recorder/start', requireAuth, (req: Request, res: Response) => {
+app.post('/api/recorder/start', requireAuth, requireFeature('recorder'), (req: Request, res: Response) => {
   const { projectId, autUrl } = req.body as { projectId?: string; autUrl?: string };
   if (!projectId) { res.status(400).json({ error: 'projectId is required' }); return; }
   if (!autUrl)    { res.status(400).json({ error: 'autUrl is required' });    return; }
@@ -1472,6 +2258,27 @@ app.post('/api/recorder/stop', requireAuth, (req: Request, res: Response) => {
   logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'RECORDER_STOPPED', resourceType: 'recorder', resourceId: token.slice(0, 8), details: `steps=${session.stepCount} duration=${durationSecs}s project=${session.projectId}`, ip: req.ip ?? null });
 
   logger.info(`[recorder] Session stopped: ${token.slice(0,8)} — ${session.stepCount} steps captured`);
+
+  // P5-B: Upsert PageModel — group captured locatorIds by pageKey so pre-scan knows which
+  // locators belong to each page. Runs asynchronously after response to avoid blocking.
+  setImmediate(() => {
+    const locIdsByPage = new Map<string, Set<string>>();
+    for (const step of session.steps) {
+      if (!step.locatorId) continue;
+      const loc = readAll<Locator>(LOCATORS).find(l => l.id === step.locatorId);
+      const pk  = loc?.pageKey;
+      if (!pk) continue;
+      if (!locIdsByPage.has(pk)) locIdsByPage.set(pk, new Set());
+      locIdsByPage.get(pk)!.add(step.locatorId);
+    }
+    for (const [pk, ids] of locIdsByPage) {
+      try {
+        upsertPageModel({ projectId: session.projectId, pageKey: pk, locatorIds: [...ids], capturedFrom: 'recorder' });
+        logger.info(`[recorder] PageModel upserted: project=${session.projectId} pageKey=${pk} locators=${ids.size}`);
+      } catch (e) { logger.warn(`[recorder] PageModel upsert failed: ${e}`); }
+    }
+  });
+
   res.json({ success: true, stepCount: session.stepCount, steps: session.steps });
 });
 
@@ -1483,6 +2290,148 @@ app.post('/api/recorder/heartbeat', (req: Request, res: Response) => {
   if (!session || !session.active) { res.status(404).json({ ok: false }); return; }
   session.lastActivity = Date.now();
   res.json({ ok: true });
+});
+
+// POST /api/recorder/analyse — detect repeated step-sequence patterns in recorded steps
+// Compares the newly-recorded steps against all existing scripts in the same project.
+// Returns patterns (sequences of ≥2 steps) that appear in at least 1 existing script,
+// suggesting them as candidates for extraction into a CommonFunction.
+app.post('/api/recorder/analyse', requireAuth, (req: Request, res: Response) => {
+  const { projectId, steps } = req.body as { projectId?: string; steps?: any[] };
+  if (!projectId || !Array.isArray(steps) || steps.length < 2) {
+    res.json({ patterns: [] });
+    return;
+  }
+
+  // Minimum consecutive steps to qualify as a reusable pattern.
+  // 2 is intentionally low — username+password fill is already a clear login pattern.
+  const MIN_LEN = 2;
+
+  // Load existing scripts + functions for this project
+  const allScripts   = readAll<TestScript>(SCRIPTS).filter(s => s.projectId === projectId);
+  const allFunctions = readAll<CommonFunction>(FUNCTIONS).filter(f => f.projectId === projectId);
+
+  /**
+   * Normalised locator key — prefers the human-assigned locatorName over the raw
+   * CSS/XPath selector because scripts built manually often store the same element
+   * under different selector strings but share a consistent locatorName.
+   *
+   * Normalisation rules:
+   *   1. Use locatorName if non-empty, else fall back to locator / detail
+   *   2. Lowercase everything
+   *   3. Strip a leading `#` (CSS id) or `.` (CSS class) — `#username` → `username`
+   *      so scripts that store the selector differently still fingerprint identically
+   */
+  function normalizeLocKey(step: any): string {
+    // CommonFunction steps saved via the editor use `selector`; script steps use `locator`
+    const raw = (step.locatorName || step.detail || step.locator || step.selector || '').trim();
+    return raw.toLowerCase().replace(/^[#.]/, '');
+  }
+
+  function stepFp(step: any): string {
+    return `${(step.keyword ?? '').toUpperCase()}|${normalizeLocKey(step)}`;
+  }
+
+  // Pre-compute normalised fingerprint arrays for all existing scripts
+  const scriptFpArrays = allScripts.map(s => (s.steps || []).map(stepFp));
+
+  // Normalised fingerprints for the newly-recorded steps
+  const recFps = steps.map(stepFp);
+  const n = recFps.length;
+
+  const patterns: Array<{
+    startIndex:    number;
+    endIndex:      number;
+    steps:         any[];
+    matchCount:    number;
+    suggestedName: string;
+    duplicateFnId?: string;
+  }> = [];
+
+  const used = new Set<number>(); // indices already claimed by a longer pattern
+
+  // Greedy longest-first scan — pick the longest matching subsequence at each position
+  for (let len = n; len >= MIN_LEN; len--) {
+    for (let start = 0; start <= n - len; start++) {
+      // Skip if any step in this window already belongs to a detected pattern
+      let overlaps = false;
+      for (let i = start; i < start + len; i++) {
+        if (used.has(i)) { overlaps = true; break; }
+      }
+      if (overlaps) continue;
+
+      const candidateFp = recFps.slice(start, start + len).join('::');
+
+      // Count how many existing scripts contain this normalised subsequence
+      let matchCount = 0;
+      for (const fpArr of scriptFpArrays) {
+        for (let si = 0; si <= fpArr.length - len; si++) {
+          if (fpArr.slice(si, si + len).join('::') === candidateFp) {
+            matchCount++;
+            break; // one match per script is enough
+          }
+        }
+      }
+
+      if (matchCount === 0) continue; // not reused elsewhere — skip
+
+      // Claim these indices so shorter overlapping patterns are not double-reported
+      for (let i = start; i < start + len; i++) used.add(i);
+
+      const candidateSteps = steps.slice(start, start + len);
+
+      // Check if an equivalent CommonFunction already exists.
+      // Match cases (all use normalised fingerprints):
+      //   1. Exact match — same steps in same order
+      //   2. Candidate is contained within existing fn  (existing fn is a superset)
+      //   3. Existing fn is contained within candidate  (candidate is a superset — new recording captured more context)
+      const candidateFpArr = recFps.slice(start, start + len);
+      const dupFn = allFunctions.find(f => {
+        const fnFpArr: string[] = (f.steps || []).map((s: any) => stepFp(s));
+        const fnFp = fnFpArr.join('::');
+        if (fnFp === candidateFp) return true; // exact match
+
+        // Candidate contained inside existing fn
+        if (fnFpArr.length >= len) {
+          for (let fi = 0; fi <= fnFpArr.length - len; fi++) {
+            if (fnFpArr.slice(fi, fi + len).join('::') === candidateFp) return true;
+          }
+        }
+        // Existing fn contained inside candidate
+        const fLen = fnFpArr.length;
+        if (fLen >= MIN_LEN && fLen <= len) {
+          const fnFpJoined = fnFp; // already joined
+          for (let ci = 0; ci <= len - fLen; ci++) {
+            if (candidateFpArr.slice(ci, ci + fLen).join('::') === fnFpJoined) return true;
+          }
+        }
+        return false;
+      });
+
+      // Build a human-readable suggested name from the first step's locatorName / keyword
+      const firstStep = candidateSteps[0];
+      const lastStep  = candidateSteps[candidateSteps.length - 1];
+      const firstName = firstStep.locatorName || firstStep.keyword || '';
+      const lastName  = lastStep.locatorName  || lastStep.keyword  || '';
+      const autoName  = firstName === lastName
+        ? firstName
+        : `${firstName} to ${lastName}`;
+      const suggestedName = dupFn
+        ? dupFn.name
+        : autoName.replace(/[^a-zA-Z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+
+      patterns.push({
+        startIndex:    start,
+        endIndex:      start + len - 1,
+        steps:         candidateSteps,
+        matchCount,
+        suggestedName,
+        duplicateFnId: dupFn?.id,
+      });
+    }
+  }
+
+  res.json({ patterns });
 });
 
 // ── Common Functions ──────────────────────────────────────────────────────────
@@ -1796,6 +2745,11 @@ app.post('/api/suites', (req: Request, res: Response) => {
     description: sanitizeInput(body.description ?? ''), scriptIds: body.scriptIds ?? [],
     environmentId: body.environmentId ?? null,
     retries: ([0,1,2].includes(body.retries as number) ? body.retries : 0) as 0|1|2,
+    beforeEachSteps: Array.isArray(body.beforeEachSteps) ? body.beforeEachSteps : [],
+    afterEachSteps:  Array.isArray(body.afterEachSteps)  ? body.afterEachSteps  : [],
+    fastMode:        !!body.fastMode,
+    fastModeSteps:   Array.isArray(body.fastModeSteps)   ? body.fastModeSteps   : [],
+    overlayHandlers: Array.isArray(body.overlayHandlers) ? body.overlayHandlers : [],
     createdBy: req.session.username!, createdAt: now,
     modifiedBy: req.session.username!, modifiedAt: now,
   };
@@ -1812,6 +2766,11 @@ app.put('/api/suites/:id', (req: Request, res: Response) => {
   if (body.scriptIds)               suite.scriptIds     = body.scriptIds;
   if (body.environmentId !== undefined) suite.environmentId = body.environmentId;
   if (body.retries !== undefined) suite.retries = ([0,1,2].includes(body.retries as number) ? body.retries : 0) as 0|1|2;
+  if (Array.isArray(body.beforeEachSteps)) suite.beforeEachSteps = body.beforeEachSteps;
+  if (Array.isArray(body.afterEachSteps))  suite.afterEachSteps  = body.afterEachSteps;
+  if (body.fastMode !== undefined)          suite.fastMode        = !!body.fastMode;
+  if (Array.isArray(body.fastModeSteps))    suite.fastModeSteps   = body.fastModeSteps;
+  if (Array.isArray(body.overlayHandlers)) suite.overlayHandlers = body.overlayHandlers;
   suite.modifiedBy = req.session.username!;
   suite.modifiedAt = new Date().toISOString();
   upsert(SUITES, suite);
@@ -1825,7 +2784,7 @@ app.delete('/api/suites/:id', (req: Request, res: Response) => {
 
 // ── Test Suite Execution ──────────────────────────────────────────────────────
 
-app.post('/api/suites/:id/run', async (req: Request, res: Response) => {
+app.post('/api/suites/:id/run', requireAuthOrApiKey, async (req: Request, res: Response) => {
   const suite = findById<TestSuite>(SUITES, req.params.id);
   if (!suite) { res.status(404).json({ error: 'Not found' }); return; }
 
@@ -1863,6 +2822,12 @@ app.post('/api/suites/:id/run', async (req: Request, res: Response) => {
       project,
       environment,
       allFunctions,
+      port:          PORT,
+      beforeEachSteps: suite.beforeEachSteps ?? [],
+      afterEachSteps:  suite.afterEachSteps  ?? [],
+      fastMode:        suite.fastMode        ?? false,
+      fastModeSteps:   suite.fastModeSteps   ?? [],
+      overlayHandlers: suite.overlayHandlers ?? [],
     });
     logger.info(`[suite run] Codegen spec → ${specPath}`);
   } catch (err) {
@@ -1965,6 +2930,35 @@ app.post('/api/debug/start', requireAuth, (req: Request, res: Response) => {
   const project = findById<Project>(PROJECTS, script.projectId);
   if (!project) { res.status(404).json({ error: 'Project not found' }); return; }
 
+  // ── Same-script conflict check ────────────────────────────────────────────
+  // Allow different users to debug the same script (they use different environments
+  // or are exploring independently) but warn so they are aware.
+  // We use a soft-lock: first active session on the same script wins if the requester
+  // is a DIFFERENT user; the same user gets a 409 only if they already have an active
+  // session for this exact script (prevents duplicate windows from the same account).
+  const activeForScript = [...debugSessions.values()].filter(
+    s => s.scriptId === scriptId &&
+         !['done', 'stopped', 'error'].includes(s.status)
+  );
+
+  // Block: same user already has this script open in another tab/window
+  const ownDuplicate = activeForScript.find(s => s.userId === req.session.userId);
+  if (ownDuplicate) {
+    res.status(409).json({
+      error:     'You already have an active debug session for this script',
+      code:      'DUPLICATE_OWN_SESSION',
+      sessionId: ownDuplicate.sessionId,
+      since:     ownDuplicate.startedAt,
+    });
+    return;
+  }
+
+  // Warn (non-blocking): other users are already debugging the same script
+  // Client receives this info so it can display a notice — it is NOT a 409.
+  const otherDebuggers = activeForScript
+    .filter(s => s.userId !== req.session.userId)
+    .map(s => ({ username: s.username, since: s.startedAt, sessionId: s.sessionId }));
+
   const allFunctions = readAll<CommonFunction>(FUNCTIONS).filter(f => f.projectId === project.id);
 
   // Resolve environment
@@ -1987,21 +2981,30 @@ app.post('/api/debug/start', requireAuth, (req: Request, res: Response) => {
 
   const session: DebugSession = {
     sessionId,
-    scriptId: script.id,
-    scriptTitle: script.title,
-    projectId: project.id,
-    status: 'starting',
-    currentStep: 0,
-    totalSteps: script.steps.length,
+    scriptId:        script.id,
+    scriptTitle:     script.title,
+    projectId:       project.id,
+    userId:          req.session.userId!,
+    username:        req.session.username!,
+    environmentId:   environment?.id ?? null,
+    environmentName: environment?.name ?? null,
+    status:          'starting',
+    currentStep:     0,
+    totalSteps:      script.steps.length,
     specPath,
-    startedAt: new Date().toISOString(),
-    lastHeartbeat: Date.now(),
+    startedAt:       new Date().toISOString(),
+    lastHeartbeat:   Date.now(),
   };
   debugSessions.set(sessionId, session);
 
-  logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'SCRIPT_DEBUG', resourceType: 'script', resourceId: script.id, details: script.title, ip: req.ip ?? null });
+  logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'SCRIPT_DEBUG', resourceType: 'script', resourceId: script.id, details: `${script.title} env=${environment?.name ?? 'default'}`, ip: req.ip ?? null });
 
-  res.json({ sessionId, scriptTitle: script.title, totalSteps: session.totalSteps });
+  res.json({
+    sessionId,
+    scriptTitle:    script.title,
+    totalSteps:     session.totalSteps,
+    otherDebuggers, // [] when no one else is debugging this script; client shows a notice if non-empty
+  });
 
   // Spawn Playwright — spec uses file-based IPC (pending.json / gate.json)
   const relSpec   = path.relative(path.resolve('.'), specPath).replace(/\\/g, '/');
@@ -2214,6 +3217,20 @@ app.post('/api/debug/heartbeat/:id', requireAuth, (req: Request, res: Response) 
   res.json({ ok: true });
 });
 
+// GET /api/debug/sessions?projectId=xxx — list active debug sessions for a project
+// Used by the UI to show "being debugged by X" badges on script rows.
+// Returns all sessions that are not yet done/stopped/error, scoped to the given project.
+app.get('/api/debug/sessions', requireAuth, (req: Request, res: Response) => {
+  const { projectId } = req.query as { projectId?: string };
+  const active = [...debugSessions.values()]
+    .filter(s =>
+      !['done', 'stopped', 'error'].includes(s.status) &&
+      (!projectId || s.projectId === projectId)
+    )
+    .map(({ proc: _proc, specPath: _spec, pendingStep: _ps, ...safe }) => safe);
+  res.json(active);
+});
+
 // ── Flaky Test Detection ──────────────────────────────────────────────────────
 
 app.get('/api/flaky', requireAuth, (req: Request, res: Response) => {
@@ -2291,7 +3308,7 @@ function triggerScheduledRun(schedule: ScheduledRun): void {
 
   let specPath: string;
   try {
-    specPath = generateCodegenSpec({ suiteName: suite.name, suiteId: suite.id, runId, scripts, project, environment, allFunctions });
+    specPath = generateCodegenSpec({ suiteName: suite.name, suiteId: suite.id, runId, scripts, project, environment, allFunctions, port: PORT, beforeEachSteps: suite.beforeEachSteps ?? [], afterEachSteps: suite.afterEachSteps ?? [], fastMode: suite.fastMode ?? false, fastModeSteps: suite.fastModeSteps ?? [], overlayHandlers: suite.overlayHandlers ?? [] });
   } catch (err) {
     logger.error(`[scheduler] Spec generation failed for schedule ${schedule.id}: ${(err as Error).message}`);
     return;
@@ -2345,7 +3362,7 @@ function unregisterCronJob(scheduleId: string): void {
 }
 
 // GET /api/schedules?suiteId=xxx
-app.get('/api/schedules', requireAuth, (req: Request, res: Response) => {
+app.get('/api/schedules', requireAuth, requireFeature('scheduler'), (req: Request, res: Response) => {
   const { suiteId, projectId } = req.query as Record<string, string>;
   let all = readAll<ScheduledRun>(SCHEDULES);
   if (suiteId)   all = all.filter(s => s.suiteId   === suiteId);
@@ -2354,7 +3371,7 @@ app.get('/api/schedules', requireAuth, (req: Request, res: Response) => {
 });
 
 // POST /api/schedules
-app.post('/api/schedules', requireAuth, (req: Request, res: Response) => {
+app.post('/api/schedules', requireAuth, requireFeature('scheduler'), (req: Request, res: Response) => {
   const { suiteId, environmentId, cronExpression, label } = req.body as Partial<ScheduledRun>;
   if (!suiteId || !environmentId || !cronExpression || !label) {
     res.status(400).json({ error: 'suiteId, environmentId, cronExpression and label are required' }); return;
@@ -2408,12 +3425,6 @@ app.delete('/api/schedules/:id', requireAuth, (req: Request, res: Response) => {
   if (!ok) { res.status(404).json({ error: 'Schedule not found' }); return; }
   logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'SCHEDULE_DELETE', resourceType: 'schedule', resourceId: req.params.id, details: null, ip: req.ip ?? null });
   res.json({ success: true });
-});
-
-// ── SPA fallback (requires auth) ─────────────────────────────────────────────
-
-app.get('*', requireAuth, (_req: Request, res: Response) => {
-  res.sendFile(path.join(PUBLIC_DIR, 'index.html'));
 });
 
 // ── HTTP + WebSocket server ───────────────────────────────────────────────────
@@ -2480,13 +3491,296 @@ wss.on('connection', (ws) => {
   });
 });
 
+// ── P1-08: License API endpoints ─────────────────────────────────────────────
+
+// GET /api/admin/license — return sanitised license info for UI display
+app.get('/api/admin/license', requireAuth, requireAdmin, (_req: Request, res: Response) => {
+  const stored = loadStoredLicense();
+  if (!stored) { res.json({ activated: false }); return; }
+  const p = stored.payload;
+  const now = new Date();
+  const expires = new Date(p.expiresAt);
+  const daysLeft = Math.ceil((expires.getTime() - now.getTime()) / 86400000);
+  res.json({
+    activated:        true,
+    tier:             p.tier,
+    orgId:            p.orgId,
+    orgName:          p.orgName,
+    seats:            p.seats,
+    seatsUsed:        getSeatsUsed(),
+    seatRatio:        getSeatUsageRatio(),   // P2-04: fraction 0–1 or -1 (unlimited)
+    maxInstances:     p.maxInstances,
+    expiresAt:        p.expiresAt,
+    daysLeft,
+    expired:          expires < now,
+    features:         p.features,
+    featureOverrides: p.featureOverrides ?? {},   // P4-01: vendor-signed per-feature overrides
+  });
+});
+
+// POST /api/admin/license/activate — validate + store license key or .lic file
+const licUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 64 * 1024 } });
+app.post('/api/admin/license/activate', requireAuth, requireAdmin, licUpload.single('licFile'), async (req: Request, res: Response) => {
+  // Enterprise .lic file upload (P3-04: persist file path for startup re-verify)
+  if (req.file) {
+    // Save .lic to data/ for permanent storage and RSA re-verify on every startup
+    const licDir      = require('path').resolve('data');
+    const persistPath = require('path').join(licDir, 'license.lic');
+    require('fs').mkdirSync(licDir, { recursive: true });
+    require('fs').writeFileSync(persistPath, req.file.buffer);
+
+    const payload = validateLicFile(persistPath);
+    if (!payload) {
+      require('fs').unlinkSync(persistPath);
+      res.status(400).json({ error: 'Invalid, expired, or machine-mismatched .lic file' });
+      return;
+    }
+    // P3-06: block HMAC activation for TEAM/ENT — enforced by .lic requirement
+    storeLicense('lic-file', payload, persistPath);
+    refreshLicenseCache(payload);
+    logAudit({ userId: req.session.userId ?? null, username: req.session.username ?? null, action: 'LICENSE_ACTIVATED', resourceType: 'license', resourceId: null, details: `tier=${payload.tier} org=${payload.orgId} lic=file`, ip: req.ip ?? null });
+    res.json({ success: true, tier: payload.tier, orgName: payload.orgName, expiresAt: payload.expiresAt });
+    return;
+  }
+
+  // HMAC key activation
+  const { key } = req.body as { key?: string };
+  if (!key) { res.status(400).json({ error: 'key is required' }); return; }
+  const payload = await validateLicenseKey(key.trim());
+  if (!payload) { res.status(400).json({ error: 'Invalid license key — check the key and try again' }); return; }
+  if (new Date(payload.expiresAt) < new Date()) { res.status(400).json({ error: 'License key has expired' }); return; }
+
+  // P3-06: TEAM/ENT require .lic file — HMAC keys no longer accepted for these tiers
+  if (payload.tier === 'team' || payload.tier === 'enterprise') {
+    res.status(400).json({
+      error:   'Team and Enterprise licenses require a .lic file from your vendor — HMAC key activation is not supported for these tiers.',
+      upgrade: 'lic_required',
+    });
+    return;
+  }
+
+  storeLicense(key.trim(), payload);
+  refreshLicenseCache(payload);
+  logAudit({ userId: req.session.userId ?? null, username: req.session.username ?? null, action: 'LICENSE_ACTIVATED', resourceType: 'license', resourceId: null, details: `tier=${payload.tier} org=${payload.orgId}`, ip: req.ip ?? null });
+  res.json({ success: true, tier: payload.tier, orgName: payload.orgName, expiresAt: payload.expiresAt });
+});
+
+// DELETE /api/admin/license — deactivate (admin only)
+app.delete('/api/admin/license', requireAuth, requireAdmin, (req: Request, res: Response) => {
+  const licPath = require('path').resolve('data', 'license.json');
+  try { require('fs').unlinkSync(licPath); } catch { /* ok */ }
+  clearLicenseCache();
+  logAudit({ userId: req.session.userId ?? null, username: req.session.username ?? null, action: 'LICENSE_DEACTIVATED', resourceType: 'license', resourceId: null, details: null, ip: req.ip ?? null });
+  res.json({ success: true });
+});
+
+// P1-EG-05: Transfer license endpoint (re-binds to current machine)
+app.post('/api/admin/license/transfer', requireAuth, requireAdmin, (req: Request, res: Response) => {
+  const result = checkMachineBinding();
+  if (result.ok) {
+    res.status(400).json({ error: 'License is already bound to this machine — transfer not needed' });
+    return;
+  }
+  const ok = transferLicense();
+  if (!ok) { res.status(500).json({ error: 'Transfer failed — no active license found' }); return; }
+  clearLicenseCache();
+  logAudit({ userId: req.session.userId ?? null, username: req.session.username ?? null, action: 'LICENSE_TRANSFERRED', resourceType: 'license', resourceId: null, details: `new machineId=${getMachineId().slice(0,8)}…`, ip: req.ip ?? null });
+  res.json({ success: true, machineId: getMachineId() });
+});
+
+// P1-EG-06: Machine binding status endpoint
+app.get('/api/admin/license/machine', requireAuth, requireAdmin, (_req: Request, res: Response) => {
+  const current = getMachineId();
+  const stored  = loadStoredLicense();
+  const bound   = stored?.machineId ?? null;
+  res.json({
+    currentMachineId:     current,
+    currentMachineIdHint: current.slice(0, 8) + '…',
+    boundMachineId:       bound,
+    boundMachineIdHint:   bound ? bound.slice(0, 8) + '…' : null,
+    match:                bound ? bound === current : null,
+  });
+});
+
+// P3-11: License audit log — last 100 license-specific events
+app.get('/api/admin/license/audit', requireAuth, requireAdmin, (_req: Request, res: Response) => {
+  const AUDIT_FILE = require('path').resolve('data', 'audit.json');
+  try {
+    const all: Array<Record<string, unknown>> = require('fs').existsSync(AUDIT_FILE)
+      ? JSON.parse(require('fs').readFileSync(AUDIT_FILE, 'utf-8'))
+      : [];
+    const LICENSE_ACTIONS = new Set(['LICENSE_ACTIVATED','LICENSE_DEACTIVATED','LICENSE_TRANSFERRED','LICENSE_EXPIRED']);
+    const events = all.filter(e => LICENSE_ACTIONS.has(e.action as string)).slice(-100).reverse();
+    res.json(events);
+  } catch { res.json([]); }
+});
+
+// P2-02: Active sessions — list + force-logout (seat dashboard)
+app.get('/api/admin/license/sessions', requireAuth, requireAdmin, (req: Request, res: Response) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  sessionStore.all!((err: any, sessions: any) => {
+    if (err) { res.status(500).json({ error: 'Failed to read sessions' }); return; }
+    const rows = Object.entries(sessions ?? {}).map(([sid, raw]) => {
+      const s = raw as Record<string, unknown>;
+      return {
+        sessionId:    sid,
+        userId:       s.userId   ?? null,
+        username:     s.username ?? null,
+        role:         s.role     ?? null,
+        loginAt:      s.loginAt  ?? null,
+        lastActivity: s.lastActivity ?? null,
+        ip:           s.ip       ?? null,
+        isCurrent:    sid === req.sessionID,
+      };
+    }).filter(s => s.userId);   // only authenticated sessions
+    res.json({ sessions: rows, seatsUsed: getSeatsUsed(), seatRatio: getSeatUsageRatio() });
+  });
+});
+
+// DELETE /api/admin/license/sessions/:sessionId — force-logout a user (frees a seat)
+app.delete('/api/admin/license/sessions/:sessionId', requireAuth, requireAdmin, (req: Request, res: Response) => {
+  const { sessionId } = req.params;
+  if (sessionId === req.sessionID) { res.status(400).json({ error: 'Cannot revoke your own session' }); return; }
+  sessionStore.destroy!(sessionId, (err: Error | undefined) => {
+    if (err) { res.status(500).json({ error: 'Failed to destroy session' }); return; }
+    // Seat map will self-correct: recordLogout was already called if user hit /logout,
+    // or the seat will be freed on next syncSeatsFromSessions (startup) / next login check.
+    res.json({ success: true });
+  });
+});
+
+// P3-08: Branding endpoint — returns white-label config from Enterprise .lic (public, no auth)
+app.get('/api/branding', (_req: Request, res: Response) => {
+  const p = getLicensePayload();
+  if (p?.whiteLabelConfig) {
+    res.json({
+      appName:      p.whiteLabelConfig.appName,
+      logoUrl:      p.whiteLabelConfig.logoUrl      ?? null,
+      primaryColor: p.whiteLabelConfig.primaryColor ?? null,
+    });
+  } else {
+    res.json({ appName: 'QA Agent Platform', logoUrl: null, primaryColor: null });
+  }
+});
+
+// P3-07: Seat audit report — CSV export (admin only)
+app.get('/api/admin/license/seat-report', requireAuth, requireAdmin, (_req: Request, res: Response) => {
+  const USERS_FILE = require('path').resolve('data', 'users.json');
+  const AUDIT_FILE = require('path').resolve('data', 'audit.json');
+  try {
+    type UserRec = { id: string; username: string; email: string; role: string; isActive: boolean; lastLogin: string | null };
+    const users: UserRec[] = require('fs').existsSync(USERS_FILE)
+      ? JSON.parse(require('fs').readFileSync(USERS_FILE, 'utf-8'))
+      : [];
+    const auditEvents: Array<Record<string, unknown>> = require('fs').existsSync(AUDIT_FILE)
+      ? JSON.parse(require('fs').readFileSync(AUDIT_FILE, 'utf-8'))
+      : [];
+
+    // Count logins per user from audit log
+    const loginCounts: Record<string, number> = {};
+    for (const e of auditEvents) {
+      if (e.action === 'LOGIN' && typeof e.userId === 'string') {
+        loginCounts[e.userId] = (loginCounts[e.userId] ?? 0) + 1;
+      }
+    }
+
+    const p = getLicensePayload();
+    const csvRows = [
+      ['Username', 'Email', 'Role', 'Active', 'Last Login', 'Login Count', 'Seat Used'],
+      ...users.map((u, i) => [
+        u.username,
+        u.email,
+        u.role,
+        u.isActive ? 'Yes' : 'No',
+        u.lastLogin ? new Date(u.lastLogin).toLocaleString() : 'Never',
+        String(loginCounts[u.id] ?? 0),
+        p && p.seats !== -1 ? (i < p.seats ? 'Yes' : 'No') : 'Unlimited',
+      ]),
+    ];
+
+    const csv = csvRows.map(row => row.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\r\n');
+    const filename = `seat-report-${new Date().toISOString().slice(0,10)}.csv`;
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(csv);
+  } catch (e) { res.status(500).json({ error: 'Failed to generate report' }); }
+});
+
+// ── SPA fallback (requires auth) — MUST be after all API routes ──────────────
+
+app.get('*', requireAuth, (_req: Request, res: Response) => {
+  res.sendFile(path.join(PUBLIC_DIR, 'index.html'));
+});
+
 server.listen(PORT, '0.0.0.0', async () => {
+  // P3-04: RSA .lic file re-verify — detect tampered or moved .lic files at startup
+  const licFileCheck = checkStoredLicFile();
+  if (!licFileCheck.ok) {
+    logger.error('═══════════════════════════════════════════════════════');
+    if (licFileCheck.reason === 'lic_file_missing') {
+      logger.error('LICENSE ERROR: .lic file not found at expected path.');
+      logger.error(`  Expected: ${licFileCheck.path}`);
+      logger.error('Re-upload your .lic file via Admin → License or contact your vendor.');
+    } else {
+      logger.error('LICENSE ERROR: .lic file failed RSA verification.');
+      logger.error(`  File: ${licFileCheck.path}`);
+      logger.error('The .lic file may have been tampered with or belongs to a different machine.');
+      logger.error('Contact your vendor for a replacement .lic file.');
+    }
+    logger.error('═══════════════════════════════════════════════════════');
+    process.exit(1);
+  }
+
+  // P1-EG-04: Machine fingerprint check — refuse to start if license bound to different machine
+  const machineCheck = checkMachineBinding();
+  if (!machineCheck.ok && machineCheck.reason === 'mismatch') {
+    logger.error('═══════════════════════════════════════════════════════');
+    logger.error('LICENSE ERROR: Machine fingerprint mismatch detected.');
+    logger.error(`  Bound machine:   ${machineCheck.storedId}`);
+    logger.error(`  Current machine: ${machineCheck.currentId}`);
+    logger.error('This license is registered to a different machine.');
+    logger.error('Options:');
+    logger.error('  1. Use Admin → License → Transfer License to re-bind.');
+    logger.error('  2. Set QA_SKIP_MACHINE_CHECK=1 for Docker/CI environments.');
+    logger.error('═══════════════════════════════════════════════════════');
+    process.exit(1);
+  }
+
+  if (process.env.QA_SKIP_MACHINE_CHECK === '1') {
+    logger.warn('[license] Machine check bypassed (QA_SKIP_MACHINE_CHECK=1) — CI/Docker mode');
+  }
+
   await seedDefaults();
+
+  // P2-03: Rehydrate in-memory seat map from persisted SQLite sessions on startup.
+  // Prevents seat count resetting to 0 after server restart while users are still logged in.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  sessionStore.all!((err: any, sessions: any) => {
+    if (err || !sessions) return;
+    const activeUserIds = Object.values(sessions)
+      .map((s: any) => s.userId as string | undefined)
+      .filter((uid): uid is string => !!uid);
+    syncSeatsFromSessions(activeUserIds);
+    if (activeUserIds.length > 0) {
+      logger.info(`[license] Rehydrated ${new Set(activeUserIds).size} seat(s) from ${activeUserIds.length} persisted session(s)`);
+    }
+  });
 
   // Register all enabled schedules
   const savedSchedules = readAll<ScheduledRun>(SCHEDULES).filter(s => s.enabled);
   for (const s of savedSchedules) registerCronJob(s);
   if (savedSchedules.length > 0) logger.info(`[scheduler] Loaded ${savedSchedules.length} active schedule(s)`);
+
+  // License expiry tick — check every hour while server is running.
+  // getLicensePayload() already re-checks on every request, but this catches
+  // the edge case where no requests arrive around the exact expiry moment.
+  setInterval(() => {
+    const justExpired = checkExpiryTick();
+    if (justExpired) {
+      logger.warn('[license] License has expired. Platform entering read-only mode.');
+      logAudit({ userId: null, username: null, action: 'LICENSE_EXPIRED', resourceType: 'license', resourceId: null, details: null, ip: null });
+    }
+  }, 60 * 60 * 1000); // every 1 hour
 
   // Heartbeat monitor — kill orphaned debug sessions if no heartbeat for 60s
   setInterval(() => {
@@ -2496,9 +3790,19 @@ server.listen(PORT, '0.0.0.0', async () => {
       if (session.status !== 'done' && session.status !== 'stopped' && session.status !== 'error') {
         const timeSinceHeartbeat = now - session.lastHeartbeat;
         if (timeSinceHeartbeat > HEARTBEAT_TIMEOUT_MS) {
-          logger.info(`[dbg:heartbeat] No heartbeat for ${timeSinceHeartbeat}ms — killing orphaned session ${sessionId.slice(0,8)}`);
-          if (session.proc) { try { session.proc.kill('SIGTERM'); } catch { /* ignore */ } }
+          logger.info(`[dbg:heartbeat] No heartbeat for ${timeSinceHeartbeat}ms — killing orphaned session ${sessionId.slice(0,8)} (user: ${session.username})`);
+          if (session.proc?.pid) {
+            try {
+              // Kill entire process tree (Chrome children) — same as stop logic
+              if (process.platform === 'win32') {
+                require('child_process').execSync(`taskkill /F /T /PID ${session.proc.pid}`, { stdio: 'pipe' });
+              } else {
+                process.kill(-session.proc.pid, 'SIGTERM');
+              }
+            } catch { /* already dead */ }
+          }
           session.status = 'stopped';
+          sseSessionPush(sessionId, 'debug:done', { sessionId, status: 'stopped' });
           clearInterval(debugPollers.get(sessionId)!);
           debugPollers.delete(sessionId);
         }
