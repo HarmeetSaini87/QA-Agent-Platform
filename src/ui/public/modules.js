@@ -6003,17 +6003,47 @@ function apikeyCloseModal() {
 }
 
 function apikeyCopyKey() {
-  if (_apikeyRawKey) navigator.clipboard.writeText(_apikeyRawKey).catch(() => {});
+  if (!_apikeyRawKey) return;
+  const btn  = document.querySelector('#apikey-result-block .btn');
+  const orig = btn ? btn.textContent : 'Copy';
+  const succeed = () => { if (btn) { btn.textContent = '✓ Copied!'; setTimeout(() => { btn.textContent = orig; }, 1800); } };
+  const fail    = () => { if (btn) { btn.textContent = 'Select + Ctrl+C'; setTimeout(() => { btn.textContent = orig; }, 2500); } };
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(_apikeyRawKey).then(succeed).catch(() => _akCopyFallback(_apikeyRawKey, succeed, fail));
+  } else {
+    _akCopyFallback(_apikeyRawKey, succeed, fail);
+  }
 }
 
 function _akCopyYaml() {
   const yaml = document.getElementById('ak-yaml-preview').textContent;
-  navigator.clipboard.writeText(yaml).then(() => {
-    const btn = document.getElementById('ak-copy-yaml-btn');
-    const orig = btn.textContent;
-    btn.textContent = 'Copied!';
-    setTimeout(() => { btn.textContent = orig; }, 1500);
-  }).catch(() => {});
+  const btn  = document.getElementById('ak-copy-yaml-btn');
+  const orig = btn.textContent;
+
+  const succeed = () => { btn.textContent = '✓ Copied!'; setTimeout(() => { btn.textContent = orig; }, 1800); };
+  const fail    = () => { btn.textContent = 'Select + Ctrl+C'; setTimeout(() => { btn.textContent = orig; }, 2500); };
+
+  // Modern clipboard API (HTTPS / localhost)
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(yaml).then(succeed).catch(() => _akCopyFallback(yaml, succeed, fail));
+  } else {
+    _akCopyFallback(yaml, succeed, fail);
+  }
+}
+
+function _akCopyFallback(text, succeed, fail) {
+  // execCommand fallback — works over HTTP on internal networks
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0';
+  document.body.appendChild(ta);
+  ta.focus();
+  ta.select();
+  try {
+    const ok = document.execCommand('copy');
+    ok ? succeed() : fail();
+  } catch { fail(); }
+  document.body.removeChild(ta);
 }
 
 function _akDownloadYaml() {
