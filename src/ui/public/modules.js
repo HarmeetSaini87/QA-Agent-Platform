@@ -4836,11 +4836,31 @@ function _histRenderComparison(r1, r2) {
     ${section('Newly Failed — Regressions', '🔴', '#f48771', failRows, ['Test Name', 'Run 1', 'Run 2', 'Error Message'])}
     ${section('Newly Passed — Fixed', '🟢', '#4ec9b0', passRows, ['Test Name', 'Run 1', 'Run 2', 'Note'])}
     ${section('Duration Changed  (≥50% shift)', '🟡', '#f6c543', durRows, ['Test Name', 'Run 1 Duration', 'Run 2 Duration', 'Change'])}
-    ${section('Stable', '⚪', '#6b7280', stableRows, ['Test Name', 'Run 1', 'Run 2', 'Duration Trend'])}
+    ${section('Stable — Same result in both runs', '⚪', '#6b7280', stableRows, ['Test Name', 'Run 1', 'Run 2', 'Duration Trend'])}
+    ${onlyInA.length ? section('Only in Run 1 — not executed in Run 2', '📋', '#a5b4fc',
+        onlyInA.map(({name, t}) => `<tr style="background:#1a1f26">
+          <td style="${tdStyle};color:#f1f5f9;font-weight:500">${escHtml(name)}</td>
+          <td style="${tdStyle};text-align:center">${statusChip(t.status)}</td>
+          <td style="${tdStyle};text-align:center;color:#4b5563;font-size:11px">Not run</td>
+          <td style="${tdStyle};text-align:center;color:#6b7280;font-size:11px">${fmtMs(t.durationMs)}</td>
+        </tr>`),
+        ['Test Name', 'Run 1 Result', 'Run 2 Result', 'Run 1 Duration']) : ''}
+    ${onlyInB.length ? section('Only in Run 2 — not executed in Run 1', '📋', '#a5b4fc',
+        onlyInB.map(({name, t}) => `<tr style="background:#1a1f26">
+          <td style="${tdStyle};color:#f1f5f9;font-weight:500">${escHtml(name)}</td>
+          <td style="${tdStyle};text-align:center;color:#4b5563;font-size:11px">Not run</td>
+          <td style="${tdStyle};text-align:center">${statusChip(t.status)}</td>
+          <td style="${tdStyle};text-align:center;color:#6b7280;font-size:11px">${fmtMs(t.durationMs)}</td>
+        </tr>`),
+        ['Test Name', 'Run 1 Result', 'Run 2 Result', 'Run 2 Duration']) : ''}
+    ${(r1.tests||[]).length === 0 || (r2.tests||[]).length === 0 ? `
+      <div style="margin-top:8px;padding:16px 20px;background:#1c1917;border:1px solid #713f12;border-radius:10px;color:#fde68a;font-size:13px">
+        ⚠️ <strong>One or both runs have no test results.</strong> This usually means the run failed before Playwright could execute any tests (e.g. spec generation error, environment unreachable, or run was aborted).
+        Check the run duration — a very short run (under 10s) with 0 tests typically indicates a startup failure.
+      </div>` : ''}
   `;
 
   overlay.style.display = 'block';
-  // Scroll overlay to top
   overlay.querySelector('div').scrollTop = 0;
 }
 
