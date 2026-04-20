@@ -1725,12 +1725,15 @@ async function scriptLoad() {
   const res = await fetch(`/api/scripts?projectId=${encodeURIComponent(currentProjectId)}`);
   allScripts = await res.json();
   scriptRender();
+  await seLoadComponents();
+  _scriptSubcompFilter();
 }
 
 function scriptRender() {
   const qTitle = (document.getElementById('script-filter-title')?.value ?? '').toLowerCase();
   const qTag   = (document.getElementById('script-filter-tag')?.value ?? '').toLowerCase();
   const qComp  = (document.getElementById('script-filter-comp')?.value ?? '').toLowerCase();
+  const qSubcomp = (document.getElementById('script-filter-subcomp')?.value ?? '').toLowerCase();
   const listEl  = document.getElementById('script-list');
   const emptyEl = document.getElementById('script-list-empty');
   if (!listEl) return;
@@ -1740,6 +1743,7 @@ function scriptRender() {
     if (qTitle && !s.title.toLowerCase().includes(qTitle)) return false;
     if (qTag   && !(s.tags || []).some(t => t.toLowerCase().includes(qTag))) return false;
     if (qComp  && !(s.component || '').toLowerCase().includes(qComp)) return false;
+    if (qSubcomp && !(s.subcomponent || '').toLowerCase().includes(qSubcomp)) return false;
     return true;
   });
   if (!filtered.length) {
@@ -1779,6 +1783,7 @@ function scriptRender() {
             <th style="min-width:86px">TC ID</th>
             <th style="min-width:200px">Title</th>
             <th style="min-width:130px">Component</th>
+            <th style="min-width:130px">Subcomponent</th>
             <th style="min-width:130px">Tag</th>
             <th style="min-width:90px">Priority</th>
             <th style="min-width:100px">Created By</th>
@@ -1792,6 +1797,7 @@ function scriptRender() {
               <td><span style="font-family:monospace;font-weight:600;color:var(--primary);font-size:12.5px">${escHtml(s.tcId || '—')}</span></td>
               <td title="${escHtml(s.title)}"><div style="font-weight:500">${escHtml(s.title)}</div></td>
               <td title="${escHtml(s.component || '')}">${escHtml(s.component || '—')}</td>
+              <td title="${escHtml(s.subcomponent || '')}">${escHtml(s.subcomponent || '—')}</td>
               <td>${(s.tags||[]).length ? (s.tags||[]).map(t=>`<span class="badge badge-tester">${escHtml(t)}</span>`).join(' ') : '—'}</td>
               <td><span class="badge badge-${escHtml(s.priority)}">${escHtml(s.priority)}</span></td>
               <td style="font-size:12px">${escHtml(s.createdBy || '—')}</td>
@@ -1811,6 +1817,27 @@ function scriptRender() {
     ${pgHtml}`;
   // Re-apply debug badges after DOM is rebuilt
   _debugApplyBadges();
+}
+
+function _scriptSubcompFilter() {
+  const compVal = (document.getElementById('script-filter-comp')?.value ?? '').trim().toLowerCase();
+  const subSel  = document.getElementById('script-filter-subcomp');
+  if (!subSel) return;
+  subSel.innerHTML = '<option value="">All Subcomponents</option>';
+  if (!compVal) {
+    subSel.disabled = true;
+    return;
+  }
+  const matching = _seCompDefs.filter(c => c.name.toLowerCase().includes(compVal));
+  const allSubs = [...new Set(matching.flatMap(c => c.subcomponents.map(s => s.name)))].sort();
+  if (!allSubs.length) { subSel.disabled = true; return; }
+  subSel.disabled = false;
+  allSubs.forEach(name => {
+    const opt = document.createElement('option');
+    opt.value = name;
+    opt.textContent = name;
+    subSel.appendChild(opt);
+  });
 }
 
 function _scriptPageGo(delta) {
