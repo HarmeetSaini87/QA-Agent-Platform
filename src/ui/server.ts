@@ -3367,7 +3367,7 @@ app.post('/api/debug/start', requireAuth, (req: Request, res: Response) => {
   const gateFile    = path.join(ssDir, 'gate.json');
   const errorFile   = path.join(ssDir, 'error.json');
 
-  const proc = cp.spawn('npx', ['playwright', 'test', '--reporter=list', relSpec], {
+  const proc = cp.spawn('npx', ['playwright', 'test', '--headed', '--reporter=list', relSpec], {
     cwd:   path.resolve('.'),
     env:   { ...process.env },
     shell: true,
