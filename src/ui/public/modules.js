@@ -4398,7 +4398,7 @@ async function validateLocators() {
   if (!currentProjectId) { alert('Select a project first.'); return; }
 
   // Build env URL list from current project
-  const proj = (window._allProjects || []).find(p => p.id === currentProjectId);
+  const proj = allProjects.find(p => p.id === currentProjectId);
   const envs = proj?.environments || [];
   const modal = document.getElementById('prescan-modal');
   if (!modal) return;

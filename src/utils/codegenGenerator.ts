@@ -1651,6 +1651,35 @@ export function generateDebugSpec(input: DebugCodegenInput): string {
   //   4. If no spinner → resolve immediately.
   //   5. Safety cap: 8s max — never blocks the session.
   //   Zero static waits — all timing driven by DOM state.
+  // ── __buildLocator — runtime universal locator builder (all types) ───────────
+  // Used exclusively in debug retry blocks so patched locatorType+locator are
+  // resolved at runtime rather than being baked into the spec at generation time.
+  lines.push(`function __buildLocator(page: any, lt: string, loc: string): any {`);
+  lines.push(`  switch ((lt || 'css').toLowerCase()) {`);
+  lines.push(`    case 'text':        return page.getByText(loc);`);
+  lines.push(`    case 'testid':      return page.getByTestId(loc);`);
+  lines.push(`    case 'label':       return page.getByLabel(loc);`);
+  lines.push(`    case 'placeholder': return page.getByPlaceholder(loc);`);
+  lines.push(`    case 'title':       return page.getByTitle(loc);`);
+  lines.push(`    case 'xpath':       return page.locator('xpath=' + loc);`);
+  lines.push(`    case 'id':          return page.locator('#' + loc.replace(/^#/, ''));`);
+  lines.push(`    case 'name':        return page.locator('[name="' + loc + '"]');`);
+  lines.push(`    case 'role': {`);
+  lines.push(`      const ci = loc.lastIndexOf(':');`);
+  lines.push(`      if (ci > -1) return page.getByRole(loc.slice(0, ci) as any, { name: loc.slice(ci + 1) });`);
+  lines.push(`      return page.getByRole(loc as any);`);
+  lines.push(`    }`);
+  lines.push(`    case 'nth': {`);
+  lines.push(`      const ci = loc.lastIndexOf(':');`);
+  lines.push(`      if (ci > -1) return page.locator(loc.slice(0, ci)).nth(parseInt(loc.slice(ci + 1), 10) || 0);`);
+  lines.push(`      return page.locator(loc).nth(0);`);
+  lines.push(`    }`);
+  lines.push(`    case 'last':        return page.locator(loc).last();`);
+  lines.push(`    default:            return page.locator(loc);  // css`);
+  lines.push(`  }`);
+  lines.push(`}`);
+  lines.push(``);
+
   lines.push(`async function __waitForPageSettle(page: any): Promise<void> {`);
   lines.push(`  await page.evaluate(() => new Promise<void>(resolve => {`);
   lines.push(`    // Tiered timing: 200ms initial → 300ms after mutations → 500ms when spinner found`);
@@ -1953,16 +1982,22 @@ export function generateDebugSpec(input: DebugCodegenInput): string {
     const code = generateStepCode(step, project, environment, allFunctions, dataMap, '            ', 0);
     if (code) {
       // Replace static locator references with runtime patched variables in generated code
+      // Build patched code: replace ALL locator expressions + value using runtime
+      // __buildLocator (covers css/xpath/id/name/role/text/testid/label/placeholder/
+      // title/nth/last — every type __buildLocator handles).
+      // Strategy: replace ANY page.<locatorMethod>(...) call with the runtime builder,
+      // then replace hardcoded static/fill values with __patchedVal where relevant.
+      const anyLocatorRe = /\bpage\.(locator|getByLabel|getByPlaceholder|getByTestId|getByText|getByRole|getByTitle)\s*\([^)]*\)(\.(nth|last|first)\([^)]*\))*/g;
       const patchedCode = code
-        .replace(/\bpage\.locator\(["'][^"']*["']\)/g, `page.locator(__patchedLoc_${step.order})`)
-        .replace(/\bpage\.getByLabel\(["'][^"']*["']\)/g, `page.getByLabel(__patchedLoc_${step.order})`)
-        .replace(/\bpage\.getByPlaceholder\(["'][^"']*["']\)/g, `page.getByPlaceholder(__patchedLoc_${step.order})`)
-        .replace(/\bpage\.getByTestId\(["'][^"']*["']\)/g, `page.getByTestId(__patchedLoc_${step.order})`)
-        .replace(/\bpage\.getByText\(["'][^"']*["']\)/g, `page.getByText(__patchedLoc_${step.order})`);
+        .replace(anyLocatorRe, `__buildLocator(page, __patchedLt_${step.order}, __patchedLoc_${step.order})`)
+        // Patch fill/type value — covers .fill('...') and .type('...')
+        .replace(/\.(fill|type)\(['"`][^'"`]*['"`]\)/g, `.$1(__patchedVal_${step.order})`)
+        // Patch selectOption value
+        .replace(/\.selectOption\(['"`][^'"`]*['"`]\)/g, `.selectOption(__patchedVal_${step.order})`);
       lines.push(patchedCode);
     }
-    // 📌 Pin — store value into __sessionVars if storeAs is set
-    const dbgPinLine = storeAsLine(step, step.locator ? buildLocatorExpr(step.locatorType || 'css', step.locator) : null, '            ');
+    // 📌 Pin — store value into __sessionVars if storeAs is set (use patched locator)
+    const dbgPinLine = storeAsLine(step, step.locator ? `__buildLocator(page, __patchedLt_${step.order}, __patchedLoc_${step.order})` : null, '            ');
     if (dbgPinLine) lines.push(dbgPinLine);
     // Wait for DOM/network to settle
     lines.push(`            await __waitForPageSettle(page);`);
