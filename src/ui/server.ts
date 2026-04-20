@@ -611,7 +611,7 @@ function spawnRunWithSpec(record: RunRecord, specPath: string, headed?: boolean,
   // Phase B: JSON reporter runs alongside list reporter; output file via env var
   const jsonReportFile = 'pw-report.json'; // relative to cwd; PLAYWRIGHT_JSON_OUTPUT_NAME controls filename
   const jsonReportPath = path.join(path.resolve(outputDir), jsonReportFile);
-  const args      = ['playwright', 'test', '--reporter=list,json', `--output="${outputDir}"`];
+  const args      = ['playwright', 'test', '--reporter=list,json', `--output=${outputDir}`];
   if (retries > 0) args.push(`--retries=${retries}`);
   // Add --project flag for each selected browser (defaults to chromium only)
   const selectedBrowsers = (browsers && browsers.length) ? browsers : ['chromium'];
