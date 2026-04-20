@@ -1982,19 +1982,53 @@ export function generateDebugSpec(input: DebugCodegenInput): string {
     const code = generateStepCode(step, project, environment, allFunctions, dataMap, '            ', 0);
     if (code) {
       // Replace static locator references with runtime patched variables in generated code
-      // Build patched code: replace ALL locator expressions + value using runtime
-      // __buildLocator (covers css/xpath/id/name/role/text/testid/label/placeholder/
-      // title/nth/last — every type __buildLocator handles).
-      // Strategy: replace ANY page.<locatorMethod>(...) call with the runtime builder,
-      // then replace hardcoded static/fill values with __patchedVal where relevant.
-      const anyLocatorRe = /\bpage\.(locator|getByLabel|getByPlaceholder|getByTestId|getByText|getByRole|getByTitle)\s*\([^)]*\)(\.(nth|last|first)\([^)]*\))*/g;
-      const patchedCode = code
-        .replace(anyLocatorRe, `__buildLocator(page, __patchedLt_${step.order}, __patchedLoc_${step.order})`)
-        // Patch fill/type value — covers .fill('...') and .type('...')
-        .replace(/\.(fill|type)\(['"`][^'"`]*['"`]\)/g, `.$1(__patchedVal_${step.order})`)
-        // Patch selectOption value
-        .replace(/\.selectOption\(['"`][^'"`]*['"`]\)/g, `.selectOption(__patchedVal_${step.order})`);
-      lines.push(patchedCode);
+      // Retry execution: use __buildLocator + keyword dispatch instead of regex-patching
+      // generated code. This handles ALL locator types correctly without fragile string
+      // replacement that breaks on chained methods or special characters in selectors.
+      const o = step.order;
+      lines.push(`            const __retryLoc_${o} = __buildLocator(page, __patchedLt_${o}, __patchedLoc_${o});`);
+      lines.push(`            switch ('${kw}') {`);
+      lines.push(`              case 'CLICK': case 'JS CLICK':`);
+      lines.push(`                await __retryLoc_${o}.waitFor({ state: 'visible', timeout: 10000 });`);
+      lines.push(`                await __retryLoc_${o}.click(); break;`);
+      lines.push(`              case 'DBLCLICK':`);
+      lines.push(`                await __retryLoc_${o}.waitFor({ state: 'visible', timeout: 10000 });`);
+      lines.push(`                await __retryLoc_${o}.dblclick(); break;`);
+      lines.push(`              case 'RIGHT CLICK':`);
+      lines.push(`                await __retryLoc_${o}.waitFor({ state: 'visible', timeout: 10000 });`);
+      lines.push(`                await __retryLoc_${o}.click({ button: 'right' }); break;`);
+      lines.push(`              case 'FILL': case 'TYPE':`);
+      lines.push(`                await __retryLoc_${o}.waitFor({ state: 'visible', timeout: 10000 });`);
+      lines.push(`                await __retryLoc_${o}.fill(__patchedVal_${o}); break;`);
+      lines.push(`              case 'SELECT':`);
+      lines.push(`                await __retryLoc_${o}.selectOption(__patchedVal_${o}); break;`);
+      lines.push(`              case 'HOVER': case 'HOVER AND CLICK':`);
+      lines.push(`                await __retryLoc_${o}.hover(); break;`);
+      lines.push(`              case 'CLEAR':`);
+      lines.push(`                await __retryLoc_${o}.waitFor({ state: 'visible', timeout: 10000 });`);
+      lines.push(`                await __retryLoc_${o}.clear(); break;`);
+      lines.push(`              case 'ASSERT VISIBLE':`);
+      lines.push(`                await __retryLoc_${o}.waitFor({ state: 'visible', timeout: 10000 }); break;`);
+      lines.push(`              case 'ASSERT NOT VISIBLE':`);
+      lines.push(`                await __retryLoc_${o}.waitFor({ state: 'hidden', timeout: 10000 }); break;`);
+      lines.push(`              case 'ASSERT TEXT':`);
+      lines.push(`                await __retryLoc_${o}.waitFor({ state: 'visible', timeout: 10000 });`);
+      lines.push(`                { const t = await __retryLoc_${o}.innerText(); if (!t.includes(__patchedVal_${o})) throw new Error('Text mismatch: expected "' + __patchedVal_${o} + '" in "' + t + '"'); } break;`);
+      lines.push(`              case 'ASSERT VALUE':`);
+      lines.push(`                { const v = await __retryLoc_${o}.inputValue(); if (v !== __patchedVal_${o}) throw new Error('Value mismatch: expected "' + __patchedVal_${o} + '" got "' + v + '"'); } break;`);
+      lines.push(`              case 'ASSERT CHECKED':`);
+      lines.push(`                await __retryLoc_${o}.waitFor({ state: 'visible', timeout: 10000 });`);
+      lines.push(`                { const checked = await __retryLoc_${o}.isChecked(); if (!checked) throw new Error('Element not checked'); } break;`);
+      lines.push(`              case 'CHECK': await __retryLoc_${o}.check(); break;`);
+      lines.push(`              case 'UNCHECK': await __retryLoc_${o}.uncheck(); break;`);
+      lines.push(`              case 'FOCUS': await __retryLoc_${o}.focus(); break;`);
+      lines.push(`              case 'SCROLL INTO VIEW': await __retryLoc_${o}.scrollIntoViewIfNeeded(); break;`);
+      lines.push(`              default:`);
+      lines.push(`                // Fallback: attempt click for unknown keywords with a locator`);
+      lines.push(`                await __retryLoc_${o}.waitFor({ state: 'visible', timeout: 10000 });`);
+      lines.push(`                await __retryLoc_${o}.click();`);
+      lines.push(`            }`);
+
     }
     // 📌 Pin — store value into __sessionVars if storeAs is set (use patched locator)
     const dbgPinLine = storeAsLine(step, step.locator ? `__buildLocator(page, __patchedLt_${step.order}, __patchedLoc_${step.order})` : null, '            ');
