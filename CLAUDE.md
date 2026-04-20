@@ -135,9 +135,14 @@ npx playwright test tests/codegen/<spec-file>.spec.ts --headed
 
 ### UI Server Restart Procedure
 Always follow in order:
-1. `netstat -ano | findstr :3000` — note the PID
+1. `netstat -ano | findstr :3000` — note the PID (e.g. 7428)
 2. `taskkill //F //PID <pid>`
-3. `cd "e:/AI Agent/qa-agent-platform" && npm run build && npm run ui`
+3. `cd "e:/AI Agent/qa-agent-platform" && npm run ui >> server.log 2>&1 &`
+4. `sleep 4 && curl -s http://localhost:3000 -o /dev/null -w "%{http_code}"` — must return 200
+5. `tail -3 server.log` — verify timestamp is TODAY (e.g. 2026-04-20). If it shows an old date, the restart failed silently.
+
+**CRITICAL:** Never use `> /dev/null 2>&1` when backgrounding — it hides startup failures.
+Always redirect to `server.log` so the timestamp can be verified.
 
 **When to restart:** After any change to `src/` files (always build first). Static files (`*.html`, `*.js`, `*.css` in `public/`) are served directly — no restart needed for those.
 

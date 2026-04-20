@@ -254,8 +254,75 @@ async function main() {
   }
 
   // All done — clean up backup
+  banner('Step 8 — Restart prod server');
+
+  // Find PID holding port 3000
+  let oldPid = null;
+  try {
+    const netstat = spawnSync('netstat', ['-ano'], { shell: true, encoding: 'utf8' });
+    const match = netstat.stdout.split('\n').find(l => l.includes(':3000') && l.includes('LISTENING'));
+    if (match) oldPid = match.trim().split(/\s+/).pop();
+  } catch {}
+
+  if (oldPid) {
+    info(`Found prod server on PID ${oldPid} — killing…`);
+    try {
+      spawnSync('taskkill', [`//F`, `//PID`, oldPid], { shell: true });
+      ok(`PID ${oldPid} terminated.`);
+    } catch (e) {
+      warn(`Could not kill PID ${oldPid}: ${e.message}`);
+    }
+    // Brief wait for port to release
+    await new Promise(r => setTimeout(r, 1500));
+  } else {
+    info('No existing server found on port 3000.');
+  }
+
+  // Start prod server — always log to server.log so we can verify
+  info('Starting prod server → server.log…');
+  const { spawn } = require('child_process');
+  const logStream = require('fs').createWriteStream(path.join(PROD_ROOT, 'server.log'), { flags: 'a' });
+  const srv = spawn('npm', ['run', 'ui'], {
+    cwd: PROD_ROOT,
+    shell: true,
+    detached: true,
+    stdio: ['ignore', logStream, logStream],
+  });
+  srv.unref();
+
+  // Wait up to 10s for port 3000 to respond
+  info('Waiting for server to accept connections…');
+  let up = false;
+  for (let i = 0; i < 20; i++) {
+    await new Promise(r => setTimeout(r, 500));
+    try {
+      const check = spawnSync('curl', ['-s', 'http://localhost:3000', '-o', '/dev/null', '-w', '%{http_code}'], { shell: true, encoding: 'utf8' });
+      if (check.stdout.trim() === '200') { up = true; break; }
+    } catch {}
+  }
+
+  if (!up) {
+    fail('Server did not respond on port 3000 within 10 seconds.');
+    fail('Check server.log for startup errors.');
+    process.exit(1);
+  }
+  ok('Prod server is UP on port 3000.');
+
+  // Verify server.log has today's date
+  try {
+    const logTail = fs.readFileSync(path.join(PROD_ROOT, 'server.log'), 'utf8').split('\n').filter(Boolean);
+    const lastLine = logTail[logTail.length - 1] || '';
+    const today = new Date().toISOString().slice(0, 10);
+    if (lastLine.includes(today)) {
+      ok(`server.log confirmed today's date (${today}) — server is running latest build.`);
+    } else {
+      warn(`server.log last line does not show today's date. Last: "${lastLine.slice(0, 80)}"`);
+      warn('The server may be running an old binary. Check manually.');
+    }
+  } catch {}
+
   banner('Promotion complete');
-  ok('All files copied and prod build verified.');
+  ok('All files copied, prod built, server restarted and verified.');
 
   const cleanAnswer = await ask('Delete backup folder? (yes/no):');
   if (cleanAnswer.toLowerCase().startsWith('y')) {
@@ -265,8 +332,7 @@ async function main() {
     info(`Backup kept at: ${bakDir}`);
   }
 
-  console.log('\n  Prod is ready. Restart the prod server to apply changes.\n');
-  console.log('    taskkill //F //PID <pid> && npm run ui\n');
+  console.log('\n  Done. Prod is live on http://localhost:3000\n');
 }
 
 main().catch(err => {
