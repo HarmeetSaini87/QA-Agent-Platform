@@ -606,12 +606,15 @@ function spawnRunWithSpec(record: RunRecord, specPath: string, headed?: boolean,
   const relPath   = path.relative(path.resolve('.'), specPath).replace(/\\/g, '/');
   // Use config.paths.testResults so dev and prod write to their own isolated directories
   const outputDir = path.join(config.paths.testResults, runId).replace(/\\/g, '/');
+  // Use relative path for --output to avoid Windows shell splitting on spaces in absolute paths.
+  // CWD is always path.resolve('.') = project root, so relative path is safe.
+  const relOutputDir = path.relative(path.resolve('.'), path.resolve(outputDir)).replace(/\\/g, '/');
   // Pre-create output dir so visual diff screenshots can be written by generated spec
   fs.mkdirSync(path.resolve(outputDir), { recursive: true });
   // Phase B: JSON reporter runs alongside list reporter; output file via env var
   const jsonReportFile = 'pw-report.json'; // relative to cwd; PLAYWRIGHT_JSON_OUTPUT_NAME controls filename
   const jsonReportPath = path.join(path.resolve(outputDir), jsonReportFile);
-  const args      = ['playwright', 'test', '--reporter=list,json', `--output=${outputDir}`];
+  const args      = ['playwright', 'test', '--reporter=list,json', `--output=${relOutputDir}`];
   if (retries > 0) args.push(`--retries=${retries}`);
   // Add --project flag for each selected browser (defaults to chromium only)
   const selectedBrowsers = (browsers && browsers.length) ? browsers : ['chromium'];
@@ -626,7 +629,7 @@ function spawnRunWithSpec(record: RunRecord, specPath: string, headed?: boolean,
 
   const proc = cp.spawn('npx', args, {
     cwd:   path.resolve('.'),
-    env:   { ...process.env, CI: '', HEADLESS: runHeadless ? 'true' : 'false', PW_OUTPUT_DIR: outputDir, PLAYWRIGHT_JSON_OUTPUT_NAME: jsonReportPath },
+    env:   { ...process.env, CI: '', HEADLESS: runHeadless ? 'true' : 'false', PW_OUTPUT_DIR: relOutputDir, PLAYWRIGHT_JSON_OUTPUT_NAME: jsonReportPath },
     shell: true,
   });
 
