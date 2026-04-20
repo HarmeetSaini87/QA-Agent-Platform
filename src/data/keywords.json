@@ -437,6 +437,15 @@
           }
         },
         {
+          "key": "ASSERT VISUAL", "label": "Assert Visual", "needsLocator": true, "needsValue": false, "valueHint": "Threshold 0–100 (default 10 = 10% pixel diff tolerance)",
+          "helpLabel": "Captures a screenshot of the element and compares it to the stored baseline",
+          "tooltip": {
+            "what": "Captures a screenshot of the target element and compares it pixel-by-pixel against the approved baseline image. Fails if the visual difference exceeds the threshold.\n\nOn first run: captures the element and saves it as the baseline automatically.\nOn subsequent runs: diffs against the baseline and reports the % of changed pixels.",
+            "example": "Locator: #dashboard-chart  →  captures chart, compares to baseline\nLocator: .patient-card      →  detects layout or style regressions on the card",
+            "tip": "Leave value blank to use the default 10% threshold. Set a higher value (e.g. 20) for elements with dynamic content like timestamps. Approve or reset baselines from the Visual Baselines tab."
+          }
+        },
+        {
           "key": "ASSERT URL NOT", "label": "Assert URL Not", "needsLocator": false, "needsValue": true, "valueHint": "URL or partial URL that must NOT be current",
           "helpLabel": "Verifies the current page URL does NOT contain the given value",
           "tooltip": {

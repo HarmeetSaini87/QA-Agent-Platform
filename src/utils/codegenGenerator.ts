@@ -652,6 +652,40 @@ function generateStepCode(
       // Count assertions don't waitFor — count may legitimately be 0
       return locExpr ? line(`await expect(${locExpr}).toHaveCount(${val});`) : line(`// ASSERT COUNT: missing locator`);
 
+    case 'ASSERT VISUAL': {
+      if (!locExpr) return line(`// ASSERT VISUAL: missing locator`);
+      const threshold = (step.value && !isNaN(parseFloat(step.value)))
+        ? parseFloat(step.value) / 100   // user enters 0–100, pixelmatch expects 0–1
+        : 0.1;
+      const locName = step.locator || 'element';
+      return line(
+        `{
+${indent}  // ASSERT VISUAL — capture and compare against stored baseline
+${indent}  await ${locExpr}.waitFor({ state: 'visible', timeout: 10000 });
+${indent}  const __vsBuffer = await ${locExpr}.screenshot({ type: 'png' });
+${indent}  const __vsPort = process.env.QA_SERVER_PORT || '3003';
+${indent}  const __vsResult = await fetch(\`http://localhost:\${__vsPort}/api/visual-baselines/compare\`, {
+${indent}    method: 'POST',
+${indent}    headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.QA_INTERNAL_API_KEY || '' },
+${indent}    body: JSON.stringify({
+${indent}      projectId:   '${project.id}',
+${indent}      testName:    test.info().title,
+${indent}      locatorName: ${JSON.stringify(locName)},
+${indent}      imageBase64: __vsBuffer.toString('base64'),
+${indent}      threshold:   ${threshold},
+${indent}    }),
+${indent}  }).then(r => r.json());
+${indent}  if (__vsResult.status === 'new-baseline') {
+${indent}    console.log('[VISUAL] New baseline captured for: ${locName}');
+${indent}  } else if (__vsResult.status === 'fail') {
+${indent}    throw new Error(\`[VISUAL] ${locName}: \${__vsResult.message}\`);
+${indent}  } else {
+${indent}    console.log(\`[VISUAL] OK — \${__vsResult.message}\`);
+${indent}  }
+${indent}}`
+      );
+    }
+
     case 'ASSERT URL':
       // toHaveURL has built-in retry — no extra wait needed
       return line(`await expect(page).toHaveURL(${val});`);

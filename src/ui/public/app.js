@@ -139,11 +139,13 @@ function switchTab(tab) {
     locators: 'Locator Repository', functions: 'Common Functions',
     commondata: 'Common Data', history: 'Execution History',
     flaky: 'Flaky Test Detection', analytics: 'Analytics Dashboard',
+    visual: 'Visual Baselines',
     projects: 'Projects', admin: 'Admin Panel',
   }[tab] ?? tab;
   if (tab === 'history')   histLoad();
   if (tab === 'flaky')     flakyLoad();
   if (tab === 'analytics') analyticsLoad();
+  if (tab === 'visual')    vrLoad();
   if (tab === 'execution') execLoad();
   hideRunPanel();
 }

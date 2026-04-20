@@ -1239,6 +1239,61 @@ app.get('/api/analytics', requireAuth, (req: Request, res: Response) => {
   });
 });
 
+// ── Visual Regression endpoints ───────────────────────────────────────────────
+import { getAllBaselines, getBaseline, approveBaseline, deleteBaseline, compareScreenshot, baselineImagePath } from '../utils/visualRegression';
+
+// GET /api/visual-baselines?projectId=xxx
+app.get('/api/visual-baselines', requireAuth, (req: Request, res: Response) => {
+  const { projectId } = req.query as { projectId?: string };
+  res.json(getAllBaselines(projectId));
+});
+
+// GET /api/visual-baselines/:id/image?type=baseline|actual|diff
+app.get('/api/visual-baselines/:id/image', requireAuth, (req: Request, res: Response) => {
+  const entry = getBaseline(req.params.id);
+  if (!entry) { res.status(404).json({ error: 'Baseline not found' }); return; }
+  const type  = (req.query.type as 'baseline' | 'actual' | 'diff') || 'baseline';
+  const imgPath = baselineImagePath(entry.projectId, entry.id, type);
+  if (!fs.existsSync(imgPath)) { res.status(404).json({ error: 'Image not found' }); return; }
+  res.setHeader('Content-Type', 'image/png');
+  res.setHeader('Cache-Control', 'no-cache');
+  fs.createReadStream(imgPath).pipe(res);
+});
+
+// POST /api/visual-baselines/:id/approve
+app.post('/api/visual-baselines/:id/approve', requireAuth, (req: Request, res: Response) => {
+  const ok = approveBaseline(req.params.id, req.session.username ?? 'unknown');
+  if (!ok) { res.status(404).json({ error: 'Baseline not found or no actual image' }); return; }
+  logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'VISUAL_BASELINE_APPROVED', resourceType: 'visual-baseline', resourceId: req.params.id, details: null, ip: req.ip ?? null });
+  res.json({ success: true });
+});
+
+// DELETE /api/visual-baselines/:id
+app.delete('/api/visual-baselines/:id', requireAuth, (req: Request, res: Response) => {
+  const ok = deleteBaseline(req.params.id);
+  if (!ok) { res.status(404).json({ error: 'Baseline not found' }); return; }
+  logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'VISUAL_BASELINE_DELETED', resourceType: 'visual-baseline', resourceId: req.params.id, details: null, ip: req.ip ?? null });
+  res.json({ success: true });
+});
+
+// POST /api/visual-baselines/compare  { projectId, testName, locatorName, imageBase64, threshold }
+// Called by the generated spec during test execution
+app.post('/api/visual-baselines/compare', requireAuthOrApiKey, (req: Request, res: Response) => {
+  const { projectId, testName, locatorName, imageBase64, threshold } = req.body as {
+    projectId: string; testName: string; locatorName: string; imageBase64: string; threshold?: number;
+  };
+  if (!projectId || !testName || !locatorName || !imageBase64) {
+    res.status(400).json({ error: 'projectId, testName, locatorName and imageBase64 required' }); return;
+  }
+  try {
+    const buffer = Buffer.from(imageBase64, 'base64');
+    const result = compareScreenshot(projectId, testName, locatorName, buffer, threshold ?? 0.1);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
 // Returns the global heal-log (all T2 heal events across all runs for a project)
 app.get('/api/heal-log', requireAuth, (req: Request, res: Response) => {
   const { projectId, limit: limitStr } = req.query as { projectId?: string; limit?: string };

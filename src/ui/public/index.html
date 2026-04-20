@@ -87,6 +87,13 @@
         <span>Analytics</span>
       </div>
 
+      <div class="nav-item" data-tab="visual" id="nav-visual">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
+        </svg>
+        <span>Visual Baselines</span>
+      </div>
+
       <div class="nav-section-label admin-only" id="admin-section-label">Admin</div>
       <div class="nav-item admin-only" data-tab="projects" id="nav-projects">
         <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -689,6 +696,32 @@
 
         <div id="analytics-loading" style="text-align:center;padding:40px;color:#858585">Select a project to view analytics.</div>
       </div><!-- /panel-analytics -->
+
+      <!-- ── Tab: Visual Baselines ───────────────────────────────────────── -->
+      <div class="panel" id="panel-visual">
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-title" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+            <span>&#128247; Visual Baselines</span>
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+              <input type="text" id="vr-search" class="fm-input" placeholder="Filter by name…" style="width:200px;font-size:12.5px" oninput="vrFilter()">
+              <select id="vr-status-filter" class="fm-input" style="width:140px;font-size:12.5px" onchange="vrFilter()">
+                <option value="">All statuses</option>
+                <option value="approved">Approved</option>
+                <option value="pending-review">Pending Review</option>
+                <option value="no-baseline">No Baseline</option>
+              </select>
+              <button class="btn btn-outline btn-sm" onclick="vrLoad()">&#8635; Refresh</button>
+            </div>
+          </div>
+          <div id="vr-summary" style="display:flex;gap:16px;flex-wrap:wrap;margin-top:12px;font-size:12.5px;color:var(--neutral-600)"></div>
+        </div>
+
+        <div id="vr-loading" style="text-align:center;padding:40px;color:#858585">Select a project to view visual baselines.</div>
+        <div id="vr-empty" style="display:none;text-align:center;padding:40px;color:#858585">No visual baselines found for this project.</div>
+
+        <!-- Baseline grid -->
+        <div id="vr-grid" style="display:none;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px"></div>
+      </div><!-- /panel-visual -->
 
       <!-- ── Tab: Projects ──────────────────────────────────────────────── -->
       <div class="panel admin-only" id="panel-projects">
