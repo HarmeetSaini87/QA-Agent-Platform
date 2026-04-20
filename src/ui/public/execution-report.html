@@ -323,6 +323,8 @@
     .det-header.warn-hdr { background: #fffbeb; color: #92400e; }
     .det-header.warn-hdr:hover { background: #fef3c7; }
     .warn-hdr-note { font-size: 11px; font-weight: 400; opacity: 0.75; margin-left: 8px; }
+    .warn-toggle-link { font-size: 11px; color: #92400e; opacity: 0.7; text-decoration: underline dotted; }
+    .warn-toggle-link:hover { opacity: 1; }
 
     /* ── Error section ────────────────────────────────────────────────────── */
     .error-box {
@@ -1015,20 +1017,29 @@ function buildDetailPanel(t, i, status) {
       </div>`);
   }
 
-  // ── App Warnings (browser console errors captured during test — informational only) ──
-  // Only shown on failed tests — on passed tests these are pure noise.
-  if (t.consoleErrors && t.consoleErrors.length && t.status === 'fail') {
+  // ── App Warnings — hidden by default, toggle link shown only on failed tests ──
+  // Console errors from the browser are always app-level noise (404s, resource errors).
+  // Actual test failures (stale element, timeout, assertion) are in Error Details above.
+  if (t.consoleErrors && t.consoleErrors.length && status === 'fail') {
+    const warnId  = `app-warn-${i}`;
     const errRows = t.consoleErrors.map(e => `<div class="ce-row">${esc(e)}</div>`).join('');
     sections.push(`
-      <div class="det-section collapsed">
+      <div class="det-section collapsed" id="${warnId}" style="display:none">
         <div class="det-header warn-hdr" onclick="toggleDetSection(this)">
           <span class="det-arrow">&#9658;</span>
-          &#9432; App Warnings (${t.consoleErrors.length})
-          <span class="warn-hdr-note">— No impact on test result &middot; Informational only</span>
+          &#9432; Browser Console Warnings (${t.consoleErrors.length})
+          <span class="warn-hdr-note">— Not the cause of failure &middot; App-level noise</span>
         </div>
         <div class="det-body">
           <div class="ce-list">${errRows}</div>
         </div>
+      </div>
+      <div style="text-align:right;padding:4px 8px 0">
+        <a href="#" class="warn-toggle-link" onclick="event.preventDefault();
+          var w=document.getElementById('${warnId}');
+          w.style.display=w.style.display==='none'?'block':'none';
+          this.textContent=w.style.display==='none'?'Show browser warnings (${t.consoleErrors.length})':'Hide browser warnings';
+        ">Show browser warnings (${t.consoleErrors.length})</a>
       </div>`);
   }
 
