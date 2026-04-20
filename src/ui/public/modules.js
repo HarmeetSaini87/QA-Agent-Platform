@@ -895,6 +895,66 @@ async function compDeleteSub(compId, subId) {
   compRender();
 }
 
+async function seLoadComponents() {
+  if (!currentProjectId) { _seCompDefs = []; return; }
+  const res = await fetch(`/api/projects/${encodeURIComponent(currentProjectId)}/components`);
+  _seCompDefs = res.ok ? await res.json() : [];
+}
+
+function sePopulateComponent(currentValue) {
+  const sel = document.getElementById('se-component');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">— Select Component —</option>';
+  const knownNames = new Set(_seCompDefs.map(c => c.name));
+  _seCompDefs.forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c.name;
+    opt.textContent = c.name;
+    sel.appendChild(opt);
+  });
+  if (currentValue && !knownNames.has(currentValue)) {
+    const opt = document.createElement('option');
+    opt.value = currentValue;
+    opt.textContent = `${currentValue} (legacy)`;
+    opt.disabled = true;
+    opt.selected = true;
+    sel.appendChild(opt);
+  } else {
+    sel.value = currentValue || '';
+  }
+  sePopulateSubcomponent(null);
+}
+
+function sePopulateSubcomponent(currentValue) {
+  const compSel = document.getElementById('se-component');
+  const subSel  = document.getElementById('se-subcomponent');
+  if (!subSel || !compSel) return;
+  const selectedComp = _seCompDefs.find(c => c.name === compSel.value);
+  subSel.innerHTML = '<option value="">— Select Subcomponent —</option>';
+  if (!selectedComp || !selectedComp.subcomponents.length) {
+    if (selectedComp) {
+      const opt = document.createElement('option');
+      opt.disabled = true;
+      opt.textContent = 'No subcomponents defined';
+      subSel.appendChild(opt);
+    }
+    subSel.disabled = !selectedComp;
+    return;
+  }
+  subSel.disabled = false;
+  selectedComp.subcomponents.forEach(s => {
+    const opt = document.createElement('option');
+    opt.value = s.name;
+    opt.textContent = s.name;
+    subSel.appendChild(opt);
+  });
+  if (currentValue) subSel.value = currentValue;
+}
+
+function seComponentChanged() {
+  sePopulateSubcomponent(null);
+}
+
 function projCloseModal() { closeModal('modal-project'); editingProjectId = null; }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1649,6 +1709,7 @@ async function keywordsLoad() {
 let allScripts      = [];
 let editingScriptId = null;
 let _compDefs = [];   // ComponentDef[] for current project in modal
+let _seCompDefs = [];   // ComponentDef[] for current project, used in script editor
 let _scriptPage     = 0;
 const SCRIPT_PAGE_SIZE = 10;
 
@@ -1930,6 +1991,7 @@ function _bulkToast(msg) {
 
 async function scriptOpenEditor(id = null) {
   await keywordsLoad();
+  await seLoadComponents();
   if (!allFunctions.length) { try { await fnLoad(); } catch {} }
   editingScriptId = id;
   document.getElementById('script-editor-title').textContent = id ? 'Edit Script' : 'New Script';
@@ -1940,7 +2002,8 @@ async function scriptOpenEditor(id = null) {
   if (id) {
     const sc = allScripts.find(s => s.id === id);
     if (!sc) return;
-    document.getElementById('se-component').value = sc.component || '';
+    sePopulateComponent(sc.component || '');
+    sePopulateSubcomponent(sc.subcomponent || null);
     document.getElementById('se-title').value      = sc.title;
     document.getElementById('se-desc').value       = sc.description || '';
     document.getElementById('se-priority').value   = sc.priority;
@@ -1956,7 +2019,8 @@ async function scriptOpenEditor(id = null) {
     (sc.steps || []).forEach(step => scriptAddStep(step, null, true));
     scriptReorderNums(); // one call after all steps inserted
   } else {
-    document.getElementById('se-component').value = '';
+    sePopulateComponent('');
+    sePopulateSubcomponent(null);
     document.getElementById('se-title').value      = '';
     document.getElementById('se-desc').value       = '';
     document.getElementById('se-priority').value   = 'medium';
@@ -3358,10 +3422,12 @@ async function scriptSave() {
   if (emptyTdStep !== -1) { modAlert('script-editor-alert', 'error', `Step ${emptyTdStep + 1}: Test Data (Static) requires at least one value row.`); return; }
 
   const tags = document.getElementById('se-tags').value.split(',').map(t => t.trim()).filter(Boolean);
+  const subcompVal = document.getElementById('se-subcomponent')?.value || '';
   const body = {
-    projectId:   currentProjectId, title,
-    component:   document.getElementById('se-component').value.trim(),
-    description: document.getElementById('se-desc').value.trim(),
+    projectId:    currentProjectId, title,
+    component:    document.getElementById('se-component').value,
+    subcomponent: subcompVal || undefined,
+    description:  document.getElementById('se-desc').value.trim(),
     tags, priority: document.getElementById('se-priority').value, steps,
   };
   const method = editingScriptId ? 'PUT'  : 'POST';
