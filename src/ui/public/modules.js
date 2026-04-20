@@ -26,6 +26,11 @@ async function authBootstrap() {
       document.querySelectorAll('.admin-only').forEach(el => el.style.display = 'none');
     }
 
+    // Viewer-mode: hide all write controls, show badge
+    if (currentUser.role === 'viewer') {
+      _applyViewerMode();
+    }
+
     // Populate project dropdown
     await projDropdownLoad();
     // Enforce project selection on initial tab
@@ -34,6 +39,26 @@ async function authBootstrap() {
   } catch {
     window.location.href = '/login';
   }
+}
+
+function isViewer() { return currentUser?.role === 'viewer'; }
+
+function _applyViewerMode() {
+  // Badge next to username in sidebar
+  const roleEl = document.getElementById('sidebar-role');
+  if (roleEl) {
+    roleEl.textContent = '';
+    roleEl.innerHTML = '<span style="background:#f48771;color:#fff;font-size:10px;font-weight:700;padding:2px 7px;border-radius:8px;letter-spacing:.5px">VIEW ONLY</span>';
+  }
+
+  // Hide all write-action buttons — add/new/delete/run/save/edit
+  document.querySelectorAll(
+    '#btn-new-script, #btn-new-suite, #btn-add-locator, #btn-new-function, #btn-add-cd, ' +
+    '.btn-run-suite, .script-bulk-bar, #script-bulk-bar'
+  ).forEach(el => el.style.display = 'none');
+
+  // Mark body so CSS can target viewer-specific rules
+  document.body.classList.add('viewer-mode');
 }
 
 async function doLogout() {
@@ -359,8 +384,8 @@ function cdRender() {
       <td>${escHtml(d.createdBy || '—')}</td>
       <td>${formatDate(d.createdAt)}</td>
       <td>
-        <button class="tbl-btn" onclick="cdEdit('${escHtml(d.id)}')">Edit</button>
-        <button class="tbl-btn del" onclick="cdDelete('${escHtml(d.id)}','${escHtml(d.dataName)}')">Delete</button>
+        ${isViewer() ? '' : `<button class="tbl-btn" onclick="cdEdit('${escHtml(d.id)}')">Edit</button>`}
+        ${isViewer() ? '' : `<button class="tbl-btn del" onclick="cdDelete('${escHtml(d.id)}','${escHtml(d.dataName)}')">Delete</button>`}
       </td>
     </tr>`).join('');
   if (pgEl) {
@@ -627,8 +652,8 @@ function locatorRender() {
       <td>${escHtml(l.pageModule || '—')}</td>
       <td>${escHtml(l.description || '—')}</td>
       <td>
-        <button class="tbl-btn" onclick="locatorEdit('${escHtml(l.id)}')">Edit</button>
-        <button class="tbl-btn del" onclick="locatorDelete('${escHtml(l.id)}','${escHtml(l.name)}')">Del</button>
+        ${isViewer() ? '' : `<button class="tbl-btn" onclick="locatorEdit('${escHtml(l.id)}')">Edit</button>`}
+        ${isViewer() ? '' : `<button class="tbl-btn del" onclick="locatorDelete('${escHtml(l.id)}','${escHtml(l.name)}')">Del</button>`}
       </td>
     </tr>`;
   }).join('');
@@ -871,8 +896,8 @@ function fnRender() {
       <td>${escHtml(f.createdBy || '—')}</td>
       <td>${formatDate(f.createdAt)}</td>
       <td>
-        <button class="tbl-btn" onclick="fnEdit('${escHtml(f.id)}')">Edit</button>
-        <button class="tbl-btn del" onclick="fnDelete('${escHtml(f.id)}','${escHtml(f.name)}')">Delete</button>
+        ${isViewer() ? '' : `<button class="tbl-btn" onclick="fnEdit('${escHtml(f.id)}')">Edit</button>`}
+        ${isViewer() ? '' : `<button class="tbl-btn del" onclick="fnDelete('${escHtml(f.id)}','${escHtml(f.name)}')">Delete</button>`}
       </td>
     </tr>`).join('');
   if (pgEl) {
@@ -1405,9 +1430,9 @@ function scriptRender() {
               <td style="font-size:12px">${formatDate(s.createdAt)}</td>
               <td>
                 <div style="display:flex;gap:4px">
-                  <button class="tbl-btn" onclick="scriptOpenEditor('${escHtml(s.id)}')">Edit</button>
+                  ${isViewer() ? '' : `<button class="tbl-btn" onclick="scriptOpenEditor('${escHtml(s.id)}')">Edit</button>`}
                   <button class="tbl-btn dbg" onclick="debugOpen('${escHtml(s.id)}')">&#128027;</button>
-                  <button class="tbl-btn del" onclick="scriptDelete('${escHtml(s.id)}','${escHtml(s.title)}')">Del</button>
+                  ${isViewer() ? '' : `<button class="tbl-btn del" onclick="scriptDelete('${escHtml(s.id)}','${escHtml(s.title)}')">Del</button>`}
                 </div>
               </td>
             </tr>`).join('')}
@@ -3242,8 +3267,8 @@ function suiteRender() {
           <div class="suite-meta">${(s.scriptIds||[]).length} script${(s.scriptIds||[]).length !== 1 ? 's' : ''} · By ${escHtml(s.createdBy || '—')} · ${formatDate(s.createdAt)}</div>
         </div>
         <div style="flex-shrink:0;display:flex;gap:6px;align-items:center">
-          <button class="tbl-btn" onclick="suiteEditById('${escHtml(s.id)}')">Edit</button>
-          <button class="tbl-btn del" onclick="suiteDelete('${escHtml(s.id)}','${escHtml(s.name)}')">Delete</button>
+          ${isViewer() ? '' : `<button class="tbl-btn" onclick="suiteEditById('${escHtml(s.id)}')">Edit</button>`}
+          ${isViewer() ? '' : `<button class="tbl-btn del" onclick="suiteDelete('${escHtml(s.id)}','${escHtml(s.name)}')">Delete</button>`}
         </div>
       </div>
     </div>`).join('');
@@ -7219,9 +7244,9 @@ function vrCard(b) {
       <div style="padding:10px 14px">
         <div style="font-size:11.5px;color:var(--neutral-500);margin-bottom:10px">Last run: ${lastRun}${b.width ? ` · ${b.width}×${b.height}` : ''}</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
-          ${b.status === 'pending-review' ? `<button class="btn btn-primary btn-sm" onclick="vrApprove('${b.id}')">&#10003; Approve</button>` : ''}
+          ${(!isViewer() && b.status === 'pending-review') ? `<button class="btn btn-primary btn-sm" onclick="vrApprove('${b.id}')">&#10003; Approve</button>` : ''}
           <button class="btn btn-outline btn-sm" onclick="vrViewDiff('${b.id}')">&#128247; View Images</button>
-          <button class="btn btn-outline btn-sm" style="color:#f48771;border-color:#f48771" onclick="vrDelete('${b.id}', '${escHtml(b.testName)}')">&#128465; Delete</button>
+          ${isViewer() ? '' : `<button class="btn btn-outline btn-sm" style="color:#f48771;border-color:#f48771" onclick="vrDelete('${b.id}', '${escHtml(b.testName)}')">&#128465; Delete</button>`}
         </div>
       </div>
     </div>

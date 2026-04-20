@@ -45,7 +45,7 @@ import { seedDefaults }            from '../data/seed';
 import { readAll, upsert, remove, findById, writeAll, USERS, PROJECTS, LOCATORS, FUNCTIONS, AUDIT, SETTINGS, SCRIPTS, SUITES, COMMON_DATA, SCHEDULES, APIKEYS } from '../data/store';
 import { User, Project, ProjectEnvironment, Locator, CommonFunction, CommonData, AuditEntry, AppSettings, NotificationSettings, DEFAULT_SETTINGS, DEFAULT_NOTIFICATION_SETTINGS, ProjectCredential, TestScript, ScriptStep, TestSuite, ScheduledRun, HealingProposal, LicensePayload, ApiKey, BrowserName } from '../data/types';
 import { hashPassword, verifyPassword, validatePasswordStrength } from '../auth/crypto';
-import { requireAuth, requireAdmin, requireAuthOrApiKey, sanitizeInput } from '../auth/middleware';
+import { requireAuth, requireAdmin, requireEditor, requireAuthOrApiKey, sanitizeInput } from '../auth/middleware';
 import { logAudit }                                                from '../auth/audit';
 import * as crypto from 'crypto';
 import { sendRunNotification, sendTestNotification, formatDuration } from '../utils/notifier';
@@ -1261,7 +1261,7 @@ app.get('/api/visual-baselines/:id/image', requireAuth, (req: Request, res: Resp
 });
 
 // POST /api/visual-baselines/:id/approve
-app.post('/api/visual-baselines/:id/approve', requireAuth, (req: Request, res: Response) => {
+app.post('/api/visual-baselines/:id/approve', requireAuth, requireEditor, (req: Request, res: Response) => {
   const ok = approveBaseline(req.params.id, req.session.username ?? 'unknown');
   if (!ok) { res.status(404).json({ error: 'Baseline not found or no actual image' }); return; }
   logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'VISUAL_BASELINE_APPROVED', resourceType: 'visual-baseline', resourceId: req.params.id, details: null, ip: req.ip ?? null });
@@ -1269,7 +1269,7 @@ app.post('/api/visual-baselines/:id/approve', requireAuth, (req: Request, res: R
 });
 
 // DELETE /api/visual-baselines/:id
-app.delete('/api/visual-baselines/:id', requireAuth, (req: Request, res: Response) => {
+app.delete('/api/visual-baselines/:id', requireAuth, requireEditor, (req: Request, res: Response) => {
   const ok = deleteBaseline(req.params.id);
   if (!ok) { res.status(404).json({ error: 'Baseline not found' }); return; }
   logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'VISUAL_BASELINE_DELETED', resourceType: 'visual-baseline', resourceId: req.params.id, details: null, ip: req.ip ?? null });
@@ -2330,7 +2330,7 @@ app.get('/api/locators', (req: Request, res: Response) => {
   }
 });
 
-app.post('/api/locators', (req: Request, res: Response) => {
+app.post('/api/locators', requireEditor, (req: Request, res: Response) => {
   const { name, selector, selectorType, pageModule, projectId, description } = req.body as any;
   if (!name || !selector) { res.status(400).json({ error: 'name and selector are required' }); return; }
   const loc: Locator = {
@@ -2343,7 +2343,7 @@ app.post('/api/locators', (req: Request, res: Response) => {
   res.json({ success: true, id: loc.id });
 });
 
-app.put('/api/locators/:id', (req: Request, res: Response) => {
+app.put('/api/locators/:id', requireEditor, (req: Request, res: Response) => {
   const loc = findById<Locator>(LOCATORS, req.params.id);
   if (!loc) { res.status(404).json({ error: 'Not found' }); return; }
   const { name, selector, selectorType, pageModule, projectId, description } = req.body as any;
@@ -2358,7 +2358,7 @@ app.put('/api/locators/:id', (req: Request, res: Response) => {
   res.json({ success: true });
 });
 
-app.delete('/api/locators/:id', (req: Request, res: Response) => {
+app.delete('/api/locators/:id', requireEditor, (req: Request, res: Response) => {
   const removed = remove(LOCATORS, req.params.id);
   if (!removed) { res.status(404).json({ error: 'Not found' }); return; }
   res.json({ success: true });
@@ -2672,7 +2672,7 @@ app.get('/api/functions', (req: Request, res: Response) => {
   }
 });
 
-app.post('/api/functions', (req: Request, res: Response) => {
+app.post('/api/functions', requireEditor, (req: Request, res: Response) => {
   const { name, identifier, description, steps, projectId } = req.body as any;
   if (!name)       { res.status(400).json({ error: 'Function name is required' }); return; }
   if (!identifier) { res.status(400).json({ error: 'Identifier is required' }); return; }
@@ -2693,7 +2693,7 @@ app.post('/api/functions', (req: Request, res: Response) => {
   res.json({ success: true, id: fn.id });
 });
 
-app.put('/api/functions/:id', (req: Request, res: Response) => {
+app.put('/api/functions/:id', requireEditor, (req: Request, res: Response) => {
   const fn = findById<CommonFunction>(FUNCTIONS, req.params.id);
   if (!fn) { res.status(404).json({ error: 'Not found' }); return; }
   const { name, identifier, description, steps, projectId } = req.body as any;
@@ -2713,7 +2713,7 @@ app.put('/api/functions/:id', (req: Request, res: Response) => {
   res.json({ success: true });
 });
 
-app.delete('/api/functions/:id', (req: Request, res: Response) => {
+app.delete('/api/functions/:id', requireEditor, (req: Request, res: Response) => {
   const removed = remove(FUNCTIONS, req.params.id);
   if (!removed) { res.status(404).json({ error: 'Not found' }); return; }
   res.json({ success: true });
@@ -2755,7 +2755,7 @@ app.get('/api/common-data', requireAuth, (req: Request, res: Response) => {
   return res.json(all.map(cdForResponse));
 });
 
-app.post('/api/common-data', requireAuth, (req: Request, res: Response) => {
+app.post('/api/common-data', requireAuth, requireEditor, (req: Request, res: Response) => {
   const { projectId, dataName, value, environment, sensitive } = req.body as Partial<CommonData> & { sensitive?: boolean };
   if (!projectId || !dataName || !environment) {
     res.status(400).json({ error: 'projectId, dataName and environment are required' }); return;
@@ -2777,7 +2777,7 @@ app.post('/api/common-data', requireAuth, (req: Request, res: Response) => {
   res.json({ success: true, id: record.id });
 });
 
-app.put('/api/common-data/:id', requireAuth, (req: Request, res: Response) => {
+app.put('/api/common-data/:id', requireAuth, requireEditor, (req: Request, res: Response) => {
   const record = findById<CommonData>(COMMON_DATA, req.params.id);
   if (!record) { res.status(404).json({ error: 'Not found' }); return; }
   const { dataName, value, environment, sensitive } = req.body as Partial<CommonData> & { sensitive?: boolean };
@@ -2804,7 +2804,7 @@ app.get('/api/common-data/:id/reveal', requireAuth, (req: Request, res: Response
   res.json({ value: record.sensitive ? decryptValue(record.value) : record.value });
 });
 
-app.delete('/api/common-data/:id', requireAuth, (req: Request, res: Response) => {
+app.delete('/api/common-data/:id', requireAuth, requireEditor, (req: Request, res: Response) => {
   remove(COMMON_DATA, req.params.id);
   logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'COMMON_DATA_DELETED', resourceType: 'common_data', resourceId: req.params.id, details: null, ip: req.ip ?? null });
   res.json({ success: true });
@@ -2883,7 +2883,7 @@ function finaliseDraftLocators(steps: ScriptStep[], projectId: string): ScriptSt
   });
 }
 
-app.post('/api/scripts', (req: Request, res: Response) => {
+app.post('/api/scripts', requireEditor, (req: Request, res: Response) => {
   const body = req.body as Partial<TestScript> & { recorderToken?: string };
   if (!body.projectId || !body.title) { res.status(400).json({ error: 'projectId and title required' }); return; }
 
@@ -2918,7 +2918,7 @@ app.post('/api/scripts', (req: Request, res: Response) => {
   res.json({ success: true, id: script.id, tcId });
 });
 
-app.put('/api/scripts/:id', (req: Request, res: Response) => {
+app.put('/api/scripts/:id', requireEditor, (req: Request, res: Response) => {
   const script = findById<TestScript>(SCRIPTS, req.params.id);
   if (!script) { res.status(404).json({ error: 'Not found' }); return; }
   const body = req.body as Partial<TestScript> & { recorderToken?: string };
@@ -2939,7 +2939,7 @@ app.put('/api/scripts/:id', (req: Request, res: Response) => {
   res.json({ success: true });
 });
 
-app.delete('/api/scripts/:id', (req: Request, res: Response) => {
+app.delete('/api/scripts/:id', requireEditor, (req: Request, res: Response) => {
   remove(SCRIPTS, req.params.id);
   logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'SCRIPT_DELETED', resourceType: 'script', resourceId: req.params.id, details: null, ip: req.ip ?? null });
   res.json({ success: true });
@@ -2948,7 +2948,7 @@ app.delete('/api/scripts/:id', (req: Request, res: Response) => {
 // ── Bulk Script Actions ───────────────────────────────────────────────────────
 
 // DELETE /api/scripts/bulk  { ids: string[] }
-app.delete('/api/scripts/bulk', requireAuth, (req: Request, res: Response) => {
+app.delete('/api/scripts/bulk', requireAuth, requireEditor, (req: Request, res: Response) => {
   const { ids } = req.body as { ids?: string[] };
   if (!Array.isArray(ids) || ids.length === 0) { res.status(400).json({ error: 'ids array required' }); return; }
   const deleted: string[] = [];
@@ -2963,7 +2963,7 @@ app.delete('/api/scripts/bulk', requireAuth, (req: Request, res: Response) => {
 });
 
 // PATCH /api/scripts/bulk  { ids: string[], patch: { priority?, tags?, component? } }
-app.patch('/api/scripts/bulk', requireAuth, (req: Request, res: Response) => {
+app.patch('/api/scripts/bulk', requireAuth, requireEditor, (req: Request, res: Response) => {
   const { ids, patch } = req.body as { ids?: string[]; patch?: Partial<Pick<TestScript, 'priority' | 'tags' | 'component'>> };
   if (!Array.isArray(ids) || ids.length === 0) { res.status(400).json({ error: 'ids array required' }); return; }
   if (!patch || Object.keys(patch).length === 0) { res.status(400).json({ error: 'patch object required' }); return; }
@@ -2984,7 +2984,7 @@ app.patch('/api/scripts/bulk', requireAuth, (req: Request, res: Response) => {
 });
 
 // POST /api/scripts/bulk-suite  { ids: string[], suiteId: string }
-app.post('/api/scripts/bulk-suite', requireAuth, (req: Request, res: Response) => {
+app.post('/api/scripts/bulk-suite', requireAuth, requireEditor, (req: Request, res: Response) => {
   const { ids, suiteId } = req.body as { ids?: string[]; suiteId?: string };
   if (!Array.isArray(ids) || ids.length === 0) { res.status(400).json({ error: 'ids array required' }); return; }
   if (!suiteId) { res.status(400).json({ error: 'suiteId required' }); return; }
@@ -3022,7 +3022,7 @@ app.get('/api/suites/:id', (req: Request, res: Response) => {
   res.json(enriched);
 });
 
-app.post('/api/suites', (req: Request, res: Response) => {
+app.post('/api/suites', requireEditor, (req: Request, res: Response) => {
   const body = req.body as Partial<TestSuite>;
   if (!body.projectId || !body.name) { res.status(400).json({ error: 'projectId and name required' }); return; }
   const now = new Date().toISOString();
@@ -3045,7 +3045,7 @@ app.post('/api/suites', (req: Request, res: Response) => {
   res.json({ success: true, id: suite.id });
 });
 
-app.put('/api/suites/:id', (req: Request, res: Response) => {
+app.put('/api/suites/:id', requireEditor, (req: Request, res: Response) => {
   const suite = findById<TestSuite>(SUITES, req.params.id);
   if (!suite) { res.status(404).json({ error: 'Not found' }); return; }
   const body = req.body as Partial<TestSuite>;
@@ -3066,14 +3066,14 @@ app.put('/api/suites/:id', (req: Request, res: Response) => {
   res.json({ success: true });
 });
 
-app.delete('/api/suites/:id', (req: Request, res: Response) => {
+app.delete('/api/suites/:id', requireEditor, (req: Request, res: Response) => {
   remove(SUITES, req.params.id);
   res.json({ success: true });
 });
 
 // ── Test Suite Execution ──────────────────────────────────────────────────────
 
-app.post('/api/suites/:id/run', requireAuthOrApiKey, async (req: Request, res: Response) => {
+app.post('/api/suites/:id/run', requireAuthOrApiKey, requireEditor, async (req: Request, res: Response) => {
   const suite = findById<TestSuite>(SUITES, req.params.id);
   if (!suite) { res.status(404).json({ error: 'Not found' }); return; }
 
@@ -3662,7 +3662,7 @@ app.get('/api/schedules', requireAuth, requireFeature('scheduler'), (req: Reques
 });
 
 // POST /api/schedules
-app.post('/api/schedules', requireAuth, requireFeature('scheduler'), (req: Request, res: Response) => {
+app.post('/api/schedules', requireAuth, requireEditor, requireFeature('scheduler'), (req: Request, res: Response) => {
   const { suiteId, environmentId, cronExpression, label } = req.body as Partial<ScheduledRun>;
   if (!suiteId || !environmentId || !cronExpression || !label) {
     res.status(400).json({ error: 'suiteId, environmentId, cronExpression and label are required' }); return;
@@ -3686,7 +3686,7 @@ app.post('/api/schedules', requireAuth, requireFeature('scheduler'), (req: Reque
 });
 
 // PUT /api/schedules/:id  (update label, cron, enabled, environmentId)
-app.put('/api/schedules/:id', requireAuth, (req: Request, res: Response) => {
+app.put('/api/schedules/:id', requireAuth, requireEditor, (req: Request, res: Response) => {
   const all = readAll<ScheduledRun>(SCHEDULES);
   const idx = all.findIndex(s => s.id === req.params.id);
   if (idx < 0) { res.status(404).json({ error: 'Schedule not found' }); return; }
@@ -3710,7 +3710,7 @@ app.put('/api/schedules/:id', requireAuth, (req: Request, res: Response) => {
 });
 
 // DELETE /api/schedules/:id
-app.delete('/api/schedules/:id', requireAuth, (req: Request, res: Response) => {
+app.delete('/api/schedules/:id', requireAuth, requireEditor, (req: Request, res: Response) => {
   unregisterCronJob(req.params.id);
   const ok = remove(SCHEDULES, req.params.id);
   if (!ok) { res.status(404).json({ error: 'Schedule not found' }); return; }

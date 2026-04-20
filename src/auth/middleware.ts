@@ -28,6 +28,22 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
   }
 }
 
+/**
+ * Require editor or admin role — blocks viewers from write operations.
+ * Use on all POST/PUT/PATCH/DELETE endpoints that mutate project data.
+ */
+export function requireEditor(req: Request, res: Response, next: NextFunction): void {
+  if (!req.session?.userId) {
+    if (req.originalUrl.startsWith('/api/')) { res.status(401).json({ error: 'Unauthorized' }); return; }
+    res.redirect('/login'); return;
+  }
+  if (req.session.role === 'viewer') {
+    res.status(403).json({ error: 'Forbidden — your account is View Only. Contact an admin to request editor access.' });
+    return;
+  }
+  next();
+}
+
 /** Require admin role — returns 403 if not admin */
 export function requireAdmin(req: Request, res: Response, next: NextFunction): void {
   if (!req.session?.userId) {

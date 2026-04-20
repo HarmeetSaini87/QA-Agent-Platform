@@ -228,7 +228,7 @@
 
             <!-- Action buttons -->
             <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-              <button id="exec-run-btn" class="btn btn-success" onclick="execRun()" disabled>
+              <button id="exec-run-btn" class="btn btn-success btn-run-suite" onclick="execRun()" disabled>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="vertical-align:-2px"><polygon points="5 3 19 12 5 21 5 3"/></svg>
                 Run Suite
               </button>
@@ -1173,7 +1173,11 @@
       <div class="row-2">
         <div class="field">
           <label>Role <span class="req">*</span></label>
-          <select id="um-role"><option value="tester">Tester</option><option value="admin">Admin</option></select>
+          <select id="um-role">
+            <option value="viewer">Viewer (read-only)</option>
+            <option value="tester" selected>Tester (create &amp; run)</option>
+            <option value="admin">Admin (full access)</option>
+          </select>
         </div>
         <div class="field"><label>Password <span class="req">*</span></label><input id="um-password" type="password" placeholder="Min 8 chars" /></div>
       </div>

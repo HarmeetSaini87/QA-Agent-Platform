@@ -1671,3 +1671,27 @@ body.lic-readonly .run-suite-btn::after { content: ' (License expired)'; font-si
 .an-chart-bar-wrap { flex: 1; background: var(--neutral-100, #f3f4f6); border-radius: 3px; height: 14px; overflow: hidden; }
 .an-chart-bar  { height: 100%; border-radius: 3px; transition: width .4s ease; }
 .an-chart-pct  { width: 38px; text-align: right; font-weight: 600; flex-shrink: 0; }
+
+/* ── Viewer mode — hide all write controls via CSS ────────────────────────── */
+body.viewer-mode .btn-run-suite,
+body.viewer-mode [data-viewer-hide],
+body.viewer-mode #btn-new-script,
+body.viewer-mode #btn-new-suite,
+body.viewer-mode #btn-add-locator,
+body.viewer-mode #btn-new-function,
+body.viewer-mode #btn-add-cd,
+body.viewer-mode #script-bulk-bar,
+body.viewer-mode .script-action-edit,
+body.viewer-mode .script-action-delete,
+body.viewer-mode .suite-action-edit,
+body.viewer-mode .suite-action-delete,
+body.viewer-mode .loc-action-edit,
+body.viewer-mode .loc-action-delete,
+body.viewer-mode .fn-action-edit,
+body.viewer-mode .fn-action-delete,
+body.viewer-mode .cd-action-edit,
+body.viewer-mode .cd-action-delete,
+body.viewer-mode .vr-action-approve,
+body.viewer-mode .vr-action-delete {
+  display: none !important;
+}
