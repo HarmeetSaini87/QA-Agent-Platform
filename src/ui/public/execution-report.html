@@ -320,6 +320,9 @@
     .det-body { padding: 16px 20px; }
     .det-header.error-hdr { background: #fef2f2; color: var(--danger); }
     .det-header.error-hdr:hover { background: #fee2e2; }
+    .det-header.warn-hdr { background: #fffbeb; color: #92400e; }
+    .det-header.warn-hdr:hover { background: #fef3c7; }
+    .warn-hdr-note { font-size: 11px; font-weight: 400; opacity: 0.75; margin-left: 8px; }
 
     /* ── Error section ────────────────────────────────────────────────────── */
     .error-box {
@@ -573,6 +576,7 @@
       /* Det header print */
       .det-header { background: #f4f6f8 !important; color: #374151 !important; }
       .det-header.error-hdr { background: #fee2e2 !important; color: #991b1b !important; }
+      .det-header.warn-hdr  { background: #fef3c7 !important; color: #92400e !important; }
       /* Footer */
       .report-footer { background: #e5e7eb !important; color: #374151 !important; }
     }
@@ -1011,14 +1015,16 @@ function buildDetailPanel(t, i, status) {
       </div>`);
   }
 
-  // ── Console Errors (Phase A: JS errors + page exceptions collected during test) ──
-  if (t.consoleErrors && t.consoleErrors.length) {
+  // ── App Warnings (browser console errors captured during test — informational only) ──
+  // Only shown on failed tests — on passed tests these are pure noise.
+  if (t.consoleErrors && t.consoleErrors.length && t.status === 'fail') {
     const errRows = t.consoleErrors.map(e => `<div class="ce-row">${esc(e)}</div>`).join('');
     sections.push(`
-      <div class="det-section">
-        <div class="det-header error-hdr" onclick="toggleDetSection(this)">
-          <span class="det-arrow">&#9660;</span>
-          &#9888; Console Errors (${t.consoleErrors.length})
+      <div class="det-section collapsed">
+        <div class="det-header warn-hdr" onclick="toggleDetSection(this)">
+          <span class="det-arrow">&#9658;</span>
+          &#9432; App Warnings (${t.consoleErrors.length})
+          <span class="warn-hdr-note">— No impact on test result &middot; Informational only</span>
         </div>
         <div class="det-body">
           <div class="ce-list">${errRows}</div>
