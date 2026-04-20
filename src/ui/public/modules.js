@@ -662,6 +662,7 @@ async function projLoad() {
 }
 
 function projOpenModal(id = null) {
+  projTabSwitch('details');
   editingProjectId = id;
   modClearAlert('proj-modal-alert');
   document.getElementById('proj-modal-title').textContent = id ? 'Edit Project' : 'New Project';
@@ -689,6 +690,7 @@ async function projEdit(id) {
   (p.environments || []).forEach(e => projAddEnv(e.id, e.name, e.url));
   modClearAlert('proj-modal-alert');
   openModal('modal-project');
+  projTabSwitch('details');
 }
 
 function projAddEnv(id = '', name = '', url = '') {
@@ -733,6 +735,164 @@ async function projDelete(id, name) {
   if (!confirm(`Delete project "${name}"?`)) return;
   await fetch(`/api/projects/${id}`, { method: 'DELETE' });
   await projLoad();
+}
+
+function projTabSwitch(tab) {
+  ['details', 'environments', 'components'].forEach(t => {
+    document.getElementById(`proj-tab-panel-${t}`).style.display = t === tab ? '' : 'none';
+    document.getElementById(`proj-tab-${t}`).classList.toggle('proj-tab-active', t === tab);
+  });
+  if (tab === 'components') {
+    const pid = editingProjectId;
+    if (pid) compLoad(pid);
+  }
+  // Hide Save button on Components tab — components are saved individually
+  const saveBtn = document.getElementById('proj-save-btn');
+  if (saveBtn) saveBtn.style.display = tab === 'components' ? 'none' : '';
+}
+
+async function compLoad(projectId) {
+  const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/components`);
+  if (!res.ok) return;
+  _compDefs = await res.json();
+
+  // Auto-migration: if no components yet and scripts exist with component values, seed them
+  const banner = document.getElementById('proj-comp-banner');
+  if (_compDefs.length === 0) {
+    const sRes = await fetch(`/api/scripts?projectId=${encodeURIComponent(projectId)}`);
+    if (sRes.ok) {
+      const scripts = await sRes.json();
+      const distinct = [...new Set(scripts.map(s => (s.component || '').trim()).filter(Boolean))];
+      if (distinct.length > 0) {
+        for (const name of distinct) {
+          const r = await fetch(`/api/projects/${encodeURIComponent(projectId)}/components`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }),
+          });
+          if (r.ok) { const d = await r.json(); _compDefs.push(d.comp); }
+        }
+        if (banner) {
+          banner.innerHTML = `<div class="alert alert-info" style="font-size:12.5px">${distinct.length} component(s) imported from existing test scripts. <button class="tbl-btn" onclick="document.getElementById('proj-comp-banner').style.display='none'">Dismiss</button></div>`;
+          banner.style.display = '';
+        }
+      }
+    }
+  }
+
+  compRender();
+}
+
+function compRender() {
+  const el = document.getElementById('proj-comp-list');
+  if (!el) return;
+  if (!_compDefs.length) {
+    el.innerHTML = '<div class="builder-hint">No components yet. Click + Add Component to create one.</div>';
+    return;
+  }
+  el.innerHTML = _compDefs.map(c => `
+    <div class="comp-row" data-comp-id="${escHtml(c.id)}">
+      <span class="comp-row-name" id="comp-name-${escHtml(c.id)}">${escHtml(c.name)}</span>
+      <button class="tbl-btn" onclick="compRenameStart('${escHtml(c.id)}')">Rename</button>
+      <button class="tbl-btn del" onclick="compDeleteComp('${escHtml(c.id)}','${escHtml(c.name)}')">Delete</button>
+    </div>
+    <div class="subcomp-list" id="subcomp-list-${escHtml(c.id)}">
+      ${c.subcomponents.map(s => `
+        <div class="subcomp-row" data-sub-id="${escHtml(s.id)}">
+          <span class="subcomp-name">\u00b7 ${escHtml(s.name)}</span>
+          <button class="tbl-btn del" onclick="compDeleteSub('${escHtml(c.id)}','${escHtml(s.id)}')">✕</button>
+        </div>`).join('')}
+      <div style="margin-top:4px">
+        <button class="tbl-btn" onclick="compAddSub('${escHtml(c.id)}')">+ Add Subcomponent</button>
+      </div>
+    </div>`).join('');
+}
+
+async function compAddComp() {
+  const name = prompt('Component name:');
+  if (!name?.trim()) return;
+  const pid = editingProjectId;
+  const res = await fetch(`/api/projects/${encodeURIComponent(pid)}/components`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: name.trim() }),
+  });
+  if (!res.ok) { alert('Failed to add component'); return; }
+  const data = await res.json();
+  _compDefs.push(data.comp);
+  compRender();
+}
+
+function compRenameStart(compId) {
+  const nameEl = document.getElementById(`comp-name-${compId}`);
+  if (!nameEl) return;
+  const current = nameEl.textContent;
+  nameEl.outerHTML = `
+    <input id="comp-rename-input-${escHtml(compId)}" class="fm-input" value="${escHtml(current)}" style="flex:1;margin-right:4px" />`;
+  // Replace Rename button with Save/Cancel
+  const row = document.querySelector(`[data-comp-id="${compId}"]`);
+  row.querySelectorAll('button').forEach(b => b.style.display = 'none');
+  const saveBtn = document.createElement('button');
+  saveBtn.className = 'tbl-btn';
+  saveBtn.textContent = 'Save';
+  saveBtn.onclick = () => compRenameConfirm(compId);
+  const cancelBtn = document.createElement('button');
+  cancelBtn.className = 'tbl-btn';
+  cancelBtn.textContent = 'Cancel';
+  cancelBtn.onclick = () => compRender();
+  row.appendChild(saveBtn);
+  row.appendChild(cancelBtn);
+}
+
+async function compRenameConfirm(compId) {
+  const input = document.getElementById(`comp-rename-input-${compId}`);
+  const newName = input?.value?.trim();
+  if (!newName) { alert('Name cannot be empty'); return; }
+  const pid = editingProjectId;
+  const comp = _compDefs.find(c => c.id === compId);
+  if (!comp) return;
+  const res = await fetch(`/api/projects/${encodeURIComponent(pid)}/components/${encodeURIComponent(compId)}`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: newName, subcomponents: comp.subcomponents }),
+  });
+  if (!res.ok) { alert('Failed to rename'); return; }
+  comp.name = newName;
+  compRender();
+}
+
+async function compDeleteComp(compId, compName) {
+  if (!confirm(`Remove component "${compName}"? Existing test scripts referencing it will keep their saved value.`)) return;
+  const pid = editingProjectId;
+  const res = await fetch(`/api/projects/${encodeURIComponent(pid)}/components/${encodeURIComponent(compId)}`, { method: 'DELETE' });
+  if (!res.ok) { alert('Failed to delete'); return; }
+  _compDefs = _compDefs.filter(c => c.id !== compId);
+  compRender();
+}
+
+async function compAddSub(compId) {
+  const name = prompt('Subcomponent name:');
+  if (!name?.trim()) return;
+  const comp = _compDefs.find(c => c.id === compId);
+  if (!comp) return;
+  const newSub = { id: 'sub-' + Date.now() + '-' + Math.random().toString(36).slice(2), name: name.trim() };
+  const updatedSubs = [...comp.subcomponents, newSub];
+  const pid = editingProjectId;
+  const res = await fetch(`/api/projects/${encodeURIComponent(pid)}/components/${encodeURIComponent(compId)}`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: comp.name, subcomponents: updatedSubs }),
+  });
+  if (!res.ok) { alert('Failed to add subcomponent'); return; }
+  const data = await res.json();
+  comp.subcomponents = data.comp.subcomponents;
+  compRender();
+}
+
+async function compDeleteSub(compId, subId) {
+  const comp = _compDefs.find(c => c.id === compId);
+  if (!comp) return;
+  const updatedSubs = comp.subcomponents.filter(s => s.id !== subId);
+  const pid = editingProjectId;
+  const res = await fetch(`/api/projects/${encodeURIComponent(pid)}/components/${encodeURIComponent(compId)}`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: comp.name, subcomponents: updatedSubs }),
+  });
+  if (!res.ok) { alert('Failed to delete subcomponent'); return; }
+  const data = await res.json();
+  comp.subcomponents = data.comp.subcomponents;
+  compRender();
 }
 
 function projCloseModal() { closeModal('modal-project'); editingProjectId = null; }
@@ -1488,6 +1648,7 @@ async function keywordsLoad() {
 
 let allScripts      = [];
 let editingScriptId = null;
+let _compDefs = [];   // ComponentDef[] for current project in modal
 let _scriptPage     = 0;
 const SCRIPT_PAGE_SIZE = 10;
 
