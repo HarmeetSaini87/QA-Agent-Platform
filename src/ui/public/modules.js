@@ -237,22 +237,43 @@ async function settingsLoad() {
   document.getElementById('set-timeout').value     = data.sessionTimeoutMinutes ?? 60;
   document.getElementById('set-max-logins').value  = data.maxFailedLogins ?? 5;
   document.getElementById('set-allow-reg').checked = !!data.allowRegistration;
+  // NL settings — key is redacted on server side, just show placeholder if set
+  const keyEl = document.getElementById('set-anthropic-key');
+  if (keyEl) keyEl.placeholder = data.anthropicApiKeySet ? '●●●●●●●●●●●● (saved)' : 'sk-ant-…';
+  const modelEl = document.getElementById('set-nl-model');
+  if (modelEl && data.nlModel) modelEl.value = data.nlModel;
+  const statusEl = document.getElementById('set-nl-status');
+  if (statusEl) statusEl.textContent = data.anthropicApiKeySet ? '✓ API key is configured — NL Suggestion active' : 'No API key — NL Suggestion disabled';
   // Load notification settings
   notifLoad(data.notifications ?? {});
 }
 
 async function settingsSave() {
   modClearAlert('settings-alert');
+  const keyVal = document.getElementById('set-anthropic-key')?.value.trim();
   const body = {
     appName:               document.getElementById('set-app-name').value.trim(),
     sessionTimeoutMinutes: parseInt(document.getElementById('set-timeout').value) || 60,
     maxFailedLogins:       parseInt(document.getElementById('set-max-logins').value) || 5,
     allowRegistration:     document.getElementById('set-allow-reg').checked,
+    nlModel:               document.getElementById('set-nl-model')?.value || 'claude-haiku-4-5-20251001',
+    ...(keyVal ? { anthropicApiKey: keyVal } : {}),
   };
   const res  = await fetch('/api/admin/settings', { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
   const data = await res.json();
-  if (res.ok) modAlert('settings-alert','success','Settings saved successfully');
-  else        modAlert('settings-alert','error', data.error || 'Error saving settings');
+  if (res.ok) {
+    modAlert('settings-alert','success','Settings saved successfully');
+    if (keyVal) { const el = document.getElementById('set-anthropic-key'); if (el) { el.value = ''; el.placeholder = '●●●●●●●●●●●● (saved)'; } }
+    settingsLoad();
+  } else {
+    modAlert('settings-alert','error', data.error || 'Error saving settings');
+  }
+}
+
+function toggleApiKeyVisibility() {
+  const el = document.getElementById('set-anthropic-key');
+  if (!el) return;
+  el.type = el.type === 'password' ? 'text' : 'password';
 }
 
 // ── Notification Settings ─────────────────────────────────────────────────────
@@ -1864,6 +1885,13 @@ function scriptAddStep(step = {}, insertBeforeRow = null, _skipReorder = false) 
         <input type="checkbox" class="se-step-screenshot"${step.screenshot ? ' checked' : ''} /> Screenshot
       </label>
     </div>
+    <div class="step-nl-row" style="display:flex;align-items:center;gap:6px;margin:4px 0 0 0">
+      <span style="font-size:11px;color:var(--neutral-500);flex-shrink:0">&#10024; NL:</span>
+      <input class="fm-input se-step-nl-input" type="text" placeholder="Describe this step in plain English…"
+             style="flex:1;font-size:12px;padding:4px 8px"
+             oninput="nlStepDebounce(this)" />
+      <span class="se-step-nl-status" style="font-size:11px;color:var(--neutral-500);flex-shrink:0;min-width:60px;text-align:right"></span>
+    </div>
     <div class="step-help-row"${helpLbl ? '' : ' style="display:none"'}>
       <span class="step-help-label">${escHtml(helpLbl)}</span>
       <span class="step-tooltip-trigger" data-tooltip-json="${escHtml(tipJson)}" onmouseenter="_kwTipShow(this)" onmouseleave="_kwTipHide()"${tipJson ? '' : ' style="display:none"'}>?</span>
@@ -2073,6 +2101,96 @@ function scriptAddStep(step = {}, insertBeforeRow = null, _skipReorder = false) 
     if (varSel && step.value) varSel.dataset.savedVar = step.value;
     _loadVarOptions(row);
   }
+}
+
+// ── NL Keyword Suggestion ──────────────────────────────────────────────────────
+
+let _nlTimer = null;
+
+function nlStepDebounce(input) {
+  const row = input.closest('.script-step-row');
+  const statusEl = row?.querySelector('.se-step-nl-status');
+  if (statusEl) statusEl.textContent = '…';
+  clearTimeout(_nlTimer);
+  const val = input.value.trim();
+  if (!val) { if (statusEl) statusEl.textContent = ''; return; }
+  _nlTimer = setTimeout(() => nlStepSuggest(input, row, statusEl), 600);
+}
+
+async function nlStepSuggest(input, row, statusEl) {
+  if (statusEl) { statusEl.textContent = '⏳'; statusEl.style.color = 'var(--neutral-400)'; }
+  try {
+    const res  = await fetch('/api/nl-suggest', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ description: input.value.trim(), projectId: currentProjectId || '' }),
+    });
+    const data = await res.json();
+
+    if (!res.ok || data.error) {
+      if (statusEl) { statusEl.textContent = '✗'; statusEl.style.color = '#f48771'; statusEl.title = data.error || 'Error'; }
+      return;
+    }
+
+    // Auto-fill keyword
+    if (data.keyword) {
+      const kwSel = row.querySelector('.se-step-kw-select');
+      if (kwSel) {
+        const match = [...kwSel.options].find(o => o.value.toUpperCase() === data.keyword.toUpperCase());
+        if (match) {
+          kwSel.value = match.value;
+          scriptStepKwChange(kwSel);
+        }
+      }
+    }
+
+    // Auto-fill locator name
+    if (data.locatorName) {
+      const locInput = row.querySelector('.se-step-loc-name');
+      if (locInput && !locInput.value) {
+        locInput.value = data.locatorName;
+        // Try to resolve from locator repo
+        _seResolveLocName(row, data.locatorName);
+      }
+    }
+
+    // Auto-fill static value
+    if (data.value) {
+      const staticInput = row.querySelector('.se-step-val-static');
+      if (staticInput && !staticInput.value) staticInput.value = data.value;
+    }
+
+    const pct = Math.round((data.confidence ?? 1) * 100);
+    if (statusEl) {
+      statusEl.textContent = `✓ ${pct}%`;
+      statusEl.style.color = pct >= 80 ? '#4ec9b0' : pct >= 50 ? '#e9b96e' : '#f48771';
+      statusEl.title = `Confidence: ${pct}%`;
+    }
+  } catch (e) {
+    if (statusEl) { statusEl.textContent = '✗'; statusEl.style.color = '#f48771'; statusEl.title = e.message; }
+  }
+}
+
+// Resolve a locator name against the repo (same logic as locator picker)
+function _seResolveLocName(row, name) {
+  if (!currentProjectId || !name) return;
+  fetch(`/api/locators?projectId=${encodeURIComponent(currentProjectId)}`)
+    .then(r => r.json())
+    .then(locs => {
+      const match = locs.find(l => l.name?.toLowerCase() === name.toLowerCase());
+      if (!match) return;
+      const locNameEl  = row.querySelector('.se-step-loc-name');
+      const locTypeEl  = row.querySelector('.se-step-loc-type');
+      const locSelEl   = row.querySelector('.se-step-selector');
+      const repoEl     = row.querySelector('.loc-repo-badge');
+      const unlockEl   = row.querySelector('.loc-unlock-btn');
+      if (locNameEl)  { locNameEl.value = match.name; locNameEl.readOnly = true; }
+      if (locTypeEl)  locTypeEl.value = match.selectorType || match.locatorType || 'css';
+      if (locSelEl)   { locSelEl.value = match.selector || ''; locSelEl.readOnly = true; }
+      if (repoEl)     repoEl.style.display = '';
+      if (unlockEl)   unlockEl.style.display = '';
+      row.dataset.locatorId = match.id;
+    }).catch(() => {});
 }
 
 function scriptStepKwChange(sel) {

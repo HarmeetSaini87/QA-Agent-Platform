@@ -321,6 +321,8 @@ export interface AppSettings {
   appName:               string;
   maxFailedLogins:       number;
   notifications:         NotificationSettings;
+  anthropicApiKey?:      string;   // Claude Haiku — used by NL Keyword Suggestion
+  nlModel?:              string;   // default: claude-haiku-4-5-20251001
 }
 
 export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {

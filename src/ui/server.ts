@@ -1134,6 +1134,68 @@ app.get('/api/runs', (req: Request, res: Response) => {
   })));
 });
 
+// ── NL Keyword Suggestion ─────────────────────────────────────────────────────
+// POST /api/nl-suggest  { description, projectId }
+// Returns { keyword, locatorName, value, confidence, error? }
+app.post('/api/nl-suggest', requireAuth, async (req: Request, res: Response) => {
+  const { description, projectId } = req.body as { description: string; projectId: string };
+  if (!description?.trim()) { res.status(400).json({ error: 'description is required' }); return; }
+
+  // Load API key from settings
+  const settings = (readAll<AppSettings & { id: string }>(SETTINGS)[0] ?? DEFAULT_SETTINGS) as any;
+  const apiKey   = (settings.anthropicApiKey || '').trim();
+  if (!apiKey) { res.status(503).json({ error: 'NL Suggestion not configured — add Anthropic API key in Admin → Settings' }); return; }
+
+  const model = settings.nlModel || 'claude-haiku-4-5-20251001';
+
+  // Build context: keywords + project locators
+  const keywords = JSON.parse(require('fs').readFileSync(require('path').resolve('src/data/keywords.json'), 'utf-8')) as Array<{ key: string; label: string; helpLabel?: string; needsLocator?: boolean; needsValue?: boolean }>;
+  const kwList   = keywords.map(k => `${k.key}: ${k.helpLabel || k.label}`).join('\n');
+
+  const locators = projectId
+    ? readAll<import('../data/types').Locator>(LOCATORS).filter(l => !l.projectId || l.projectId === projectId)
+    : [];
+  const locList = locators.map(l => l.name).join(', ') || '(none configured)';
+
+  const prompt = `You are a test automation assistant. Map the tester's natural language description to a Playwright keyword test step.
+
+## Available Keywords
+${kwList}
+
+## Available Locator Names for this project
+${locList}
+
+## Task
+Given the description below, return a JSON object with exactly these fields:
+- "keyword": one of the keyword keys listed above (e.g. "CLICK", "FILL", "ASSERT TEXT")
+- "locatorName": the best matching locator name from the list above, or null if none fits
+- "value": the value to use (e.g. text to type, text to assert), or null if not needed
+- "confidence": a number 0–1 indicating how confident you are
+
+Return ONLY valid JSON. No explanation, no markdown, no code fences.
+
+## Description
+${description.trim()}`;
+
+  try {
+    const Anthropic = require('@anthropic-ai/sdk');
+    const client    = new Anthropic.default({ apiKey });
+    const msg = await client.messages.create({
+      model,
+      max_tokens: 256,
+      messages: [{ role: 'user', content: prompt }],
+    });
+    const raw  = (msg.content[0] as any)?.text?.trim() || '{}';
+    const json = JSON.parse(raw);
+    res.json({ keyword: json.keyword || null, locatorName: json.locatorName || null, value: json.value || null, confidence: json.confidence ?? 1 });
+  } catch (err: any) {
+    const msg = err?.message || String(err);
+    // JSON parse error → try to extract from response
+    if (msg.includes('JSON')) { res.status(422).json({ error: 'Model returned non-JSON response' }); return; }
+    res.status(502).json({ error: `AI call failed: ${msg}` });
+  }
+});
+
 // ── Analytics endpoint ────────────────────────────────────────────────────────
 // GET /api/analytics?projectId=xxx&days=30
 app.get('/api/analytics', requireAuth, (req: Request, res: Response) => {
@@ -2222,7 +2284,10 @@ app.delete('/api/test-files/:projectId/:filename', (req: Request, res: Response)
 
 app.get('/api/admin/settings', requireAdmin, (_req, res) => {
   const rows = readAll<AppSettings & { id: string }>(SETTINGS);
-  res.json(rows[0] ?? { id: 'global', ...DEFAULT_SETTINGS });
+  const s = rows[0] ?? { id: 'global', ...DEFAULT_SETTINGS };
+  // Never expose the raw API key — just tell the UI whether one is set
+  const { anthropicApiKey, ...safe } = s as any;
+  res.json({ ...safe, anthropicApiKeySet: !!(anthropicApiKey && String(anthropicApiKey).trim()) });
 });
 
 app.put('/api/admin/settings', requireAdmin, (req: Request, res: Response) => {
@@ -2233,7 +2298,11 @@ app.put('/api/admin/settings', requireAdmin, (req: Request, res: Response) => {
     ...(current.notifications ?? {}),
     ...(req.body.notifications ?? {}),
   };
-  const updated = { ...current, ...req.body, notifications, id: 'global' };
+  // Only overwrite anthropicApiKey if a non-empty value was sent
+  const incomingKey = (req.body.anthropicApiKey || '').trim();
+  const anthropicApiKey = incomingKey || (current as any).anthropicApiKey || '';
+  const { anthropicApiKey: _drop, ...restBody } = req.body;
+  const updated = { ...current, ...restBody, notifications, anthropicApiKey, id: 'global' };
   writeAll(SETTINGS, [updated]);
   logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'SETTINGS_UPDATED', resourceType: 'settings', resourceId: 'global', details: null, ip: req.ip ?? null });
   res.json({ success: true });
