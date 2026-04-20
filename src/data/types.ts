@@ -321,8 +321,12 @@ export interface AppSettings {
   appName:               string;
   maxFailedLogins:       number;
   notifications:         NotificationSettings;
-  anthropicApiKey?:      string;   // Claude Haiku — used by NL Keyword Suggestion
-  nlModel?:              string;   // default: claude-haiku-4-5-20251001
+  nlProvider?:           string;   // 'anthropic'|'openai'|'groq'|'gemini'|'ollama'|'compatible'
+  nlApiKey?:             string;   // API key for cloud providers (stored server-side only)
+  nlModel?:              string;   // model name / tag
+  nlBaseUrl?:            string;   // Ollama or compatible endpoint base URL
+  // Legacy field — kept for backwards compat, migrated to nlApiKey on first save
+  anthropicApiKey?:      string;
 }
 
 export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {

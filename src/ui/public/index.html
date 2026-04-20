@@ -822,24 +822,50 @@
               </label>
             </div>
 
-            <!-- NL Suggestion (Claude Haiku) -->
+            <!-- NL Suggestion — Multi-provider AI Settings -->
             <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--neutral-300)">
-              <div style="font-size:13px;font-weight:700;color:var(--neutral-700);margin-bottom:10px">&#10024; NL Keyword Suggestion (Claude AI)</div>
+              <div style="font-size:13px;font-weight:700;color:var(--neutral-700);margin-bottom:4px">&#10024; AI — NL Keyword Suggestion</div>
+              <div style="font-size:12px;color:var(--neutral-500);margin-bottom:12px">When configured, testers can describe a step in plain English and the AI auto-fills the keyword, locator and value.</div>
+
               <div class="field">
-                <label>Anthropic API Key <span style="font-size:11px;color:var(--neutral-500);font-weight:400">(stored server-side, never exposed to browser)</span></label>
-                <div style="display:flex;gap:8px">
-                  <input id="set-anthropic-key" class="fm-input" type="password" placeholder="sk-ant-…" style="flex:1;font-family:monospace" />
-                  <button class="btn btn-outline btn-sm" onclick="toggleApiKeyVisibility()" type="button">&#128065; Show</button>
-                </div>
-              </div>
-              <div class="field" style="margin-top:8px">
-                <label>Model <span style="font-size:11px;color:var(--neutral-500);font-weight:400">(default: claude-haiku-4-5-20251001)</span></label>
-                <select id="set-nl-model" class="fm-input" style="max-width:320px">
-                  <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5 (fastest, cheapest)</option>
-                  <option value="claude-sonnet-4-6">Claude Sonnet 4.6 (more accurate)</option>
+                <label>AI Provider</label>
+                <select id="set-nl-provider" class="fm-input" style="max-width:360px" onchange="nlProviderChanged()">
+                  <option value="">— Disabled —</option>
+                  <option value="anthropic">Anthropic (Claude Haiku / Sonnet)</option>
+                  <option value="openai">OpenAI (GPT-4o / GPT-4o mini)</option>
+                  <option value="groq">Groq (Free tier — Llama, Mixtral, Gemma)</option>
+                  <option value="gemini">Google Gemini (Free tier — Gemini Flash)</option>
+                  <option value="ollama">Ollama (Local / Air-gapped — zero cost)</option>
+                  <option value="compatible">OpenAI-Compatible (Azure OpenAI, Together.ai, Mistral…)</option>
                 </select>
               </div>
-              <div id="set-nl-status" style="font-size:12px;color:var(--neutral-500);margin-top:6px"></div>
+
+              <!-- Dynamic fields — shown/hidden by nlProviderChanged() -->
+              <div id="nl-help-text" style="font-size:12px;color:var(--neutral-500);margin:6px 0 10px 0;display:none"></div>
+
+              <div id="nl-key-field" class="field" style="display:none">
+                <label id="nl-key-label">API Key <span style="font-size:11px;color:var(--neutral-500);font-weight:400">(stored server-side only — never sent to browser)</span></label>
+                <div style="display:flex;gap:8px">
+                  <input id="set-nl-key" class="fm-input" type="password" style="flex:1;font-family:monospace" />
+                  <button class="btn btn-outline btn-sm" onclick="toggleApiKeyVisibility()" type="button">&#128065; Show</button>
+                </div>
+                <div id="nl-key-set-hint" style="font-size:11.5px;color:#4ec9b0;margin-top:4px;display:none">&#10003; Key saved — leave blank to keep existing</div>
+              </div>
+
+              <div id="nl-url-field" class="field" style="display:none">
+                <label id="nl-url-label">Endpoint Base URL</label>
+                <input id="set-nl-baseurl" class="fm-input" type="text" placeholder="http://localhost:11434" style="font-family:monospace" />
+              </div>
+
+              <div id="nl-model-field" class="field" style="display:none">
+                <label>Model</label>
+                <div style="display:flex;gap:8px;align-items:center">
+                  <select id="set-nl-model-select" class="fm-input" style="flex:1;max-width:400px" onchange="nlModelSelectChanged()"></select>
+                  <input id="set-nl-model-custom" class="fm-input" type="text" placeholder="or type custom model name" style="flex:1;max-width:260px;font-family:monospace" />
+                </div>
+              </div>
+
+              <div id="set-nl-status" style="font-size:12px;margin-top:8px"></div>
             </div>
 
             <button class="btn btn-primary" style="margin-top:16px" onclick="settingsSave()">Save Settings</button>

@@ -1136,64 +1136,58 @@ app.get('/api/runs', (req: Request, res: Response) => {
 
 // ── NL Keyword Suggestion ─────────────────────────────────────────────────────
 // POST /api/nl-suggest  { description, projectId }
-// Returns { keyword, locatorName, value, confidence, error? }
+// Returns { keyword, locatorName, value, confidence, provider, error? }
+import { nlSuggest, NlProviderConfig } from '../utils/nlProvider';
+
 app.post('/api/nl-suggest', requireAuth, async (req: Request, res: Response) => {
   const { description, projectId } = req.body as { description: string; projectId: string };
   if (!description?.trim()) { res.status(400).json({ error: 'description is required' }); return; }
 
-  // Load API key from settings
   const settings = (readAll<AppSettings & { id: string }>(SETTINGS)[0] ?? DEFAULT_SETTINGS) as any;
-  const apiKey   = (settings.anthropicApiKey || '').trim();
-  if (!apiKey) { res.status(503).json({ error: 'NL Suggestion not configured — add Anthropic API key in Admin → Settings' }); return; }
+  const provider  = (settings.nlProvider || '').trim();
 
-  const model = settings.nlModel || 'claude-haiku-4-5-20251001';
+  if (!provider) {
+    res.status(503).json({ error: 'NL Suggestion not configured — go to Admin → Settings → AI Settings to choose a provider.' });
+    return;
+  }
 
-  // Build context: keywords + project locators
-  const keywords = JSON.parse(require('fs').readFileSync(require('path').resolve('src/data/keywords.json'), 'utf-8')) as Array<{ key: string; label: string; helpLabel?: string; needsLocator?: boolean; needsValue?: boolean }>;
+  // Migrate legacy anthropicApiKey → nlApiKey
+  const apiKey  = (settings.nlApiKey || settings.anthropicApiKey || '').trim();
+  const baseUrl = (settings.nlBaseUrl || '').trim();
+  const model   = (settings.nlModel  || '').trim();
+
+  // Validate provider needs
+  if (provider !== 'ollama' && !apiKey) {
+    res.status(503).json({ error: `NL Suggestion: API key required for provider "${provider}". Configure in Admin → Settings.` });
+    return;
+  }
+  if (provider === 'ollama' && !baseUrl && !settings.nlBaseUrl) {
+    // default Ollama URL — allow fallback
+  }
+
+  // Build keyword + locator context
+  const keywords = JSON.parse(require('fs').readFileSync(require('path').resolve('src/data/keywords.json'), 'utf-8')) as Array<{ key: string; label: string; helpLabel?: string }>;
   const kwList   = keywords.map(k => `${k.key}: ${k.helpLabel || k.label}`).join('\n');
-
   const locators = projectId
     ? readAll<import('../data/types').Locator>(LOCATORS).filter(l => !l.projectId || l.projectId === projectId)
     : [];
-  const locList = locators.map(l => l.name).join(', ') || '(none configured)';
+  const locList  = locators.map(l => l.name).join(', ') || '(none configured)';
 
-  const prompt = `You are a test automation assistant. Map the tester's natural language description to a Playwright keyword test step.
-
-## Available Keywords
-${kwList}
-
-## Available Locator Names for this project
-${locList}
-
-## Task
-Given the description below, return a JSON object with exactly these fields:
-- "keyword": one of the keyword keys listed above (e.g. "CLICK", "FILL", "ASSERT TEXT")
-- "locatorName": the best matching locator name from the list above, or null if none fits
-- "value": the value to use (e.g. text to type, text to assert), or null if not needed
-- "confidence": a number 0–1 indicating how confident you are
-
-Return ONLY valid JSON. No explanation, no markdown, no code fences.
-
-## Description
-${description.trim()}`;
+  const cfg: NlProviderConfig = { provider: provider as any, apiKey, model, baseUrl };
 
   try {
-    const Anthropic = require('@anthropic-ai/sdk');
-    const client    = new Anthropic.default({ apiKey });
-    const msg = await client.messages.create({
-      model,
-      max_tokens: 256,
-      messages: [{ role: 'user', content: prompt }],
-    });
-    const raw  = (msg.content[0] as any)?.text?.trim() || '{}';
-    const json = JSON.parse(raw);
-    res.json({ keyword: json.keyword || null, locatorName: json.locatorName || null, value: json.value || null, confidence: json.confidence ?? 1 });
+    const result = await nlSuggest(cfg, description.trim(), kwList, locList);
+    res.json(result);
   } catch (err: any) {
-    const msg = err?.message || String(err);
-    // JSON parse error → try to extract from response
-    if (msg.includes('JSON')) { res.status(422).json({ error: 'Model returned non-JSON response' }); return; }
-    res.status(502).json({ error: `AI call failed: ${msg}` });
+    const msg = (err?.message || String(err)).slice(0, 300);
+    res.status(502).json({ error: `NL provider error: ${msg}` });
   }
+});
+
+// GET /api/nl-providers — returns provider metadata for Admin UI (no secrets)
+app.get('/api/nl-providers', requireAdmin, (_req, res) => {
+  const { NL_PROVIDERS } = require('../utils/nlProvider');
+  res.json(NL_PROVIDERS);
 });
 
 // ── Analytics endpoint ────────────────────────────────────────────────────────
@@ -2286,8 +2280,9 @@ app.get('/api/admin/settings', requireAdmin, (_req, res) => {
   const rows = readAll<AppSettings & { id: string }>(SETTINGS);
   const s = rows[0] ?? { id: 'global', ...DEFAULT_SETTINGS };
   // Never expose the raw API key — just tell the UI whether one is set
-  const { anthropicApiKey, ...safe } = s as any;
-  res.json({ ...safe, anthropicApiKeySet: !!(anthropicApiKey && String(anthropicApiKey).trim()) });
+  const { nlApiKey, anthropicApiKey, ...safe } = s as any;
+  const keyIsSet = !!((nlApiKey || anthropicApiKey || '').trim());
+  res.json({ ...safe, nlApiKeySet: keyIsSet });
 });
 
 app.put('/api/admin/settings', requireAdmin, (req: Request, res: Response) => {
@@ -2298,11 +2293,11 @@ app.put('/api/admin/settings', requireAdmin, (req: Request, res: Response) => {
     ...(current.notifications ?? {}),
     ...(req.body.notifications ?? {}),
   };
-  // Only overwrite anthropicApiKey if a non-empty value was sent
-  const incomingKey = (req.body.anthropicApiKey || '').trim();
-  const anthropicApiKey = incomingKey || (current as any).anthropicApiKey || '';
-  const { anthropicApiKey: _drop, ...restBody } = req.body;
-  const updated = { ...current, ...restBody, notifications, anthropicApiKey, id: 'global' };
+  // Preserve secrets — only overwrite if non-empty value sent
+  const incomingKey = (req.body.nlApiKey || req.body.anthropicApiKey || '').trim();
+  const nlApiKey    = incomingKey || (current as any).nlApiKey || (current as any).anthropicApiKey || '';
+  const { nlApiKey: _d1, anthropicApiKey: _d2, ...restBody } = req.body as any;
+  const updated = { ...current, ...restBody, notifications, nlApiKey, id: 'global' };
   writeAll(SETTINGS, [updated]);
   logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'SETTINGS_UPDATED', resourceType: 'settings', resourceId: 'global', details: null, ip: req.ip ?? null });
   res.json({ success: true });

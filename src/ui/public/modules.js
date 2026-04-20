@@ -230,6 +230,9 @@ async function auditLoad(page = 1) {
 // SETTINGS
 // ══════════════════════════════════════════════════════════════════════════════
 
+// NL provider metadata — loaded from server on settings open
+let _nlProviders = [];
+
 async function settingsLoad() {
   const res  = await fetch('/api/admin/settings');
   const data = await res.json();
@@ -237,33 +240,45 @@ async function settingsLoad() {
   document.getElementById('set-timeout').value     = data.sessionTimeoutMinutes ?? 60;
   document.getElementById('set-max-logins').value  = data.maxFailedLogins ?? 5;
   document.getElementById('set-allow-reg').checked = !!data.allowRegistration;
-  // NL settings — key is redacted on server side, just show placeholder if set
-  const keyEl = document.getElementById('set-anthropic-key');
-  if (keyEl) keyEl.placeholder = data.anthropicApiKeySet ? '●●●●●●●●●●●● (saved)' : 'sk-ant-…';
-  const modelEl = document.getElementById('set-nl-model');
-  if (modelEl && data.nlModel) modelEl.value = data.nlModel;
-  const statusEl = document.getElementById('set-nl-status');
-  if (statusEl) statusEl.textContent = data.anthropicApiKeySet ? '✓ API key is configured — NL Suggestion active' : 'No API key — NL Suggestion disabled';
-  // Load notification settings
+
+  // Load NL provider metadata then restore saved settings
+  try {
+    const pr = await fetch('/api/nl-providers');
+    if (pr.ok) _nlProviders = await pr.json();
+  } catch {}
+
+  const provSel = document.getElementById('set-nl-provider');
+  if (provSel && data.nlProvider) provSel.value = data.nlProvider;
+  nlProviderChanged(data);  // pass saved data to pre-fill fields
+
   notifLoad(data.notifications ?? {});
 }
 
 async function settingsSave() {
   modClearAlert('settings-alert');
-  const keyVal = document.getElementById('set-anthropic-key')?.value.trim();
+  const keyVal     = document.getElementById('set-nl-key')?.value.trim();
+  const customModel = document.getElementById('set-nl-model-custom')?.value.trim();
+  const selectModel = document.getElementById('set-nl-model-select')?.value || '';
   const body = {
     appName:               document.getElementById('set-app-name').value.trim(),
     sessionTimeoutMinutes: parseInt(document.getElementById('set-timeout').value) || 60,
     maxFailedLogins:       parseInt(document.getElementById('set-max-logins').value) || 5,
     allowRegistration:     document.getElementById('set-allow-reg').checked,
-    nlModel:               document.getElementById('set-nl-model')?.value || 'claude-haiku-4-5-20251001',
-    ...(keyVal ? { anthropicApiKey: keyVal } : {}),
+    nlProvider:            document.getElementById('set-nl-provider')?.value || '',
+    nlModel:               customModel || selectModel || '',
+    nlBaseUrl:             document.getElementById('set-nl-baseurl')?.value.trim() || '',
+    ...(keyVal ? { nlApiKey: keyVal } : {}),
   };
   const res  = await fetch('/api/admin/settings', { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
   const data = await res.json();
   if (res.ok) {
     modAlert('settings-alert','success','Settings saved successfully');
-    if (keyVal) { const el = document.getElementById('set-anthropic-key'); if (el) { el.value = ''; el.placeholder = '●●●●●●●●●●●● (saved)'; } }
+    if (keyVal) {
+      const el = document.getElementById('set-nl-key');
+      if (el) { el.value = ''; el.placeholder = '●●●●●●●●●●●● (saved)'; }
+      const hint = document.getElementById('nl-key-set-hint');
+      if (hint) hint.style.display = '';
+    }
     settingsLoad();
   } else {
     modAlert('settings-alert','error', data.error || 'Error saving settings');
@@ -271,9 +286,89 @@ async function settingsSave() {
 }
 
 function toggleApiKeyVisibility() {
-  const el = document.getElementById('set-anthropic-key');
+  const el = document.getElementById('set-nl-key');
   if (!el) return;
   el.type = el.type === 'password' ? 'text' : 'password';
+}
+
+function nlProviderChanged(savedData) {
+  const provId   = document.getElementById('set-nl-provider')?.value || '';
+  const prov     = _nlProviders.find(p => p.id === provId);
+
+  const helpEl   = document.getElementById('nl-help-text');
+  const keyField = document.getElementById('nl-key-field');
+  const urlField = document.getElementById('nl-url-field');
+  const mdlField = document.getElementById('nl-model-field');
+  const statusEl = document.getElementById('set-nl-status');
+
+  if (!provId || !prov) {
+    if (helpEl)   { helpEl.style.display = 'none'; helpEl.textContent = ''; }
+    if (keyField)  keyField.style.display = 'none';
+    if (urlField)  urlField.style.display = 'none';
+    if (mdlField)  mdlField.style.display = 'none';
+    if (statusEl)  { statusEl.textContent = 'NL Suggestion disabled.'; statusEl.style.color = 'var(--neutral-400)'; }
+    return;
+  }
+
+  // Help text
+  if (helpEl) { helpEl.textContent = prov.helpText || ''; helpEl.style.display = ''; }
+
+  // API Key field
+  if (keyField) {
+    keyField.style.display = prov.needsKey ? '' : 'none';
+    const keyInput = document.getElementById('set-nl-key');
+    if (keyInput && prov.keyPlaceholder) keyInput.placeholder = prov.keyPlaceholder;
+    const hint = document.getElementById('nl-key-set-hint');
+    if (hint) hint.style.display = (savedData?.nlApiKeySet && prov.needsKey) ? '' : 'none';
+  }
+
+  // Base URL field
+  if (urlField) {
+    urlField.style.display = prov.needsUrl ? '' : 'none';
+    const urlInput = document.getElementById('set-nl-baseurl');
+    if (urlInput) {
+      if (prov.urlPlaceholder) urlInput.placeholder = prov.urlPlaceholder;
+      if (savedData?.nlBaseUrl && !urlInput.value) urlInput.value = savedData.nlBaseUrl;
+    }
+  }
+
+  // Model field
+  if (mdlField) {
+    mdlField.style.display = '';
+    const sel = document.getElementById('set-nl-model-select');
+    const customInput = document.getElementById('set-nl-model-custom');
+    if (sel) {
+      sel.innerHTML = prov.modelOptions.map(o =>
+        `<option value="${escHtml(o.value)}">${escHtml(o.label)}</option>`
+      ).join('') || '<option value="">— type model name below —</option>';
+      if (savedData?.nlModel) {
+        const match = prov.modelOptions.find(o => o.value === savedData.nlModel);
+        if (match) sel.value = savedData.nlModel;
+        else if (customInput) customInput.value = savedData.nlModel;
+      } else {
+        sel.value = prov.defaultModel || (prov.modelOptions[0]?.value || '');
+      }
+    }
+  }
+
+  // Status
+  if (statusEl) {
+    const keyOk = !prov.needsKey || savedData?.nlApiKeySet;
+    const urlOk = !prov.needsUrl || (savedData?.nlBaseUrl || provId === 'ollama');
+    if (keyOk && urlOk) {
+      statusEl.textContent = `✓ ${prov.label} configured — NL Suggestion active`;
+      statusEl.style.color = '#4ec9b0';
+    } else {
+      statusEl.textContent = `Configure credentials above then Save Settings to activate.`;
+      statusEl.style.color = 'var(--neutral-400)';
+    }
+  }
+}
+
+function nlModelSelectChanged() {
+  const sel = document.getElementById('set-nl-model-select');
+  const custom = document.getElementById('set-nl-model-custom');
+  if (sel?.value && custom) custom.value = '';
 }
 
 // ── Notification Settings ─────────────────────────────────────────────────────
