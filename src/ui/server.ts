@@ -42,8 +42,8 @@ import { logger }  from '../utils/logger';
 
 // ── Auth + Data imports ────────────────────────────────────────────────────────
 import { seedDefaults }            from '../data/seed';
-import { readAll, upsert, remove, findById, writeAll, USERS, PROJECTS, LOCATORS, FUNCTIONS, AUDIT, SETTINGS, SCRIPTS, SUITES, COMMON_DATA, SCHEDULES, APIKEYS } from '../data/store';
-import { User, Project, ProjectEnvironment, Locator, CommonFunction, CommonData, AuditEntry, AppSettings, NotificationSettings, DEFAULT_SETTINGS, DEFAULT_NOTIFICATION_SETTINGS, ProjectCredential, TestScript, ScriptStep, TestSuite, ScheduledRun, HealingProposal, LicensePayload, ApiKey, BrowserName } from '../data/types';
+import { readAll, upsert, remove, findById, writeAll, USERS, PROJECTS, LOCATORS, FUNCTIONS, AUDIT, SETTINGS, SCRIPTS, SUITES, COMMON_DATA, SCHEDULES, APIKEYS, COMPONENTS } from '../data/store';
+import { User, Project, ProjectEnvironment, Locator, CommonFunction, CommonData, AuditEntry, AppSettings, NotificationSettings, DEFAULT_SETTINGS, DEFAULT_NOTIFICATION_SETTINGS, ProjectCredential, TestScript, ScriptStep, TestSuite, ScheduledRun, HealingProposal, LicensePayload, ApiKey, BrowserName, ComponentDef, Subcomponent } from '../data/types';
 import { hashPassword, verifyPassword, validatePasswordStrength } from '../auth/crypto';
 import { requireAuth, requireAdmin, requireEditor, requireAuthOrApiKey, sanitizeInput } from '../auth/middleware';
 import { logAudit }                                                from '../auth/audit';
@@ -2428,6 +2428,46 @@ app.put('/api/locators/:id', requireEditor, (req: Request, res: Response) => {
 app.delete('/api/locators/:id', requireEditor, (req: Request, res: Response) => {
   const removed = remove(LOCATORS, req.params.id);
   if (!removed) { res.status(404).json({ error: 'Not found' }); return; }
+  res.json({ success: true });
+});
+
+// ── Component / Subcomponent endpoints ───────────────────────────────────────
+
+app.get('/api/projects/:projectId/components', (req: Request, res: Response) => {
+  const { projectId } = req.params;
+  const all = readAll<ComponentDef>(COMPONENTS).filter(c => c.projectId === projectId);
+  res.json(all);
+});
+
+app.post('/api/projects/:projectId/components', requireEditor, (req: Request, res: Response) => {
+  const { projectId } = req.params;
+  const { name } = req.body as { name?: string };
+  if (!name?.trim()) { res.status(400).json({ error: 'name is required' }); return; }
+  const comp: ComponentDef = {
+    id: uuidv4(),
+    projectId,
+    name: sanitizeInput(name.trim()),
+    subcomponents: [],
+    createdAt: new Date().toISOString(),
+  };
+  upsert(COMPONENTS, comp);
+  res.json({ success: true, id: comp.id, comp });
+});
+
+app.put('/api/projects/:projectId/components/:compId', requireEditor, (req: Request, res: Response) => {
+  const comp = findById<ComponentDef>(COMPONENTS, req.params.compId);
+  if (!comp || comp.projectId !== req.params.projectId) { res.status(404).json({ error: 'Not found' }); return; }
+  const { name, subcomponents } = req.body as { name?: string; subcomponents?: Subcomponent[] };
+  if (name !== undefined) comp.name = sanitizeInput(name.trim());
+  if (subcomponents !== undefined) comp.subcomponents = subcomponents;
+  upsert(COMPONENTS, comp);
+  res.json({ success: true, comp });
+});
+
+app.delete('/api/projects/:projectId/components/:compId', requireEditor, (req: Request, res: Response) => {
+  const comp = findById<ComponentDef>(COMPONENTS, req.params.compId);
+  if (!comp || comp.projectId !== req.params.projectId) { res.status(404).json({ error: 'Not found' }); return; }
+  remove(COMPONENTS, req.params.compId);
   res.json({ success: true });
 });
 
