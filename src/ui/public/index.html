@@ -160,7 +160,10 @@
             <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">
               <input id="script-filter-title" class="filter-input" style="width:180px" placeholder="Title…" oninput="_scriptPage=0;scriptRender()" />
               <input id="script-filter-tag" class="filter-input" style="width:140px" placeholder="Tag…" oninput="_scriptPage=0;scriptRender()" />
-              <input id="script-filter-comp" class="filter-input" style="width:140px" placeholder="Component…" oninput="_scriptPage=0;scriptRender()" />
+              <input id="script-filter-comp" class="filter-input" style="width:130px" placeholder="Component…" oninput="_scriptPage=0;_scriptSubcompFilter();scriptRender()" />
+              <select id="script-filter-subcomp" class="filter-input" style="width:140px" disabled onchange="_scriptPage=0;scriptRender()">
+                <option value="">All Subcomponents</option>
+              </select>
               <button id="btn-new-script" class="btn btn-primary btn-sm" onclick="scriptOpenEditor()" disabled>+ New Script</button>
             </div>
           </div>
@@ -1251,24 +1254,47 @@
       <span id="proj-modal-title">New Project</span>
       <button class="modal-close" onclick="projCloseModal()">✕</button>
     </div>
-    <div class="modal-body">
-      <div id="proj-modal-alert" style="margin-bottom:8px"></div>
-      <div class="row-2">
-        <div class="field"><label>Project Name <span class="req">*</span></label><input id="pm-name" class="fm-input" placeholder="e.g. BSS Mediation" /></div>
-        <div class="field"><label>TC ID Prefix <span class="req">*</span></label><input id="pm-prefix" class="fm-input" placeholder="e.g. MED" style="text-transform:uppercase" maxlength="10" /></div>
+    <div class="modal-body" style="padding-top:0">
+      <div id="proj-modal-alert" style="margin-bottom:8px;padding-top:12px"></div>
+      <!-- Tab strip -->
+      <div style="display:flex;gap:0;border-bottom:2px solid var(--neutral-200);margin-bottom:14px">
+        <button id="proj-tab-details" class="proj-tab proj-tab-active" onclick="projTabSwitch('details')">Details</button>
+        <button id="proj-tab-environments" class="proj-tab" onclick="projTabSwitch('environments')">Environments</button>
+        <button id="proj-tab-components" class="proj-tab" onclick="projTabSwitch('components')">Components</button>
       </div>
-      <div class="field"><label>Description</label><input id="pm-desc" class="fm-input" placeholder="Optional description" /></div>
-      <!-- Environments -->
-      <div style="display:flex;align-items:center;margin:14px 0 8px">
-        <span style="font-size:13px;font-weight:700;color:var(--neutral-700)">Environments</span>
-        <button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="projAddEnv()">+ Add Environment</button>
+
+      <!-- Tab: Details -->
+      <div id="proj-tab-panel-details">
+        <div class="row-2">
+          <div class="field"><label>Project Name <span class="req">*</span></label><input id="pm-name" class="fm-input" placeholder="e.g. BSS Mediation" /></div>
+          <div class="field"><label>TC ID Prefix <span class="req">*</span></label><input id="pm-prefix" class="fm-input" placeholder="e.g. MED" style="text-transform:uppercase" maxlength="10" /></div>
+        </div>
+        <div class="field"><label>Description</label><input id="pm-desc" class="fm-input" placeholder="Optional description" /></div>
       </div>
-      <div style="font-size:12px;color:var(--neutral-400);margin-bottom:8px">Define one or more environments (DEV, QA, UAT, PROD) with their Base URLs. The first environment is used by default when running a suite.</div>
-      <div id="proj-envs"></div>
+
+      <!-- Tab: Environments -->
+      <div id="proj-tab-panel-environments" style="display:none">
+        <div style="display:flex;align-items:center;margin-bottom:8px">
+          <span style="font-size:13px;font-weight:700;color:var(--neutral-700)">Environments</span>
+          <button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="projAddEnv()">+ Add Environment</button>
+        </div>
+        <div style="font-size:12px;color:var(--neutral-400);margin-bottom:8px">Define one or more environments (DEV, QA, UAT, PROD) with their Base URLs. The first environment is used by default when running a suite.</div>
+        <div id="proj-envs"></div>
+      </div>
+
+      <!-- Tab: Components -->
+      <div id="proj-tab-panel-components" style="display:none">
+        <div id="proj-comp-banner" style="display:none;margin-bottom:8px"></div>
+        <div style="display:flex;align-items:center;margin-bottom:10px">
+          <span style="font-size:12px;color:var(--neutral-400)">Manage components and subcomponents for this project.</span>
+          <button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="compAddComp()">+ Add Component</button>
+        </div>
+        <div id="proj-comp-list"></div>
+      </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="projCloseModal()">Cancel</button>
-      <button class="btn btn-primary" onclick="projSave()">Save Project</button>
+      <button id="proj-save-btn" class="btn btn-primary" onclick="projSave()">Save Project</button>
     </div>
   </div>
 </div>
@@ -1509,7 +1535,15 @@
         <div class="card-title" style="font-size:14px">Script Details</div>
         <div id="script-editor-alert" style="margin-bottom:8px"></div>
         <div class="field"><label>Component</label>
-            <input id="se-component" class="fm-input" placeholder="e.g. Login, Billing, Mediation" /></div>
+          <select id="se-component" class="fm-input" onchange="seComponentChanged()">
+            <option value="">— Select Component —</option>
+          </select>
+        </div>
+        <div class="field"><label>Subcomponent</label>
+          <select id="se-subcomponent" class="fm-input" disabled>
+            <option value="">— Select Subcomponent —</option>
+          </select>
+        </div>
         <div class="field"><label>Title <span class="req">*</span></label>
           <input id="se-title" class="fm-input" placeholder="e.g. Verify Login Flow" /></div>
         <div class="field"><label>Description</label>
