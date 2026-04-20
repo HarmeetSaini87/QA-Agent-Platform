@@ -456,6 +456,33 @@ let allCommonData = [];
 let _cdPage = 0;
 const CD_PAGE_SIZE = 10;
 
+function _cdPopulateEnvDropdowns() {
+  const proj = _currentProjectData();
+  const envs = proj?.environments || [];
+  const opts = envs.map(e => `<option value="${escHtml(e.name)}" data-url="${escHtml(e.url || '')}">${escHtml(e.name)}</option>`).join('');
+
+  const filter = document.getElementById('cd-env-filter');
+  if (filter) { filter.innerHTML = '<option value="">All Environments</option>' + opts; }
+
+  const modal = document.getElementById('cd-env');
+  if (modal) { modal.innerHTML = '<option value="">— Select Environment —</option>' + opts; }
+
+  // clear URL hints on project switch
+  const fu = document.getElementById('cd-env-filter-url');
+  if (fu) fu.textContent = '';
+  const mu = document.getElementById('cd-env-url');
+  if (mu) mu.textContent = '';
+}
+
+function _cdShowEnvUrl(selectId, labelId) {
+  const sel = document.getElementById(selectId);
+  const lbl = document.getElementById(labelId);
+  if (!sel || !lbl) return;
+  const opt = sel.options[sel.selectedIndex];
+  const url = opt?.dataset?.url || '';
+  lbl.textContent = url || '';
+}
+
 async function cdLoad() {
   const tbody = document.getElementById('cd-tbody');
   if (!tbody) return;
@@ -523,7 +550,8 @@ function cdOpenModal(id = null) {
   if (!id) {
     document.getElementById('cd-name').value  = '';
     document.getElementById('cd-value').value = '';
-    document.getElementById('cd-env').value   = 'QA';
+    document.getElementById('cd-env').value   = '';
+    const mu = document.getElementById('cd-env-url'); if (mu) mu.textContent = '';
     const sensEl = document.getElementById('cd-sensitive');
     if (sensEl) sensEl.checked = false;
   }
@@ -544,6 +572,7 @@ async function cdEdit(id) {
   document.getElementById('cd-value').value = d.sensitive ? '' : d.value;
   document.getElementById('cd-value').placeholder = d.sensitive ? 'Leave blank to keep existing value' : '';
   document.getElementById('cd-env').value   = d.environment;
+  _cdShowEnvUrl('cd-env', 'cd-env-url');
   const sensEl = document.getElementById('cd-sensitive');
   if (sensEl) sensEl.checked = !!d.sensitive;
   modClearAlert('cd-modal-alert');
@@ -1370,6 +1399,7 @@ function onProjectChange() {
   suiteLoad();
   locatorLoadScoped();
   fnLoad();
+  _cdPopulateEnvDropdowns();
   cdLoad();
   histLoad();
   flakyLoad();

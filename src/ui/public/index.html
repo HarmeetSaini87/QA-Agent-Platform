@@ -439,7 +439,10 @@
           <div class="card-title">
             Common Data
             <div style="display:flex;gap:8px;align-items:center;margin-left:auto">
-              <input id="cd-env-filter" class="fm-input" style="width:160px;font-size:13px" placeholder="Filter by environment…" oninput="_cdPage=0;cdLoad()" />
+              <select id="cd-env-filter" class="fm-input" style="width:160px;font-size:13px" onchange="_cdPage=0;cdLoad();_cdShowEnvUrl('cd-env-filter','cd-env-filter-url')">
+                <option value="">All Environments</option>
+              </select>
+              <span id="cd-env-filter-url" style="font-size:11.5px;color:var(--neutral-400);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px"></span>
               <button id="btn-add-cd" class="btn btn-primary btn-sm" onclick="cdOpenModal()" disabled>+ Add Common Data</button>
             </div>
           </div>
@@ -1288,7 +1291,10 @@
         </div>
         <div class="field">
           <label>Environment <span class="req">*</span></label>
-          <input id="cd-env" class="fm-input" placeholder="e.g. QA, DEV, UAT" />
+          <select id="cd-env" class="fm-input" onchange="_cdShowEnvUrl('cd-env','cd-env-url')">
+            <option value="">— Select Environment —</option>
+          </select>
+          <span id="cd-env-url" style="font-size:11.5px;color:var(--neutral-400);margin-top:3px;display:block;word-break:break-all"></span>
         </div>
       </div>
       <div class="field">
