@@ -188,6 +188,7 @@ export interface TestScript {
   projectId:   string;
   tcId:        string;          // auto-generated e.g. "MED-01"
   component:   string;          // categorization e.g. "Login", "Billing"
+  subcomponent?: string;        // optional; matches Subcomponent.name at save time
   title:       string;
   description: string;
   tags:        string[];
@@ -197,6 +198,21 @@ export interface TestScript {
   createdAt:   string;
   modifiedBy:  string;
   modifiedAt:  string;
+}
+
+// ── Component / Subcomponent ──────────────────────────────────────────────────
+
+export interface Subcomponent {
+  id:   string;
+  name: string;
+}
+
+export interface ComponentDef {
+  id:            string;
+  projectId:     string;
+  name:          string;
+  subcomponents: Subcomponent[];
+  createdAt:     string;
 }
 
 // ── Common Data ───────────────────────────────────────────────────────────────

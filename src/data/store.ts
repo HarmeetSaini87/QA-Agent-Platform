@@ -63,3 +63,4 @@ export const SUITES      = 'suites';
 export const COMMON_DATA = 'common_data';
 export const SCHEDULES   = 'schedules';
 export const APIKEYS     = 'apikeys';
+export const COMPONENTS  = 'components';
