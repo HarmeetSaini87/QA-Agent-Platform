@@ -1169,8 +1169,11 @@ app.post('/api/nl-suggest', requireAuth, async (req: Request, res: Response) => 
   }
 
   // Build keyword + locator context
-  const keywords = JSON.parse(require('fs').readFileSync(require('path').resolve('src/data/keywords.json'), 'utf-8')) as Array<{ key: string; label: string; helpLabel?: string }>;
-  const kwList   = keywords.map(k => `${k.key}: ${k.helpLabel || k.label}`).join('\n');
+  const kwData   = JSON.parse(require('fs').readFileSync(require('path').resolve('src/data/keywords.json'), 'utf-8'));
+  const kwArray: Array<{ key: string; label: string; helpLabel?: string }> = Array.isArray(kwData)
+    ? kwData
+    : (kwData.categories || []).flatMap((cat: any) => Array.isArray(cat.keywords) ? cat.keywords : []);
+  const kwList   = kwArray.map(k => `${k.key}: ${k.helpLabel || k.label}`).join('\n');
   const locators = projectId
     ? readAll<import('../data/types').Locator>(LOCATORS).filter(l => !l.projectId || l.projectId === projectId)
     : [];
@@ -2425,10 +2428,73 @@ app.put('/api/locators/:id', requireEditor, (req: Request, res: Response) => {
   res.json({ success: true });
 });
 
+function cleanupOrphanedLocatorReferences(locatorIds: string[]) {
+  if (!locatorIds.length) return;
+  
+  // 1. Scripts
+  const scripts = readAll<TestScript>(SCRIPTS);
+  let scriptsChanged = false;
+  scripts.forEach(script => {
+    (script.steps || []).forEach(step => {
+      if (step.locatorId && locatorIds.includes(step.locatorId)) {
+        step.locatorId = null;
+        step.locator = null;
+        step.locatorType = "";
+        scriptsChanged = true;
+      }
+    });
+  });
+  if (scriptsChanged) writeAll(SCRIPTS, scripts);
+
+  // 2. Functions
+  // We need the names of the locators being deleted for function step matching
+  const allLocs = readAll<Locator>(LOCATORS);
+  const locsBeingDeleted = allLocs.filter(l => locatorIds.includes(l.id));
+  const deletedNames = new Set(locsBeingDeleted.map(l => l.name.trim().toLowerCase()));
+  
+  const functions = readAll<CommonFunction>(FUNCTIONS);
+  let functionsChanged = false;
+  functions.forEach(fn => {
+    (fn.steps || []).forEach(step => {
+      if (step.locatorName && deletedNames.has(step.locatorName.trim().toLowerCase())) {
+        step.locatorName = null;
+        step.selector = null;
+        step.locatorType = "";
+        functionsChanged = true;
+      }
+    });
+  });
+  if (functionsChanged) writeAll(FUNCTIONS, functions);
+}
+
 app.delete('/api/locators/:id', requireEditor, (req: Request, res: Response) => {
-  const removed = remove(LOCATORS, req.params.id);
+  const id = req.params.id;
+  cleanupOrphanedLocatorReferences([id]);
+  const removed = remove(LOCATORS, id);
   if (!removed) { res.status(404).json({ error: 'Not found' }); return; }
   res.json({ success: true });
+});
+
+app.post('/api/locators/bulk-delete', requireEditor, (req: Request, res: Response) => {
+  const { ids } = req.body as { ids?: string[] };
+  if (!ids || !Array.isArray(ids)) { res.status(400).json({ error: 'ids array is required' }); return; }
+  
+  cleanupOrphanedLocatorReferences(ids);
+  
+  let count = 0;
+  ids.forEach(id => {
+    if (remove(LOCATORS, id)) count++;
+  });
+  logAudit({
+    userId: req.session.userId!,
+    username: req.session.username!,
+    action: 'LOCATORS_BULK_DELETE',
+    resourceType: 'locator',
+    resourceId: 'multiple',
+    details: `Deleted ${count} locators`,
+    ip: req.ip ?? null
+  });
+  res.json({ success: true, count });
 });
 
 // ── Component / Subcomponent endpoints ───────────────────────────────────────
@@ -3010,6 +3076,7 @@ app.post('/api/scripts', requireEditor, (req: Request, res: Response) => {
     id: uuidv4(), projectId: body.projectId,
     tcId,
     component:   sanitizeInput(body.component ?? ''),
+    subcomponent: body.subcomponent ? sanitizeInput(body.subcomponent) : undefined,
     title:       sanitizeInput(body.title),
     description: sanitizeInput(body.description ?? ''), tags: body.tags ?? [],
     priority: body.priority ?? 'medium', steps: resolvedSteps,
@@ -3032,6 +3099,7 @@ app.put('/api/scripts/:id', requireEditor, (req: Request, res: Response) => {
   if (body.title)                      script.title       = sanitizeInput(body.title);
   if (body.description !== undefined)  script.description = sanitizeInput(body.description);
   if (body.component   !== undefined)  script.component   = sanitizeInput(body.component);
+  if (body.subcomponent!== undefined)  script.subcomponent= sanitizeInput(body.subcomponent);
   if (body.tags)                       script.tags        = body.tags;
   if (body.priority)                   script.priority    = body.priority;
   if (body.steps)                      script.steps       = finaliseDraftLocators(body.steps, script.projectId ?? '');
@@ -3244,6 +3312,13 @@ app.post('/api/suites/:id/run', requireAuthOrApiKey, requireEditor, async (req: 
   fs.mkdirSync(path.dirname(planFile), { recursive: true });
   fs.writeFileSync(planFile, JSON.stringify(planMeta, null, 2));
 
+  // Browsers: prefer request body (execution page selection) over suite default
+  const VB: BrowserName[] = ['chromium', 'firefox', 'webkit'];
+  const reqBrowsers = Array.isArray(req.body.browsers)
+    ? req.body.browsers.filter((b: string): b is BrowserName => VB.includes(b as BrowserName))
+    : [];
+  const runBrowsers: BrowserName[] = reqBrowsers.length > 0 ? reqBrowsers : (suite.browsers?.length ? suite.browsers : ['chromium']);
+
   const queuePosition = runQueue.length;
   const record: RunRecord = {
     runId, planPath: planFile, planId, startedAt, specPath,
@@ -3256,14 +3331,14 @@ app.post('/api/suites/:id/run', requireAuthOrApiKey, requireEditor, async (req: 
     environmentId:   environment?.id   || '',
     environmentName: environment?.name || '',
     executedBy:      req.session.username ?? 'unknown',
-    browsers:        suite.browsers ?? ['chromium'],
+    browsers:        runBrowsers,
   };
   runs.set(runId, record);
 
   const queuePos = activeRunCount >= MAX_CONCURRENT_RUNS ? runQueue.length + 1 : 0;
 
   // Enqueue — starts immediately if slot available, otherwise waits
-  enqueueRun(() => spawnRunWithSpec(record, specPath, req.body.headed !== false, suite.retries ?? 0, suite.browsers ?? ['chromium']));
+  enqueueRun(() => spawnRunWithSpec(record, specPath, req.body.headed !== false, suite.retries ?? 0, runBrowsers));
 
   logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'SUITE_RUN', resourceType: 'suite', resourceId: suite.id, details: suite.name, ip: req.ip ?? null });
   res.json({ runId, startedAt, queued: queuePos > 0, queuePosition: queuePos });
@@ -3410,7 +3485,7 @@ app.post('/api/debug/start', requireAuth, (req: Request, res: Response) => {
   const gateFile    = path.join(ssDir, 'gate.json');
   const errorFile   = path.join(ssDir, 'error.json');
 
-  const proc = cp.spawn('npx', ['playwright', 'test', '--headed', '--reporter=list', relSpec], {
+  const proc = cp.spawn('npx', ['playwright', 'test', '--headed', '--reporter=list', '--project=chromium', relSpec], {
     cwd:   path.resolve('.'),
     env:   { ...process.env },
     shell: true,
