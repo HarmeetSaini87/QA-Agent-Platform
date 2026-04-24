@@ -1803,6 +1803,7 @@ export function generateDebugSpec(input: DebugCodegenInput): string {
   lines.push(`  test.setTimeout(30 * 60 * 1000); // 30-min timeout for interactive debug`);
   lines.push(`  test('${testName}', async ({ page }) => {`);
   lines.push(`    const __sessionVars: Record<string, string> = {}; // Variable Store`);
+  lines.push(`    const __globalVars: Record<string, string> = {}; // Global Variable Store`);
   lines.push(``);
 
   // Auto-navigate first
