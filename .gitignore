@@ -39,6 +39,13 @@ results/*.xml
 # Local IDE / Claude settings
 .claude/
 
+# Local AI tool configs — not product code
+.kiro/
+.mcp.json
+.opencode.json
+.superpowers/
+docs/superpowers/
+
 # Temp folders
 New folder/
 
@@ -59,3 +66,5 @@ logs/
 
 # User-uploaded test files (FILE CHOOSER uploads)
 test-files/
+# Added by code-review-graph
+.code-review-graph/

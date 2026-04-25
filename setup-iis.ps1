@@ -3,12 +3,19 @@
 # Run this script ONCE as Administrator
 # ============================================================
 
-$siteName    = "qa-launchpad"
-$hostName    = "qa-launchpad.local"
+# --- Auto-Elevate: re-launch as Admin if not already elevated ---
+if (-NOT ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]"Administrator")) {
+    Write-Warning "Not running as Administrator — relaunching with elevation..."
+    Start-Process PowerShell "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`"" -Verb RunAs
+    exit
+}
+
+$siteName    = "qa-launchpad-dev"
+$hostName    = "qa-launchpad.test"
 $serverIP    = "10.30.155.212"
-$nodePort    = 3000
-$siteRoot    = "C:\inetpub\qa-launchpad"
-$appPoolName = "qa-launchpad-pool"
+$nodePort    = 3003
+$siteRoot    = "C:\inetpub\qa-launchpad-dev"
+$appPoolName = "qa-launchpad-dev"
 
 Write-Host "`n[1/6] Enabling ARR Proxy at server level..." -ForegroundColor Cyan
 & "$env:windir\system32\inetsrv\appcmd.exe" set config `
@@ -101,17 +108,17 @@ if ($existing) {
 }
 
 Write-Host "`n[6/6] Setting up pm2 to keep Node.js running..." -ForegroundColor Cyan
-$projectPath = "E:\AI Agent\qa-agent-platform"
+$projectPath = "E:\AI Agent\qa-agent-platform-dev"
 Push-Location $projectPath
 
 # Stop any existing pm2 process for this app
-& npm exec -y pm2 -- delete qa-launchpad 2>$null
+& npm exec -y pm2 -- delete qa-launchpad-dev 2>$null
 
 # Start with pm2
-& npm exec -y pm2 -- start npm --name "qa-launchpad" -- run ui
+& npm exec -y pm2 -- start npm --name "qa-launchpad-dev" -- run ui
 & npm exec -y pm2 -- save
 
-Write-Host "     pm2 process 'qa-launchpad' registered." -ForegroundColor Green
+Write-Host "     pm2 process 'qa-launchpad-dev' registered." -ForegroundColor Green
 Pop-Location
 
 Write-Host "`n============================================================" -ForegroundColor Cyan

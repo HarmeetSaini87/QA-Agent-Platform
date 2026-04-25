@@ -347,6 +347,78 @@
           }
         },
         {
+          "key": "ASSERT UNCHECKED", "label": "Assert Unchecked", "needsLocator": true, "needsValue": false, "valueHint": "",
+          "helpLabel": "Verifies a checkbox is in the unchecked (unticked) state",
+          "tooltip": {
+            "what": "Confirms the checkbox is NOT ticked. Fails if it is currently checked.",
+            "example": "Locator: input[name=\"SendMarketing\"]\nLocator: #chk-notifications",
+            "tip": "Use after Uncheck to verify the action worked, or to assert a box is unticked by default on a fresh form."
+          }
+        },
+        {
+          "key": "ASSERT EDITABLE", "label": "Assert Editable", "needsLocator": true, "needsValue": false, "valueHint": "",
+          "helpLabel": "Verifies an input or textarea is editable (not read-only or disabled)",
+          "tooltip": {
+            "what": "Confirms the element accepts user input — it is neither disabled nor read-only.",
+            "example": "Locator: input[name=\"Email\"]\nLocator: textarea#notes",
+            "tip": "Use to confirm that a field has been unlocked after a previous action — e.g. clicking Edit enables the Name field."
+          }
+        },
+        {
+          "key": "ASSERT READONLY", "label": "Assert Read-Only", "needsLocator": true, "needsValue": false, "valueHint": "",
+          "helpLabel": "Verifies an input field is read-only (cannot be typed into)",
+          "tooltip": {
+            "what": "Confirms the element has the readonly attribute set — the user can see the value but cannot change it.",
+            "example": "Locator: input[name=\"PatientId\"]\nLocator: #generated-ref",
+            "tip": "Different from Assert Disabled — a read-only field is still focusable and its value is submitted with the form."
+          }
+        },
+        {
+          "key": "ASSERT EMPTY", "label": "Assert Empty", "needsLocator": true, "needsValue": false, "valueHint": "",
+          "helpLabel": "Verifies an input or element contains no text / is empty",
+          "tooltip": {
+            "what": "Confirms the target element has no text content and no value. Works on inputs, textareas and container elements.",
+            "example": "Locator: input[name=\"Search\"]\nLocator: #results-panel",
+            "tip": "Use after a Clear action or on initial page load to confirm fields start empty."
+          }
+        },
+        {
+          "key": "ASSERT FOCUSED", "label": "Assert Focused", "needsLocator": true, "needsValue": false, "valueHint": "",
+          "helpLabel": "Verifies the element currently has keyboard focus",
+          "tooltip": {
+            "what": "Confirms the element is the currently focused element on the page (i.e. document.activeElement).",
+            "example": "Locator: input[name=\"Username\"]\nLocator: #search-box",
+            "tip": "Use to verify auto-focus behaviour on page load or after Tab key navigation tests."
+          }
+        },
+        {
+          "key": "ASSERT CLASS", "label": "Assert Class", "needsLocator": true, "needsValue": true, "valueHint": "Expected CSS class name (e.g. active)",
+          "helpLabel": "Verifies an element has the specified CSS class applied",
+          "tooltip": {
+            "what": "Checks that the element's class list contains the given CSS class name. Partial match — the element may have additional classes.",
+            "example": "Locator: .nav-item[data-page=\"home\"]  Value: active\nLocator: #status-badge               Value: error",
+            "tip": "Use to assert UI state driven by CSS — e.g. confirm a tab is active, a badge shows error colour, or a row is selected."
+          }
+        },
+        {
+          "key": "ASSERT CSS", "label": "Assert CSS", "needsLocator": true, "needsValue": true, "valueHint": "property:value (e.g. color:rgb(255,0,0))",
+          "helpLabel": "Verifies a computed CSS property on an element has the expected value",
+          "tooltip": {
+            "what": "Reads the element's computed style and checks that the given CSS property matches the expected value. Format: property:value separated by a colon.",
+            "example": "Locator: #error-message  Value: color:rgb(255, 0, 0)\nLocator: .hero-banner    Value: display:flex",
+            "tip": "Use computed CSS values (as returned by getComputedStyle), not shorthand. Colours must be in rgb() format. Check DevTools Computed tab for exact values."
+          }
+        },
+        {
+          "key": "ASSERT RESPONSE OK", "label": "Assert Response OK", "needsLocator": false, "needsValue": false, "valueHint": "",
+          "helpLabel": "Verifies the last intercepted HTTP response returned a 2xx status",
+          "tooltip": {
+            "what": "Asserts that the most recently intercepted network response had a successful HTTP status code (200–299). Requires an active network intercept set up earlier in the test.",
+            "example": "No locator or value needed.\nUse after: API INTERCEPT → click Submit → ASSERT RESPONSE OK",
+            "tip": "Requires a prior API INTERCEPT step in the same test. Use ASSERT API BODY to also validate the response payload."
+          }
+        },
+        {
           "key": "ASSERT ENABLED", "label": "Assert Enabled", "needsLocator": true, "needsValue": false, "valueHint": "",
           "helpLabel": "Verifies a button or input is enabled (clickable)",
           "tooltip": {
@@ -874,15 +946,17 @@
     }
   ],
   "locatorTypes": [
-    { "value": "css",     "label": "CSS Selector" },
-    { "value": "xpath",   "label": "XPath" },
-    { "value": "id",      "label": "ID" },
-    { "value": "name",    "label": "Name" },
-    { "value": "text",    "label": "Text" },
-    { "value": "testid",  "label": "data-testid" },
-    { "value": "role",    "label": "ARIA Role" },
-    { "value": "nth",     "label": "Nth Element (index)" },
-    { "value": "last",    "label": "Last Element" }
+    { "value": "css",         "label": "CSS Selector" },
+    { "value": "xpath",       "label": "XPath" },
+    { "value": "id",          "label": "ID" },
+    { "value": "name",        "label": "Name" },
+    { "value": "text",        "label": "Text" },
+    { "value": "testid",      "label": "data-testid" },
+    { "value": "role",        "label": "ARIA Role" },
+    { "value": "label",       "label": "Label" },
+    { "value": "placeholder", "label": "Placeholder" },
+    { "value": "nth",         "label": "Nth Element (index)" },
+    { "value": "last",        "label": "Last Element" }
   ],
   "dynamicTokens": [
     { "token": "{{random.text(8)}}",       "label": "Random Text (8 chars)" },

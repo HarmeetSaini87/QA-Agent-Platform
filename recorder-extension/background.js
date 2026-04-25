@@ -135,6 +135,37 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       break;
     }
 
+    case 'INJECT_URL_PATCHER': {
+      // Hook pushState/replaceState in the PAGE's main world so SPA navigations
+      // fire a __qa_urlchange DOM event that the isolated content script can catch.
+      const tabId   = sender.tab?.id;
+      const frameId = sender.frameId ?? 0;
+      if (!tabId) break;
+      chrome.scripting.executeScript({
+        target: { tabId, frameIds: [frameId] },
+        world:  'MAIN',
+        func: () => {
+          if (window.__qaUrlPatched) return;
+          window.__qaUrlPatched = true;
+          const _fire = () =>
+            document.dispatchEvent(new CustomEvent('__qa_urlchange'));
+          const _push    = history.pushState.bind(history);
+          const _replace = history.replaceState.bind(history);
+          history.pushState = function (...args) {
+            const r = _push(...args);
+            _fire();
+            return r;
+          };
+          history.replaceState = function (...args) {
+            const r = _replace(...args);
+            _fire();
+            return r;
+          };
+        },
+      }).catch(err => console.warn('[QA Recorder] URL patcher injection failed:', err.message));
+      break;
+    }
+
     case 'GET_CURRENT_TAB':
       chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
         sendResponse({ tab: tabs[0] || null });

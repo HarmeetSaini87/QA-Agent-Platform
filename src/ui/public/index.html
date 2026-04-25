@@ -94,6 +94,13 @@
         <span>Visual Baselines</span>
       </div>
 
+      <div class="nav-item" data-tab="locator-health" id="nav-locator-health">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+        </svg>
+        <span>Locator Health</span>
+      </div>
+
       <div class="nav-section-label admin-only" id="admin-section-label">Admin</div>
       <div class="nav-item admin-only" data-tab="projects" id="nav-projects">
         <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -160,10 +167,8 @@
             <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">
               <input id="script-filter-title" class="filter-input" style="width:180px" placeholder="Title…" oninput="_scriptPage=0;scriptRender()" />
               <input id="script-filter-tag" class="filter-input" style="width:140px" placeholder="Tag…" oninput="_scriptPage=0;scriptRender()" />
-              <input id="script-filter-comp" class="filter-input" style="width:130px" placeholder="Component…" oninput="_scriptPage=0;_scriptSubcompFilter();scriptRender()" />
-              <select id="script-filter-subcomp" class="filter-input" style="width:140px" disabled onchange="_scriptPage=0;scriptRender()">
-                <option value="">All Subcomponents</option>
-              </select>
+              <input id="script-filter-comp" class="filter-input" style="width:130px" placeholder="Component…" oninput="_scriptPage=0;scriptRender()" />
+              <input id="script-filter-subcomp" class="filter-input" style="width:140px" placeholder="Subcomponent…" oninput="_scriptPage=0;scriptRender()" />
               <button id="btn-new-script" class="btn btn-primary btn-sm" onclick="scriptOpenEditor()" disabled>+ New Script</button>
             </div>
           </div>
@@ -210,6 +215,33 @@
                 <select id="exec-env-sel" class="fm-input" onchange="_execUpdateRunBtn()">
                   <option value="">— Select Environment —</option>
                 </select>
+              </div>
+            </div>
+
+            <!-- Target Browsers -->
+            <div class="field" style="margin-bottom:14px">
+              <label style="display:flex;align-items:center;gap:6px">
+                Target Browsers
+                <span class="info-icon" tabindex="0"
+                  data-tooltip="Select which browsers to run this suite against.&#10;&#10;Chromium — Chrome/Edge engine (default, fastest)&#10;Firefox — Gecko engine&#10;WebKit — Safari engine&#10;&#10;Each selected browser runs every test independently. Results are grouped by browser in the execution report.&#10;&#10;Tip: Use Chromium for day-to-day runs. Add Firefox &amp; WebKit for cross-browser regression before releases.">?</span>
+              </label>
+              <div style="display:flex;gap:20px;margin-top:4px">
+                <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                  <input type="checkbox" id="exec-browser-chromium" value="chromium" checked style="width:15px;height:15px" onchange="_execCheckBrowserConstraint()" />
+                  <span style="display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;background:#4285F4;color:#fff">● Chrome</span>
+                </label>
+                <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                  <input type="checkbox" id="exec-browser-firefox" value="firefox" style="width:15px;height:15px" onchange="_execCheckBrowserConstraint()" />
+                  <span style="display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;background:#E66000;color:#fff">● Firefox</span>
+                </label>
+                <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                  <input type="checkbox" id="exec-browser-webkit" value="webkit" style="width:15px;height:15px" onchange="_execCheckBrowserConstraint()" />
+                  <span style="display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;background:#006CFF;color:#fff">● Safari</span>
+                </label>
+              </div>
+              <div style="font-size:11.5px;color:var(--neutral-400);margin-top:4px">At least one browser must be selected. Defaults to Chromium.</div>
+              <div id="exec-browser-warning" style="display:none;margin-top:8px;padding:9px 13px;border-radius:6px;background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;font-size:12.5px;line-height:1.5">
+                ⚠️ <strong>Multi-browser execution is not supported</strong> when "Value Source" is "Test Data (Static)". Please select only one browser.
               </div>
             </div>
 
@@ -326,26 +358,34 @@
         <div style="display:flex;gap:0;border-bottom:2px solid var(--neutral-200);margin-bottom:16px">
           <button id="loc-subtab-repo" class="loc-subtab loc-subtab-active" onclick="locSubTab('repo')">Locator Repository</button>
           <button id="loc-subtab-proposals" class="loc-subtab" onclick="locSubTab('proposals')">Healing Proposals <span id="loc-proposal-count" style="display:none;background:#7c3aed;color:#fff;border-radius:10px;padding:0 6px;font-size:11px;margin-left:4px"></span></button>
+          <button id="loc-subtab-heallog" class="loc-subtab" onclick="locSubTab('heallog')">Healing Report <span id="loc-heallog-count" style="display:none;background:#e66000;color:#fff;border-radius:10px;padding:0 6px;font-size:11px;margin-left:4px"></span></button>
         </div>
 
         <!-- Sub-panel: Locator Repository -->
         <div id="loc-subpanel-repo" class="card">
           <div class="card-title">
             Locator Repository
-            <button id="btn-add-locator" class="btn btn-primary btn-sm" onclick="locatorOpenModal()" style="margin-left:auto" disabled>+ Add Locator</button>
+            <div style="margin-left:auto; display:flex; gap:8px">
+              <button id="loc-btn-delete-selected" class="btn btn-danger btn-sm" onclick="locatorDeleteSelected()" style="display:none">Delete Selected</button>
+              <button id="btn-add-locator" class="btn btn-primary btn-sm" onclick="locatorOpenModal()">+ Add Locator</button>
+            </div>
           </div>
           <!-- Filters -->
           <div class="row-2" style="margin-bottom:12px;gap:8px;flex-wrap:wrap">
             <input id="loc-filter-name" class="filter-input" placeholder="Filter by name..." oninput="_locPage=0;locatorRender()" />
-            <input id="loc-filter-module" class="filter-input" placeholder="Filter by page/module..." oninput="_locPage=0;locatorRender()" />
-            <select id="loc-filter-type" class="filter-input" style="max-width:140px" onchange="_locPage=0;locatorRender()">
+            <select id="loc-filter-type" class="filter-input" style="max-width:160px" onchange="_locPage=0;locatorRender()">
               <option value="">All types</option>
-              <option value="css">CSS</option>
+              <option value="css">CSS Selector</option>
               <option value="xpath">XPath</option>
-              <option value="testid">testid</option>
               <option value="id">ID</option>
-              <option value="name">name</option>
-              <option value="text">text</option>
+              <option value="name">Name</option>
+              <option value="text">Text</option>
+              <option value="testid">data-testid</option>
+              <option value="role">ARIA Role</option>
+              <option value="label">Label</option>
+              <option value="placeholder">Placeholder</option>
+              <option value="nth">Nth Element (index)</option>
+              <option value="last">Last Element</option>
             </select>
           </div>
           <div id="loc-table-wrap" class="lt-wrap">
@@ -353,10 +393,10 @@
               <table class="data-table lt-fixed" id="loc-table">
                 <thead>
                   <tr>
+                    <th style="width:40px;text-align:center"><input type="checkbox" id="loc-select-all" onclick="locatorSelectAll(this)"></th>
                     <th style="min-width:160px">Name</th>
                     <th style="min-width:240px">Selector</th>
                     <th style="min-width:80px">Type</th>
-                    <th style="min-width:150px">Page / Module</th>
                     <th style="min-width:180px">Description</th>
                     <th style="min-width:100px"></th>
                   </tr>
@@ -374,12 +414,13 @@
             Healing Proposals
             <span style="font-size:12px;color:var(--neutral-400);margin-left:8px;font-weight:400">Auto-generated by T3 Similarity Engine</span>
             <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
-              <select id="loc-prop-filter" class="filter-input" style="max-width:160px" onchange="proposalRender()">
+              <select id="loc-prop-filter" class="filter-input" style="max-width:180px" onchange="proposalRender()">
                 <option value="">All statuses</option>
-                <option value="pending-review">Pending Review</option>
-                <option value="auto-applied">Auto Applied</option>
-                <option value="approved">Approved</option>
-                <option value="rejected">Rejected</option>
+                <option value="pending-review">⏳ Pending Review</option>
+                <option value="auto-applied">⚡ Auto Applied</option>
+                <option value="approved">✓ Approved (Permanent)</option>
+                <option value="approved-temporary">⬡ Approved (Temporary)</option>
+                <option value="rejected">✗ Rejected</option>
               </select>
               <button class="btn btn-outline btn-sm" onclick="proposalLoad()">&#8635; Refresh</button>
             </div>
@@ -400,7 +441,50 @@
               <tbody id="prop-tbody"></tbody>
             </table>
           </div>
-        </div>
+        </div><!-- /loc-subpanel-proposals -->
+
+        <!-- Sub-panel: Healing Report -->
+        <div id="loc-subpanel-heallog" class="card" style="display:none">
+          <div class="card-title">
+            Healing Report
+            <span style="font-size:12px;color:var(--neutral-400);margin-left:8px;font-weight:400">All auto-healed steps across every run</span>
+            <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
+              <select id="heallog-filter-tier" class="filter-input" style="max-width:120px" onchange="healLogRender()">
+                <option value="">All tiers</option>
+                <option value="T2">T2 — Fallback</option>
+                <option value="T3">T3 — Similarity</option>
+                <option value="T4">T4 — Approved</option>
+              </select>
+              <button class="btn btn-outline btn-sm" onclick="healLogLoad()">&#8635; Refresh</button>
+            </div>
+          </div>
+          <div class="lt-body-wrap" style="max-height:520px;overflow-y:auto">
+            <table class="data-table" id="heallog-table">
+              <thead>
+                <tr>
+                  <th style="min-width:40px">#</th>
+                  <th style="min-width:120px">Run ID</th>
+                  <th style="min-width:130px">Suite</th>
+                  <th style="min-width:80px">TC ID</th>
+                  <th style="min-width:60px">Step</th>
+                  <th style="min-width:120px">Locator</th>
+                  <th style="min-width:200px">Before (failed)</th>
+                  <th style="min-width:200px">After (healed)</th>
+                  <th style="min-width:60px">Tier</th>
+                  <th style="min-width:60px">Conf.</th>
+                  <th style="min-width:120px">Healed At</th>
+                </tr>
+              </thead>
+              <tbody id="heallog-tbody">
+                <tr id="heallog-empty-row">
+                  <td colspan="11" style="text-align:center;color:var(--neutral-400);padding:32px;font-size:13px">
+                    No healing events recorded yet. Events appear here after a test run where a primary locator failed and a fallback was used.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div><!-- /loc-subpanel-heallog -->
       </div><!-- /panel-locators -->
 
       <!-- ── Tab: Common Functions ──────────────────────────────────────── -->
@@ -727,6 +811,32 @@
         <!-- Baseline grid -->
         <div id="vr-grid" style="display:none;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px"></div>
       </div><!-- /panel-visual -->
+
+      <!-- ── Tab: Locator Health ───────────────────────────────────────── -->
+      <div class="panel" id="panel-locator-health">
+        <div class="card">
+          <div class="card-title">
+            Locator Health Report
+            <button class="btn btn-sm" style="margin-left:auto" onclick="locatorHealthLoad()">↻ Refresh</button>
+          </div>
+          <div id="locator-health-summary" style="display:flex;gap:24px;margin-bottom:16px;flex-wrap:wrap;"></div>
+          <div id="locator-health-empty" style="display:none;color:var(--text-muted);padding:24px 0;text-align:center;">No healing events recorded for this project.</div>
+          <table class="data-table" id="locator-health-table" style="display:none;">
+            <thead>
+              <tr>
+                <th>Locator</th>
+                <th>Selector</th>
+                <th style="text-align:center">Heal Count</th>
+                <th style="text-align:center">Avg Confidence</th>
+                <th>Last Healed</th>
+                <th>Method</th>
+                <th>Old → New</th>
+              </tr>
+            </thead>
+            <tbody id="locator-health-tbody"></tbody>
+          </table>
+        </div>
+      </div><!-- /panel-locator-health -->
 
       <!-- ── Tab: Projects ──────────────────────────────────────────────── -->
       <div class="panel admin-only" id="panel-projects">
@@ -1092,14 +1202,42 @@
         <div class="field">
           <label>Selector Type</label>
           <select id="loc-type">
-            <option value="css">CSS</option><option value="xpath">XPath</option>
-            <option value="id">ID</option><option value="name">Name</option>
-            <option value="text">Text</option><option value="testid">data-testid</option>
+            <option value="css">CSS Selector</option>
+            <option value="xpath">XPath</option>
+            <option value="id">ID</option>
+            <option value="name">Name</option>
+            <option value="text">Text</option>
+            <option value="testid">data-testid</option>
+            <option value="role">ARIA Role</option>
+            <option value="label">Label</option>
+            <option value="placeholder">Placeholder</option>
+            <option value="nth">Nth Element (index)</option>
+            <option value="last">Last Element</option>
           </select>
         </div>
         <div class="field"><label>Page / Module</label><input id="loc-page" placeholder="e.g. Gateway Type Config" /></div>
       </div>
       <div class="field"><label>Description</label><input id="loc-desc" placeholder="Optional description" /></div>
+
+      <!-- Fallback locators — only shown when alternatives exist (recorder v4+) -->
+      <div id="loc-alts-section" style="display:none;margin-top:14px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+          <label style="margin:0;font-size:12px;font-weight:600;color:var(--neutral-600)">Fallback Locators</label>
+          <span style="font-size:11px;color:var(--neutral-400)">Tried in order if primary fails · click Set Primary to swap</span>
+        </div>
+        <table style="width:100%;border-collapse:collapse;font-size:12px">
+          <thead>
+            <tr style="background:var(--neutral-100)">
+              <th style="padding:4px 6px;text-align:left;color:var(--neutral-500);font-weight:600;width:28px">#</th>
+              <th style="padding:4px 6px;text-align:left;color:var(--neutral-500);font-weight:600">Selector</th>
+              <th style="padding:4px 6px;text-align:left;color:var(--neutral-500);font-weight:600;width:90px">Type</th>
+              <th style="padding:4px 6px;text-align:left;color:var(--neutral-500);font-weight:600;width:80px">Confidence</th>
+              <th style="padding:4px 6px;width:90px"></th>
+            </tr>
+          </thead>
+          <tbody id="loc-alts-tbody"></tbody>
+        </table>
+      </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="locatorCloseModal()">Cancel</button>
@@ -1648,12 +1786,6 @@
           <input id="sm-desc" class="fm-input" placeholder="Optional description" /></div>
       </div>
       <div class="field">
-        <label>Execution Environment</label>
-        <select id="sm-env" class="fm-input">
-          <option value="">— Use project default (first environment) —</option>
-        </select>
-      </div>
-      <div class="field">
         <label style="display:flex;align-items:center;gap:6px">
           Auto-Retry Failed Tests
           <span class="info-icon" tabindex="0"
@@ -1664,29 +1796,6 @@
           <option value="1">1 — Retry once on failure</option>
           <option value="2">2 — Retry twice on failure</option>
         </select>
-      </div>
-      <!-- ── Browser Selection ────────────────────────────────────────── -->
-      <div class="field">
-        <label style="display:flex;align-items:center;gap:6px">
-          Target Browsers
-          <span class="info-icon" tabindex="0"
-            data-tooltip="Select which browsers to run this suite against.&#10;&#10;Chromium — Chrome/Edge engine (default, fastest)&#10;Firefox — Gecko engine&#10;WebKit — Safari engine&#10;&#10;Each selected browser runs every test independently. Results are grouped by browser in the execution report.&#10;&#10;Tip: Use Chromium for day-to-day runs. Add Firefox &amp; WebKit for cross-browser regression before releases.">?</span>
-        </label>
-        <div style="display:flex;gap:20px;margin-top:4px">
-          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13.5px">
-            <input type="checkbox" id="sm-browser-chromium" value="chromium" checked style="width:15px;height:15px" />
-            <span>&#128028; Chromium</span>
-          </label>
-          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13.5px">
-            <input type="checkbox" id="sm-browser-firefox" value="firefox" style="width:15px;height:15px" />
-            <span>&#129418; Firefox</span>
-          </label>
-          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13.5px">
-            <input type="checkbox" id="sm-browser-webkit" value="webkit" style="width:15px;height:15px" />
-            <span>&#127757; WebKit (Safari)</span>
-          </label>
-        </div>
-        <div style="font-size:11.5px;color:var(--neutral-400);margin-top:4px">At least one browser must be selected.</div>
       </div>
       <!-- ── Add Scripts section ─────────────────────────────────────── -->
       <div style="margin-top:14px">

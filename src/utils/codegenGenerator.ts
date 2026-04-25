@@ -708,6 +708,57 @@ ${indent}}`
         ? line(`await ${locExpr}.waitFor({ state: 'visible', timeout: 10000 });\n${indent}await expect(${locExpr}).toBeDisabled();`)
         : line(`// ASSERT DISABLED: missing locator`);
 
+    case 'ASSERT UNCHECKED':
+      return locExpr
+        ? line(`await ${locExpr}.waitFor({ state: 'visible', timeout: 10000 });\n${indent}await expect(${locExpr}).not.toBeChecked();`)
+        : line(`// ASSERT UNCHECKED: missing locator`);
+
+    case 'ASSERT EDITABLE':
+      return locExpr
+        ? line(`await ${locExpr}.waitFor({ state: 'visible', timeout: 10000 });\n${indent}await expect(${locExpr}).toBeEditable();`)
+        : line(`// ASSERT EDITABLE: missing locator`);
+
+    case 'ASSERT READONLY':
+      return locExpr
+        ? line(`await ${locExpr}.waitFor({ state: 'visible', timeout: 10000 });\n${indent}await expect(${locExpr}).not.toBeEditable();`)
+        : line(`// ASSERT READONLY: missing locator`);
+
+    case 'ASSERT EMPTY':
+      return locExpr
+        ? line(`await ${locExpr}.waitFor({ state: 'visible', timeout: 10000 });\n${indent}await expect(${locExpr}).toBeEmpty();`)
+        : line(`// ASSERT EMPTY: missing locator`);
+
+    case 'ASSERT FOCUSED':
+      return locExpr
+        ? line(`await ${locExpr}.waitFor({ state: 'visible', timeout: 10000 });\n${indent}await expect(${locExpr}).toBeFocused();`)
+        : line(`// ASSERT FOCUSED: missing locator`);
+
+    case 'ASSERT CLASS': {
+      if (!locExpr) return line(`// ASSERT CLASS: missing locator`);
+      const cssClass = (step.value || '').trim();
+      if (!cssClass) return line(`// ASSERT CLASS: missing expected class name in Value`);
+      return line(`await ${locExpr}.waitFor({ state: 'visible', timeout: 10000 });\n${indent}await expect(${locExpr}).toHaveClass(new RegExp('(?:^|\\\\s)${cssClass.replace(/[.*+?^${}()|[\]\\]/g, '\\\\$&')}(?:\\\\s|$)'));`);
+    }
+
+    case 'ASSERT CSS': {
+      if (!locExpr) return line(`// ASSERT CSS: missing locator`);
+      const rawCss = (step.value || '').trim();
+      const colonIdx = rawCss.indexOf(':');
+      if (colonIdx < 1) return line(`// ASSERT CSS: value must be "property:expected-value"`);
+      const cssProp = rawCss.slice(0, colonIdx).trim();
+      const cssVal  = rawCss.slice(colonIdx + 1).trim();
+      return line(`await ${locExpr}.waitFor({ state: 'visible', timeout: 10000 });\n${indent}await expect(${locExpr}).toHaveCSS(${JSON.stringify(cssProp)}, ${JSON.stringify(cssVal)});`);
+    }
+
+    case 'ASSERT RESPONSE OK': {
+      const pfxRO = comment ? comment + '\n' : '';
+      return pfxRO + [
+        `${indent}// ASSERT RESPONSE OK — requires prior API INTERCEPT step`,
+        `${indent}if (!__lastApiResponse) throw new Error('ASSERT RESPONSE OK: no intercepted response found. Add an API INTERCEPT step before this assertion.');`,
+        `${indent}await expect(__lastApiResponse).toBeOK();`,
+      ].join('\n');
+    }
+
     case 'ASSERT CONTAINS':
       return locExpr
         ? line(`await ${locExpr}.waitFor({ state: 'visible', timeout: 10000 });\n${indent}await expect(${locExpr}).toContainText(${val});`)
@@ -1135,6 +1186,12 @@ export function generateCodegenSpec(input: CodegenInput): string {
   lines.push(`    case 'xpath':        return page.locator('xpath=' + selector);`);
   lines.push(`    case 'id':           return page.locator('#' + selector.replace(/^#/, ''));`);
   lines.push(`    case 'name':         return page.locator('[name="' + selector.replace(/"/g, '\\\\"') + '"]');`);
+  lines.push(`    case 'nth': {`);
+  lines.push(`      const [__sel, ...__idxParts] = selector.split(':');`);
+  lines.push(`      const __idx = parseInt(__idxParts.join(':').trim(), 10) || 0;`);
+  lines.push(`      return page.locator(__sel.trim()).nth(__idx);`);
+  lines.push(`    }`);
+  lines.push(`    case 'last':         return page.locator(selector).last();`);
   lines.push(`    default:             return page.locator(selector);`);
   lines.push(`  }`);
   lines.push(`}`);
@@ -1149,7 +1206,7 @@ export function generateCodegenSpec(input: CodegenInput): string {
   lines.push(`      const loc = await __buildLoc(page, alt.selector, alt.selectorType);`);
   lines.push(`      const visible = await loc.first().isVisible({ timeout: 2000 });`);
   lines.push(`      if (visible) {`);
-  lines.push(`        const evt = { stepOrder, keyword, locatorId, healed: alt.selector, healedType: alt.selectorType, confidence: alt.confidence, at: new Date().toISOString() };`);
+  lines.push(`        const evt = { stepOrder, keyword, locatorId, healed: alt.selector, healedType: alt.selectorType, confidence: alt.confidence, tier: 'T2', at: new Date().toISOString() };`);
   lines.push(`        try { _fs.appendFileSync(__HEAL_LOG, JSON.stringify(evt) + '\\n'); } catch {}`);
   lines.push(`        return alt;`);
   lines.push(`      }`);
@@ -1175,7 +1232,7 @@ export function generateCodegenSpec(input: CodegenInput): string {
   lines.push(`    case 'ASSERT VISIBLE':  await loc.waitFor({ state: 'visible',  timeout: 8000 }); break;`);
   lines.push(`    case 'ASSERT HIDDEN':   await loc.waitFor({ state: 'hidden',   timeout: 8000 }); break;`);
   lines.push(`    case 'ASSERT TEXT': case 'ASSERT CONTAINS': await loc.waitFor({ state: 'visible', timeout: 8000 }); break;`);
-  lines.push(`    case 'ASSERT VALUE': case 'ASSERT CHECKED': case 'ASSERT ENABLED': case 'ASSERT DISABLED': await loc.waitFor({ state: 'visible', timeout: 8000 }); break;`);
+  lines.push(`    case 'ASSERT VALUE': case 'ASSERT CHECKED': case 'ASSERT UNCHECKED': case 'ASSERT ENABLED': case 'ASSERT DISABLED': case 'ASSERT EDITABLE': case 'ASSERT READONLY': case 'ASSERT EMPTY': case 'ASSERT FOCUSED': case 'ASSERT CLASS': case 'ASSERT CSS': await loc.waitFor({ state: 'visible', timeout: 8000 }); break;`);
   lines.push(`    case 'ASSERT ATTRIBUTE': case 'ASSERT COUNT': await loc.waitFor({ state: 'attached', timeout: 8000 }); break;`);
   lines.push(`    default:               await loc.waitFor({ state: 'visible', timeout: 5000 }); await loc.click(); break;`);
   lines.push(`  }`);
@@ -1213,40 +1270,45 @@ export function generateCodegenSpec(input: CodegenInput): string {
   lines.push(`  } catch { return null; }`);
   lines.push(`}`);
   lines.push(``);
-  // ── Self-Healing T4: Human Review Queue ──────────────────────────────────────
-  lines.push(`// ── Self-Healing T4: Human Review Queue ─────────────────────────────────────`);
-  lines.push(`const __PENDING_HEAL  = \`\${__SS_DIR}/pending-heal.json\`;`);
-  lines.push(`const __HEAL_RESPONSE = \`\${__SS_DIR}/heal-response.json\`;`);
-  lines.push(`async function __tryT4Heal(`);
+  // ── Self-Healing T4: Non-blocking pending-review path ────────────────────────
+  // T4 no longer blocks test execution. When T3 returns a score 50–74 (plausible
+  // but not confident), the candidate is used immediately so execution continues.
+  // A "healed-pending" event is written to healed.ndjson; after the run completes,
+  // attachHealEvents() creates a pending-review proposal for async human approval.
+  //
+  // Score < 50: nothing viable — step fails as normal (throw original error).
+  // ASSERT steps: same non-blocking logic — use candidate if score ≥ 50, fail if < 50.
+  //   Asserts that pass with a pending candidate are marked amber in the report.
+  //
+  // Human review outcomes (in Healing Proposals tab):
+  //   Approve Permanent  → T3 candidate becomes new primary selector
+  //   Approve Temporary  → T3 candidate added to alternatives[], primary unchanged
+  //   Reject             → candidate discarded; next run will fail or re-trigger T3
+  lines.push(`// ── Self-Healing T4: Non-blocking pending path ──────────────────────────────`);
+  lines.push(`async function __tryT4NonBlocking(`);
   lines.push(`  page: any, stepOrder: number, keyword: string, locatorId: string,`);
   lines.push(`  profile: any, runId: string,`);
   lines.push(`  candidateSelector: string | null, candidateSelectorType: string | null,`);
-  lines.push(`  score: number, isAssert: boolean`);
+  lines.push(`  score: number`);
   lines.push(`): Promise<{ selector: string; selectorType: string } | null> {`);
-  lines.push(`  // For ASSERT with no candidate yet, run T3 scan to surface best match for the card`);
-  lines.push(`  if (isAssert && !candidateSelector && profile && locatorId) {`);
+  lines.push(`  // If T3 returned nothing at all, try running it now (ASSERT path enters here directly)`);
+  lines.push(`  if (!candidateSelector && profile && locatorId) {`);
   lines.push(`    const _t3 = await __tryT3Heal(page, stepOrder, keyword, locatorId, profile, runId).catch(() => null);`);
   lines.push(`    if (_t3) { candidateSelector = _t3.selector; candidateSelectorType = _t3.selectorType; score = _t3.score; }`);
   lines.push(`  }`);
-  lines.push(`  const _proposal = { stepOrder, keyword, locatorId, candidateSelector, candidateSelectorType: candidateSelectorType ?? 'css', score, isAssert, runId, at: new Date().toISOString() };`);
-  lines.push(`  try { _fs.unlinkSync(__HEAL_RESPONSE); } catch {}`);
-  lines.push(`  _fs.writeFileSync(__PENDING_HEAL, JSON.stringify(_proposal));`);
-  lines.push(`  // Poll for response — up to 10 minutes (human review can take time)`);
-  lines.push(`  return new Promise(resolve => {`);
-  lines.push(`    const _iv = setInterval(() => {`);
-  lines.push(`      try {`);
-  lines.push(`        if (_fs.existsSync(__HEAL_RESPONSE)) {`);
-  lines.push(`          const _d = JSON.parse(_fs.readFileSync(__HEAL_RESPONSE, 'utf-8'));`);
-  lines.push(`          clearInterval(_iv);`);
-  lines.push(`          try { _fs.unlinkSync(__HEAL_RESPONSE); } catch {}`);
-  lines.push(`          try { _fs.unlinkSync(__PENDING_HEAL); } catch {}`);
-  lines.push(`          if (_d.action === 'approve' && _d.selector) resolve({ selector: _d.selector, selectorType: _d.selectorType || 'css' });`);
-  lines.push(`          else resolve(null);`);
-  lines.push(`        }`);
-  lines.push(`      } catch {}`);
-  lines.push(`    }, 500);`);
-  lines.push(`    setTimeout(() => { clearInterval(_iv); resolve(null); }, 10 * 60 * 1000);`);
-  lines.push(`  });`);
+  lines.push(`  // Score < 50 — nothing viable, let the step fail`);
+  lines.push(`  if (!candidateSelector || score < 50) return null;`);
+  lines.push(`  // Score 50–74 — use candidate non-blocking, queue for human review`);
+  lines.push(`  const evt = {`);
+  lines.push(`    stepOrder, keyword, locatorId,`);
+  lines.push(`    healed: candidateSelector,`);
+  lines.push(`    healedType: candidateSelectorType ?? 'css',`);
+  lines.push(`    confidence: score,`);
+  lines.push(`    tier: 'T4-pending',`);
+  lines.push(`    at: new Date().toISOString(),`);
+  lines.push(`  };`);
+  lines.push(`  try { _fs.appendFileSync(__HEAL_LOG, JSON.stringify(evt) + '\\n'); } catch {}`);
+  lines.push(`  return { selector: candidateSelector, selectorType: candidateSelectorType ?? 'css' };`);
   lines.push(`}`);
   lines.push(``);
 
@@ -1263,16 +1325,21 @@ export function generateCodegenSpec(input: CodegenInput): string {
   lines.push(``);
 
   // ── Fast Mode: capture auth state once, reuse across all tests ───────────────
+  // NOTE: test.use({ storageState }) is intentionally NOT used here.
+  // It is evaluated at collection time (before beforeAll runs), so the file does
+  // not exist yet and Playwright throws ENOENT. Instead each test() opens its own
+  // browser.newContext({ storageState }) after beforeAll has written the file.
   if (fastMode && fastModeSteps.length > 0) {
-    lines.push(`  // Fast Mode — login once, reuse auth state for all tests`);
-    lines.push(`  const __AUTH_STATE = \`\${__SS_DIR}/auth-state.json\`;`);
-    lines.push(`  test.use({ storageState: __AUTH_STATE });`);
-    lines.push(``);
-    lines.push(`  test.beforeAll(async ({ browser }) => {`);
-    lines.push(`    const __authCtx  = await browser.newContext({ ignoreHTTPSErrors: true });`);
-    lines.push(`    const __authPage = await __authCtx.newPage();`);
     const envUrl = environment?.url || project.appUrl || '';
     const escUrl = envUrl.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    lines.push(`  // Fast Mode — login once, reuse auth state for all tests`);
+    lines.push(`  const __AUTH_STATE = \`\${__SS_DIR}/auth-state.json\`;`);
+    lines.push(``);
+    // Single beforeAll: auth first, then prescan on the authenticated page
+    lines.push(`  test.beforeAll(async ({ browser }) => {`);
+    lines.push(`    // Step 1: authenticate and persist storage state`);
+    lines.push(`    const __authCtx  = await browser.newContext({ ignoreHTTPSErrors: true });`);
+    lines.push(`    const __authPage = await __authCtx.newPage();`);
     lines.push(`    await __authPage.goto('${escUrl}', { waitUntil: 'domcontentloaded' });`);
     lines.push(`    await __authPage.waitForLoadState('domcontentloaded');`);
     for (let hi = 0; hi < fastModeSteps.length; hi++) {
@@ -1281,17 +1348,30 @@ export function generateCodegenSpec(input: CodegenInput): string {
       if (code) lines.push(code);
     }
     lines.push(`    await __authCtx.storageState({ path: __AUTH_STATE });`);
+    lines.push(`    // Step 2: prescan DOM on the authenticated page (reuse same context)`);
+    const prescanUrlFM  = environment?.url || project.appUrl || '';
+    const prescanKeyFM  = normalizePageKey(prescanUrlFM);
+    const escFM         = (s: string) => s.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    lines.push(`    try {`);
+    lines.push(`      await __authPage.waitForTimeout(1500);`);
+    lines.push(`      const __psCandidates = await __authPage.evaluate(__DOM_SCAN).catch(() => []);`);
+    lines.push(`      await fetch(__PLATFORM_URL + '/api/prescan', {`);
+    lines.push(`        method: 'POST',`);
+    lines.push(`        headers: { 'Content-Type': 'application/json' },`);
+    lines.push(`        body: JSON.stringify({ projectId: '${project.id}', pageKey: '${prescanKeyFM}', candidates: __psCandidates, runId: '${runId}' }),`);
+    lines.push(`      }).catch(() => {});`);
+    lines.push(`    } catch { /* prescan failure never blocks tests */ }`);
     lines.push(`    await __authCtx.close();`);
     lines.push(`  });`);
     lines.push(``);
   }
 
   // ── afterEach: screenshot on failure + console error report ──────────────────
-  lines.push(`  test.afterEach(async ({ page }, testInfo) => {`);
+  lines.push(`  test.afterEach(async ({ page, browserName }, testInfo) => {`);
   lines.push(`    const __curIdx = __testIdx; // captured at afterEach time`);
   lines.push(`    if (testInfo.status !== testInfo.expectedStatus) {`);
-  lines.push(`      // Capture failure screenshot named by test index for server-side pickup`);
-  lines.push(`      const __failPath = \`\${__SS_DIR}/FAILED-\${__curIdx}.png\`;`);
+  lines.push(`      // Capture failure screenshot — browser-qualified to avoid multi-browser collisions`);
+  lines.push(`      const __failPath = \`\${__SS_DIR}/FAILED-\${__curIdx}-\${browserName}.png\`;`);
   lines.push(`      await page.screenshot({ path: __failPath, fullPage: true }).catch(() => {});`);
   lines.push(`      await testInfo.attach('failure-screenshot', { path: __failPath, contentType: 'image/png' }).catch(() => {});`);
   lines.push(`    }`);
@@ -1333,36 +1413,39 @@ export function generateCodegenSpec(input: CodegenInput): string {
     lines.push(``);
   }
 
-  // ── P5: Pre-scan beforeAll — navigate, DOM scan, score locators for this page ─
-  const prescanUrl     = environment?.url || project.appUrl || '';
-  const prescanPageKey = normalizePageKey(prescanUrl);
-  const esc            = (s: string) => s.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-  lines.push(`  // P5: Pre-scan — DOM health check before any test begins`);
-  lines.push(`  test.beforeAll(async ({ browser }) => {`);
-  lines.push(`    const __psCtx  = await browser.newContext({ ignoreHTTPSErrors: true });`);
-  lines.push(`    const __psPage = await __psCtx.newPage();`);
-  lines.push(`    try {`);
-  lines.push(`      await __psPage.goto('${esc(prescanUrl)}', { waitUntil: 'domcontentloaded', timeout: 20000 });`);
-  lines.push(`      await __psPage.waitForTimeout(1500); // brief SPA settle`);
-  lines.push(`      const __psCandidates = await __psPage.evaluate(__DOM_SCAN).catch(() => []);`);
-  lines.push(`      await fetch(__PLATFORM_URL + '/api/prescan', {`);
-  lines.push(`        method: 'POST',`);
-  lines.push(`        headers: { 'Content-Type': 'application/json' },`);
-  lines.push(`        body: JSON.stringify({`);
-  lines.push(`          projectId: '${project.id}',`);
-  lines.push(`          pageKey:   '${prescanPageKey}',`);
-  lines.push(`          candidates: __psCandidates,`);
-  lines.push(`          runId:     '${runId}',`);
-  lines.push(`        }),`);
-  lines.push(`      }).catch(() => {});`);
-  lines.push(`    } catch { /* prescan failure never blocks tests */ }`);
-  lines.push(`    await __psCtx.close().catch(() => {});`);
-  lines.push(`  });`);
-  lines.push(``);
+  // ── P5: Pre-scan beforeAll — only when NOT fast mode (fast mode merges prescan into its beforeAll) ─
+  if (!(fastMode && fastModeSteps.length > 0)) {
+    const prescanUrl     = environment?.url || project.appUrl || '';
+    const prescanPageKey = normalizePageKey(prescanUrl);
+    const esc            = (s: string) => s.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    lines.push(`  // P5: Pre-scan — DOM health check before any test begins`);
+    lines.push(`  test.beforeAll(async ({ browser }) => {`);
+    lines.push(`    const __psCtx  = await browser.newContext({ ignoreHTTPSErrors: true });`);
+    lines.push(`    const __psPage = await __psCtx.newPage();`);
+    lines.push(`    try {`);
+    lines.push(`      await __psPage.goto('${esc(prescanUrl)}', { waitUntil: 'domcontentloaded', timeout: 20000 });`);
+    lines.push(`      await __psPage.waitForTimeout(1500); // brief SPA settle`);
+    lines.push(`      const __psCandidates = await __psPage.evaluate(__DOM_SCAN).catch(() => []);`);
+    lines.push(`      await fetch(__PLATFORM_URL + '/api/prescan', {`);
+    lines.push(`        method: 'POST',`);
+    lines.push(`        headers: { 'Content-Type': 'application/json' },`);
+    lines.push(`        body: JSON.stringify({`);
+    lines.push(`          projectId: '${project.id}',`);
+    lines.push(`          pageKey:   '${prescanPageKey}',`);
+    lines.push(`          candidates: __psCandidates,`);
+    lines.push(`          runId:     '${runId}',`);
+    lines.push(`        }),`);
+    lines.push(`      }).catch(() => {});`);
+    lines.push(`    } catch { /* prescan failure never blocks tests */ }`);
+    lines.push(`    await __psCtx.close().catch(() => {});`);
+    lines.push(`  });`);
+    lines.push(``);
+  }
 
   for (const script of scripts) {
     const sortedSteps = script.steps.slice().sort((a, b) => a.order - b.order);
-    const testName    = script.title.replace(/'/g, "\\'");
+    // Prefix title with tcId so execution report can extract and display it
+    const testName    = (script.tcId ? `[${script.tcId}] ` : '') + script.title.replace(/'/g, "\\'");
 
     // Determine number of parameterized runs from testdata steps
     // Each step with valueMode='testdata' contributes rows — use max row count
@@ -1391,9 +1474,21 @@ export function generateCodegenSpec(input: CodegenInput): string {
     for (let runIdx = 0; runIdx < numRuns; runIdx++) {
       const testIdx  = scripts.indexOf(script) * numRuns + runIdx;
       const runLabel = numRuns > 1 ? ` [row ${runIdx + 1}]` : '';
-      lines.push(`  test('${testName}${runLabel.replace(/'/g, "\\'")}', async ({ page }) => {`);
-      lines.push(`    __testIdx++; // increment module-level counter — used by afterEach for FAILED-<idx>.png`);
-      lines.push(`    const __sessionVars: Record<string, string> = {}; // Variable Store`);
+      const isFastMode = fastMode && fastModeSteps.length > 0;
+      if (isFastMode) {
+        lines.push(`  test('${testName}${runLabel.replace(/'/g, "\\'")}', async ({ browser, browserName }) => {`);
+        lines.push(`    __testIdx++;`);
+        lines.push(`    const __browser = browserName;`);
+        lines.push(`    const __sessionVars: Record<string, string> = {};`);
+        lines.push(`    // Fast Mode: open context with saved auth state — beforeAll wrote this file`);
+        lines.push(`    const __fastCtx  = await browser.newContext({ storageState: __AUTH_STATE, ignoreHTTPSErrors: true });`);
+        lines.push(`    const page       = await __fastCtx.newPage();`);
+      } else {
+        lines.push(`  test('${testName}${runLabel.replace(/'/g, "\\'")}', async ({ page, browserName }) => {`);
+        lines.push(`    __testIdx++; // increment module-level counter — used by afterEach for FAILED-<idx>.png`);
+        lines.push(`    const __browser = browserName;`);
+        lines.push(`    const __sessionVars: Record<string, string> = {};`);
+      }
       lines.push(``);
       lines.push(`    // ── Console error collection ──────────────────────────────────────────────`);
       lines.push(`    const __qaConsoleErrors: string[] = [];`);
@@ -1427,7 +1522,7 @@ export function generateCodegenSpec(input: CodegenInput): string {
       lines.push('');
 
       // Keywords that don't need visual diff wrapping
-      const NO_DIFF_KW = new Set(['SCREENSHOT', 'WAIT', 'GOTO', 'VERIFY', 'ASSERT TEXT', 'ASSERT VISIBLE', 'ASSERT HIDDEN', 'ASSERT VALUE', 'WAIT FOR TOAST', 'ASSERT TOAST']);
+      const NO_DIFF_KW = new Set(['SCREENSHOT', 'WAIT', 'GOTO', 'VERIFY', 'ASSERT TEXT', 'ASSERT VISIBLE', 'ASSERT HIDDEN', 'ASSERT VALUE', 'WAIT FOR TOAST', 'ASSERT TOAST', 'ASSERT UNCHECKED', 'ASSERT CHECKED', 'ASSERT EDITABLE', 'ASSERT READONLY', 'ASSERT EMPTY', 'ASSERT FOCUSED', 'ASSERT CLASS', 'ASSERT CSS', 'ASSERT RESPONSE OK']);
 
       for (let si = 0; si < sortedSteps.length; si++) {
         const step     = sortedSteps[si];
@@ -1465,14 +1560,14 @@ export function generateCodegenSpec(input: CodegenInput): string {
             : [];
           const locatorIdStr = (step.locatorId || '').replace(/'/g, "\\'");
           lines.push(`      const __alt_${step.order}: Array<{selector:string;selectorType:string;confidence:number}> = ${JSON.stringify(stepAlts)};`);
-          lines.push(`      await page.screenshot({ path: \`\${__SS_DIR}/${testIdx}-before-${step.order}.png\`, fullPage: false }).catch(() => {});`);
+          lines.push(`      await page.screenshot({ path: \`\${__SS_DIR}/${testIdx}-\${__browser}-before-${step.order}.png\`, fullPage: false }).catch(() => {});`);
           lines.push(`      try {`);
           const innerCode = generateStepCode(step, project, environment, allFunctions, dataMap, '        ', runIdx);
           if (innerCode) lines.push(innerCode);
           const pinLine = storeAsLine(step, step.locator ? buildLocatorExpr(step.locatorType || 'css', step.locator) : null, '        ');
           if (pinLine) lines.push(pinLine);
           lines.push(`      } catch (__e_${step.order}: any) {`);
-          lines.push(`        await page.screenshot({ path: \`\${__SS_DIR}/${testIdx}-after-${step.order}.png\`, fullPage: false }).catch(() => {});`);
+          lines.push(`        await page.screenshot({ path: \`\${__SS_DIR}/${testIdx}-\${__browser}-after-${step.order}.png\`, fullPage: false }).catch(() => {});`);
           // stepVal needed in both T2/T3 and T4 (ASSERT) branches
           const stepVal = valueExpr(step, dataMap, runIdx);
           if (!isAssert && !isFnCall) {
@@ -1496,8 +1591,8 @@ export function generateCodegenSpec(input: CodegenInput): string {
             lines.push(`              await __execWithLoc(page, '${kw}', __t3Loc_${step.order}, ${stepVal});`);
             lines.push(`            } catch { throw __e_${step.order}; }`);
             lines.push(`          } else {`);
-            lines.push(`            // T4: score < 75 — request human review`);
-            lines.push(`            const __t4Dec_${step.order} = await __tryT4Heal(page, ${step.order}, '${kw}', '${locatorIdStr}', __t3Profile_${step.order}, '${runId}', __t3Result_${step.order}?.selector ?? null, __t3Result_${step.order}?.selectorType ?? null, __t3Result_${step.order}?.score ?? 0, false);`);
+            lines.push(`            // T4-nonblocking: score 50–74 → use candidate + queue for human review`);
+            lines.push(`            const __t4Dec_${step.order} = await __tryT4NonBlocking(page, ${step.order}, '${kw}', '${locatorIdStr}', __t3Profile_${step.order}, '${runId}', __t3Result_${step.order}?.selector ?? null, __t3Result_${step.order}?.selectorType ?? null, __t3Result_${step.order}?.score ?? 0);`);
             lines.push(`            if (__t4Dec_${step.order}) {`);
             lines.push(`              try {`);
             lines.push(`                const __t4Loc_${step.order} = await __buildLoc(page, __t4Dec_${step.order}.selector, __t4Dec_${step.order}.selectorType);`);
@@ -1507,12 +1602,12 @@ export function generateCodegenSpec(input: CodegenInput): string {
             lines.push(`          }`);
             lines.push(`        }`);
           } else if (isAssert) {
-            // P4-F: ASSERT steps always require human review — force T4 regardless of confidence
+            // ASSERT: non-blocking T4 — use T3 candidate if score ≥ 50, else fail
             const assertProfile = getStepHealingProfile(step.locatorId);
             const assertProfileJson = assertProfile ? JSON.stringify(assertProfile) : 'null';
-            lines.push(`        // P4-F: ASSERT steps always go to T4 human review`);
+            lines.push(`        // ASSERT: non-blocking heal — use T3 candidate if score ≥ 50, queue for review`);
             lines.push(`        const __t4AssertProfile_${step.order} = ${assertProfileJson};`);
-            lines.push(`        const __t4AssertDec_${step.order} = await __tryT4Heal(page, ${step.order}, '${kw}', '${locatorIdStr}', __t4AssertProfile_${step.order}, '${runId}', null, null, 0, true);`);
+            lines.push(`        const __t4AssertDec_${step.order} = await __tryT4NonBlocking(page, ${step.order}, '${kw}', '${locatorIdStr}', __t4AssertProfile_${step.order}, '${runId}', null, null, 0);`);
             lines.push(`        if (__t4AssertDec_${step.order}) {`);
             lines.push(`          try {`);
             lines.push(`            const __t4AssertLoc_${step.order} = await __buildLoc(page, __t4AssertDec_${step.order}.selector, __t4AssertDec_${step.order}.selectorType);`);
@@ -1543,6 +1638,9 @@ export function generateCodegenSpec(input: CodegenInput): string {
         lines.push(`    }); // Step ${step.order}: ${kw}`);
       }
 
+      if (isFastMode) {
+        lines.push(`    await __fastCtx.close().catch(() => {});`);
+      }
       lines.push(`  });`);
       lines.push(``);
     }
@@ -1783,6 +1881,11 @@ export function generateDebugSpec(input: DebugCodegenInput): string {
   lines.push(`        const [r, ...np] = locVal.split(':'); const n = np.join(':').trim();`);
   lines.push(`        loc = n ? page.getByRole(r.trim() as any, { name: n }) : page.getByRole(r.trim() as any); break;`);
   lines.push(`      }`);
+  lines.push(`      case 'nth': {`);
+  lines.push(`        const ci = locVal.lastIndexOf(':');`);
+  lines.push(`        loc = ci > -1 ? page.locator(locVal.slice(0, ci)).nth(parseInt(locVal.slice(ci + 1), 10) || 0) : page.locator(locVal).nth(0); break;`);
+  lines.push(`      }`);
+  lines.push(`      case 'last': loc = page.locator(locVal).last(); break;`);
   lines.push(`      default: loc = page.locator(locVal); break;`);
   lines.push(`    }`);
   lines.push(`    await loc.first().evaluate((el: any, c: string) => {`);

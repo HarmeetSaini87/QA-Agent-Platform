@@ -46,6 +46,7 @@ import { readAll, upsert, remove, findById, writeAll, USERS, PROJECTS, LOCATORS,
 import { User, Project, ProjectEnvironment, Locator, CommonFunction, CommonData, AuditEntry, AppSettings, NotificationSettings, DEFAULT_SETTINGS, DEFAULT_NOTIFICATION_SETTINGS, ProjectCredential, TestScript, ScriptStep, TestSuite, ScheduledRun, HealingProposal, LicensePayload, ApiKey, BrowserName, ComponentDef, Subcomponent } from '../data/types';
 import { hashPassword, verifyPassword, validatePasswordStrength } from '../auth/crypto';
 import { requireAuth, requireAdmin, requireEditor, requireAuthOrApiKey, sanitizeInput } from '../auth/middleware';
+import rateLimit from 'express-rate-limit';
 import { logAudit }                                                from '../auth/audit';
 import * as crypto from 'crypto';
 import { sendRunNotification, sendTestNotification, formatDuration } from '../utils/notifier';
@@ -109,7 +110,17 @@ interface HealEvent {
   healed:          string;   // new selector that worked
   healedType:      string;
   confidence:      number;
+  tier:            'T2' | 'T3' | 'T4' | 'T4-pending';
   at:              string;   // ISO timestamp
+  // Enriched at run-complete time (not written by spec)
+  runId?:          string;
+  projectId?:      string;
+  suiteName?:      string;
+  scriptTitle?:    string;
+  tcId?:           string;
+  locatorName?:    string;
+  oldSelector?:    string;
+  oldSelectorType?: string;
 }
 
 interface RunRecord {
@@ -407,16 +418,37 @@ function attachFailureScreenshots(record: RunRecord): void {
   const ssDir = path.join(config.paths.testResults, record.runId);
   if (!fs.existsSync(ssDir)) return;
 
-  const failRe = /^FAILED-(\d+)\.png$/;
+  // New format: FAILED-<idx>-<browser>.png
+  // Legacy format: FAILED-<idx>.png (single-browser runs)
+  const failRe       = /^FAILED-(\d+)-(chromium|firefox|webkit)\.png$/;
+  const failReLegacy = /^FAILED-(\d+)\.png$/;
   let files: string[];
   try { files = fs.readdirSync(ssDir); } catch { return; }
 
+  // Build per-browser ordered list of record.tests[] entries (same logic as attachVisualDiff)
+  const browserTests = new Map<string, typeof record.tests>();
+  for (const ev of record.tests) {
+    const b = (ev.browser || 'chromium').toLowerCase();
+    if (!browserTests.has(b)) browserTests.set(b, []);
+    browserTests.get(b)!.push(ev);
+  }
+
   for (const f of files) {
     const m = f.match(failRe);
-    if (!m) continue;
-    const idx = parseInt(m[1], 10);
-    const ev  = record.tests[idx];
-    if (ev) ev.failureScreenshotPath = `test-results/${record.runId}/${f}`;
+    if (m) {
+      const scriptIdx = parseInt(m[1], 10);
+      const browser   = m[2].toLowerCase();
+      // scriptIdx = position within this browser's own test sequence
+      const ev = browserTests.get(browser)?.[scriptIdx];
+      if (ev) ev.failureScreenshotPath = `test-results/${record.runId}/${f}`;
+      continue;
+    }
+    const ml = f.match(failReLegacy);
+    if (ml) {
+      const idx = parseInt(ml[1], 10);
+      const ev  = record.tests[idx];
+      if (ev) ev.failureScreenshotPath = `test-results/${record.runId}/${f}`;
+    }
   }
 }
 
@@ -431,12 +463,14 @@ function attachStepsFromJson(record: RunRecord, jsonReportPath: string): void {
     const report = JSON.parse(raw);
 
     // Flatten all test results from the report (suites → specs → tests)
-    const pwTests: any[] = [];
+    // Each entry carries title + projectName (= browser) for accurate matching
+    const pwTests: Array<{ title: string; browser: string; test: any }> = [];
     function collectTests(suites: any[]): void {
       for (const suite of suites || []) {
         for (const spec of suite.specs || []) {
           for (const test of spec.tests || []) {
-            pwTests.push({ title: spec.title, test });
+            const browser = (test.projectName || 'chromium').toLowerCase();
+            pwTests.push({ title: spec.title, browser, test });
           }
         }
         collectTests(suite.suites || []);
@@ -444,14 +478,34 @@ function attachStepsFromJson(record: RunRecord, jsonReportPath: string): void {
     }
     collectTests(report.suites || []);
 
-    // Match positionally — same order as record.tests[] since workers:1
-    pwTests.forEach((entry, idx) => {
-      const ev = record.tests[idx];
-      if (!ev) return;
-      const result = entry.test?.results?.[0];
+    // Match each record.tests[] entry to its JSON counterpart by title + browser.
+    // Track claimed pwTests entries to handle duplicate titles across browsers.
+    const claimed = new Set<number>();
+
+    record.tests.forEach((ev) => {
+      const evBrowser = (ev.browser || 'chromium').toLowerCase();
+      const evTitle   = (ev.name || '').toLowerCase();
+
+      // Find best match: same browser, title contains (or is contained by) pwTest title
+      let bestIdx = -1;
+      let bestScore = -1;
+      pwTests.forEach((entry, i) => {
+        if (claimed.has(i)) return;
+        if (entry.browser !== evBrowser) return;
+        const pt = entry.title.toLowerCase();
+        // Score: exact match > one contains other > partial
+        const score = pt === evTitle ? 3
+          : evTitle.includes(pt) || pt.includes(evTitle) ? 2
+          : 1;
+        if (score > bestScore) { bestScore = score; bestIdx = i; }
+      });
+
+      if (bestIdx < 0) return;
+      claimed.add(bestIdx);
+
+      const result = pwTests[bestIdx].test?.results?.[0];
       if (!result) return;
 
-      // Flatten top-level steps only (test.step() wrapping)
       const steps = (result.steps || []).map((s: any) => ({
         name:       s.title || '',
         status:     s.error ? 'fail' : 'pass',
@@ -471,53 +525,64 @@ function attachVisualDiff(record: RunRecord): void {
   if (!fs.existsSync(ssDir)) return;
 
   const files = fs.readdirSync(ssDir);
-  // before files: "<testIdx>-before-<stepOrder>.png"
-  const beforeRe = /^(\d+)-before-(\d+)\.png$/;
-  const afterRe  = /^(\d+)-after-(\d+)\.png$/;
+  // Screenshot filenames: "<scriptIdx>-<browser>-before|after-<stepOrder>.png"
+  // scriptIdx = position within a single browser's test sequence (0-based per browser)
+  // Legacy (single-browser): "<scriptIdx>-before|after-<stepOrder>.png"
+  const beforeRe       = /^(\d+)-(chromium|firefox|webkit)-before-(\d+)\.png$/;
+  const afterRe        = /^(\d+)-(chromium|firefox|webkit)-after-(\d+)\.png$/;
+  const beforeReLegacy = /^(\d+)-before-(\d+)\.png$/;
+  const afterReLegacy  = /^(\d+)-after-(\d+)\.png$/;
 
-  // Build maps: testIdx → { stepOrder → filename }
-  const beforeMap = new Map<number, Map<number, string>>();
-  const afterMap  = new Map<number, Map<number, string>>();
+  // Map: "<scriptIdx>-<browser>" → stepOrder → filename
+  type StepMap = Map<number, string>;
+  const beforeMap = new Map<string, StepMap>();
+  const afterMap  = new Map<string, StepMap>();
 
   for (const f of files) {
-    const bm = f.match(beforeRe);
+    const bm = f.match(beforeRe) || (() => { const m = f.match(beforeReLegacy); return m ? [m[0], m[1], 'chromium', m[2]] : null; })();
     if (bm) {
-      const ti = parseInt(bm[1], 10);
-      const so = parseInt(bm[2], 10);
-      if (!beforeMap.has(ti)) beforeMap.set(ti, new Map());
-      beforeMap.get(ti)!.set(so, f);
+      const key = `${bm[1]}-${bm[2]}`;
+      const so  = parseInt(bm[3], 10);
+      if (!beforeMap.has(key)) beforeMap.set(key, new Map());
+      beforeMap.get(key)!.set(so, f);
     }
-    const am = f.match(afterRe);
+    const am = f.match(afterRe) || (() => { const m = f.match(afterReLegacy); return m ? [m[0], m[1], 'chromium', m[2]] : null; })();
     if (am) {
-      const ti = parseInt(am[1], 10);
-      const so = parseInt(am[2], 10);
-      if (!afterMap.has(ti)) afterMap.set(ti, new Map());
-      afterMap.get(ti)!.set(so, f);
+      const key = `${am[1]}-${am[2]}`;
+      const so  = parseInt(am[3], 10);
+      if (!afterMap.has(key)) afterMap.set(key, new Map());
+      afterMap.get(key)!.set(so, f);
     }
   }
 
-  record.tests.forEach((ev, idx) => {
-    const beforeSteps = beforeMap.get(idx);
-    const afterSteps  = afterMap.get(idx);
+  // scriptIdx = position of this test within its browser's own sequence.
+  // record.tests[] is ordered by parse time (all chromium first, then firefox, etc.)
+  // so we track a per-browser counter to derive the correct scriptIdx.
+  const browserCounter = new Map<string, number>();
+
+  record.tests.forEach((ev) => {
+    const browser = (ev.browser || 'chromium').toLowerCase();
+    const scriptIdx = browserCounter.get(browser) ?? 0;
+    browserCounter.set(browser, scriptIdx + 1);
+
+    const key = `${scriptIdx}-${browser}`;
+    const beforeSteps = beforeMap.get(key);
+    const afterSteps  = afterMap.get(key);
 
     if (!beforeSteps && !afterSteps) return;
 
     if (ev.status === 'fail') {
-      // Find the last step that has an after screenshot (= the failing step)
       if (afterSteps && afterSteps.size > 0) {
         const lastFailStep = Math.max(...afterSteps.keys());
         ev.screenshotAfter  = `test-results/${record.runId}/${afterSteps.get(lastFailStep)}`;
-        // Matching before screenshot for the same step
         if (beforeSteps?.has(lastFailStep)) {
           ev.screenshotBefore = `test-results/${record.runId}/${beforeSteps.get(lastFailStep)}`;
         }
       } else if (beforeSteps && beforeSteps.size > 0) {
-        // No after shot captured — use last before shot as context
         const lastStep = Math.max(...beforeSteps.keys());
         ev.screenshotBefore = `test-results/${record.runId}/${beforeSteps.get(lastStep)}`;
       }
     } else {
-      // Passing test — attach the last before-screenshot as visual evidence
       if (beforeSteps && beforeSteps.size > 0) {
         const lastStep = Math.max(...beforeSteps.keys());
         ev.screenshotPath = `test-results/${record.runId}/${beforeSteps.get(lastStep)}`;
@@ -528,11 +593,12 @@ function attachVisualDiff(record: RunRecord): void {
 
 // ── Video & Trace attachment ──────────────────────────────────────────────────
 // After Playwright finishes, each test has its own output subdirectory:
-//   test-results/<runId>/<sanitized-test-title>-chromium/
+//   test-results/<runId>/<sanitized-test-title>-<browser>/
 //     video.webm    (when video: 'on')
 //     trace.zip     (when trace: 'on')
-// Tests run sequentially (workers: 1), so we match directories to record.tests[]
-// positionally after sorting alphabetically (Playwright names them from test title).
+// Match by browser name + title fragment to handle multi-browser runs correctly.
+// Playwright sanitizes the test title (spaces→dashes, special chars removed) so we
+// do a fuzzy match: every word ≥4 chars from ev.name must appear in the dir name.
 function attachVideoAndTrace(record: RunRecord): void {
   const runDir = path.join(config.paths.testResults, record.runId);
   if (!fs.existsSync(runDir)) return;
@@ -544,49 +610,246 @@ function attachVideoAndTrace(record: RunRecord): void {
   // Playwright creates one subdir per test named <title>-<browser> (or -<browser>-<retry>)
   const testDirs = entries
     .filter(e => e.isDirectory() && /(chromium|firefox|webkit)/i.test(e.name))
-    .map(e => e.name)
-    .sort();
+    .map(e => e.name);
 
   if (!testDirs.length) return;
 
-  record.tests.forEach((ev, idx) => {
-    const dir = testDirs[idx];
-    if (!dir) return;
+  // Build a sanitized slug from a test name the same way Playwright does:
+  // lower-case, replace non-alphanumeric with dashes, collapse runs
+  function slugify(s: string): string {
+    return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  }
 
-    const videoFile = path.join(runDir, dir, 'video.webm');
-    const traceFile = path.join(runDir, dir, 'trace.zip');
+  // Track which dirs have been claimed to avoid double-assignment
+  const claimed = new Set<string>();
+
+  record.tests.forEach((ev) => {
+    const browser = (ev.browser || 'chromium').toLowerCase();
+    const titleSlug = slugify(ev.name || '');
+    // Words from the slug that are long enough to be distinctive
+    const words = titleSlug.split('-').filter(w => w.length >= 3);
+
+    // Find the best matching dir for this browser + title
+    // Prefer dirs that match the browser AND contain all title words
+    let best: string | undefined;
+    let bestScore = -1;
+
+    for (const dir of testDirs) {
+      if (claimed.has(dir)) continue;
+      const dirLower = dir.toLowerCase();
+
+      // Must end with -<browser> or -<browser>-<retry>
+      const browserSuffix = new RegExp(`-${browser}(-\\d+)?$`);
+      if (!browserSuffix.test(dirLower)) continue;
+
+      // Score by how many title words appear in the dir name
+      const score = words.filter(w => dirLower.includes(w)).length;
+      if (score > bestScore) {
+        bestScore = score;
+        best = dir;
+      }
+    }
+
+    // Fallback: if no title match, take any unclaimed dir for this browser
+    if (!best) {
+      best = testDirs.find(d => !claimed.has(d) && new RegExp(`-${browser}(-\\d+)?$`).test(d.toLowerCase()));
+    }
+
+    if (!best) return;
+    claimed.add(best);
+
+    const videoFile = path.join(runDir, best, 'video.webm');
+    const traceFile = path.join(runDir, best, 'trace.zip');
 
     if (fs.existsSync(videoFile)) {
-      ev.videoPath = `test-results/${record.runId}/${dir}/video.webm`;
+      ev.videoPath = `test-results/${record.runId}/${best}/video.webm`;
     }
     if (fs.existsSync(traceFile)) {
-      ev.tracePath = `test-results/${record.runId}/${dir}/trace.zip`;
+      ev.tracePath = `test-results/${record.runId}/${best}/trace.zip`;
     }
   });
 }
 
-// Reads the healed.ndjson written by the spec's __tryAlts helper and attaches
-// heal events to the run record. Also persists each event to the global
-// data/healing-log.json for the Locator Repo healing history view.
+/**
+ * Backfills a promoted selector into every TestScript step and CommonFunction step
+ * that references the given locatorId. Called after T2 auto-heal, T3 auto-apply
+ * (score ≥ T3_AUTO_THRESHOLD), and T4-pending human "Approve Permanent".
+ *
+ * Updates:
+ *   - scripts[].steps[].locator + locatorType   (where step.locatorId === locatorId)
+ *   - functions[].steps[].selector + locatorType (where step.locatorName matches locator name)
+ */
+function backfillScriptsAndFunctions(
+  locatorId:       string,
+  locatorName:     string,
+  newSelector:     string,
+  newSelectorType: string,
+): void {
+  try {
+    // ── Test Scripts ────────────────────────────────────────────────────────────
+    const scripts = readAll<TestScript>(SCRIPTS);
+    let scriptsDirty = false;
+    for (const script of scripts) {
+      let changed = false;
+      for (const step of script.steps) {
+        if (step.locatorId === locatorId && (step.locator !== newSelector || step.locatorType !== newSelectorType)) {
+          step.locator     = newSelector;
+          step.locatorType = newSelectorType;
+          changed = true;
+        }
+      }
+      if (changed) scriptsDirty = true;
+    }
+    if (scriptsDirty) writeAll(SCRIPTS, scripts);
+
+    // ── Common Functions ────────────────────────────────────────────────────────
+    const functions = readAll<CommonFunction>(FUNCTIONS);
+    let fnsDirty = false;
+    for (const fn of functions) {
+      let changed = false;
+      for (const step of fn.steps) {
+        if (step.locatorName === locatorName && (step.selector !== newSelector || step.locatorType !== newSelectorType)) {
+          step.selector    = newSelector;
+          step.locatorType = newSelectorType;
+          changed = true;
+        }
+      }
+      if (changed) fnsDirty = true;
+    }
+    if (fnsDirty) writeAll(FUNCTIONS, functions);
+
+    logger.info(`[backfill] locator=${locatorId} name="${locatorName}" → ${newSelectorType}:${newSelector} | scripts=${scriptsDirty} fns=${fnsDirty}`);
+  } catch (err) {
+    logger.warn(`[backfill] Failed: ${(err as Error).message}`);
+  }
+}
+
+// Reads the healed.ndjson written by the spec's __tryAlts / __tryT3Heal helpers,
+// attaches events to the run record, updates healingStats on affected Locators
+// (critical for T2 heals — T3/T4 update stats at their own call sites), and
+// persists enriched events to data/healing-log.ndjson for the Healing Report.
 function attachHealEvents(record: RunRecord): void {
   const healFile = path.join(config.paths.testResults, record.runId, 'healed.ndjson');
   if (!fs.existsSync(healFile)) return;
 
-  const lines = fs.readFileSync(healFile, 'utf-8').trim().split('\n').filter(Boolean);
-  const events: HealEvent[] = [];
-  for (const line of lines) {
-    try { events.push(JSON.parse(line) as HealEvent); } catch { /* malformed line */ }
+  const rawLines = fs.readFileSync(healFile, 'utf-8').trim().split('\n').filter(Boolean);
+  const rawEvents: HealEvent[] = [];
+  for (const line of rawLines) {
+    try { rawEvents.push(JSON.parse(line) as HealEvent); } catch { /* malformed line */ }
   }
-  if (!events.length) return;
+  if (!rawEvents.length) return;
 
-  record.healEvents = events;
+  // Build a lookup of all locators once (avoid repeated file reads in loop)
+  const allLocs = readAll<Locator>(LOCATORS);
+  const locById = new Map(allLocs.map(l => [l.id, l]));
 
-  // Append to global healing-log.json (NDJSON)
+  // Resolve script title + tcId from the suite for report enrichment
+  // record.tests[].name is the Playwright test title — format: "[TCID] Title · browser"
+  const tcPattern = /^\[([A-Z]{1,8}[-_]\d+)\]\s*/;
+  function resolveTcAndTitle(stepOrder: number): { tcId: string; scriptTitle: string } {
+    // Best effort — find a test whose step order range covers this stepOrder
+    // For now use suiteName context; more precise mapping is a future enhancement
+    return { tcId: '', scriptTitle: record.suiteName ?? '' };
+  }
+
+  // Enrich each event, update T2 locator stats, collect enriched list
+  const enriched: HealEvent[] = rawEvents.map(e => {
+    const loc = locById.get(e.locatorId);
+    const { tcId, scriptTitle } = resolveTcAndTitle(e.stepOrder);
+    const full: HealEvent = {
+      ...e,
+      tier:           e.tier ?? 'T2',  // spec writes tier for T3; T2 events have no tier field yet
+      runId:          record.runId,
+      projectId:      record.projectId ?? '',
+      suiteName:      record.suiteName ?? '',
+      scriptTitle,
+      tcId,
+      locatorName:    loc?.name ?? e.locatorId,
+      oldSelector:    loc?.selector ?? '',
+      oldSelectorType: loc?.selectorType ?? 'css',
+    };
+
+    // ── T2: update healingStats + promote winning alt to primary + backfill ──────
+    // The spec tried stored alternatives; full.healed is the selector that worked.
+    // Promote it to primary on the Locator record, demote the old primary to alts,
+    // then backfill every TestScript step and CommonFunction step that used this locator.
+    if ((full.tier === 'T2') && loc) {
+      const winnerSelector     = full.healed;
+      const winnerSelectorType = full.healedType ?? 'css';
+      const demoted = { selector: loc.selector, selectorType: loc.selectorType, confidence: 50 };
+      const existingAlts = (loc.alternatives ?? []).filter(a => a.selector !== winnerSelector && a.selector !== loc.selector);
+      const updated = {
+        ...loc,
+        selector:     winnerSelector,
+        selectorType: winnerSelectorType as Locator['selectorType'],
+        alternatives: [demoted, ...existingAlts].slice(0, 10),
+        healingStats: {
+          healCount:       (loc.healingStats?.healCount ?? 0) + 1,
+          lastHealedAt:    full.at,
+          lastHealedFrom:  loc.selector,
+          lastHealedBy:    'auto' as const,
+        },
+        updatedAt: new Date().toISOString(),
+      };
+      upsert(LOCATORS, updated);
+      locById.set(loc.id, updated);
+      backfillScriptsAndFunctions(loc.id, loc.name, winnerSelector, winnerSelectorType);
+    }
+
+    // ── T4-pending: non-blocking heal — create pending-review proposal ─────────
+    // The spec used the T3 candidate (score 50–74) without blocking. Create a
+    // proposal so the human can decide permanent vs temporary vs reject.
+    if (full.tier === 'T4-pending' && loc) {
+      const proposalId  = uuidv4();
+      const proposalsDir = path.resolve('data', 'proposals');
+      const proposal: HealingProposal = {
+        id:              proposalId,
+        projectId:       record.projectId ?? loc.projectId ?? '',
+        locatorId:       full.locatorId,
+        locatorName:     loc.name,
+        scriptId:        '',
+        scriptTitle:     full.scriptTitle ?? '',
+        stepOrder:       full.stepOrder,
+        oldSelector:     loc.selector,
+        oldSelectorType: loc.selectorType,
+        newSelector:     full.healed,
+        newSelectorType: full.healedType,
+        confidence:      full.confidence,
+        healedAt:        full.at,
+        status:          'pending-review',
+        usedInRun:       true,
+      };
+      try {
+        fs.mkdirSync(proposalsDir, { recursive: true });
+        fs.writeFileSync(path.join(proposalsDir, `${proposalId}.json`), JSON.stringify(proposal, null, 2));
+      } catch (err) {
+        logger.warn(`[attachHealEvents] Failed to write T4-pending proposal: ${(err as Error).message}`);
+      }
+      // Increment healCount — the step DID use a healed locator this run
+      const updated = {
+        ...loc,
+        healingStats: {
+          healCount:       (loc.healingStats?.healCount ?? 0) + 1,
+          lastHealedAt:    full.at,
+          lastHealedFrom:  loc.selector,
+          lastHealedBy:    'auto' as const,
+        },
+        updatedAt: new Date().toISOString(),
+      };
+      upsert(LOCATORS, updated);
+      locById.set(loc.id, updated);
+    }
+
+    return full;
+  });
+
+  record.healEvents = enriched;
+
+  // Append enriched events to global healing-log.ndjson
   const globalLog = path.resolve('data', 'healing-log.ndjson');
-  const withRunId = events.map(e => ({ ...e, runId: record.runId, projectId: record.projectId ?? '' }));
   try {
     fs.mkdirSync(path.resolve('data'), { recursive: true });
-    fs.appendFileSync(globalLog, withRunId.map(e => JSON.stringify(e)).join('\n') + '\n', 'utf-8');
+    fs.appendFileSync(globalLog, enriched.map(e => JSON.stringify(e)).join('\n') + '\n', 'utf-8');
   } catch { /* log write failure is non-fatal */ }
 }
 
@@ -951,7 +1214,16 @@ const testFileUpload = multer({
 
 // ── Auth API routes (public — no session required) ────────────────────────────
 
-app.post('/api/auth/login', async (req: Request, res: Response) => {
+const loginRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10,                   // 10 attempts per window per IP
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many login attempts. Try again in 15 minutes.' },
+  skipSuccessfulRequests: true, // only count failures
+});
+
+app.post('/api/auth/login', loginRateLimiter, async (req: Request, res: Response) => {
   const { username, password } = req.body as { username?: string; password?: string };
   if (!username || !password) { res.status(400).json({ error: 'Username and password are required' }); return; }
 
@@ -1374,6 +1646,63 @@ app.get('/api/heal-log', requireAuth, (req: Request, res: Response) => {
   res.json(events.slice(0, limitN));
 });
 
+// Returns locator health summary — heal counts, last healed date, method, confidence
+app.get('/api/locator-health', requireAuth, (req: Request, res: Response) => {
+  const { projectId } = req.query as { projectId?: string };
+  if (!projectId) { res.status(400).json({ error: 'projectId required' }); return; }
+
+  const locators = readAll<Locator>(LOCATORS).filter(l => l.projectId === projectId);
+
+  // Read heal-log for extra event data
+  const logFile = path.resolve('data', 'healing-log.ndjson');
+  const events: any[] = [];
+  if (fs.existsSync(logFile)) {
+    const lines = fs.readFileSync(logFile, 'utf-8').trim().split('\n').filter(Boolean);
+    for (const line of lines) {
+      try { const e = JSON.parse(line); if (e.projectId === projectId) events.push(e); } catch { /* skip */ }
+    }
+  }
+
+  // Build per-locator event index: locatorId → events[]
+  const eventsByLocator: Record<string, any[]> = {};
+  for (const e of events) {
+    if (!e.locatorId) continue;
+    (eventsByLocator[e.locatorId] = eventsByLocator[e.locatorId] || []).push(e);
+  }
+
+  const report = locators
+    .filter(l => (l.healingStats?.healCount ?? 0) > 0 || eventsByLocator[l.id])
+    .map(l => {
+      const stats = l.healingStats;
+      const locEvents = (eventsByLocator[l.id] || []).sort((a, b) =>
+        new Date(b.healedAt || b.timestamp || 0).getTime() - new Date(a.healedAt || a.timestamp || 0).getTime()
+      );
+      const latestEvent = locEvents[0];
+      return {
+        id: l.id,
+        name: l.name,
+        selector: l.selector,
+        healCount: stats?.healCount ?? locEvents.length,
+        lastHealedAt: stats?.lastHealedAt ?? latestEvent?.healedAt ?? latestEvent?.timestamp ?? null,
+        lastHealedFrom: stats?.lastHealedFrom ?? latestEvent?.oldSelector ?? null,
+        lastHealedBy: stats?.lastHealedBy ?? latestEvent?.method ?? null,
+        avgConfidence: locEvents.length
+          ? Math.round(locEvents.reduce((s, e) => s + (e.confidence ?? e.score ?? 0), 0) / locEvents.length)
+          : null,
+        recentEvents: locEvents.slice(0, 5).map(e => ({
+          healedAt: e.healedAt ?? e.timestamp,
+          oldSelector: e.oldSelector ?? e.originalSel,
+          newSelector: e.newSelector ?? e.healedSel,
+          confidence: e.confidence ?? e.score,
+          method: e.method ?? (e.auto ? 'auto' : 'approved'),
+        })),
+      };
+    })
+    .sort((a, b) => b.healCount - a.healCount);
+
+  res.json(report);
+});
+
 // ── P5: Pre-Scan endpoints ────────────────────────────────────────────────────
 
 // P5-C: POST /api/prescan — called by generated spec beforeAll block
@@ -1611,18 +1940,15 @@ app.post('/api/heal', requireAuth, (req: Request, res: Response) => {
     logger.warn(`[heal] Failed to write proposal: ${(err as Error).message}`);
   }
 
-  // Auto-update Locator Repo alternatives if score ≥ threshold
+  // T3 auto-apply (score ≥ threshold): promote to primary + backfill scripts/functions
   if (autoApply && locEntry) {
-    const newAlt = toLocatorAlternative(best);
-    const existingAlts = locEntry.alternatives ?? [];
-    // Avoid duplicates — replace if same selectorType exists with lower confidence
-    const deduped = existingAlts.filter(a => a.selectorType !== newAlt.selectorType || a.confidence >= newAlt.confidence);
-    if (!deduped.find(a => a.selector === newAlt.selector)) {
-      deduped.unshift(newAlt); // prepend — highest confidence first
-    }
+    const demoted      = { selector: locEntry.selector, selectorType: locEntry.selectorType, confidence: 50 };
+    const existingAlts = (locEntry.alternatives ?? []).filter(a => a.selector !== best.bestSelector && a.selector !== locEntry.selector);
     upsert(LOCATORS, {
       ...locEntry,
-      alternatives: deduped.slice(0, 10), // keep top 10
+      selector:     best.bestSelector,
+      selectorType: best.bestType as Locator['selectorType'],
+      alternatives: [demoted, ...existingAlts].slice(0, 10),
       healingStats: {
         healCount:      (locEntry.healingStats?.healCount ?? 0) + 1,
         lastHealedAt:   new Date().toISOString(),
@@ -1631,6 +1957,7 @@ app.post('/api/heal', requireAuth, (req: Request, res: Response) => {
       },
       updatedAt: new Date().toISOString(),
     });
+    backfillScriptsAndFunctions(locatorId, locEntry.name, best.bestSelector, best.bestType);
   }
 
   logger.info(`[heal] T3 locator=${locatorId} score=${best.score} auto=${autoApply} selector=${best.bestSelector}`);
@@ -1665,13 +1992,17 @@ app.get('/api/proposals', requireAuth, (req: Request, res: Response) => {
 });
 
 // Approve or reject a healing proposal
+// action values:
+//   'approved'           → T3 candidate becomes new permanent primary selector
+//   'approved-temporary' → T3 candidate added to top of alternatives[], primary unchanged
+//   'rejected'           → candidate discarded; next run re-triggers T3
 app.post('/api/proposals/:id/review', requireAuth, (req: Request, res: Response) => {
   const { id } = req.params;
-  const { action } = req.body as { action: 'approved' | 'rejected' };
+  const { action } = req.body as { action: 'approved' | 'approved-temporary' | 'rejected' };
   const user = req.session as any;
 
-  if (!['approved', 'rejected'].includes(action)) {
-    res.status(400).json({ error: 'action must be approved or rejected' }); return;
+  if (!['approved', 'approved-temporary', 'rejected'].includes(action)) {
+    res.status(400).json({ error: 'action must be approved, approved-temporary, or rejected' }); return;
   }
 
   const filePath = path.resolve('data', 'proposals', `${id}.json`);
@@ -1684,27 +2015,45 @@ app.post('/api/proposals/:id/review', requireAuth, (req: Request, res: Response)
     proposal.reviewedAt = new Date().toISOString();
     fs.writeFileSync(filePath, JSON.stringify(proposal, null, 2));
 
-    // On approve — update Locator Repo
-    if (action === 'approved') {
-      const locEntry = readAll<Locator>(LOCATORS).find(l => l.id === proposal.locatorId);
-      if (locEntry) {
-        const newAlt = { selector: proposal.newSelector, selectorType: proposal.newSelectorType, confidence: proposal.confidence };
-        const existingAlts = locEntry.alternatives ?? [];
-        const deduped = existingAlts.filter(a => a.selector !== newAlt.selector);
-        deduped.unshift(newAlt);
-        upsert(LOCATORS, {
-          ...locEntry,
-          alternatives: deduped.slice(0, 10),
-          healingStats: {
-            healCount:      (locEntry.healingStats?.healCount ?? 0) + 1,
-            lastHealedAt:   proposal.reviewedAt!,
-            lastHealedFrom: proposal.oldSelector,
-            lastHealedBy:   'approved',
-          },
-          updatedAt: new Date().toISOString(),
-        });
-      }
+    const locEntry = readAll<Locator>(LOCATORS).find(l => l.id === proposal.locatorId);
+
+    if (action === 'approved' && locEntry) {
+      // Permanent: promote candidate to primary, demote old primary to alternatives,
+      // then backfill every script step and common function step referencing this locator.
+      const demoted      = { selector: locEntry.selector, selectorType: locEntry.selectorType, confidence: 50 };
+      const existingAlts = (locEntry.alternatives ?? []).filter(a => a.selector !== proposal.newSelector && a.selector !== locEntry.selector);
+      upsert(LOCATORS, {
+        ...locEntry,
+        selector:     proposal.newSelector,
+        selectorType: proposal.newSelectorType as Locator['selectorType'],
+        alternatives: [demoted, ...existingAlts].slice(0, 10),
+        healingStats: {
+          healCount:      (locEntry.healingStats?.healCount ?? 0) + 1,
+          lastHealedAt:   proposal.reviewedAt!,
+          lastHealedFrom: proposal.oldSelector,
+          lastHealedBy:   'approved',
+        },
+        updatedAt: new Date().toISOString(),
+      });
+      backfillScriptsAndFunctions(locEntry.id, locEntry.name, proposal.newSelector, proposal.newSelectorType);
+    } else if (action === 'approved-temporary' && locEntry) {
+      // Temporary: add candidate to alternatives only — primary and steps unchanged
+      const newAlt       = { selector: proposal.newSelector, selectorType: proposal.newSelectorType, confidence: proposal.confidence };
+      const existingAlts = (locEntry.alternatives ?? []).filter(a => a.selector !== proposal.newSelector);
+      upsert(LOCATORS, {
+        ...locEntry,
+        alternatives: [newAlt, ...existingAlts].slice(0, 10),
+        healingStats: {
+          healCount:      (locEntry.healingStats?.healCount ?? 0) + 1,
+          lastHealedAt:   proposal.reviewedAt!,
+          lastHealedFrom: proposal.oldSelector,
+          lastHealedBy:   'approved',
+        },
+        updatedAt: new Date().toISOString(),
+      });
+      // No backfill for temporary — primary selector in scripts stays unchanged
     }
+    // rejected: no locator change — next run re-triggers T3
 
     res.json({ ok: true, proposal });
   } catch (err) {
@@ -2392,12 +2741,9 @@ app.delete('/api/projects/:id', requireAdmin, (req: Request, res: Response) => {
 
 app.get('/api/locators', (req: Request, res: Response) => {
   const { projectId } = req.query as { projectId?: string };
-  const all = readAll<Locator>(LOCATORS).filter(l => !l.draft); // exclude unfinished drafts
-  if (projectId) {
-    res.json(all.filter(l => l.projectId === projectId));
-  } else {
-    res.json(all);
-  }
+  if (!projectId) { res.json([]); return; } // project scope required — never leak cross-project
+  const all = readAll<Locator>(LOCATORS).filter(l => !l.draft);
+  res.json(all.filter(l => l.projectId === projectId));
 });
 
 app.post('/api/locators', requireEditor, (req: Request, res: Response) => {
@@ -2416,13 +2762,15 @@ app.post('/api/locators', requireEditor, (req: Request, res: Response) => {
 app.put('/api/locators/:id', requireEditor, (req: Request, res: Response) => {
   const loc = findById<Locator>(LOCATORS, req.params.id);
   if (!loc) { res.status(404).json({ error: 'Not found' }); return; }
-  const { name, selector, selectorType, pageModule, projectId, description } = req.body as any;
+  const { name, selector, selectorType, pageModule, projectId, description, alternatives } = req.body as any;
   if (name)        loc.name        = sanitizeInput(name);
   if (selector)    loc.selector    = sanitizeInput(selector);
   if (selectorType) loc.selectorType = selectorType;
   if (pageModule !== undefined) loc.pageModule = sanitizeInput(pageModule);
   if (projectId !== undefined)  loc.projectId  = projectId;
   if (description !== undefined) loc.description = sanitizeInput(description);
+  // Accept alternatives array update (from UI promote-to-primary or post-heal update)
+  if (Array.isArray(alternatives)) loc.alternatives = alternatives;
   loc.updatedAt = new Date().toISOString();
   upsert(LOCATORS, loc);
   res.json({ success: true });
@@ -3318,6 +3666,16 @@ app.post('/api/suites/:id/run', requireAuthOrApiKey, requireEditor, async (req: 
     ? req.body.browsers.filter((b: string): b is BrowserName => VB.includes(b as BrowserName))
     : [];
   const runBrowsers: BrowserName[] = reqBrowsers.length > 0 ? reqBrowsers : (suite.browsers?.length ? suite.browsers : ['chromium']);
+
+  // Server-side guard: if any step uses testdata (Test Data Static), multi-browser not allowed.
+  // Short-circuits on first match — safe for large suites with 100s of scripts.
+  if (runBrowsers.length > 1) {
+    const hasTestData = scripts.some(s => s.steps.some(step => step.valueMode === 'testdata'));
+    if (hasTestData) {
+      res.status(400).json({ error: 'Multi-browser execution is not supported when "Value Source" is "Test Data (Static)". Please select only one browser.' });
+      return;
+    }
+  }
 
   const queuePosition = runQueue.length;
   const record: RunRecord = {

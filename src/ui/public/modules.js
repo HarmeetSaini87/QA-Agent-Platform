@@ -53,7 +53,7 @@ function _applyViewerMode() {
 
   // Hide all write-action buttons — add/new/delete/run/save/edit
   document.querySelectorAll(
-    '#btn-new-script, #btn-new-suite, #btn-add-locator, #btn-new-function, #btn-add-cd, ' +
+    '#btn-new-script, #btn-new-suite, #btn-add-locator, #loc-btn-delete-selected, #btn-new-function, #btn-add-cd, ' +
     '.btn-run-suite, .script-bulk-bar, #script-bulk-bar'
   ).forEach(el => el.style.display = 'none');
 
@@ -518,10 +518,11 @@ function cdRender() {
       <td title="${escHtml('\${' + d.dataName + '}')}" ><code style="background:var(--neutral-100);padding:2px 6px;border-radius:3px;font-size:12.5px">\${${escHtml(d.dataName)}}</code></td>
       <td>
         ${d.sensitive
-          ? `<span style="letter-spacing:2px;color:var(--neutral-400);font-size:13px">••••••••</span>
-             <button class="tbl-btn" style="margin-left:6px;font-size:10px;padding:1px 6px" onclick="cdReveal('${escHtml(d.id)}',this)" title="Reveal value">👁</button>`
+          ? `<span class="cd-masked-wrap" data-id="${escHtml(d.id)}" style="display:inline-flex;align-items:center;gap:6px">
+               <span class="cd-masked-dots" style="letter-spacing:2px;color:var(--neutral-400);font-size:13px">••••••••</span>
+               <button class="tbl-btn cd-eye-btn" style="font-size:14px;padding:1px 5px;line-height:1;min-width:26px" title="Show value" onclick="cdToggleReveal(this)">👁</button>
+             </span>`
           : `<span title="${escHtml(d.value)}">${escHtml(d.value)}</span>`}
-        ${d.sensitive ? '<span class="badge badge-fail" style="margin-left:6px;font-size:10px;padding:1px 5px">sensitive</span>' : ''}
       </td>
       <td><span class="badge badge-${d.environment === 'PROD' ? 'fail' : d.environment === 'UAT' ? 'medium' : 'active'}">${escHtml(d.environment)}</span></td>
       <td>${escHtml(d.createdBy || '—')}</td>
@@ -600,19 +601,44 @@ async function cdSave() {
   await cdLoad();
 }
 
-async function cdReveal(id, btn) {
-  const cell = btn.parentElement;
-  const res  = await fetch(`/api/common-data/${id}/reveal`);
+async function cdToggleReveal(btn) {
+  const wrap    = btn.closest('.cd-masked-wrap');
+  const dotsEl  = wrap.querySelector('.cd-masked-dots');
+  const plainEl = wrap.querySelector('.cd-plain-value');
+  const id      = wrap.dataset.id;
+
+  // If already revealed — hide it
+  if (plainEl) {
+    plainEl.remove();
+    dotsEl.style.display = '';
+    btn.title = 'Show value';
+    btn.textContent = '👁';
+    clearTimeout(wrap._hideTimer);
+    return;
+  }
+
+  // Fetch and reveal
+  btn.disabled = true;
+  const res = await fetch(`/api/common-data/${id}/reveal`);
+  btn.disabled = false;
   if (!res.ok) { alert('Could not reveal value'); return; }
   const { value } = await res.json();
+
+  dotsEl.style.display = 'none';
+  btn.title = 'Hide value';
+  btn.textContent = '🙈';
+
   const span = document.createElement('span');
-  span.style.cssText = 'font-family:monospace;font-size:12px;background:var(--neutral-100);padding:2px 6px;border-radius:3px;margin-left:4px';
+  span.className = 'cd-plain-value';
+  span.style.cssText = 'font-family:monospace;font-size:12px;background:var(--neutral-100);padding:2px 6px;border-radius:3px';
   span.textContent = value;
-  btn.replaceWith(span);
-  // Auto-hide after 10 seconds
-  setTimeout(() => {
-    span.replaceWith(btn);
-  }, 10000);
+  wrap.insertBefore(span, btn);
+
+  // Auto-hide after 15 seconds
+  clearTimeout(wrap._hideTimer);
+  wrap._hideTimer = setTimeout(() => {
+    if (wrap.querySelector('.cd-plain-value')) cdToggleReveal(btn);
+  }, 15000);
 }
 
 async function cdDelete(id, name) {
@@ -962,28 +988,35 @@ function projCloseModal() { closeModal('modal-project'); editingProjectId = null
 // ══════════════════════════════════════════════════════════════════════════════
 
 let allLocators = [];
+let selectedLocators = new Set();
 let editingLocatorId = null;
 let _locPage = 0;
 const LOC_PAGE_SIZE = 10;
 
 async function locatorLoad() {
-  const url = currentProjectId
-    ? `/api/locators?projectId=${encodeURIComponent(currentProjectId)}`
-    : '/api/locators';
-  const res = await fetch(url);
+  if (!currentProjectId) {
+    allLocators = [];
+    _locPage = 0;
+    selectedLocators.clear();
+    const tbody = document.getElementById('loc-tbody');
+    if (tbody) tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--neutral-400);padding:20px">Select a project to view locators.</td></tr>';
+    const pg = document.getElementById('loc-pagination');
+    if (pg) pg.innerHTML = '';
+    return;
+  }
+  const res = await fetch(`/api/locators?projectId=${encodeURIComponent(currentProjectId)}`);
   allLocators = await res.json();
   _locPage = 0;
+  selectedLocators.clear();
   locatorRender();
 }
 
 function locatorRender() {
   const nameF   = (document.getElementById('loc-filter-name')?.value   ?? '').toLowerCase();
-  const moduleF = (document.getElementById('loc-filter-module')?.value ?? '').toLowerCase();
   const typeF   = (document.getElementById('loc-filter-type')?.value   ?? '').toLowerCase();
 
   const filtered = allLocators.filter(l =>
     (!nameF   || l.name.toLowerCase().includes(nameF)) &&
-    (!moduleF || (l.pageModule || '').toLowerCase().includes(moduleF)) &&
     (!typeF   || (l.selectorType || '').toLowerCase() === typeF)
   );
 
@@ -996,34 +1029,190 @@ function locatorRender() {
   if (!tbody) return;
 
   tbody.innerHTML = pageItems.map(l => {
-    const isAuto = (l.description || '').toLowerCase().includes('auto-captured');
-    const autoTag = isAuto ? `<span class="badge" style="background:#7c3aed;color:#fff;font-size:10px;margin-left:4px">Auto</span>` : '';
-    const truncSel = l.selector.length > 60 ? `<span title="${escHtml(l.selector)}">${escHtml(l.selector.substring(0, 60))}…</span>` : escHtml(l.selector);
-    // Stability badge — only shown when importanceScore is present (recorder v4+)
+    const isAuto    = (l.description || '').toLowerCase().includes('auto-captured');
+    const autoTag   = isAuto ? `<span class="badge" style="background:#7c3aed;color:#fff;font-size:10px;margin-left:4px">Auto</span>` : '';
+    const truncSel  = l.selector.length > 60 ? `<span title="${escHtml(l.selector)}">${escHtml(l.selector.substring(0, 60))}…</span>` : escHtml(l.selector);
+
+    // ── Stability Badge (pill) ────────────────────────────────────────────────
+    // Reflects PRIMARY locator health based on REAL test run history.
+    // Colour = how many times the primary locator needed auto-repair during runs.
     let stabilityBadge = '';
-    if (l.importanceScore != null) {
-      const score = l.importanceScore;
-      const dot   = score >= 80 ? '🟢' : score >= 50 ? '🟡' : '🔴';
-      const label = score >= 80 ? 'Stable' : score >= 50 ? 'Moderate' : 'Fragile';
-      const altCount = l.alternatives?.length ?? 0;
-      const altTip   = altCount ? ` · ${altCount} alt${altCount > 1 ? 's' : ''}` : '';
-      const pageKeyTip = l.pageKey ? ` · ${l.pageKey}` : '';
-      stabilityBadge = `<span title="Stability score: ${score}/100${altTip}${pageKeyTip}" style="margin-left:5px;font-size:11px;cursor:default">${dot} <span style="font-size:10px;color:var(--neutral-500)">${label}</span></span>`;
+    {
+      const hs            = l.healingStats;
+      const healCount     = hs?.healCount ?? 0;
+      const lastHealed    = hs?.lastHealedAt ? new Date(hs.lastHealedAt) : null;
+      const daysSinceHeal = lastHealed ? Math.floor((Date.now() - lastHealed.getTime()) / 86400000) : null;
+      const hasRunData    = healCount > 0 || lastHealed != null;
+
+      let bg, border, color, icon, lbl, tipLines;
+
+      if (!hasRunData) {
+        // Never run yet — show design-time selector quality as a hint
+        const sc = l.importanceScore ?? null;
+        bg = '#f3f4f6'; border = '#d1d5db'; color = '#6b7280'; icon = '⚪'; lbl = 'Not Run Yet';
+        tipLines = [
+          '📋 STABILITY BADGE — Not Run Yet',
+          '',
+          'This locator has never been used in a test run.',
+          'There is no real evidence yet about how reliable it is.',
+          '',
+          sc != null
+            ? `Selector Quality Score: ${sc}/100`
+            : 'No quality score available (manually created locator).',
+          sc != null && sc >= 80 ? '→ Well-anchored selector (has testid / aria-label / role).' : '',
+          sc != null && sc >= 50 && sc < 80 ? '→ Average selector — some identifiers present.' : '',
+          sc != null && sc < 50  ? '→ Weak selector — no stable identifiers. Consider adding data-testid to the element.' : '',
+          '',
+          'Run a test suite to get a real stability rating.',
+        ].filter(x => x !== undefined);
+      } else if (healCount === 0) {
+        bg = '#dcfce7'; border = '#86efac'; color = '#15803d'; icon = '✔'; lbl = 'Stable';
+        tipLines = [
+          '🟢 STABILITY BADGE — Stable',
+          '',
+          'This locator has NEVER needed auto-repair across all test runs.',
+          'The element is found reliably every time — no fixes were required.',
+          '',
+          'What this means for you:',
+          '→ Safe to use. No action needed.',
+          '→ If the app UI changes, this badge will degrade automatically.',
+        ];
+      } else if (healCount <= 2 && (daysSinceHeal === null || daysSinceHeal > 7)) {
+        bg = '#fef9c3'; border = '#fde047'; color = '#a16207'; icon = '⚠'; lbl = `Healed ×${healCount}`;
+        tipLines = [
+          '🟡 STABILITY BADGE — Healed (Monitor)',
+          '',
+          `This locator needed auto-repair ${healCount} time${healCount > 1 ? 's' : ''} during test runs.`,
+          `Last repaired: ${hs?.lastHealedAt?.slice(0,10) ?? '—'}`,
+          '',
+          'What this means:',
+          '→ The test kept running by using a fallback locator.',
+          '→ The original locator may be drifting as the app UI changes.',
+          '',
+          'Recommended action:',
+          '→ Open the Healing Proposals tab to review what changed.',
+          '→ Consider promoting the fallback to primary if it is more stable.',
+        ];
+      } else {
+        bg = '#fee2e2'; border = '#fca5a5'; color = '#b91c1c'; icon = '✖'; lbl = `Fragile ×${healCount}`;
+        tipLines = [
+          '🔴 STABILITY BADGE — Fragile (Action Required)',
+          '',
+          `This locator has broken and needed auto-repair ${healCount} time${healCount > 1 ? 's' : ''}.`,
+          `Last repaired: ${hs?.lastHealedAt?.slice(0,10) ?? '—'}`,
+          '',
+          'What this means:',
+          '→ The primary locator keeps failing — the element has changed significantly.',
+          '→ Tests are only passing because a fallback selector took over.',
+          '→ This is a risk — if fallbacks also break, tests will fail.',
+          '',
+          'Recommended action:',
+          '→ Go to Healing Proposals → Approve Permanent to fix the primary.',
+          '→ Or open this locator (Edit) and update the selector manually.',
+          '→ Ask the developer to add a data-testid attribute to the element.',
+        ];
+      }
+
+      const tip = tipLines.join('\n');
+      stabilityBadge = `<span title="${escHtml(tip)}"
+        style="display:inline-flex;align-items:center;gap:3px;margin-left:6px;
+               padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;
+               background:${bg};border:1px solid ${border};color:${color};
+               cursor:help;white-space:nowrap;letter-spacing:.2px">
+        ${icon} ${lbl}
+      </span>`;
     }
+
+    // ── Fallbacks chip ────────────────────────────────────────────────────────
+    const alts     = l.alternatives || [];
+    const altCount = alts.length;
+    const altChip  = altCount
+      ? `<span onclick="locatorToggleAlts('${escHtml(l.id)}')"
+           id="loc-alt-chip-${escHtml(l.id)}"
+           title="${escHtml('FALLBACK LOCATORS — ' + altCount + ' backup selector' + (altCount > 1 ? 's' : '') + ' stored\n\nIf the primary locator above fails during a test run, the system automatically tries these backups in order from highest to lowest confidence.\n\nClick to expand and see each fallback selector and its confidence score.\nYou can also promote any fallback to become the new primary.')}"
+           style="display:inline-flex;align-items:center;gap:3px;margin-left:5px;
+                  padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;
+                  background:#ede9fe;border:1px solid #c4b5fd;color:#6d28d9;
+                  cursor:pointer;white-space:nowrap;user-select:none">
+          ⛓ ${altCount} fallback${altCount > 1 ? 's' : ''}
+        </span>`
+      : '';
+
+    // ── Inline fallbacks expansion rows ──────────────────────────────────────
+    const altRows = alts.length ? alts
+      .slice()
+      .sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0))
+      .map((a, i) => {
+        const conf = a.confidence ?? 0;
+        // Confidence pill per fallback row
+        const confBg     = conf >= 80 ? '#dcfce7' : conf >= 60 ? '#fef9c3' : '#fee2e2';
+        const confBorder = conf >= 80 ? '#86efac' : conf >= 60 ? '#fde047' : '#fca5a5';
+        const confColor  = conf >= 80 ? '#15803d' : conf >= 60 ? '#a16207' : '#b91c1c';
+        const confLabel  = conf >= 80 ? 'High' : conf >= 60 ? 'Medium' : 'Low';
+        const confTip = [
+          'CONFIDENCE SCORE — ' + conf + '/100 (' + confLabel + ')',
+          '',
+          'This score shows how reliable this BACKUP selector is expected to be.',
+          'It is set at the time the recorder captures the element.',
+          '',
+          conf >= 80
+            ? '✔ High confidence — uses a stable attribute like data-testid or aria-label.\n  Very unlikely to break if the app changes.'
+            : conf >= 60
+            ? '⚠ Medium confidence — uses a role, label or placeholder.\n  Fairly stable but could break if copy or layout changes.'
+            : '✖ Low confidence — uses a structural path (XPath) or name attribute.\n  Will break if the page structure or element position changes.',
+          '',
+          'Higher score = tried first when primary locator fails.',
+          'Lower score = last resort before the test reports a failure.',
+        ].join('\n');
+
+        const truncAlt  = (a.selector || '').length > 70 ? escHtml((a.selector||'').substring(0,70)) + '…' : escHtml(a.selector||'');
+        const promoteBtn = isViewer() ? '' :
+          `<button class="tbl-btn" style="font-size:10px;padding:1px 7px" onclick="locatorPromoteAlt('${escHtml(l.id)}',${i})" title="Set this as the primary locator — current primary moves to fallbacks">Set Primary</button>`;
+        return `<tr id="loc-alt-row-${escHtml(l.id)}-${i}" style="display:none;background:var(--neutral-50)">
+          <td></td>
+          <td colspan="2" style="padding:4px 10px 4px 28px">
+            <span style="font-size:10px;color:var(--neutral-400);margin-right:6px">#${i+1}</span>
+            <code style="font-size:11px">${truncAlt}</code>
+          </td>
+          <td><span class="badge badge-tester" style="font-size:10px">${escHtml(a.selectorType||'css')}</span></td>
+          <td>
+            <span title="${escHtml(confTip)}"
+              style="display:inline-flex;align-items:center;gap:3px;padding:1px 7px;border-radius:20px;
+                     font-size:10px;font-weight:700;background:${confBg};border:1px solid ${confBorder};
+                     color:${confColor};cursor:help;white-space:nowrap">
+              ${conf}/100 · ${confLabel}
+            </span>
+          </td>
+          <td>${promoteBtn}</td>
+        </tr>`;
+      }).join('') : '';
+
+    const isChecked = selectedLocators.has(l.id) ? 'checked' : '';
     return `<tr>
-      <td><strong>${escHtml(l.name)}</strong>${autoTag}${stabilityBadge}</td>
+      <td style="text-align:center"><input type="checkbox" class="loc-row-check" data-id="${escHtml(l.id)}" ${isChecked} onclick="locatorToggleSelection('${escHtml(l.id)}')"></td>
+      <td><strong>${escHtml(l.name)}</strong>${autoTag}${stabilityBadge}${altChip}</td>
       <td><code style="font-size:11px">${truncSel}</code></td>
       <td><span class="badge badge-tester">${escHtml(l.selectorType)}</span></td>
-      <td>${escHtml(l.pageModule || '—')}</td>
       <td>${escHtml(l.description || '—')}</td>
       <td>
         ${isViewer() ? '' : `<button class="tbl-btn" onclick="locatorEdit('${escHtml(l.id)}')">Edit</button>`}
         ${isViewer() ? '' : `<button class="tbl-btn del" onclick="locatorDelete('${escHtml(l.id)}','${escHtml(l.name)}')">Del</button>`}
       </td>
-    </tr>`;
+    </tr>${altRows}`;
   }).join('');
 
   if (!pageItems.length) tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--neutral-400);padding:20px">No locators found</td></tr>';
+
+  // Update Select All checkbox state
+  const selectAll = document.getElementById('loc-select-all');
+  if (selectAll) {
+    selectAll.style.visibility = isViewer() ? 'hidden' : 'visible';
+    if (!isViewer()) {
+      const allOnPageChecked = pageItems.length > 0 && pageItems.every(l => selectedLocators.has(l.id));
+      selectAll.checked = allOnPageChecked;
+    }
+  }
+  locatorUpdateSelectionUI();
 
   // Pagination controls
   const wrap = document.getElementById('loc-pagination');
@@ -1040,12 +1229,14 @@ function locatorRender() {
 
 // ── Locator sub-tab switching ─────────────────────────────────────────────────
 function locSubTab(tab) {
-  const isRepo = tab === 'repo';
-  document.getElementById('loc-subpanel-repo').style.display       = isRepo ? '' : 'none';
-  document.getElementById('loc-subpanel-proposals').style.display  = isRepo ? 'none' : '';
-  document.getElementById('loc-subtab-repo').classList.toggle('loc-subtab-active', isRepo);
-  document.getElementById('loc-subtab-proposals').classList.toggle('loc-subtab-active', !isRepo);
-  if (!isRepo) proposalLoad();
+  ['repo', 'proposals', 'heallog'].forEach(t => {
+    const panel = document.getElementById(`loc-subpanel-${t}`);
+    const btn   = document.getElementById(`loc-subtab-${t}`);
+    if (panel) panel.style.display = t === tab ? '' : 'none';
+    if (btn)   btn.classList.toggle('loc-subtab-active', t === tab);
+  });
+  if (tab === 'proposals') proposalLoad();
+  if (tab === 'heallog')   healLogLoad();
 }
 
 // ── Healing Proposals ─────────────────────────────────────────────────────────
@@ -1083,24 +1274,31 @@ function proposalRender() {
 
   tbody.innerHTML = items.map(p => {
     const statusBadge = {
-      'auto-applied':   `<span class="prop-badge prop-badge-auto">Auto Applied</span>`,
-      'pending-review': `<span class="prop-badge prop-badge-pending">Pending Review</span>`,
-      'approved':       `<span class="prop-badge prop-badge-ok">Approved</span>`,
-      'rejected':       `<span class="prop-badge prop-badge-reject">Rejected</span>`,
+      'auto-applied':        `<span class="prop-badge prop-badge-auto">Auto Applied</span>`,
+      'pending-review':      `<span class="prop-badge prop-badge-pending">Pending Review</span>`,
+      'approved':            `<span class="prop-badge prop-badge-ok">Approved (Permanent)</span>`,
+      'approved-temporary':  `<span class="prop-badge" style="background:#d97706;color:#fff">Approved (Temp)</span>`,
+      'rejected':            `<span class="prop-badge prop-badge-reject">Rejected</span>`,
     }[p.status] || `<span class="prop-badge">${escHtml(p.status)}</span>`;
 
     const scoreColor = p.confidence >= 75 ? '#4ec9b0' : p.confidence >= 50 ? '#eab308' : '#f48771';
-    const truncOld = p.oldSelector?.length > 50 ? `<span title="${escHtml(p.oldSelector)}">${escHtml(p.oldSelector.substring(0,50))}…</span>` : escHtml(p.oldSelector || '—');
-    const truncNew = p.newSelector?.length > 50 ? `<span title="${escHtml(p.newSelector)}">${escHtml(p.newSelector.substring(0,50))}…</span>` : escHtml(p.newSelector || '—');
-    const healedAt = p.healedAt ? new Date(p.healedAt).toLocaleString() : '—';
+    const truncOld = (p.oldSelector?.length ?? 0) > 50 ? `<span title="${escHtml(p.oldSelector)}">${escHtml(p.oldSelector.substring(0,50))}…</span>` : escHtml(p.oldSelector || '—');
+    const truncNew = (p.newSelector?.length ?? 0) > 50 ? `<span title="${escHtml(p.newSelector)}">${escHtml(p.newSelector.substring(0,50))}…</span>` : escHtml(p.newSelector || '—');
+    const healedAt  = p.healedAt ? new Date(p.healedAt).toLocaleString() : '—';
+    const usedTag   = p.usedInRun
+      ? `<span title="This candidate was used to continue test execution during the run" style="font-size:10px;padding:1px 6px;border-radius:8px;background:#d97706;color:#fff;margin-left:4px">Used in run</span>`
+      : '';
 
     const actionBtns = p.status === 'pending-review'
-      ? `<button class="tbl-btn" style="color:#4ec9b0" onclick="proposalReview('${escHtml(p.id)}','approved')">✓ Approve</button>
-         <button class="tbl-btn del" onclick="proposalReview('${escHtml(p.id)}','rejected')">✗ Reject</button>`
+      ? `<div style="display:flex;flex-direction:column;gap:3px">
+           <button class="tbl-btn" style="color:#4ec9b0;font-size:11px" onclick="proposalReview('${escHtml(p.id)}','approved')" title="Make this the permanent primary selector">✓ Approve Permanent</button>
+           <button class="tbl-btn" style="color:#d97706;font-size:11px" onclick="proposalReview('${escHtml(p.id)}','approved-temporary')" title="Add to fallbacks only — primary selector unchanged">⬡ Approve Temporary</button>
+           <button class="tbl-btn del" style="font-size:11px" onclick="proposalReview('${escHtml(p.id)}','rejected')">✗ Reject</button>
+         </div>`
       : `<span style="font-size:11px;color:var(--neutral-500)">${escHtml(p.reviewedBy || '')} ${p.reviewedAt ? new Date(p.reviewedAt).toLocaleDateString() : ''}</span>`;
 
     return `<tr>
-      <td><strong>${escHtml(p.locatorName || p.locatorId)}</strong></td>
+      <td><strong>${escHtml(p.locatorName || p.locatorId)}</strong>${usedTag}</td>
       <td><code style="font-size:11px">${truncOld}</code></td>
       <td><code style="font-size:11px;color:${scoreColor}">${truncNew}</code></td>
       <td style="text-align:center;font-weight:600;color:${scoreColor}">${p.confidence}</td>
@@ -1112,6 +1310,12 @@ function proposalRender() {
 }
 
 async function proposalReview(id, action) {
+  const labels = {
+    'approved':           'Approve as Permanent? The T3 candidate will become the new primary selector.',
+    'approved-temporary': 'Approve as Temporary? The candidate will be added to the fallbacks list. Primary selector unchanged.',
+    'rejected':           'Reject this proposal? The candidate will be discarded. Next run will re-trigger T3.',
+  };
+  if (!confirm(labels[action] || 'Confirm?')) return;
   try {
     const res = await fetch(`/api/proposals/${encodeURIComponent(id)}/review`, {
       method: 'POST',
@@ -1119,13 +1323,68 @@ async function proposalReview(id, action) {
       body: JSON.stringify({ action }),
     });
     if (!res.ok) { const e = await res.json(); alert(e.error || 'Review failed'); return; }
-    await proposalLoad(); // Refresh
+    await proposalLoad();
   } catch { alert('Network error'); }
 }
 
 function _locPageGo(delta) {
   _locPage += delta;
   locatorRender();
+}
+
+function locatorToggleSelection(id) {
+  if (selectedLocators.has(id)) {
+    selectedLocators.delete(id);
+  } else {
+    selectedLocators.add(id);
+  }
+  locatorRender();
+}
+
+function locatorSelectAll(el) {
+  const nameF   = (document.getElementById('loc-filter-name')?.value   ?? '').toLowerCase();
+  const typeF   = (document.getElementById('loc-filter-type')?.value   ?? '').toLowerCase();
+  const filtered = allLocators.filter(l =>
+    (!nameF   || l.name.toLowerCase().includes(nameF)) &&
+    (!typeF   || (l.selectorType || '').toLowerCase() === typeF)
+  );
+  const pageItems = filtered.slice(_locPage * LOC_PAGE_SIZE, (_locPage + 1) * LOC_PAGE_SIZE);
+  
+  if (el.checked) {
+    pageItems.forEach(l => selectedLocators.add(l.id));
+  } else {
+    pageItems.forEach(l => selectedLocators.delete(l.id));
+  }
+  locatorRender();
+}
+
+function locatorUpdateSelectionUI() {
+  const btn = document.getElementById('loc-btn-delete-selected');
+  if (btn) {
+    btn.style.display = (selectedLocators.size > 0 && !isViewer()) ? '' : 'none';
+    btn.textContent = `Delete Selected (${selectedLocators.size})`;
+  }
+}
+
+async function locatorDeleteSelected() {
+  if (isViewer()) return;
+  if (!selectedLocators.size) return;
+  if (!confirm(`Delete ${selectedLocators.size} selected locator(s)?`)) return;
+  
+  const ids = Array.from(selectedLocators);
+  const res = await fetch('/api/locators/bulk-delete', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids })
+  });
+  
+  if (res.ok) {
+    selectedLocators.clear();
+    await locatorLoad();
+  } else {
+    const data = await res.json();
+    alert(data.error || 'Failed to delete locators');
+  }
 }
 
 function locatorOpenModal(id = null) {
@@ -1150,7 +1409,53 @@ async function locatorEdit(id) {
   document.getElementById('loc-page').value     = loc.pageModule || '';
   document.getElementById('loc-desc').value     = loc.description || '';
   modClearAlert('loc-modal-alert');
+  _locatorEditRenderAlts(loc);
   openModal('modal-locator');
+}
+
+function _locatorEditRenderAlts(loc) {
+  const container = document.getElementById('loc-alts-section');
+  if (!container) return;
+  const alts = (loc.alternatives || []).slice().sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0));
+  if (!alts.length) {
+    container.style.display = 'none';
+    return;
+  }
+  container.style.display = '';
+  const tbody = document.getElementById('loc-alts-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = alts.map((a, i) => {
+    const confDot  = (a.confidence ?? 0) >= 80 ? '🟢' : (a.confidence ?? 0) >= 60 ? '🟡' : '🔴';
+    const truncSel = (a.selector||'').length > 55 ? escHtml((a.selector||'').substring(0,55)) + '…' : escHtml(a.selector||'');
+    return `<tr id="loc-edit-alt-row-${i}">
+      <td style="font-size:11px;color:var(--neutral-400);padding:4px 6px">#${i+1}</td>
+      <td style="padding:4px 6px"><code style="font-size:11px" title="${escHtml(a.selector||'')}">${truncSel}</code></td>
+      <td style="padding:4px 6px"><span class="badge badge-tester" style="font-size:10px">${escHtml(a.selectorType||'css')}</span></td>
+      <td style="padding:4px 6px;font-size:11px">${confDot} ${a.confidence ?? '—'}/100</td>
+      <td style="padding:4px 6px">
+        <button class="tbl-btn" style="font-size:10px;padding:1px 7px" onclick="_locEditPromoteAlt(${i})" title="Set as primary">Set Primary</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function _locEditPromoteAlt(altIdx) {
+  const loc  = allLocators.find(l => l.id === editingLocatorId);
+  if (!loc) return;
+  const alts   = (loc.alternatives || []).slice().sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0));
+  const chosen = alts[altIdx];
+  if (!chosen) return;
+  // Swap into the form fields
+  const curSel  = document.getElementById('loc-selector').value.trim();
+  const curType = document.getElementById('loc-type').value;
+  document.getElementById('loc-selector').value = chosen.selector;
+  document.getElementById('loc-type').value     = chosen.selectorType;
+  // Rebuild in-memory alternatives: demote current primary, remove chosen
+  const demoted   = { selector: curSel, selectorType: curType, confidence: 50 };
+  const remaining = alts.filter((_, i) => i !== altIdx);
+  // Store updated alts temporarily so _locatorEditRenderAlts re-renders correctly
+  loc._editAlts = [demoted, ...remaining];
+  _locatorEditRenderAlts({ ...loc, alternatives: loc._editAlts });
 }
 
 async function locatorSave() {
@@ -1166,6 +1471,16 @@ async function locatorSave() {
     description:  document.getElementById('loc-desc').value.trim(),
     projectId:    currentProjectId || null,
   };
+
+  // If a "Set Primary" swap was performed in the modal, include the updated alternatives
+  if (editingLocatorId) {
+    const loc = allLocators.find(l => l.id === editingLocatorId);
+    if (loc?._editAlts) {
+      body.alternatives = loc._editAlts;
+      delete loc._editAlts;
+    }
+  }
+
   const method = editingLocatorId ? 'PUT' : 'POST';
   const url    = editingLocatorId ? `/api/locators/${editingLocatorId}` : '/api/locators';
   const res    = await fetch(url, { method, headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
@@ -1177,19 +1492,150 @@ async function locatorSave() {
 
 async function locatorDelete(id, name) {
   if (!confirm(`Delete locator "${name}"?`)) return;
-  await fetch(`/api/locators/${id}`, { method: 'DELETE' });
+  try {
+    const res = await fetch(`/api/locators/${id}`, { method: 'DELETE' });
+    if (!res.ok) {
+      const data = await res.json();
+      alert('Delete failed: ' + (data.error || res.statusText));
+      return;
+    }
+    await locatorLoad();
+  } catch (e) {
+    alert('Delete failed: ' + e.message);
+  }
+}
+
+function locatorCloseModal() {
+  // Clear any in-progress primary swap state
+  if (editingLocatorId) {
+    const loc = allLocators.find(l => l.id === editingLocatorId);
+    if (loc) delete loc._editAlts;
+  }
+  const altsTbody = document.getElementById('loc-alts-tbody');
+  if (altsTbody) altsTbody.innerHTML = '';
+  const altsSection = document.getElementById('loc-alts-section');
+  if (altsSection) altsSection.style.display = 'none';
+  closeModal('modal-locator');
+  editingLocatorId = null;
+}
+
+// ── Fallback locator expand / collapse ────────────────────────────────────────
+const _locAltOpen = new Set(); // tracks which locator IDs have expanded fallbacks
+
+function locatorToggleAlts(locId) {
+  const loc      = allLocators.find(l => l.id === locId);
+  const alts     = loc?.alternatives || [];
+  const chip     = document.getElementById(`loc-alt-chip-${locId}`);
+  const isOpen   = _locAltOpen.has(locId);
+  alts.forEach((_, i) => {
+    const row = document.getElementById(`loc-alt-row-${locId}-${i}`);
+    if (row) row.style.display = isOpen ? 'none' : '';
+  });
+  if (chip) chip.textContent = isOpen ? `▶ ${alts.length} fallback${alts.length > 1 ? 's' : ''}` : `▼ ${alts.length} fallback${alts.length > 1 ? 's' : ''}`;
+  isOpen ? _locAltOpen.delete(locId) : _locAltOpen.add(locId);
+}
+
+// ── Promote a fallback to primary ─────────────────────────────────────────────
+// Swaps alternatives[altIdx] ↔ primary selector in the locator record.
+// The demoted primary is inserted at the top of the alternatives list with the
+// same selectorType and a confidence of 50 (unknown — was primary, not scored).
+async function locatorPromoteAlt(locId, altIdx) {
+  const loc = allLocators.find(l => l.id === locId);
+  if (!loc) return;
+  const alts    = (loc.alternatives || []).slice().sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0));
+  const chosen  = alts[altIdx];
+  if (!chosen) return;
+  if (!confirm(`Set "${chosen.selector}" (${chosen.selectorType}) as the primary locator for "${loc.name}"?\n\nThe current primary will move to the fallbacks list.`)) return;
+
+  // Build new alternatives: old primary demoted, chosen removed from list
+  const demoted    = { selector: loc.selector, selectorType: loc.selectorType, confidence: 50 };
+  const remaining  = alts.filter((_, i) => i !== altIdx);
+  const newAlts    = [demoted, ...remaining];
+
+  const body = {
+    selector:     chosen.selector,
+    selectorType: chosen.selectorType,
+    alternatives: newAlts,
+  };
+  const res = await fetch(`/api/locators/${locId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const d = await res.json().catch(() => ({}));
+    alert('Failed to update locator: ' + (d.error || res.statusText));
+    return;
+  }
+  _locAltOpen.delete(locId); // collapse after swap so user sees fresh state
   await locatorLoad();
 }
 
-function locatorCloseModal() { closeModal('modal-locator'); editingLocatorId = null; }
+// ── Healing Report ────────────────────────────────────────────────────────────
+let _healLog = [];
+
+async function healLogLoad() {
+  if (!currentProjectId) return;
+  try {
+    const res = await fetch(`/api/heal-log?projectId=${encodeURIComponent(currentProjectId)}&limit=500`);
+    if (!res.ok) { _healLog = []; healLogRender(); return; }
+    _healLog = await res.json();
+  } catch { _healLog = []; }
+  healLogRender();
+  // Update count badge
+  const countEl = document.getElementById('loc-heallog-count');
+  if (countEl) {
+    if (_healLog.length) { countEl.textContent = _healLog.length; countEl.style.display = ''; }
+    else countEl.style.display = 'none';
+  }
+}
+
+function healLogRender() {
+  const tierF = (document.getElementById('heallog-filter-tier')?.value ?? '').toUpperCase();
+  const rows  = _healLog.filter(e => !tierF || (e.tier || '').toUpperCase() === tierF);
+  const tbody = document.getElementById('heallog-tbody');
+  if (!tbody) return;
+
+  if (!rows.length) {
+    tbody.innerHTML = `<tr id="heallog-empty-row"><td colspan="11" style="text-align:center;color:var(--neutral-400);padding:32px;font-size:13px">No healing events recorded yet. Events appear here after a test run where a primary locator failed and a fallback was used.</td></tr>`;
+    return;
+  }
+
+  const tierBadge = t => {
+    const colours = { T2: '#2563eb', T3: '#7c3aed', T4: '#16a34a' };
+    const bg = colours[t] || '#6b7280';
+    return `<span style="font-size:10px;font-weight:700;padding:1px 7px;border-radius:10px;background:${bg};color:#fff">${escHtml(t||'—')}</span>`;
+  };
+  const confDot = c => c >= 80 ? '🟢' : c >= 60 ? '🟡' : '🔴';
+  const shortId = id => id ? id.substring(0, 8) + '…' : '—';
+  const truncSel = s => (s||'').length > 45 ? `<span title="${escHtml(s)}">${escHtml((s||'').substring(0,45))}…</span>` : escHtml(s||'—');
+
+  tbody.innerHTML = rows.map((e, i) => `<tr>
+    <td style="color:var(--neutral-400);font-size:11px">${i + 1}</td>
+    <td style="font-size:11px"><code title="${escHtml(e.runId||'')}">${shortId(e.runId)}</code></td>
+    <td style="font-size:11px">${escHtml(e.suiteName || '—')}</td>
+    <td style="font-size:11px">${escHtml(e.tcId || '—')}</td>
+    <td style="font-size:11px;text-align:center">${e.stepOrder ?? '—'}</td>
+    <td style="font-size:11px"><strong>${escHtml(e.locatorName || e.locatorId || '—')}</strong></td>
+    <td style="font-size:11px"><code style="color:var(--red-600)">${truncSel(e.oldSelector)}</code> <span style="font-size:10px;color:var(--neutral-400)">${escHtml(e.oldSelectorType||'')}</span></td>
+    <td style="font-size:11px"><code style="color:var(--green-700)">${truncSel(e.healed)}</code> <span style="font-size:10px;color:var(--neutral-400)">${escHtml(e.healedType||'')}</span></td>
+    <td>${tierBadge(e.tier)}</td>
+    <td style="font-size:11px">${confDot(e.confidence ?? 0)} ${e.confidence ?? '—'}</td>
+    <td style="font-size:11px;color:var(--neutral-400)">${(e.at||'').slice(0,16).replace('T',' ')}</td>
+  </tr>`).join('');
+}
 
 // ── Locator picker popup (called from TC Builder step selector field) ──────────
 
 let _locatorPickerCallback = null;
 
-function locatorPickerOpen(callback) {
+async function locatorPickerOpen(callback) {
+  if (!currentProjectId) { alert('Select a project first before picking a locator.'); return; }
   _locatorPickerCallback = callback;
   document.getElementById('loc-picker-search').value = '';
+  // Always reload scoped locators so picker reflects current project
+  const res = await fetch(`/api/locators?projectId=${encodeURIComponent(currentProjectId)}`);
+  allLocators = await res.json();
   locatorPickerFilter();
   openModal('modal-locator-picker');
 }
@@ -1575,7 +2021,7 @@ async function projDropdownLoad() {
 }
 
 // Panels that require a project to be selected before any interaction
-const PROJECT_SCOPED_TABS = new Set(['scripts','suites','locators','functions','commondata','history','flaky','analytics','visual']);
+const PROJECT_SCOPED_TABS = new Set(['scripts','suites','locators','functions','commondata','history','flaky','analytics','visual','locator-health']);
 
 const _PROJ_BANNER_ID = 'proj-required-banner';
 
@@ -1625,6 +2071,7 @@ function onProjectChange() {
   flakyLoad();
   analyticsLoad();
   vrLoad();
+  locatorHealthLoad();
   execLoad();
 }
 
@@ -1636,10 +2083,8 @@ function _toggleModuleAddButtons(enabled) {
 }
 
 async function locatorLoadScoped() {
-  const url = currentProjectId
-    ? `/api/locators?projectId=${encodeURIComponent(currentProjectId)}`
-    : '/api/locators';
-  const res = await fetch(url);
+  if (!currentProjectId) { allLocators = []; locatorRender(); return; }
+  const res = await fetch(`/api/locators?projectId=${encodeURIComponent(currentProjectId)}`);
   allLocators = await res.json();
   locatorRender();
 }
@@ -1726,7 +2171,6 @@ async function scriptLoad() {
   allScripts = await res.json();
   scriptRender();
   await seLoadComponents();
-  _scriptSubcompFilter();
 }
 
 function scriptRender() {
@@ -2200,6 +2644,47 @@ function _kwTipHide() {
   if (_kwTipPopup) _kwTipPopup.style.display = 'none';
 }
 
+// ── Info-icon tooltip (position:fixed, viewport-clamped, scroll-safe) ────────
+let _infoTipPopup = null;
+let _infoTipHideTimer = null;
+
+function _infoTipShow(trigger) {
+  const text = trigger.dataset.tooltip || '';
+  if (!text) return;
+  clearTimeout(_infoTipHideTimer);
+  if (!_infoTipPopup) {
+    _infoTipPopup = document.createElement('div');
+    _infoTipPopup.className = 'info-tip-popup';
+    // keep visible while hovering the popup itself
+    _infoTipPopup.addEventListener('mouseenter', () => clearTimeout(_infoTipHideTimer));
+    _infoTipPopup.addEventListener('mouseleave', () => { _infoTipHideTimer = setTimeout(_infoTipHideNow, 120); });
+    document.body.appendChild(_infoTipPopup);
+  }
+  _infoTipPopup.textContent = text;
+  _infoTipPopup.style.display = 'block';
+  requestAnimationFrame(() => {
+    const rect = trigger.getBoundingClientRect();
+    const pw   = _infoTipPopup.offsetWidth;
+    const ph   = _infoTipPopup.offsetHeight;
+    // prefer right of icon, fall back to left
+    let left = rect.right + 10;
+    if (left + pw > window.innerWidth - 8) left = rect.left - pw - 10;
+    // prefer above icon, fall back to below, then clamp to viewport
+    let top = rect.top - ph - 8;
+    if (top < 8) top = rect.bottom + 8;
+    if (top + ph > window.innerHeight - 8) top = window.innerHeight - ph - 8;
+    _infoTipPopup.style.left = Math.max(8, left) + 'px';
+    _infoTipPopup.style.top  = Math.max(8, top)  + 'px';
+  });
+}
+function _infoTipHideNow() {
+  if (_infoTipPopup) _infoTipPopup.style.display = 'none';
+}
+function _infoTipHide() {
+  clearTimeout(_infoTipHideTimer);
+  _infoTipHideTimer = setTimeout(_infoTipHideNow, 120);
+}
+
 function _seKwGet(key) {
   for (const cat of scriptKeywords.categories) {
     const kw = cat.keywords.find(k => k.key === key);
@@ -2248,7 +2733,7 @@ function scriptAddStep(step = {}, insertBeforeRow = null, _skipReorder = false) 
       <button type="button" class="step-action-btn step-clone-icon" onclick="scriptStepClone(this)" title="Clone Step">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
       </button>
-      <button type="button" class="step-action-btn step-pin-icon${step.storeAs ? ' step-pin-active' : ''}" onclick="scriptStepPinOpen(this)" title="Save value as variable (📌 Pin)">
+      <button type="button" class="step-action-btn step-pin-icon${step.storeAs ? ' step-pin-active' : ''}${isTd ? ' step-pin-disabled' : ''}" onclick="scriptStepPinOpen(this)" title="${isTd ? 'Variable storage not allowed when Value Source is Test Data (Static)' : 'Save value as variable (📌 Pin)'}"${isTd ? ' disabled' : ''}>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3 6 6 1-4.5 4 1 6L12 16l-5.5 3 1-6L3 9l6-1z"/></svg>
       </button>
       <button type="button" class="step-action-btn step-del-icon" onclick="scriptStepDelete(this)" title="Delete Step">
@@ -2273,7 +2758,7 @@ function scriptAddStep(step = {}, insertBeforeRow = null, _skipReorder = false) 
       <span class="step-help-label">${escHtml(helpLbl)}</span>
       <span class="step-tooltip-trigger" data-tooltip-json="${escHtml(tipJson)}" onmouseenter="_kwTipShow(this)" onmouseleave="_kwTipHide()"${tipJson ? '' : ' style="display:none"'}>?</span>
     </div>
-    <div class="step-pin-badge${step.storeAs ? '' : ' step-pin-badge-hidden'}${step.storeScope==='global' ? ' step-pin-badge-global' : ''}" data-store-as="${escHtml(step.storeAs||'')}" data-store-scope="${escHtml(step.storeScope||'session')}" data-store-source="${escHtml(step.storeSource||'text')}" data-store-attr="${escHtml(step.storeAttrName||'')}">
+    <div class="step-pin-badge${(step.storeAs && !isTd) ? '' : ' step-pin-badge-hidden'}${step.storeScope==='global' ? ' step-pin-badge-global' : ''}" data-store-as="${escHtml(isTd ? '' : (step.storeAs||''))}" data-store-scope="${escHtml(step.storeScope||'session')}" data-store-source="${escHtml(step.storeSource||'text')}" data-store-attr="${escHtml(step.storeAttrName||'')}">
       <span class="pin-badge-label">${step.storeScope==='global' ? '🌐' : '📌'} Saved as <code>{{var.${escHtml(step.storeAs||'')}}}</code><span class="pin-scope-tag">${step.storeScope==='global' ? 'Global' : 'Session'}</span></span>
       <button type="button" class="pin-badge-clear" onclick="scriptStepPinClear(this)" title="Remove variable">✕</button>
     </div>
@@ -2837,6 +3322,34 @@ function scriptStepToggleVal(btn, mode) {
   row.querySelector('.se-step-val-var')?.style     && (row.querySelector('.se-step-val-var').style.display     = mode === 'variable'   ? '' : 'none');
   if (mode === 'commondata') _loadCdOptions(row);
   if (mode === 'variable')   _loadVarOptions(row);
+
+  // Pin (Store As Variable) is not allowed when Value Source is Test Data (Static)
+  const pinBtn   = row.querySelector('.step-pin-icon');
+  const pinBadge = row.querySelector('.step-pin-badge');
+  if (mode === 'testdata') {
+    // Disable pin button
+    if (pinBtn) {
+      pinBtn.disabled = true;
+      pinBtn.classList.add('step-pin-disabled');
+      pinBtn.title = 'Variable storage not allowed when Value Source is Test Data (Static)';
+    }
+    // Clear and hide any existing pin badge
+    if (pinBadge) {
+      pinBadge.dataset.storeAs = '';
+      pinBadge.classList.add('step-pin-badge-hidden');
+    }
+  } else {
+    // Re-enable pin button
+    if (pinBtn) {
+      pinBtn.disabled = false;
+      pinBtn.classList.remove('step-pin-disabled');
+      pinBtn.title = 'Save value as variable (📌 Pin)';
+    }
+    // Restore badge visibility if storeAs was previously set
+    if (pinBadge && pinBadge.dataset.storeAs) {
+      pinBadge.classList.remove('step-pin-badge-hidden');
+    }
+  }
 }
 
 // ── Variable tab helpers ───────────────────────────────────────────────────────
@@ -2868,6 +3381,8 @@ function _loadVarOptions(row) {
 
   // Global vars — from ALL steps in ALL scripts (any index), storeScope === 'global'
   const globalVars = [];
+
+  // 1. Scan DOM rows of the currently open editor (catches unsaved edits)
   allRows.forEach(r => {
     const badge = r.querySelector('.step-pin-badge');
     if (badge && badge.dataset.storeAs && badge.dataset.storeScope === 'global') {
@@ -2881,6 +3396,18 @@ function _loadVarOptions(row) {
         if (n && !globalVars.includes(n)) globalVars.push(n);
       }
     }
+  });
+
+  // 2. Scan saved scripts in allScripts (catches global vars defined in other scripts)
+  (allScripts || []).forEach(sc => {
+    (sc.steps || []).forEach(step => {
+      if (step.storeAs && step.storeScope === 'global') {
+        if (!globalVars.includes(step.storeAs)) globalVars.push(step.storeAs);
+      }
+      if (step.keyword === 'SET VARIABLE' && step.storeScope === 'global' && step.storeAs) {
+        if (!globalVars.includes(step.storeAs)) globalVars.push(step.storeAs);
+      }
+    });
   });
 
   const savedVal = sel.dataset.savedVar || sel.value || '';
@@ -2926,6 +3453,14 @@ function _varSelectChanged(sel) {
 
 function scriptStepPinOpen(btn) {
   const row      = btn.closest('.script-step-row');
+
+  // Block pin when Value Source is Test Data (Static) — N rows would overwrite same variable unpredictably
+  const isTestData = row.querySelector('.value-toggle-td.active') !== null;
+  if (isTestData) {
+    alert('Variable storage is not allowed when Value Source is "Test Data (Static)".\n\nReason: Test Data runs multiple rows — each row would overwrite the same variable, producing unpredictable results in later steps.');
+    return;
+  }
+
   const badge    = row.querySelector('.step-pin-badge');
   const curName  = badge?.dataset.storeAs || '';
   const curScope = badge?.dataset.storeScope || 'session';
@@ -3479,6 +4014,7 @@ async function scriptSave() {
 }
 
 async function _syncLocatorsToRepo(steps) {
+  if (!currentProjectId) return []; // never save unscoped locators
   const failed = [];
   const tasks = steps
     .filter(step => step.locatorName && step.locator)
@@ -4159,18 +4695,12 @@ function suiteOpenModal(id = null) {
     document.getElementById('sm-name').value = '';
     document.getElementById('sm-desc').value = '';
     document.getElementById('sm-retries').value = '0';
-    // Reset browser checkboxes — Chromium on by default
-    ['chromium', 'firefox', 'webkit'].forEach(b => {
-      const cb = document.getElementById(`sm-browser-${b}`);
-      if (cb) cb.checked = b === 'chromium';
-    });
     // Hide schedules for new suites (no ID yet)
     const schedWrap = document.getElementById('sm-sched-wrap');
     if (schedWrap) schedWrap.style.display = 'none';
     _hookInit([], [], false, []);
     _overlayInit([]);
   }
-  _populateEnvDropdown('');
   _smInit(id ? (allSuites.find(x => x.id === id)?.scriptIds || []) : []);
   openModal('modal-suite');
 }
@@ -4184,13 +4714,6 @@ async function suiteEditById(id) {
   document.getElementById('sm-name').value = s.name;
   document.getElementById('sm-desc').value = s.description || '';
   document.getElementById('sm-retries').value = String(s.retries ?? 0);
-  _populateEnvDropdown(s.environmentId || '');
-  // Load browser checkboxes
-  const savedBrowsers = s.browsers && s.browsers.length > 0 ? s.browsers : ['chromium'];
-  ['chromium', 'firefox', 'webkit'].forEach(b => {
-    const cb = document.getElementById(`sm-browser-${b}`);
-    if (cb) cb.checked = savedBrowsers.includes(b);
-  });
   modClearAlert('suite-modal-alert');
   _smInit(s.scriptIds || []);
   _hookInit(s.beforeEachSteps || [], s.afterEachSteps || [], s.fastMode || false, s.fastModeSteps || []);
@@ -4224,17 +4747,13 @@ async function suiteSave() {
   if (!name)             { modAlert('suite-modal-alert', 'error', 'Suite name is required'); return; }
   if (!currentProjectId) { modAlert('suite-modal-alert', 'error', 'Select a project first'); return; }
   const scriptIds     = [..._smSelectedIds];   // Zone B order is authoritative
-  const environmentId = document.getElementById('sm-env')?.value || null;
   const retries = parseInt(document.getElementById('sm-retries')?.value || '0', 10);
-  const selectedBrowsers = ['chromium', 'firefox', 'webkit']
-    .filter(b => document.getElementById(`sm-browser-${b}`)?.checked);
   const body = {
     projectId: currentProjectId, name,
     description:   document.getElementById('sm-desc').value.trim(),
     scriptIds,
-    environmentId: environmentId || null,
+    environmentId: null,
     retries:       [0,1,2].includes(retries) ? retries : 0,
-    browsers:      selectedBrowsers.length > 0 ? selectedBrowsers : ['chromium'],
     beforeEachSteps: _hookBefore.map((s, i)   => ({ order: i + 1, keyword: s.keyword, locator: s.locator, value: s.value, description: s.description })),
     afterEachSteps:  _hookAfter.map((s, i)    => ({ order: i + 1, keyword: s.keyword, locator: s.locator, value: s.value, description: s.description })),
     fastMode:        !!(document.getElementById('sm-fast-mode')?.checked),
@@ -4416,6 +4935,39 @@ async function execLoad() {
   document.getElementById('exec-run-hint').textContent = 'Select a suite and environment to run';
 }
 
+// Cached flag: set once per suite change (O(N) scan with early exit via .some())
+// Checkbox onchange reads this flag — O(1), no re-scan on every click.
+let _execSuiteHasTestData = false;
+
+// Returns true if execution is allowed, false if blocked.
+function _execCheckBrowserConstraint() {
+  const warningEl = document.getElementById('exec-browser-warning');
+  const runBtn    = document.getElementById('exec-run-btn');
+  const hintEl    = document.getElementById('exec-run-hint');
+
+  if (!_execSuiteHasTestData) {
+    // No testdata steps — no restriction, hide warning
+    if (warningEl) warningEl.style.display = 'none';
+    _execUpdateRunBtn();
+    return true;
+  }
+
+  const selectedCount = ['chromium', 'firefox', 'webkit']
+    .filter(b => document.getElementById(`exec-browser-${b}`)?.checked).length;
+
+  if (selectedCount > 1) {
+    if (warningEl) warningEl.style.display = '';
+    if (runBtn)    runBtn.disabled = true;
+    if (hintEl)    hintEl.textContent = '';
+    return false;
+  }
+
+  // Single browser selected — allowed
+  if (warningEl) warningEl.style.display = 'none';
+  _execUpdateRunBtn();
+  return true;
+}
+
 function execOnSuiteChange() {
   const suiteId  = document.getElementById('exec-suite-sel')?.value;
   const envSel   = document.getElementById('exec-env-sel');
@@ -4430,6 +4982,9 @@ function execOnSuiteChange() {
     scriptsWrap.style.display = 'none';
     runBtn.disabled = true;
     hintEl.textContent = 'Select a suite and environment to run';
+    _execSuiteHasTestData = false;
+    const warnEl = document.getElementById('exec-browser-warning');
+    if (warnEl) warnEl.style.display = 'none';
     return;
   }
 
@@ -4461,8 +5016,14 @@ function execOnSuiteChange() {
   }
   scriptsWrap.style.display = '';
 
-  // Update run button state
-  _execUpdateRunBtn();
+  // Scan ALL steps in suite scripts for testdata valueMode — short-circuits on first match.
+  // Result cached in _execSuiteHasTestData; checkbox onchange reads it at O(1).
+  _execSuiteHasTestData = scripts.some(s =>
+    (s.steps || []).some(step => step.valueMode === 'testdata')
+  );
+
+  // Apply browser constraint (may disable Run button and show warning)
+  _execCheckBrowserConstraint();
 }
 
 function _execUpdateRunBtn() {
@@ -4479,6 +5040,9 @@ async function execRun() {
   const suiteId = document.getElementById('exec-suite-sel')?.value;
   const envId   = document.getElementById('exec-env-sel')?.value;
   if (!suiteId || !envId) { alert('Select a suite and environment first.'); return; }
+
+  // Guard: re-validate browser constraint before executing (defence-in-depth)
+  if (!_execCheckBrowserConstraint()) return;
 
   // Stop any previous poll
   _execPollStopped = true;
@@ -4505,9 +5069,11 @@ async function execRun() {
   if (metaEl)    metaEl.textContent   = '';
   if (progressBar) progressBar.style.width = '0%';
 
+  const execBrowsers = ['chromium', 'firefox', 'webkit']
+    .filter(b => document.getElementById(`exec-browser-${b}`)?.checked);
   const res  = await fetch(`/api/suites/${suiteId}/run`, {
     method: 'POST', headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ environmentId: envId }),
+    body: JSON.stringify({ environmentId: envId, browsers: execBrowsers.length ? execBrowsers : ['chromium'] }),
   });
   const data = await res.json();
   if (!res.ok) {
@@ -4529,20 +5095,27 @@ async function execRun() {
   function _execRenderResultsTable(tests) {
     if (!tests?.length && !scripts.length) return;
     resultsTable.style.display = '';
+    function _execBrBadge(b) {
+      if (b === 'firefox') return `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 7px;border-radius:20px;font-size:10px;font-weight:700;background:#E66000;color:#fff">● Firefox</span>`;
+      if (b === 'webkit')  return `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 7px;border-radius:20px;font-size:10px;font-weight:700;background:#006CFF;color:#fff">● Safari</span>`;
+      return                      `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 7px;border-radius:20px;font-size:10px;font-weight:700;background:#4285F4;color:#fff">● Chrome</span>`;
+    }
     const rows = tests?.length
       ? tests.map(t => {
           const colour = t.status === 'pass' ? '#4ec9b0' : '#f48771';
           const icon   = t.status === 'pass' ? '✓' : '✗';
           const dur    = t.durationMs != null ? `${(t.durationMs / 1000).toFixed(1)}s` : '';
-          return `<div style="display:grid;grid-template-columns:1fr 90px 80px;border-bottom:1px solid var(--neutral-100)">
+          return `<div style="display:grid;grid-template-columns:1fr 100px 90px 80px;border-bottom:1px solid var(--neutral-100)">
             <div style="padding:7px 10px;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(t.name)}">${escHtml(t.name)}</div>
+            <div style="padding:7px 10px;display:flex;align-items:center">${_execBrBadge(t.browser || 'chromium')}</div>
             <div style="padding:7px 10px;font-size:12px;font-weight:700;color:${colour}">${icon} ${t.status}</div>
             <div style="padding:7px 10px;font-size:12px;color:var(--neutral-400)">${dur}</div>
           </div>`;
         }).join('')
       : scripts.map(s => `
-          <div style="display:grid;grid-template-columns:1fr 90px 80px;border-bottom:1px solid var(--neutral-100);opacity:.5">
+          <div style="display:grid;grid-template-columns:1fr 100px 90px 80px;border-bottom:1px solid var(--neutral-100);opacity:.5">
             <div style="padding:7px 10px;font-size:12.5px">${escHtml(s.title)}</div>
+            <div style="padding:7px 10px;font-size:12px;color:var(--neutral-400)">—</div>
             <div style="padding:7px 10px;font-size:12px;color:var(--neutral-400)">pending</div>
             <div style="padding:7px 10px;font-size:12px;color:var(--neutral-400)">—</div>
           </div>`).join('');
@@ -5034,10 +5607,14 @@ function histRender() {
     // Derive browsers from test events (populated by parser) or from run record field
     const browserSet = new Set((r.tests || []).map(t => t.browser).filter(Boolean));
     if (r.browsers && Array.isArray(r.browsers)) r.browsers.forEach(b => browserSet.add(b));
-    const browserIcons = { chromium: '🐛', firefox: '🦊', webkit: '🌍' };
+    function _brBadge(b) {
+      if (b === 'firefox') return `<span style="display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:700;background:#E66000;color:#fff">● Firefox</span>`;
+      if (b === 'webkit')  return `<span style="display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:700;background:#006CFF;color:#fff">● Safari</span>`;
+      return                      `<span style="display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:700;background:#4285F4;color:#fff">● Chrome</span>`;
+    }
     const browserLabel = browserSet.size > 0
-      ? [...browserSet].map(b => `<span title="${b}" style="font-size:13px">${browserIcons[b] || b}</span>`).join(' ')
-      : '<span style="color:var(--neutral-400);font-size:11px">chromium</span>';
+      ? [...browserSet].map(b => _brBadge(b)).join(' ')
+      : _brBadge('chromium');
     const compareCb = isDone
       ? `<input type="checkbox" class="hist-compare-chk" value="${escHtml(r.runId)}" onchange="histCompareSelChanged()" style="width:14px;height:14px;cursor:pointer" />`
       : `<span style="width:14px;display:inline-block"></span>`;
@@ -5123,6 +5700,7 @@ async function histViewDetail(runId) {
       return `<tr>
         <td style="text-align:center">${i + 1}</td>
         <td>${escHtml(t.name || '—')}</td>
+        <td style="text-align:center">${_brBadge(t.browser || 'chromium')}</td>
         <td>${st}</td>
         <td>${dur2}</td>
       </tr>`;
@@ -5155,7 +5733,7 @@ async function histViewDetail(runId) {
         <h3 style="margin:24px 0 12px;font-size:14px;color:#9cdcfe;text-transform:uppercase;letter-spacing:1px">Test Case Results</h3>
         <div style="overflow-x:auto">
           <table class="data-table">
-            <thead><tr><th>#</th><th>Test Case</th><th>Status</th><th>Duration</th></tr></thead>
+            <thead><tr><th>#</th><th>Test Case</th><th>Browser</th><th>Status</th><th>Duration</th></tr></thead>
             <tbody>${testRows}</tbody>
           </table>
         </div>` : '<p style="color:#858585;margin-top:16px">No individual test results recorded.</p>'}
@@ -5893,7 +6471,7 @@ function _debugOnError({ stepIdx, keyword, locator, errorMessage, errorType }) {
   const existingEdit = document.getElementById('dbg-inline-edit');
   if (existingEdit) existingEdit.remove();
 
-  const LOCATOR_TYPES = ['css','xpath','id','name','text','testid','role','label','placeholder'];
+  const LOCATOR_TYPES = ['css','xpath','id','name','text','testid','role','label','placeholder','nth','last'];
   const currentLoc    = locator || (stepMeta?.locator || '');
   const currentLt     = stepMeta?.locatorType || 'css';
   const currentVal    = stepMeta?.value || '';
@@ -6736,7 +7314,7 @@ function _recorderInlineEditLocator(rowEl, stepData) {
   const existing = rowEl.querySelector('.rec-inline-edit');
   if (existing) { existing.remove(); return; }
 
-  const LOCATOR_TYPES = ['css','xpath','id','name','text','testid','role','label','placeholder'];
+  const LOCATOR_TYPES = ['css','xpath','id','name','text','testid','role','label','placeholder','nth','last'];
 
   const editor = document.createElement('div');
   editor.className = 'rec-inline-edit';
@@ -7806,4 +8384,72 @@ function vrViewDiff(id) {
   <div class="col"><div class="col-hdr">Diff (red = changed)</div><img src="${imgBase}?type=diff" onerror="this.alt='No diff'"></div>
   </div></body></html>`);
   win.document.close();
+}
+
+// ── Locator Health ────────────────────────────────────────────────────────────
+
+async function locatorHealthLoad() {
+  const pid = currentProjectId;
+  if (!pid) return;
+  try {
+    const res = await fetch(`/api/locator-health?projectId=${encodeURIComponent(pid)}`);
+    const data = await res.json();
+    locatorHealthRender(data);
+  } catch (e) {
+    document.getElementById('locator-health-empty').style.display = '';
+    document.getElementById('locator-health-empty').textContent = 'Failed to load: ' + e.message;
+    document.getElementById('locator-health-table').style.display = 'none';
+    document.getElementById('locator-health-summary').innerHTML = '';
+  }
+}
+
+function locatorHealthRender(rows) {
+  const summary = document.getElementById('locator-health-summary');
+  const empty   = document.getElementById('locator-health-empty');
+  const table   = document.getElementById('locator-health-table');
+  const tbody   = document.getElementById('locator-health-tbody');
+
+  empty.style.display = 'none';
+  table.style.display = '';
+
+  if (!rows || rows.length === 0) {
+    summary.innerHTML = '';
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--neutral-400);padding:20px">No healing events recorded for this project</td></tr>';
+    return;
+  }
+
+  const totalHeals  = rows.reduce((s, r) => s + r.healCount, 0);
+  const autoCount   = rows.filter(r => r.lastHealedBy === 'auto').length;
+  const avgConf     = rows.filter(r => r.avgConfidence != null).length
+    ? Math.round(rows.filter(r => r.avgConfidence != null).reduce((s, r) => s + r.avgConfidence, 0) / rows.filter(r => r.avgConfidence != null).length)
+    : '—';
+
+  summary.innerHTML = `
+    <div class="stat-card"><div class="stat-value">${rows.length}</div><div class="stat-label">Healed Locators</div></div>
+    <div class="stat-card"><div class="stat-value">${totalHeals}</div><div class="stat-label">Total Heal Events</div></div>
+    <div class="stat-card"><div class="stat-value">${autoCount}</div><div class="stat-label">Auto-Healed</div></div>
+    <div class="stat-card"><div class="stat-value">${avgConf}%</div><div class="stat-label">Avg Confidence</div></div>
+  `;
+
+  tbody.innerHTML = rows.map(r => {
+    const latest = r.recentEvents && r.recentEvents[0];
+    const oldSel  = latest?.oldSelector ? escHtml(latest.oldSelector.slice(0, 40)) + (latest.oldSelector.length > 40 ? '…' : '') : '—';
+    const newSel  = latest?.newSelector ? escHtml(latest.newSelector.slice(0, 40)) + (latest.newSelector.length > 40 ? '…' : '') : '—';
+    const badge   = r.lastHealedBy === 'auto'
+      ? '<span class="badge badge-success">auto</span>'
+      : r.lastHealedBy
+        ? `<span class="badge badge-info">${escHtml(r.lastHealedBy)}</span>`
+        : '—';
+    const conf    = r.avgConfidence != null ? `<span class="${r.avgConfidence >= 75 ? 'text-success' : 'text-warning'}">${r.avgConfidence}%</span>` : '—';
+    const date    = r.lastHealedAt ? new Date(r.lastHealedAt).toLocaleDateString() : '—';
+    return `<tr>
+      <td>${escHtml(r.name)}</td>
+      <td><code style="font-size:11px">${escHtml((r.selector || '').slice(0, 50))}</code></td>
+      <td style="text-align:center"><strong>${r.healCount}</strong></td>
+      <td style="text-align:center">${conf}</td>
+      <td>${date}</td>
+      <td>${badge}</td>
+      <td style="font-size:11px"><span style="color:var(--text-muted)">${oldSel}</span> → ${newSel}</td>
+    </tr>`;
+  }).join('');
 }

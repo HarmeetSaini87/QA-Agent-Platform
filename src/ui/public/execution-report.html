@@ -139,6 +139,15 @@
       display: inline-flex; align-items: center; padding: 4px 12px;
       border-radius: 20px; font-size: 11px; font-weight: 600;
     }
+    .tc-browser-badge {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 3px 9px; border-radius: 20px;
+      font-size: 11px; font-weight: 700; letter-spacing: .3px;
+      white-space: nowrap;
+    }
+    .tc-browser-badge.br-chromium { background:#4285F4; color:#fff; }
+    .tc-browser-badge.br-firefox  { background:#E66000; color:#fff; }
+    .tc-browser-badge.br-webkit   { background:#006CFF; color:#fff; }
 
     /* ── Section titles (kept from original) ──────────────────────────────── */
     .section-title {
@@ -679,17 +688,26 @@ function statusBadge(status) {
 }
 
 function extractTcId(name) {
-  const m = (name || '').match(/\[([A-Z]{0,6}_\d+)\]/);
+  // Matches [MED-01], [TC-123], [ABC_01] — prefix letters + hyphen or underscore + digits
+  const m = (name || '').match(/^\[([A-Z]{1,8}[-_]\d+)\]/);
   return m ? m[1] : null;
 }
 
 function cleanTitle(name) {
-  return (name || '').replace(/^\s*\[[A-Z_\d]+\]\s*/, '').trim() || name || '—';
+  // Strip leading [TCID] prefix added by codegenGenerator
+  return (name || '').replace(/^\s*\[[A-Z]{1,8}[-_]\d+\]\s*/, '').trim() || name || '—';
 }
 
 function screenshotSrc(p) {
   if (!p) return '';
   return `/screenshots/${esc(p.replace('test-results/',''))}`;
+}
+
+function browserBadge(browser) {
+  const b = (browser || 'chromium').toLowerCase();
+  if (b === 'firefox')  return `<span class="tc-browser-badge br-firefox" >● Firefox</span>`;
+  if (b === 'webkit')   return `<span class="tc-browser-badge br-webkit"  >● Safari</span>`;
+  return                       `<span class="tc-browser-badge br-chromium">● Chrome</span>`;
 }
 
 // Converts a test-results/... artifact path → server-routed URL for video/trace.
@@ -904,9 +922,7 @@ function buildTestRow(t, i, r) {
       <td>${tcId ? `<span class="tc-id-badge">${esc(tcId)}</span>` : '<span style="color:var(--g400)">—</span>'}</td>
       <td style="color:var(--dark);font-weight:500">${esc(title)}</td>
       <td style="text-align:center">${statusBadge(status)}</td>
-      <td style="text-align:center;font-size:13px" title="${esc(t.browser || 'chromium')}">${
-        t.browser === 'firefox' ? '🦊' : t.browser === 'webkit' ? '🌍' : '🐛'
-      }</td>
+      <td style="text-align:center">${browserBadge(t.browser)}</td>
       <td style="text-align:center;color:var(--g500);font-size:12px;white-space:nowrap">${fmtDurationMs(t.durationMs)}</td>
       <td style="text-align:center">${ssCell}</td>
       <td style="text-align:center">${videoCell}</td>

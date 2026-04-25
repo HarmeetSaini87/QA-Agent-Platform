@@ -47,7 +47,7 @@ function Exit-WithError {
 # ── Banner ────────────────────────────────────────────────────────────────────
 
 Write-Log "============================================================"
-Write-Log " QA Agent Platform — Startup Script"
+Write-Log " QA Agent Platform - Startup Script"
 Write-Log " Install directory : $INSTALL_DIR"
 Write-Log "============================================================"
 
@@ -58,7 +58,7 @@ try {
     $nodeVersion = node --version 2>&1
     Write-Log "Node.js found: $nodeVersion"
 } catch {
-    Exit-WithError "Node.js is not installed or not in PATH. Install from https://nodejs.org (LTS version)."
+    Exit-WithError "Node.js is not installed or not in PATH. Install from https://nodejs.org LTS version."
 }
 
 # ── Step 2: Verify install directory ─────────────────────────────────────────
@@ -70,11 +70,11 @@ if (!(Test-Path $INSTALL_DIR)) {
 Set-Location $INSTALL_DIR
 Write-Log "Working directory: $INSTALL_DIR"
 
-# ── Step 3: Verify node_modules ───────────────────────────────────────────────
+# -- Step 3: Verify node_modules -----------------------------------------------
 
 $nodeModules = Join-Path $INSTALL_DIR "node_modules"
 if (!(Test-Path $nodeModules)) {
-    Write-Log "node_modules not found — running npm install..." "WARN"
+    Write-Log "node_modules not found - running npm install..." "WARN"
     try {
         npm install 2>&1 | Tee-Object -FilePath $LOG_FILE -Append
         Write-Log "npm install completed."
@@ -83,11 +83,11 @@ if (!(Test-Path $nodeModules)) {
     }
 }
 
-# ── Step 4: Verify TypeScript build ──────────────────────────────────────────
+# -- Step 4: Verify TypeScript build ------------------------------------------
 
 $distServer = Join-Path $INSTALL_DIR "dist\ui\server.js"
 if (!(Test-Path $distServer)) {
-    Write-Log "Build output not found — running npm run build..." "WARN"
+    Write-Log "Build output not found - running npm run build..." "WARN"
     try {
         npm run build 2>&1 | Tee-Object -FilePath $LOG_FILE -Append
         Write-Log "Build completed."
@@ -96,33 +96,32 @@ if (!(Test-Path $distServer)) {
     }
 }
 
-# ── Step 5: Verify .env ───────────────────────────────────────────────────────
+# -- Step 5: Verify .env -------------------------------------------------------
 
 $envFile = Join-Path $INSTALL_DIR ".env"
 if (!(Test-Path $envFile)) {
-    Write-Log ".env file not found — server will use built-in defaults." "WARN"
-    Write-Log "For production use, create a .env file. See docs\INSTALLATION_GUIDE.md Section 4." "WARN"
+    Write-Log ".env file not found - server will use built-in defaults." "WARN"
 } else {
     Write-Log ".env found."
 }
 
-# ── Step 6: Verify Playwright browsers ───────────────────────────────────────
+# -- Step 6: Verify Playwright browsers ---------------------------------------
 
 Write-Log "Checking Playwright browser..."
 $pwChromePath = Join-Path $env:LOCALAPPDATA "ms-playwright"
 if (!(Test-Path $pwChromePath)) {
-    Write-Log "Playwright browsers not installed — running install..." "WARN"
+    Write-Log "Playwright browsers not installed - running install..." "WARN"
     try {
         npx playwright install chromium 2>&1 | Tee-Object -FilePath $LOG_FILE -Append
         Write-Log "Playwright chromium installed."
     } catch {
-        Write-Log "Playwright browser install failed. Suite runs may fail. Run manually: npx playwright install chromium" "WARN"
+        Write-Log "Playwright browser install failed. Suite runs may fail." "WARN"
     }
 } else {
     Write-Log "Playwright browsers found."
 }
 
-# ── Step 7: Start server with auto-restart ────────────────────────────────────
+# -- Step 7: Start server with auto-restart ------------------------------------
 
 $restartCount = 0
 
@@ -140,7 +139,7 @@ while ($restartCount -le $MAX_RESTARTS) {
     try {
         # Use tsx to run TypeScript directly (no separate build step needed at runtime)
         $process = Start-Process -FilePath "node" `
-            -ArgumentList "node_modules\.bin\tsx", "src\ui\server.ts" `
+            -ArgumentList "node_modules\tsx\dist\cli.mjs", "src\ui\server.ts" `
             -WorkingDirectory $INSTALL_DIR `
             -NoNewWindow `
             -PassThru `

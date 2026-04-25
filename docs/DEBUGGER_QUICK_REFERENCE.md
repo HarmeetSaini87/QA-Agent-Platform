@@ -142,17 +142,19 @@
 npm run build
 
 # Find and kill existing server
-netstat -ano | findstr :3000
+netstat -ano | findstr :3003
 taskkill /F /PID <PID>
 
-# Start new server with logging to E: drive
-cd e:/AI Agent/qa-agent-platform
+# Start new server with logging (DEV instance — port 3003)
+cd "e:/AI Agent/qa-agent-platform-dev"
 npm run ui > server.log 2>&1 &
 
 # Verify startup
-curl http://localhost:3000
+curl http://localhost:3003
 tail -5 server.log
 ```
+
+> **Note:** Dev instance runs on port 3003. Prod instance runs on port 3000 at `e:/AI Agent/qa-agent-platform`. Never restart prod unless explicitly asked.
 
 ---
 
@@ -195,11 +197,23 @@ curl http://localhost:3000
 
 ---
 
+## 📋 Logger Output
+
+The platform uses Winston structured logging (`src/utils/logger.ts`). Log levels: `error`, `warn`, `info`, `debug`.
+
+Filter by level:
+```bash
+grep '"level":"error"' server.log
+grep '"level":"warn"'  server.log
+```
+
+Debug session logs are prefixed `[dbg:<sessionId>]` and `[debug:stop]` / `[debug:continue]`.
+
+---
+
 ## 📞 Support
 
 For issues not covered here, check:
-1. [DEBUGGER_IMPROVEMENTS.md](DEBUGGER_IMPROVEMENTS.md) — Full technical details
-2. [CHANGELOG_2026-04-08.md](../CHANGELOG_2026-04-08.md) — What changed and why
-3. Server logs: `tail -100 server.log | grep -i "error\|fail\|debug"`
-4. Browser console (F12) — JavaScript errors
-5. Network tab (F12) — API/WebSocket failures
+1. Server logs: `tail -100 server.log | grep -i "error\|fail\|debug"`
+2. Browser console (F12) — JavaScript errors
+3. Network tab (F12) — API/WebSocket failures

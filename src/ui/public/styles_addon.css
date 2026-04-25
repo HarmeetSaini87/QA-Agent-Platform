@@ -264,39 +264,40 @@
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  background: var(--neutral-600, #4a5568);
+  background: #3b82f6;
   color: #fff;
   font-size: 10px;
   font-weight: 700;
-  cursor: default;
+  cursor: help;
   position: relative;
   flex-shrink: 0;
   user-select: none;
+  transition: background .15s;
 }
-.info-icon::after {
-  content: attr(data-tooltip);
-  position: absolute;
-  left: 50%;
-  bottom: calc(100% + 8px);
-  transform: translateX(-50%);
-  background: #1e2a38;
-  color: #e2e8f0;
+.info-icon:hover { background: #2563eb; }
+/* info-icon tooltip is now JS-driven (position:fixed) — no ::after needed */
+
+/* ── Info tooltip popup (shared JS popup, appended to body) ────────────── */
+.info-tip-popup {
+  position: fixed;
+  z-index: 10000;
+  display: none;
+  background: #ffffff;
+  color: #1e293b;
   font-size: 12px;
   font-weight: 400;
-  line-height: 1.55;
+  line-height: 1.6;
   padding: 10px 13px;
   border-radius: 7px;
-  border: 1px solid #334155;
+  border: 1px solid #cbd5e1;
   white-space: pre-line;
-  width: 320px;
-  box-shadow: 0 6px 20px rgba(0,0,0,.4);
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity .15s;
-  z-index: 9999;
+  width: 300px;
+  max-width: calc(100vw - 24px);
+  max-height: 260px;
+  overflow-y: auto;
+  box-shadow: 0 8px 28px rgba(0,0,0,.22), 0 2px 8px rgba(0,0,0,.14);
+  pointer-events: auto;
 }
-.info-icon:hover::after,
-.info-icon:focus::after { opacity: 1; }
 
 /* ── Nav section label ─────────────────────────────────────────────────── */
 .nav-section-label {
@@ -621,6 +622,8 @@
 .step-action-btn.step-clone-icon:hover { color: #059669; background: #d1fae5; border-color: #059669; }
 .step-action-btn.step-pin-icon:hover   { color: #7c3aed; background: #ede9fe; border-color: #7c3aed; }
 .step-action-btn.step-pin-active       { color: #7c3aed; background: #ede9fe; border-color: #7c3aed; }
+.step-action-btn.step-pin-disabled,
+.step-action-btn.step-pin-disabled:hover { opacity: .35; cursor: not-allowed; color: var(--neutral-400); background: var(--neutral-100); border-color: var(--neutral-200); }
 
 /* ── FILE CHOOSER widget ─────────────────────────────────────────────────── */
 .se-filechooser-widget { padding: 4px 0; }
@@ -750,11 +753,12 @@
 
 /* ── Keyword tooltip popup ──────────────────────────────────────────────── */
 .kw-tooltip-popup {
-  position: fixed; z-index: 9999; display: none;
-  background: #1e293b; color: #e2e8f0;
+  position: fixed; z-index: 10000; display: none;
+  background: #ffffff; color: #1e293b;
   border-radius: 8px; padding: 12px 14px;
   width: 320px; max-width: 90vw;
-  box-shadow: 0 8px 24px rgba(0,0,0,.35);
+  border: 1px solid #cbd5e1;
+  box-shadow: 0 8px 28px rgba(0,0,0,.22), 0 2px 8px rgba(0,0,0,.14);
   font-size: 12px; line-height: 1.5;
   pointer-events: none;
 }
@@ -762,15 +766,15 @@
 .kw-tp-section:last-child { margin-bottom: 0; }
 .kw-tp-label {
   font-size: 10px; font-weight: 700; letter-spacing: .06em;
-  text-transform: uppercase; color: #94a3b8; margin-bottom: 4px;
+  text-transform: uppercase; color: #64748b; margin-bottom: 4px;
 }
-.kw-tp-what { color: #e2e8f0; }
+.kw-tp-what { color: #1e293b; }
 .kw-tp-example {
-  font-family: monospace; font-size: 11px; color: #7dd3fc;
-  background: rgba(255,255,255,.06); border-radius: 4px;
+  font-family: monospace; font-size: 11px; color: #0369a1;
+  background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 4px;
   padding: 5px 8px; margin: 0; white-space: pre-wrap; word-break: break-all;
 }
-.kw-tp-tip { color: #fbbf24; }
+.kw-tp-tip { color: #b45309; }
 
 /* ── Auto-config badge (GoToURL) ────────────────────────────────────────── */
 .se-step-auto-badge { margin: 0 0 8px 0; }

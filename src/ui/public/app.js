@@ -866,3 +866,22 @@ connectWS();
     }
   } catch { /* silently ignore */ }
 })();
+
+// ── Info-icon tooltip — event delegation (works for dynamically added icons) ──
+document.addEventListener('mouseover', e => {
+  const el = e.target.closest('.info-icon');
+  if (el && typeof _infoTipShow === 'function') _infoTipShow(el);
+});
+document.addEventListener('mouseout', e => {
+  const el = e.target.closest('.info-icon');
+  if (el && typeof _infoTipHide === 'function') _infoTipHide();
+});
+document.addEventListener('focusin', e => {
+  const el = e.target.closest('.info-icon');
+  if (el && typeof _infoTipShow === 'function') _infoTipShow(el);
+});
+document.addEventListener('focusout', e => {
+  const el = e.target.closest('.info-icon');
+  if (el && typeof _infoTipHide === 'function') _infoTipHide();
+});
+

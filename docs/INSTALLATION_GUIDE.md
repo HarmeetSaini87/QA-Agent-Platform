@@ -61,6 +61,7 @@ Both `install.ps1` (Windows) and `install.sh` (Linux) perform these steps automa
 | 11 | Optionally add a **/etc/hosts** or **hosts file** entry for a friendly URL |
 | 12 | **Start the service** and verify HTTP 200 |
 | 13 | Print a **final summary** with URL and default credentials |
+| 14 | On first boot: seed **default admin user** + **demo project** (1 script, 1 locator) |
 
 ---
 
@@ -254,13 +255,71 @@ Run through this checklist before handing off:
 [ ] Default admin login works (Admin@123)
 [ ] Password change forced on first login — change it
 [ ] Admin → License shows correct tier and expiry
-[ ] Create a test Project
-[ ] Create a test Script with 2–3 keywords
-[ ] Create a test Suite — add the script
-[ ] Run the Suite — execution completes
+[ ] Demo Project visible in project selector (see Section 7.1)
+[ ] Create a test Suite — add the demo script
 [ ] Execution History shows the run
 [ ] Service auto-starts after reboot
 ```
+
+### 7.1 Demo Data — What Gets Created on First Start
+
+On the very first server start, the platform automatically creates demo data so the UI is not blank:
+
+| Item | Details |
+|---|---|
+| **Project** | "Demo Project" — with DEV and QA environments |
+| **Test Script** | `DEMO-01` — "Login — Happy Path" — 5 steps (Navigate, Fill username, Fill password, Click Login, Assert URL) |
+| **Locator** | "Login Button" — selector `#login-btn` — page module "Login Page" |
+
+> **These are placeholders.** Update the selectors and URLs to match the customer's application, or delete them and create your own. Demo data is only created once — it will not be recreated if deleted.
+
+To delete demo data: go to the project selector → open Demo Project → delete the script, locator, then the project itself via Admin → Projects.
+
+---
+
+## 7.2 Email / SMTP Notifications (Optional)
+
+Notifications are **off by default**. To enable email alerts for failed runs or healing events:
+
+1. Open the `.env` file on the server:
+   - **Windows:** `C:\qa-agent-platform\.env`
+   - **Linux:** `/opt/qa-agent-platform/.env`
+
+2. Uncomment and fill in the SMTP section:
+   ```env
+   SMTP_HOST=smtp.yourcompany.com
+   SMTP_PORT=587
+   SMTP_SECURE=false
+   SMTP_USER=qa-platform@yourcompany.com
+   SMTP_PASS=your-smtp-password
+   SMTP_FROM=QA Platform <qa-platform@yourcompany.com>
+   NOTIFY_ON_FAIL=true
+   NOTIFY_ON_HEAL=false
+   ```
+
+3. Restart the service:
+   - **Windows:** `nssm restart QAAgentPlatform`
+   - **Linux:** `sudo systemctl restart qa-agent-platform`
+
+4. Test via **Admin → Settings → Test Notification** in the browser.
+
+> SMTP is entirely optional. The platform runs fully without it.
+
+---
+
+## 7.3 HTTPS / TLS Setup (Optional)
+
+The platform runs on **HTTP by default**. This is sufficient for internal/on-premise networks where the server is behind a corporate firewall.
+
+If the customer requires HTTPS (public-facing deployment, compliance requirement, or browser security warnings are not acceptable), follow the separate guide:
+
+**📋 [docs/HTTPS_SETUP.md](HTTPS_SETUP.md)** — covers:
+- nginx reverse proxy (Linux, recommended)
+- IIS reverse proxy (Windows)
+- Self-signed certificate (internal/dev)
+- Certbot / Let's Encrypt (public domain, free cert)
+
+> **Do not force HTTPS** on customers who do not need it. HTTP is perfectly valid for closed on-premise networks.
 
 ---
 

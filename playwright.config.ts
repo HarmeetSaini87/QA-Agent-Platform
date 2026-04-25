@@ -7,10 +7,10 @@ const isCI = !!process.env.CI; // Set to 'true' automatically in Azure DevOps
 
 export default defineConfig({
   testDir: './tests',
-  fullyParallel: false,       // Sequential by default — change per suite if needed
+  fullyParallel: true,        // Enable parallel execution across browsers/suites
   forbidOnly: isCI,
   retries: isCI ? 1 : 0,
-  workers: isCI ? 2 : 1,
+  workers: isCI ? 2 : undefined, // 'undefined' lets Playwright automatically scale based on local CPU cores
   timeout: Number(process.env.DEFAULT_TIMEOUT) || 30000,
 
   reporter: [

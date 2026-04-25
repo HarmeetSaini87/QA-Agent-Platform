@@ -391,11 +391,11 @@
       }
     }
 
-    // 2. Stable id — uniqueness verified (e.g. #username, #submitBtn)
+    // 2. Stable id — emit as type:'id' (raw value, no #) for Playwright getBy* parity
     if (el.id && !isDynamicId(el.id)) {
       const cssId = `#${el.id}`;
-      if (countMatches(cssId, r) === 1) return { sel: cssId, type: 'css' };
-      // ID not unique — qualify with tag
+      if (countMatches(cssId, r) === 1) return { sel: el.id, type: 'id' };
+      // ID not unique — qualify with tag as CSS fallback
       const cssTagId = `${tag}#${el.id}`;
       if (countMatches(cssTagId, r) === 1) return { sel: cssTagId, type: 'css' };
     }
@@ -477,6 +477,27 @@
     if (tag === 'input' || tag === 'select' || tag === 'textarea') {
       const lbl = getAssociatedLabel(el);
       if (lbl) return { sel: `label:${lbl}`, type: 'label' };
+    }
+
+    // 9b. nth / last — positional CSS when element is in a small, stable set
+    // Only triggers when all earlier strategies failed (no stable id/name/label/role).
+    // Format: "cssSelector:N" for nth, "cssSelector" for last — decoded by codegenGenerator.
+    {
+      const stableClasses = Array.from(el.classList).filter(c => !/\d{3,}|active|selected|hover|focus|open|show|hide/.test(c));
+      const shortCss      = stableClasses.length ? `${tag}.${stableClasses[0]}` : tag;
+      const siblings      = Array.from((r || document).querySelectorAll(shortCss));
+      const total         = siblings.length;
+      if (total >= 2 && total <= 20) {
+        const idx = siblings.indexOf(el);
+        if (idx !== -1) {
+          if (idx === total - 1 && total <= 10) {
+            return { sel: shortCss, type: 'last' };
+          }
+          if (idx <= 4) {
+            return { sel: `${shortCss}:${idx}`, type: 'nth' };
+          }
+        }
+      }
     }
 
     // 10. Row-anchored XPath for table cells
@@ -647,6 +668,186 @@
     '[class*="loader"]:not([class*="preloader"])',
   ].join(',');
 
+  // ── Toast / Validation / Flash message selectors ────────────────────────────
+  // Covers: Toastr, SweetAlert2, Material Snackbar, Bootstrap Toast/Alert,
+  //         Angular Material, Ant Design message, Semantic UI, inline validation errors.
+  const TOAST_SEL = [
+    // ARIA roles — framework-agnostic
+    '[role="alert"]', '[role="status"]', '[role="log"]',
+    // Common toast libraries
+    '.toast', '.toast-message', '.toast-container .toast-body',
+    '.toastr', '.ngx-toastr',
+    '.mat-snack-bar-container', '.mat-simple-snackbar',
+    '.swal2-popup .swal2-html-container', '.swal2-toast',
+    '.ant-message-notice-content', '.ant-notification-notice-message',
+    '.p-toast-message', '.p-toast-detail',   // PrimeNG
+    '.iziToast-message',
+    // Bootstrap alerts / toasts
+    '.alert:not(.alert-dismissible .btn)', '.bs-toast',
+    // Generic flash / notification patterns
+    '[class*="notification"]:not([class*="icon"])',
+    '[class*="flash-message"]', '[class*="flash-notice"]',
+    '[class*="banner-message"]',
+    '[data-notify]', '[data-alert]',
+    // Modal / dialog content — capture text when dialog appears
+    '[role="dialog"] .modal-body', '[role="dialog"] .dialog-content',
+    '[role="alertdialog"]',
+    '.modal.show .modal-body', '.modal.show .modal-title',
+    '.mat-dialog-container .mat-dialog-content',
+    '.p-dialog-content',                   // PrimeNG dialog
+    '.cdk-overlay-container .mat-dialog-content',
+    // Tooltip validation messages
+    '[role="tooltip"]',
+    '[class*="tooltip"]:not([class*="tooltip-arrow"]):not([class*="tooltip-inner"])',
+    '.tippy-content',                       // Tippy.js
+    '.p-tooltip-text',                      // PrimeNG tooltip
+  ].join(',');
+
+  const VALIDATION_SEL = [
+    // ARIA invalid fields
+    '[aria-invalid="true"]',
+    // Common validation error patterns
+    '.invalid-feedback', '.field-error', '.error-message',
+    '.mat-error', '.mat-form-field-subscript-wrapper .mat-error',
+    '.ant-form-item-explain-error',
+    '.p-error',               // PrimeNG
+    '.form-error', '.form__error',
+    '[class*="validation-error"]', '[class*="error-text"]',
+    '[class*="help-block"][class*="error"]',
+    '.ng-invalid ~ .error', '.ng-touched.ng-invalid + span',
+  ].join(',');
+
+  // Dedup window for toast asserts — don't re-emit same text within 2s
+  let _lastToastEmit = { text: '', ts: 0 };
+
+  // Set of nodes already seen in this toast-detection pass (cleared per mutation batch)
+  const _seenToastNodes = new WeakSet();
+
+  // Debounce timer for mutation-triggered toast scan
+  let _toastScanTimer = null;
+
+  function _getVisibleText(el) {
+    return (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
+  }
+
+  function _isToastVisible(el) {
+    try {
+      const r = el.getBoundingClientRect();
+      if (r.width < 2 || r.height < 2) return false;
+      const style = window.getComputedStyle(el);
+      if (style.display === 'none' || style.visibility === 'hidden' || parseFloat(style.opacity) < 0.05) return false;
+      return true;
+    } catch { return false; }
+  }
+
+  // Check whether el is a QA Recorder's own toast (purple overlay) — never capture these
+  function _isRecorderOwnToast(el) {
+    try {
+      const style = window.getComputedStyle(el);
+      return style.background.includes('124, 58, 237') ||   // rgb(124,58,237)
+             style.backgroundColor.includes('124, 58, 237') ||
+             (el.style.background && el.style.background.includes('#7c3aed'));
+    } catch { return false; }
+  }
+
+  function _emitToastAssert(text, selector, selectorType) {
+    const now = Date.now();
+    if (_lastToastEmit.text === text && now - _lastToastEmit.ts < 2000) return; // deduplicate
+    _lastToastEmit = { text, ts: now };
+    if (!shouldEmit('ASSERT_TOAST', selector, text)) return;
+    recordEmit('ASSERT_TOAST', selector, text);
+    postStep({
+      eventType:    'ASSERT_TOAST',
+      selector,
+      selectorType: selectorType || 'css',
+      value:        text,
+      smartName:    'Assert Toast Message',
+      tagName:      '',
+      url:          location.href,
+    });
+  }
+
+  function _emitValidationAssert(text, selector, selectorType) {
+    const now = Date.now();
+    if (!shouldEmit('ASSERT_TEXT', selector, text)) return;
+    recordEmit('ASSERT_TEXT', selector, text);
+    postStep({
+      eventType:    'ASSERT_TEXT',
+      selector,
+      selectorType: selectorType || 'css',
+      value:        text,
+      smartName:    'Assert Validation Message',
+      tagName:      '',
+      url:          location.href,
+    });
+  }
+
+  // Scan for newly appeared toast/validation nodes and emit asserts
+  function _scanForToastsAndValidation(addedNodes) {
+    if (!_active) return;
+
+    // 1. Check toast-role nodes added to DOM
+    addedNodes.forEach(node => {
+      if (!node || node.nodeType !== 1) return;
+      if (_seenToastNodes.has(node)) return;
+
+      // Match node itself or any descendant matching TOAST_SEL
+      const candidates = [];
+      if (node.matches && node.matches(TOAST_SEL)) candidates.push(node);
+      if (node.querySelectorAll) {
+        node.querySelectorAll(TOAST_SEL).forEach(c => candidates.push(c));
+      }
+
+      candidates.forEach(el => {
+        if (_seenToastNodes.has(el)) return;
+        _seenToastNodes.add(el);
+        if (!_isToastVisible(el)) return;
+        if (_isRecorderOwnToast(el)) return;
+
+        const text = _getVisibleText(el);
+        if (!text || text.length < 2) return;
+
+        const loc = bestSelector(el);
+        _emitToastAssert(text, loc.sel, loc.type);
+      });
+
+      // Match inline validation errors
+      const valCandidates = [];
+      if (node.matches && node.matches(VALIDATION_SEL)) valCandidates.push(node);
+      if (node.querySelectorAll) {
+        node.querySelectorAll(VALIDATION_SEL).forEach(c => valCandidates.push(c));
+      }
+      valCandidates.forEach(el => {
+        if (_seenToastNodes.has(el)) return;
+        _seenToastNodes.add(el);
+        if (!_isToastVisible(el)) return;
+
+        const text = _getVisibleText(el);
+        if (!text || text.length < 2) return;
+
+        const loc = bestSelector(el);
+        _emitValidationAssert(text, loc.sel, loc.type);
+      });
+    });
+
+    // 2. Also scan existing DOM for any toast that became visible (attribute mutation)
+    // Debounced to avoid hammering on rapid attribute changes
+    clearTimeout(_toastScanTimer);
+    _toastScanTimer = setTimeout(() => {
+      if (!_active) return;
+      document.querySelectorAll(TOAST_SEL).forEach(el => {
+        if (_seenToastNodes.has(el)) return;
+        if (!_isToastVisible(el)) return;
+        if (_isRecorderOwnToast(el)) return;
+        const text = _getVisibleText(el);
+        if (!text || text.length < 2) return;
+        _seenToastNodes.add(el);
+        const loc = bestSelector(el);
+        _emitToastAssert(text, loc.sel, loc.type);
+      });
+    }, 300);
+  }
+
   function isPageLoading() {
     try {
       const spinners = document.querySelectorAll(SPINNER_SEL);
@@ -725,6 +926,19 @@
     if (!el || el.nodeType !== 1) return;
     if (el.type === 'file') return; // handled by change
 
+    // Toast/validation click interception — emit ASSERT_TOAST instead of CLICK
+    // when user explicitly clicks on a toast/alert container.
+    const toastAncestor = el.closest && (el.closest(TOAST_SEL));
+    if (toastAncestor && !_isRecorderOwnToast(toastAncestor) && _isToastVisible(toastAncestor)) {
+      const text = _getVisibleText(toastAncestor);
+      if (text && text.length >= 2) {
+        const loc2 = bestSelector(toastAncestor);
+        _emitToastAssert(text, loc2.sel, loc2.type);
+        e.stopPropagation();
+        return;
+      }
+    }
+
     // CR1: reject invisible elements and non-actionable containers
     if (!isVisibleElement(el)) return;
     if (!isActionableClick(el)) return;
@@ -771,6 +985,46 @@
       url:          location.href,
       ...buildStepMeta(el, loc.sel),
     });
+
+    // ── G2: Post-submit / post-navigation landmark ASSERT VISIBLE ────────────
+    // After clicking a submit/save/login button, wait briefly then look for a
+    // newly visible landmark element (heading, main region, dashboard widget).
+    // This converts the recorded flow into a real test case by verifying the
+    // expected page/state actually appeared.
+    const isSubmitLike = (
+      el.type === 'submit' ||
+      /\b(submit|save|login|sign.?in|confirm|continue|next|proceed|ok|apply|create|add|update|delete|remove|send|publish)\b/i
+        .test((el.textContent || el.value || el.getAttribute('aria-label') || '').trim())
+    );
+    if (isSubmitLike) {
+      setTimeout(() => {
+        if (!_active) return;
+        // Look for a visible heading or main landmark that isn't the current form
+        const LANDMARK_SEL = 'h1, h2, [role="main"] h1, [role="main"] h2, .dashboard-title, .page-title, [data-testid*="heading"], [data-testid*="title"]';
+        const candidates = Array.from(document.querySelectorAll(LANDMARK_SEL))
+          .filter(n => {
+            const rect = n.getBoundingClientRect();
+            return rect.width > 0 && rect.height > 0 && !n.closest('form');
+          });
+        if (candidates.length > 0) {
+          const target = candidates[0];
+          const text   = (target.textContent || '').trim().substring(0, 80);
+          const lSel   = bestSelector(target);
+          if (text && text.length >= 2 && shouldEmit('ASSERT_VISIBLE', lSel.sel, text)) {
+            recordEmit('ASSERT_VISIBLE', lSel.sel, text);
+            postStep({
+              eventType:    'ASSERT_VISIBLE',
+              selector:     lSel.sel,
+              selectorType: lSel.type,
+              value:        text,
+              smartName:    `Assert visible: ${text.substring(0, 40)}`,
+              tagName:      target.tagName.toLowerCase(),
+              url:          location.href,
+            });
+          }
+        }
+      }, 800);
+    }
   }
 
   function handleChange(e) {
@@ -895,9 +1149,12 @@
     scanShadow(document);
     document.querySelectorAll('iframe').forEach(injectIntoIframe);
 
+    const _allAddedNodes = [];
     _domObserver = new MutationObserver(muts => {
+      _allAddedNodes.length = 0;
       muts.forEach(m => m.addedNodes.forEach(n => {
         if (!n || n.nodeType !== 1) return;
+        _allAddedNodes.push(n);
         if (n.shadowRoot) injectIntoShadowRoot(n.shadowRoot);
         if (n.tagName === 'IFRAME') injectIntoIframe(n);
         if (n.querySelectorAll) {
@@ -905,20 +1162,71 @@
           n.querySelectorAll('iframe').forEach(injectIntoIframe);
         }
       }));
+      // Toast/validation detection piggybacked on same observer
+      if (_allAddedNodes.length > 0) _scanForToastsAndValidation(_allAddedNodes);
     });
-    _domObserver.observe(document.documentElement, { childList: true, subtree: true });
+    _domObserver.observe(document.documentElement, { childList: true, subtree: true, attributeFilter: ['class', 'style', 'hidden', 'aria-hidden'] });
 
-    // NOTE: SPA navigation (pushState / popstate) is intentionally NOT captured.
-    // Navigation steps are auto-generated by the test engine (generateNavBlock).
+    // ── G1: SPA URL-change → ASSERT URL ──────────────────────────────────────
+    // Capture pushState / replaceState / popstate / hashchange and emit ASSERT_URL
+    // so the recorded script verifies the app actually navigated to the right route.
+    // Debounced 400ms to let the page settle before capturing the final URL.
+    let _urlAssertTimer = null;
+    let _lastAssertedUrl = location.href;
+    function _onUrlChange() {
+      if (!_active) return;
+      clearTimeout(_urlAssertTimer);
+      _urlAssertTimer = setTimeout(() => {
+        const newUrl = location.href;
+        if (newUrl === _lastAssertedUrl) return;
+        _lastAssertedUrl = newUrl;
+        // Emit a partial-path assert — strip origin, keep path+query for portability
+        let partial = newUrl;
+        try { partial = new URL(newUrl).pathname + (new URL(newUrl).search || ''); } catch {}
+        if (!shouldEmit('ASSERT_URL', partial, partial)) return;
+        recordEmit('ASSERT_URL', partial, partial);
+        postStep({
+          eventType:    'ASSERT_URL',
+          selector:     '',
+          selectorType: 'css',
+          value:        partial,
+          smartName:    `Assert URL: ${partial.substring(0, 60)}`,
+          tagName:      '',
+          url:          newUrl,
+        });
+      }, 400);
+    }
+    // Hook pushState / replaceState in MAIN world via the dialog patcher mechanism
+    // (background.js already executes in MAIN world — we piggyback via a separate message)
+    window.addEventListener('popstate',    _onUrlChange);
+    window.addEventListener('hashchange',  _onUrlChange);
+    // pushState/replaceState must be hooked in main world — request injection
+    chrome.runtime.sendMessage({ type: 'INJECT_URL_PATCHER' });
+    document.addEventListener('__qa_urlchange', _onUrlChange);
 
     injectDialogInterceptor();
     document.addEventListener('__qa_dialog', (e) => {
       if (!_active) return;
+      const dlgText = String(e.detail.value ?? '').trim();
+      // Auto-emit ASSERT_TEXT for the dialog message before the action step,
+      // so the recorded flow verifies the correct message appeared.
+      if (dlgText && dlgText.length >= 2 && shouldEmit('ASSERT_TEXT', 'dialog', dlgText)) {
+        recordEmit('ASSERT_TEXT', 'dialog', dlgText);
+        postStep({
+          eventType:    'ASSERT_TEXT',
+          selector:     'body',
+          selectorType: 'css',
+          value:        dlgText,
+          smartName:    `Assert dialog: ${dlgText.substring(0, 40)}`,
+          tagName:      '',
+          url:          location.href,
+        });
+      }
       postStep({
         eventType:    e.detail.type,
         selector:     '',
         selectorType: 'css',
-        value:        String(e.detail.value ?? ''),
+        value:        dlgText,
         smartName:    e.detail.smartName || 'Dialog',
         tagName:      '',
         url:          location.href,

@@ -221,6 +221,21 @@ APP_BASE_URL=https://your-application-url.com
 
 # Session cookie name (unique per installation)
 SESSION_COOKIE_NAME=qa-platform.sid
+
+# ── Email / SMTP Notifications (optional) ───────────────────────────────────
+# Uncomment and fill in to enable email alerts for failed runs, healing events, etc.
+# SMTP_HOST=smtp.yourcompany.com
+# SMTP_PORT=587
+# SMTP_SECURE=false
+# SMTP_USER=qa-platform@yourcompany.com
+# SMTP_PASS=your-smtp-password
+# SMTP_FROM=QA Platform <qa-platform@yourcompany.com>
+# NOTIFY_ON_FAIL=true
+# NOTIFY_ON_HEAL=false
+
+# ── Logging ──────────────────────────────────────────────────────────────────
+# Log level: debug | info | warn | error  (default: info)
+LOG_LEVEL=info
 EOF
     chown qa-platform:qa-platform "$ENV_FILE"
     chmod 600 "$ENV_FILE"

@@ -49,6 +49,7 @@ const EVENT_TO_KEYWORD: Record<string, string> = {
   HANDLE_PROMPT:  'HANDLE PROMPT',
   ASSERT_VISIBLE: 'ASSERT VISIBLE',  // auto-captured from flash/toast messages
   ASSERT_TOAST:   'ASSERT TOAST',    // CR4: auto-captured toast with text assertion
+  ASSERT_TEXT:    'ASSERT TEXT',     // CR4: inline validation / field error message
   ASSERT_URL:     'ASSERT URL',      // CR4: auto-captured after SPA navigation
 };
 
@@ -112,6 +113,7 @@ function eventTypeToVerb(eventType: string): string {
     HANDLE_PROMPT:  'Handle Prompt',
     ASSERT_VISIBLE: 'Assert Visible',
     ASSERT_TOAST:   'Assert Toast',
+    ASSERT_TEXT:    'Assert Text',
     ASSERT_URL:     'Assert URL',
     HOVER:          'Hover',
     FOCUS:          'Focus',
@@ -257,6 +259,8 @@ function mapSelectorType(raw: string): Locator['selectorType'] {
     role:        'role',
     label:       'label',
     placeholder: 'placeholder',
+    nth:         'nth',
+    last:        'last',
   };
   return map[raw] ?? 'css';
 }
@@ -304,6 +308,7 @@ export function parseRecorderEvent(
   const noLocatorKeywords = new Set([
     'GOTO', 'ACCEPT ALERT', 'ACCEPT DIALOG', 'HANDLE PROMPT',
     'ASSERT URL', 'ASSERT TOAST', 'WAIT FOR TOAST',
+    // ASSERT TEXT and ASSERT VISIBLE DO have a locator target
   ]);
 
   let locatorId:   string | null = null;
@@ -393,6 +398,7 @@ function buildDescription(event: RecorderEvent): string {
     case 'DATE_PICKER':    return name ? `Set date "${val}" on ${name}` : `Set date "${val}"`;
     case 'ASSERT_VISIBLE': return val  ? `Assert visible: ${val}` : 'Assert element visible';
     case 'ASSERT_TOAST':   return val  ? `Assert toast: "${val}"` : 'Assert toast appeared';
+    case 'ASSERT_TEXT':    return val  ? `Assert text: "${val}"` : 'Assert element text';
     case 'ASSERT_URL':     return val  ? `Assert URL contains: ${val}` : 'Assert page URL';
     case 'GOTO':           return val  ? `Navigate to ${val}` : 'Navigate to page';
     case 'ACCEPT_ALERT':   return val  ? `Accept alert: ${val}` : 'Accept alert';

@@ -99,17 +99,18 @@ export interface HealingProposal {
   newSelectorType: string;
   confidence:      number;
   healedAt:        string;
-  status:          'auto-applied' | 'pending-review' | 'approved' | 'rejected';
+  status:          'auto-applied' | 'pending-review' | 'approved' | 'approved-temporary' | 'rejected';
   reviewedBy?:     string;
   reviewedAt?:     string;
   screenshotPath?: string;
+  usedInRun?:      boolean;   // true = candidate was used to continue execution (non-blocking path)
 }
 
 export interface Locator {
   id:             string;
   name:           string;           // human-readable alias e.g. "Login Button"
   selector:       string;           // actual CSS/XPath/id
-  selectorType:   'css' | 'xpath' | 'id' | 'name' | 'text' | 'testid' | 'role' | 'label' | 'placeholder';
+  selectorType:   'css' | 'xpath' | 'id' | 'name' | 'text' | 'testid' | 'role' | 'label' | 'placeholder' | 'nth' | 'last';
   pageModule:     string;           // e.g. "Mediation Config - Gateway Type"
   projectId:      string | null;    // scoped to project or global
   description:    string;
