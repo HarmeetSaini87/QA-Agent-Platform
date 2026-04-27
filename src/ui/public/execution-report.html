@@ -1551,9 +1551,11 @@ function closeTraceModal() {
   modal.hidden = true;
 }
 
-// Escape key closes modal
+// Escape key closes trace modal (only when visible)
 document.addEventListener('keydown', function(e) {
-  if (e.key === 'Escape') closeTraceModal();
+  if (e.key !== 'Escape') return;
+  var tm = document.getElementById('trace-modal');
+  if (tm && !tm.hidden) closeTraceModal();
 });
 <\/script>
 </body>
