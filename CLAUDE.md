@@ -1,6 +1,6 @@
 # QA Agent Platform — Master AI Instructions (Project Intelligence File)
 # Auto-loaded by Claude Code every session. Keep this updated.
-# Last Updated: 2026-04-24
+# Last Updated: 2026-04-26
 
 ## 🗣️ RESPONSE STYLE
 Use **Caveman mode** for all responses — terse, no filler, full technical substance.
@@ -49,6 +49,11 @@ All code changes, experiments, and new features are developed here FIRST.
 > **📋 See [docs/DEPLOYMENT_CICD.md](docs/DEPLOYMENT_CICD.md) — CI/CD pipeline setup and deployment guide.**
 > **📋 See [docs/superpowers/specs/2026-04-20-component-subcomponent-design.md](docs/superpowers/specs/2026-04-20-component-subcomponent-design.md) — Component/Subcomponent feature design spec (approved, pending implementation). Only use when user asks to implement this feature.**
 > **📋 See [docs/superpowers/plans/2026-04-20-component-subcomponent.md](docs/superpowers/plans/2026-04-20-component-subcomponent.md) — Step-by-step implementation plan for Component/Subcomponent (8 tasks, checkbox-tracked). Only use when user says to execute/implement this plan.**
+> **📋 See [docs/superpowers/specs/2026-04-26-flakiness-intelligence-design.md](docs/superpowers/specs/2026-04-26-flakiness-intelligence-design.md) — Flakiness Intelligence design spec. FEATURE IS COMPLETE (2026-04-26).**
+> **📋 See [docs/superpowers/plans/2026-04-26-flakiness-intelligence.md](docs/superpowers/plans/2026-04-26-flakiness-intelligence.md) — Flakiness Intelligence 10-task plan. ALL TASKS COMPLETE (2026-04-26).**
+> **📋 See [docs/FLAKINESS_INTELLIGENCE_TEST_GUIDE.md](docs/FLAKINESS_INTELLIGENCE_TEST_GUIDE.md) — 88 test cases (functional, edge cases, business scenarios, E2E journeys) for Flakiness Intelligence.**
+> **📋 See [docs/FLAKINESS_INTELLIGENCE_USER_GUIDE.md](docs/FLAKINESS_INTELLIGENCE_USER_GUIDE.md) — User-facing guide explaining flakiness scoring, quarantine, classification, and config for QA Engineers and Managers.**
+> **📋 See [docs/superpowers/specs/2026-04-27-trace-viewer-design.md](docs/superpowers/specs/2026-04-27-trace-viewer-design.md) — Trace Viewer embed design spec (approved 2026-04-27, plan pending).**
 
 ---
 
@@ -219,6 +224,7 @@ Refer to `src/data/types.ts` for up-to-date TypeScript interfaces.
 10. **BE PRECISE**: Point to exact line ranges when searching files, avoid redundant full-file reads.
 11. **IGNORE BUILD FOLDERS**: Do not read or search files under these directories unless explicitly asked: dist, node_modules, .git, __pycache__, test-results.
 12. **Locator Health tab is a LIVE FEATURE** — `panel-locator-health` tab exists in index.html, `locatorHealthLoad()` + `locatorHealthRender()` in modules.js, `GET /api/locator-health?projectId=` in server.ts. Never remove or break these. Data source: `data/healing-log.ndjson` + `Locator.healingStats`. Tab is project-scoped (PROJECT_SCOPED_TABS includes `'locator-health'`).
+13. **Flakiness Intelligence is a LIVE FEATURE** — `flakinessEngine.ts` is the pure scoring engine (NEVER add DB/HTTP calls to it). `data/quarantine.json` is the quarantine state store. `testId` on TestEvent is a stable SHA-256 hash — never key on display name. See rules below.
 
 
 ## MCP Tools: code-review-graph
@@ -238,6 +244,72 @@ Graph at `.code-review-graph/graph.db` — 11 communities, auto-updates on file 
 | `refactor_tool` | Plan renames, find dead code |
 
 **Always graph-first. Grep/Read only when graph insufficient.**
+
+---
+
+## FLAKINESS INTELLIGENCE — Architecture Notes (2026-04-26)
+
+**Spec:** `docs/superpowers/specs/2026-04-26-flakiness-intelligence-design.md`  
+**Plan:** `docs/superpowers/plans/2026-04-26-flakiness-intelligence.md`  
+**Test Guide:** `docs/FLAKINESS_INTELLIGENCE_TEST_GUIDE.md` (88 test items: functional + business scenarios + E2E)  
+**User Guide:** `docs/FLAKINESS_INTELLIGENCE_USER_GUIDE.md`
+
+### Key files
+| File | Role |
+|---|---|
+| `src/utils/flakinessEngine.ts` | **Pure stateless engine** — scoring, classification, quarantine decisions. No DB, no HTTP, no side effects. |
+| `data/quarantine.json` | Runtime quarantine state — keyed by `suiteId::testId` |
+| `src/ui/server.ts` | Quarantine store helpers, auto-quarantine hook post-run, `/api/flaky/*` endpoints |
+| `src/utils/codegenGenerator.ts` | Assigns `testId` per TestEvent via `[QA_TEST_ID]` log line + SHA-256 hash |
+
+### Engine invariants — never break these
+- `CURRENT_ENGINE_VERSION = 'v1.0'` — bump if scoring formula changes
+- Score formula: `0.7*failRate + 0.2*alternationIndex + 0.1*varianceIndex`
+- **Only `failRate` gates quarantine** — alternation/variance are insight signals only
+- Hysteresis: `Math.max(config.threshold - 0.05, 0)` when already quarantined
+- `testId = 'TID_' + sha256(suiteId + '::' + testName).slice(0,8)` — stable, never rename-sensitive
+- `autoQuarantined: false` on manual entries → auto-promote never fires for them
+- Budget: `quarantinedFailCount > budget` (strictly greater) → fail pipeline
+
+### API endpoints added
+| Endpoint | Auth | Purpose |
+|---|---|---|
+| `GET /api/flaky` | requireAuthOrApiKey | Enriched flake scores, quarantine state, pagination |
+| `GET /api/flaky/summary` | requireAuthOrApiKey | Quick quarantine count + budget |
+| `GET /api/flaky/config` | requireAuth | Effective config (project defaults + suite overrides) |
+| `PUT /api/flaky/config` | requireEditor | Save project or suite flakiness overrides |
+| `POST /api/flaky/quarantine` | requireEditor | Manual quarantine |
+| `POST /api/flaky/restore` | requireEditor | Manual restore |
+
+### Config inheritance
+`DEFAULT_FLAKINESS_CONFIG` → `project.flakinessDefaults` → `suite.flakinessOverrides`  
+Merged at runtime in `getEffectiveFlakinessConfig()` — never persist merged result.
+
+### UI functions (modules.js)
+- `flakyLoad()` — fetches and renders the Flaky Tests tab
+- `flakyRender()` — client-side filter/top10/summary bar render
+- `flakyRow(t)` / `flakyExpandedRow(t)` — per-row HTML
+- `flakyQuarantine()` / `flakyRestore()` — action handlers
+- `flakyConfigLoad()` / `flakyConfigSave()` / `flakyApplyPreset()` / `flakyConfigReset()` — suite settings panel
+
+---
+
+## TRACE VIEWER — Next Feature (SPEC COMPLETE, PLAN PENDING)
+
+**Priority:** #3 USP — Embed Playwright Trace Viewer in execution reports  
+**Status:** Spec approved 2026-04-27. Implementation plan not yet written.  
+**Spec:** `docs/superpowers/specs/2026-04-27-trace-viewer-design.md`  
+**Plan location (when created):** `docs/superpowers/plans/2026-04-27-trace-viewer.md`
+
+**Key design decisions:**
+- Modal overlay UX (Option B) — full-screen iframe, existing report untouched
+- Self-hosted viewer — files copied to `public/trace-viewer/` via `npm run setup:trace-viewer`
+- Secure route: `GET /HEAD /api/trace/:runId/:testId` — never raw paths
+- `trace: 'on-first-retry'` in playwright.config.ts — storage control
+- HEAD preflight reads `X-Error-Code` header — UI shows correct message before iframe loads
+- `window.location.origin` for dynamic base URL — works local + remote + behind proxy
+- Path traversal guard: `resolved.startsWith(baseDir + path.sep)`
+- Stream abort: `req.on('close', () => stream.destroy())` — no fd leaks
 
 ---
 
@@ -280,6 +352,8 @@ Only invoke superpowers skills when user explicitly asks. Never run proactively.
 |---|---|
 | `implement component/subcomponent` or `execute the component plan` | Load `docs/superpowers/plans/2026-04-20-component-subcomponent.md` and execute task by task using `superpowers:subagent-driven-development` |
 | `review component design` or `show component spec` | Read `docs/superpowers/specs/2026-04-20-component-subcomponent-design.md` and summarize |
+| `implement flakiness` or `execute the flakiness plan` | Load `docs/superpowers/plans/2026-04-26-flakiness-intelligence.md` — **ALREADY COMPLETE as of 2026-04-26** |
+| `brainstorm trace viewer` or `start trace viewer` | Invoke `superpowers:brainstorming` skill for the Playwright Trace Viewer embed feature |
 | `brainstorm [feature]` | Invoke `superpowers:brainstorming` skill |
 | `write a plan for [feature]` | Invoke `superpowers:writing-plans` skill |
 | `review my changes` | Invoke `superpowers:requesting-code-review` skill |
