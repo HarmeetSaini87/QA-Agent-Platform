@@ -50,6 +50,7 @@ import rateLimit from 'express-rate-limit';
 import { logAudit }                                                from '../auth/audit';
 import * as crypto from 'crypto';
 import { sendRunNotification, sendTestNotification, formatDuration } from '../utils/notifier';
+import { DEFAULT_FLAKINESS_CONFIG, FlakinessConfig, analyzeFlakiness, CURRENT_ENGINE_VERSION, getActionHint } from '../utils/flakinessEngine';
 
 // ── Sensitive value encryption (AES-256-CBC) ──────────────────────────────────
 // Key derived from QA_SECRET_KEY env var, falls back to hostname-derived key.
@@ -212,6 +213,107 @@ type WsOut =
 // ── In-memory stores ──────────────────────────────────────────────────────────
 
 const runs = new Map<string, RunRecord>();
+
+// ── Quarantine state store ────────────────────────────────────────────────────
+const QUARANTINE_FILE = path.resolve('data/quarantine.json');
+
+interface QuarantineEntry {
+  suiteId: string;
+  testId: string;
+  testName: string;
+  status: 'active' | 'restored';
+  quarantinedAt: string;
+  lastEvaluatedAt: string;
+  lastNotifiedAt: string | null;
+  restoredAt: string | null;
+  manuallyRestoredAt: string | null;
+  autoQuarantined: boolean;
+  quarantineReason: string;
+  scoreVersion: string;
+}
+
+function readQuarantine(): Record<string, QuarantineEntry> {
+  try {
+    if (!fs.existsSync(QUARANTINE_FILE)) return {};
+    return JSON.parse(fs.readFileSync(QUARANTINE_FILE, 'utf-8'));
+  } catch { return {}; }
+}
+
+function writeQuarantine(data: Record<string, QuarantineEntry>): void {
+  fs.mkdirSync(path.resolve('data'), { recursive: true });
+  fs.writeFileSync(QUARANTINE_FILE, JSON.stringify(data, null, 2));
+}
+
+function upsertQuarantineEntry(
+  suiteId: string, testId: string, testName: string,
+  analysis: import('../utils/flakinessEngine').FlakeAnalysis,
+  _runId: string
+): void {
+  const all = readQuarantine();
+  const key = `${suiteId}::${testId}`;
+  if (all[key]?.status === 'active') return;
+  all[key] = {
+    suiteId, testId, testName,
+    status: 'active',
+    quarantinedAt: new Date().toISOString(),
+    lastEvaluatedAt: new Date().toISOString(),
+    lastNotifiedAt: null,
+    restoredAt: null,
+    manuallyRestoredAt: null,
+    autoQuarantined: true,
+    quarantineReason: analysis.quarantineReason ?? '',
+    scoreVersion: analysis.scoreVersion,
+  };
+  writeQuarantine(all);
+}
+
+function restoreQuarantineEntry(suiteId: string, testId: string, _runId: string, manual = false): void {
+  const all = readQuarantine();
+  const key = `${suiteId}::${testId}`;
+  if (!all[key] || all[key].status !== 'active') return;
+  all[key].status = 'restored';
+  all[key].restoredAt = new Date().toISOString();
+  if (manual) all[key].manuallyRestoredAt = new Date().toISOString();
+  writeQuarantine(all);
+}
+
+// In-app toast notification queue
+const pendingToasts: Array<{ message: string; level: 'info' | 'warn' | 'error'; runId: string }> = [];
+const notifyIdempotency = new Set<string>();
+
+function emitFlakeNotification(
+  type: 'test_quarantined' | 'test_restored' | 'budget_warning' | 'budget_exceeded',
+  suiteId: string, testId: string, runId: string, extra: Record<string, unknown> = {}
+): void {
+  const key = `${type}:${suiteId}:${testId}:${runId}`;
+  if (notifyIdempotency.has(key)) return;
+  notifyIdempotency.add(key);
+
+  const msgs: Record<string, string> = {
+    test_quarantined: `Auto-quarantined: "${extra.testName}" (score ${Number(extra.flakeScore ?? 0).toFixed(2)}). Excluded from suite result.`,
+    test_restored:    `Restored: "${extra.testName}" from quarantine after clean runs.`,
+    budget_warning:   `Quarantine budget: ${extra.used}/${extra.limit} used this run.`,
+    budget_exceeded:  `Quarantine budget exceeded (${extra.used}/${extra.limit}). Suite marked failed.`,
+  };
+
+  pendingToasts.push({
+    message: msgs[type] ?? type,
+    level: type === 'budget_exceeded' ? 'error' : type === 'budget_warning' ? 'warn' : 'info',
+    runId,
+  });
+}
+
+function getEffectiveFlakinessConfig(suiteId: string, projectId: string): FlakinessConfig {
+  const suites   = readAll<TestSuite>(SUITES);
+  const projects = readAll<Project>(PROJECTS);
+  const suite    = suites.find((s) => s.id === suiteId);
+  const project  = projects.find((p) => p.id === projectId);
+  return {
+    ...DEFAULT_FLAKINESS_CONFIG,
+    ...(( project as any)?.flakinessDefaults ?? {}),
+    ...((suite as any)?.flakinessOverrides  ?? {}),
+  } as FlakinessConfig;
+}
 
 // ── Debugger session state ────────────────────────────────────────────────────
 // File-based IPC: spec writes pending.json, polls for gate.json.
