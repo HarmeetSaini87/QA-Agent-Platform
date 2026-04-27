@@ -4952,8 +4952,10 @@ function _execTraceWarnCheck() {
   if (!warn) return;
   if (_execTraceMode !== 'on-first-retry') { warn.style.display = 'none'; return; }
   const suiteId = document.getElementById('exec-suite-sel')?.value;
-  const suite   = suiteId && typeof allSuites !== 'undefined' ? allSuites.find(s => s.id === suiteId) : null;
-  const retries = suite?.retries ?? 0;
+  if (!suiteId) { warn.style.display = 'none'; return; }
+  const suite   = typeof allSuites !== 'undefined' ? allSuites.find(s => s.id === suiteId) : null;
+  if (!suite) { warn.style.display = 'none'; return; }
+  const retries = suite.retries ?? 0;
   if (retries === 0) {
     const name = suite?.name || 'This suite';
     warn.textContent = '⚠ "' + name + '" has Auto-Retry disabled (0). No traces will be captured in Failed Only mode. Switch to Always or set Auto-Retry ≥ 1 on the suite.';
