@@ -999,17 +999,15 @@ function buildTestRow(t, i, r) {
          &#9654; Play
        </button>`;
 
-  // ── Trace button — always shown; active when a path is captured ───────────
-  const traceCell = t.tracePath
-    ? `<a class="tc-btn tc-btn-tr" href="${artifactSrc(t.tracePath)}" download
-          data-tpath="${esc(t.tracePath)}" onclick="event.stopPropagation()"
-          title="Download trace ZIP">&#128229; Trace</a>`
-    : `<button class="tc-btn tc-btn-tr tc-btn-inactive" disabled title="No trace captured">
-         &#128229; Trace
-       </button>`;
+  // ── Trace button — shown only when trace exists (no disabled clutter) ─────
+  const traceCell = (t.tracePath && t.testId)
+    ? `<button class="tc-btn tc-btn-tr"
+              onclick="event.stopPropagation();openTraceViewer(${JSON.stringify(r.runId)},${JSON.stringify(t.testId)},${JSON.stringify(t.name)})"
+              title="View trace in embedded viewer">&#128249; Trace</button>`
+    : '';
 
   // Detail row content
-  const detailHtml = buildDetailPanel(t, i, status);
+  const detailHtml = buildDetailPanel(t, i, status, r.traceMode, r.runId);
 
   // Auto-open failed test detail rows
   const detailOpenClass = status === 'fail' ? 'open' : '';
@@ -1036,7 +1034,7 @@ function buildTestRow(t, i, r) {
 }
 
 // ── Build detail panel sections ───────────────────────────────────────────────
-function buildDetailPanel(t, i, status) {
+function buildDetailPanel(t, i, status, traceMode, runId) {
   const sections = [];
 
   // ── Error details (for failed tests) ──
@@ -1110,8 +1108,32 @@ function buildDetailPanel(t, i, status) {
       </div>`);
   }
 
-  // Video & Trace are accessed via the row-level Play / Trace buttons.
-  // No separate section needed in the expanded detail panel.
+  // ── Trace section — always shown in expanded panel ────────────────────────
+  {
+    var traceContent;
+    if (t.tracePath && t.testId) {
+      traceContent = `<button class="tc-btn tc-btn-tr" style="margin:0"
+              onclick="openTraceViewer(${JSON.stringify(runId)},${JSON.stringify(t.testId)},${JSON.stringify(t.name)})"
+              title="View trace in embedded viewer">&#128249; View Trace</button>`;
+    } else if (traceMode === 'off') {
+      traceContent = '<span style="color:var(--g500)">Tracing not enabled for this run.</span>';
+    } else if (!t.tracePath && !t.retryIndex) {
+      traceContent = '<span style="color:var(--g500)">Not captured — test passed on first run.</span>' +
+        '<div class="trace-det-hint">Traces are captured on retry only (trace: on-first-retry).</div>';
+    } else {
+      traceContent = '<span style="color:var(--g500)">Trace artifact not found (may have expired).</span>';
+    }
+    sections.push(`
+      <div class="det-section collapsed">
+        <div class="det-header" onclick="toggleDetSection(this)">
+          <span class="det-arrow">&#9660;</span>
+          &#128249; Trace
+        </div>
+        <div class="det-body">
+          <div class="trace-det-section">${traceContent}</div>
+        </div>
+      </div>`);
+  }
 
   // ── Failure Screenshot (Phase A: afterEach full-page capture) ──
   if (t.failureScreenshotPath) {
