@@ -591,6 +591,45 @@
       /* Footer */
       .report-footer { background: #e5e7eb !important; color: #374151 !important; }
     }
+    /* ── Trace Viewer Modal ─────────────────────────────────────────── */
+    .trace-modal-overlay {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.75);
+      z-index: 9999;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .trace-modal-overlay[hidden] { display: none !important; }
+    .trace-modal-inner {
+      width: 95vw; height: 92vh;
+      background: #fff; border-radius: 8px;
+      display: flex; flex-direction: column;
+      overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    }
+    .trace-modal-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 16px; background: #1e1e2e; color: #fff;
+      font-size: 13px; font-weight: 500; flex-shrink: 0;
+    }
+    .trace-modal-header button {
+      background: transparent; border: 1px solid rgba(255,255,255,0.3);
+      color: #fff; padding: 4px 10px; border-radius: 4px;
+      cursor: pointer; font-size: 12px;
+    }
+    .trace-modal-header button:hover { background: rgba(255,255,255,0.1); }
+    #trace-iframe {
+      flex: 1; width: 100%; border: none;
+    }
+    #trace-modal-loading, #trace-modal-error {
+      flex: 1; display: flex; align-items: center; justify-content: center;
+      font-size: 14px; color: #555;
+    }
+    #trace-modal-error { color: #b91c1c; flex-direction: column; gap: 8px; }
+    .trace-det-section {
+      margin-top: 8px; padding: 10px 12px;
+      background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px;
+      font-size: 12px; color: #475569;
+    }
+    .trace-det-hint { color: #94a3b8; font-style: italic; margin-top: 4px; }
   </style>
 </head>
 <body>
@@ -1440,6 +1479,82 @@ function applyFilters() {
 document.addEventListener('keydown', function(e) {
   if (e.key === 'Escape') { var m = document.getElementById('_xmodal'); if (m) m.style.display = 'none'; }
 });
+// ── Trace Viewer Modal ────────────────────────────────────────────────────────
+const ERROR_CODE_MESSAGES = {
+  TRACE_NOT_FOUND:       'Trace not captured for this test.',
+  TRACE_MISSING_ON_DISK: 'Trace artifact not found (may have expired).',
+  TRACE_TOO_LARGE:       'Trace too large to preview (> 50 MB).',
+  RUN_NOT_FOUND:         'Test result not found.',
+  TEST_NOT_FOUND:        'Test result not found.',
+};
+
+async function openTraceViewer(runId, testId, testName) {
+  const origin      = window.location.origin;
+  const traceApiUrl = `${origin}/api/trace/${encodeURIComponent(runId)}/${encodeURIComponent(testId)}`;
+  const iframeSrc   = `${origin}/trace-viewer/?trace=${encodeURIComponent(traceApiUrl)}`;
+
+  // Show modal in loading state
+  const modal   = document.getElementById('trace-modal');
+  const loading = document.getElementById('trace-modal-loading');
+  const errDiv  = document.getElementById('trace-modal-error');
+  const iframe  = document.getElementById('trace-iframe');
+  const title   = document.getElementById('trace-modal-title');
+
+  title.textContent   = '\u{1F4F9} Trace: ' + (testName || testId);
+  loading.style.display = 'flex';
+  errDiv.hidden         = true;
+  iframe.style.display  = 'none';
+  iframe.src            = '';
+  modal.hidden          = false;
+
+  // HEAD preflight — reads X-Error-Code header
+  try {
+    const head = await fetch(traceApiUrl, { method: 'HEAD' });
+    if (!head.ok) {
+      const code = head.headers.get('X-Error-Code') || 'UNKNOWN';
+      const msg  = ERROR_CODE_MESSAGES[code] || 'Failed to load trace.';
+      loading.style.display = 'none';
+      errDiv.hidden = false;
+      errDiv.innerHTML = `<span>&#9888; ${esc(msg)}</span><span style="font-size:11px;color:#94a3b8">Error code: ${esc(code)}</span>`;
+      return;
+    }
+  } catch (e) {
+    loading.style.display = 'none';
+    errDiv.hidden = false;
+    errDiv.innerHTML = '<span>&#9888; Failed to reach trace endpoint.</span>';
+    return;
+  }
+
+  // Preflight passed — load iframe
+  iframe.src = iframeSrc;
+}
+
+function onTraceIframeLoaded() {
+  document.getElementById('trace-modal-loading').style.display = 'none';
+  document.getElementById('trace-iframe').style.display = 'block';
+}
+
+function onTraceIframeError() {
+  const loading = document.getElementById('trace-modal-loading');
+  const errDiv  = document.getElementById('trace-modal-error');
+  const iframe  = document.getElementById('trace-iframe');
+  loading.style.display = 'none';
+  iframe.style.display  = 'none';
+  errDiv.hidden = false;
+  errDiv.innerHTML = '<span>&#9888; Failed to load trace viewer.</span>';
+}
+
+function closeTraceModal() {
+  const modal  = document.getElementById('trace-modal');
+  const iframe = document.getElementById('trace-iframe');
+  iframe.src   = '';   // triggers req.on('close') on server → destroys stream
+  modal.hidden = true;
+}
+
+// Escape key closes modal
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') closeTraceModal();
+});
 <\/script>
 </body>
 </html>`;
@@ -1460,5 +1575,19 @@ document.addEventListener('keydown', function(e) {
   }
 }
 </script>
+<!-- Trace Viewer Modal -->
+<div id="trace-modal" class="trace-modal-overlay" hidden>
+  <div class="trace-modal-inner">
+    <div class="trace-modal-header">
+      <span id="trace-modal-title">&#128249; Trace Viewer</span>
+      <button onclick="closeTraceModal()">&#10005; Close</button>
+    </div>
+    <div id="trace-modal-loading">&#9203; Loading trace...</div>
+    <div id="trace-modal-error" hidden></div>
+    <iframe id="trace-iframe" src="" style="display:none"
+            onload="onTraceIframeLoaded()"
+            onerror="onTraceIframeError()"></iframe>
+  </div>
+</div>
 </body>
 </html>
