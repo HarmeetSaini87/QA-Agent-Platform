@@ -4738,6 +4738,7 @@ async function suiteEditById(id) {
     await schedLoad();
   }
 
+  flakyConfigLoad(id, currentProjectId);
   openModal('modal-suite');
 }
 
@@ -5665,6 +5666,79 @@ async function flakyRestore(suiteId, testId, testName) {
   });
   if (res.ok) { showToast('Test restored from quarantine.', 'info'); flakyLoad(); }
   else showToast('Restore failed.', 'error');
+}
+
+// Flakiness Config (Suite Settings)
+// ══════════════════════════════════════════════════════════════════════════════
+
+const FLAKY_PRESETS = { smoke: 20, regression: 30, e2e: 40 };
+
+async function flakyConfigLoad(suiteId, projectId) {
+  if (!suiteId || !projectId) return;
+  try {
+    const res = await fetch(`/api/flaky/config?projectId=${encodeURIComponent(projectId)}&suiteId=${encodeURIComponent(suiteId)}`);
+    if (!res.ok) return;
+    const { effective, projectDefaults } = await res.json();
+    const g = id => document.getElementById(id);
+    if (g('flaky-cfg-threshold')) g('flaky-cfg-threshold').value = Math.round((effective.threshold||0.30)*100);
+    if (g('flaky-cfg-minruns'))   g('flaky-cfg-minruns').value   = effective.minRuns || 5;
+    if (g('flaky-cfg-budget'))    g('flaky-cfg-budget').value    = effective.quarantineBudget ?? 5;
+    if (g('flaky-cfg-passrate'))  g('flaky-cfg-passrate').value  = Math.round((effective.autoPromoteMinPassRate||0.95)*100);
+    const projThr = g('flaky-cfg-proj-threshold');
+    if (projThr) projThr.textContent = `(Project default: ${Math.round((projectDefaults?.threshold||0.30)*100)}%)`;
+  } catch (e) { console.warn('flakyConfigLoad error', e); }
+}
+
+function flakyApplyPreset() {
+  const preset = document.getElementById('flaky-preset')?.value;
+  if (!preset || !FLAKY_PRESETS[preset]) return;
+  const thr = document.getElementById('flaky-cfg-threshold');
+  if (thr) thr.value = FLAKY_PRESETS[preset];
+}
+
+async function flakyConfigSave() {
+  const suiteId   = window._editingSuiteId || editingSuiteId;
+  const projectId = currentProjectId;
+  if (!suiteId || !projectId) { showToast('No suite selected.', 'warn'); return; }
+
+  const threshold = parseFloat(document.getElementById('flaky-cfg-threshold')?.value || '');
+  const minRuns   = parseInt(document.getElementById('flaky-cfg-minruns')?.value || '');
+  const budget    = parseInt(document.getElementById('flaky-cfg-budget')?.value || '');
+  const passRate  = parseFloat(document.getElementById('flaky-cfg-passrate')?.value || '');
+
+  const overrides = {};
+  if (!isNaN(threshold)) overrides.threshold = threshold / 100;
+  if (!isNaN(minRuns))   overrides.minRuns   = minRuns;
+  if (!isNaN(budget))    overrides.quarantineBudget = budget;
+  if (!isNaN(passRate))  overrides.autoPromoteMinPassRate = passRate / 100;
+
+  try {
+    const res = await fetch('/api/flaky/config', {
+      method: 'PUT', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ projectId, suiteId, overrides })
+    });
+    if (res.ok) {
+      showToast('Flakiness config saved.', 'info');
+    } else {
+      const e = await res.json();
+      showToast('Save failed: ' + ((e.errors||[]).join(', ') || 'unknown error'), 'error');
+    }
+  } catch { showToast('Save failed.', 'error'); }
+}
+
+async function flakyConfigReset() {
+  const suiteId   = window._editingSuiteId || editingSuiteId;
+  const projectId = currentProjectId;
+  if (!suiteId || !projectId) return;
+  if (!confirm('Reset suite flakiness config to project defaults?')) return;
+  try {
+    await fetch('/api/flaky/config', {
+      method: 'PUT', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ projectId, suiteId, overrides: {} })
+    });
+    flakyConfigLoad(suiteId, projectId);
+    showToast('Reset to project defaults.', 'info');
+  } catch { showToast('Reset failed.', 'error'); }
 }
 
 // ══════════════════════════════════════════════════════════════════════════════

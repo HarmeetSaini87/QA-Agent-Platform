@@ -2029,6 +2029,43 @@
         <div id="sched-list"></div>
       </div>
     </div>
+
+    <!-- Flakiness Intelligence Config -->
+    <div style="margin-top:18px;border-top:1px solid var(--border);padding-top:14px">
+      <div style="font-size:13px;font-weight:600;color:var(--neutral-300);margin-bottom:10px;display:flex;align-items:center;gap:8px">
+        Flakiness Intelligence
+        <button type="button" class="btn btn-xs btn-outline" onclick="flakyConfigReset()" title="Reset to project defaults">Reset to Default</button>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+        <label style="font-size:12px;width:160px">Suite Type Preset:</label>
+        <select id="flaky-preset" class="fm-input" style="width:140px;font-size:12px;height:28px" onchange="flakyApplyPreset()">
+          <option value="">Custom</option>
+          <option value="smoke">Smoke (20%)</option>
+          <option value="regression">Regression (30%)</option>
+          <option value="e2e">E2E (40%)</option>
+        </select>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div>
+          <label style="font-size:12px;display:block;margin-bottom:2px">Auto-quarantine threshold (%)</label>
+          <input id="flaky-cfg-threshold" type="number" min="1" max="100" class="fm-input" style="width:80px;font-size:12px;height:28px" placeholder="30">
+          <span id="flaky-cfg-proj-threshold" style="font-size:11px;color:var(--neutral-500);margin-left:4px"></span>
+        </div>
+        <div>
+          <label style="font-size:12px;display:block;margin-bottom:2px">Minimum runs before scoring</label>
+          <input id="flaky-cfg-minruns" type="number" min="1" class="fm-input" style="width:80px;font-size:12px;height:28px" placeholder="5">
+        </div>
+        <div>
+          <label style="font-size:12px;display:block;margin-bottom:2px">Quarantine budget per run</label>
+          <input id="flaky-cfg-budget" type="number" min="0" class="fm-input" style="width:80px;font-size:12px;height:28px" placeholder="5">
+        </div>
+        <div>
+          <label style="font-size:12px;display:block;margin-bottom:2px">Auto-promote: min pass rate (%)</label>
+          <input id="flaky-cfg-passrate" type="number" min="1" max="100" class="fm-input" style="width:80px;font-size:12px;height:28px" placeholder="95">
+        </div>
+      </div>
+      <button type="button" class="btn btn-sm btn-outline" style="margin-top:10px" onclick="flakyConfigSave()">Save Flakiness Config</button>
+    </div>
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="suiteCloseModal()">Cancel</button>
       <button class="btn btn-primary" onclick="suiteSave()">Save Suite</button>
