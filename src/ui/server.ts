@@ -2603,6 +2603,13 @@ function handleTraceRequest(req: Request, res: Response, streamFile: boolean): v
   const { runId, testId } = req.params;
   const requestId = uuidv4();
 
+  // Validate param format — prevents path traversal via encoded separators
+  if (!/^[a-zA-Z0-9_-]+$/.test(runId) || !/^[a-zA-Z0-9_-]+$/.test(testId)) {
+    res.setHeader('X-Error-Code', 'BAD_REQUEST');
+    res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'Invalid request' } });
+    return;
+  }
+
   // 1. Auth stub
   if (!canAccessTrace(req, runId)) {
     res.setHeader('X-Error-Code', 'FORBIDDEN');
@@ -2645,19 +2652,13 @@ function handleTraceRequest(req: Request, res: Response, streamFile: boolean): v
   // 5. Path safety guard
   const baseDir  = path.resolve(config.paths.testResults);
   const resolved = path.resolve(baseDir, ev.tracePath);
-  if (!resolved.startsWith(baseDir + path.sep)) {
+  if (!resolved.toLowerCase().startsWith((baseDir + path.sep).toLowerCase())) {
     res.setHeader('X-Error-Code', 'BAD_REQUEST');
     res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'Invalid request' } });
     return;
   }
 
   // 6. File existence + size check
-  if (!fs.existsSync(resolved)) {
-    res.setHeader('X-Error-Code', 'TRACE_MISSING_ON_DISK');
-    res.status(404).json({ error: { code: 'TRACE_MISSING_ON_DISK', message: 'Trace artifact not found' } });
-    return;
-  }
-
   const MAX_TRACE_BYTES = 50 * 1024 * 1024; // 50 MB
   let stat: fs.Stats;
   try {
@@ -2678,7 +2679,7 @@ function handleTraceRequest(req: Request, res: Response, streamFile: boolean): v
   res.setHeader('Content-Disposition', 'inline; filename="trace.zip"');
   res.setHeader('Content-Length', stat.size);
   res.setHeader('Cache-Control', 'private, max-age=300');
-  res.setHeader('Accept-Ranges', 'bytes');
+  res.setHeader('Accept-Ranges', 'none');
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Request-Id', requestId);
 
@@ -2705,7 +2706,8 @@ function handleTraceRequest(req: Request, res: Response, streamFile: boolean): v
     if (!res.headersSent) {
       res.status(500).json({ error: { code: 'TRACE_READ_FAILED', message: 'Failed to read trace' } });
     } else {
-      res.destroy();
+      stream.unpipe(res);
+      res.end();
     }
   });
   req.on('close', () => stream.destroy());
