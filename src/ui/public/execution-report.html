@@ -1518,8 +1518,8 @@ const ERROR_CODE_MESSAGES = {
 
 async function openTraceViewer(runId, testId, testName) {
   const origin      = window.location.origin;
-  const traceApiUrl = `${origin}/api/trace/${encodeURIComponent(runId)}/${encodeURIComponent(testId)}`;
-  const iframeSrc   = `${origin}/trace-viewer/?trace=${encodeURIComponent(traceApiUrl)}`;
+  const traceApiUrl = \`\${origin}/api/trace/\${encodeURIComponent(runId)}/\${encodeURIComponent(testId)}\`;
+  const iframeSrc   = \`\${origin}/trace-viewer/?trace=\${encodeURIComponent(traceApiUrl)}\`;
 
   // Show modal in loading state
   const modal   = document.getElementById('trace-modal');
@@ -1543,7 +1543,7 @@ async function openTraceViewer(runId, testId, testName) {
       const msg  = ERROR_CODE_MESSAGES[code] || 'Failed to load trace.';
       loading.style.display = 'none';
       errDiv.hidden = false;
-      errDiv.innerHTML = `<span>&#9888; ${esc(msg)}</span><span style="font-size:11px;color:#94a3b8">Error code: ${esc(code)}</span>`;
+      errDiv.innerHTML = \`<span>&#9888; \${esc(msg)}</span><span style="font-size:11px;color:#94a3b8">Error code: \${esc(code)}</span>\`;
       return;
     }
   } catch (e) {
