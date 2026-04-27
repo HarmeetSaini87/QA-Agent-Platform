@@ -315,6 +315,41 @@ function getEffectiveFlakinessConfig(suiteId: string, projectId: string): Flakin
   } as FlakinessConfig;
 }
 
+function generateTestId(suiteId: string, testName: string): string {
+  return 'TID_' + crypto.createHash('sha256')
+    .update(`${suiteId}::${testName}`)
+    .digest('hex')
+    .slice(0, 8);
+}
+
+function groupRunsByTestId(
+  allRuns: RunRecord[],
+  suiteId: string,
+  windowDays: number
+): Map<string, import('../utils/flakinessEngine').TestRun[]> {
+  const cutoff = Date.now() - windowDays * 86_400_000;
+  const map = new Map<string, import('../utils/flakinessEngine').TestRun[]>();
+
+  for (const run of allRuns) {
+    if (run.suiteId !== suiteId) continue;
+    const ts = new Date(run.startedAt).getTime();
+    if (ts < cutoff) continue;
+    for (const t of (run.tests ?? [])) {
+      if (!t.testId) continue;
+      const arr = map.get(t.testId) ?? [];
+      arr.push({
+        testId: t.testId,
+        status: t.status === 'pass' ? 'pass' : 'fail',
+        timestamp: ts,
+        durationMs: t.durationMs,
+        errorMessage: t.errorMessage,
+      });
+      map.set(t.testId, arr);
+    }
+  }
+  return map;
+}
+
 // ── Debugger session state ────────────────────────────────────────────────────
 // File-based IPC: spec writes pending.json, polls for gate.json.
 // Server polls pending.json to update session state for UI to poll.
@@ -1111,6 +1146,78 @@ function spawnRunWithSpec(record: RunRecord, specPath: string, headed?: boolean,
     const runFile = path.join(config.paths.results, `run-${runId}.json`);
     fs.mkdirSync(config.paths.results, { recursive: true });
     fs.writeFileSync(runFile, JSON.stringify(record, null, 2));
+
+    // ── Flakiness Intelligence: auto-quarantine + auto-promote ────────────────
+    if (record.suiteId && record.projectId) {
+      try {
+        const fConfig = getEffectiveFlakinessConfig(record.suiteId, record.projectId);
+
+        // Load all completed runs for this suite
+        const resultsPath = config.paths.results;
+        const allRunFiles: RunRecord[] = fs.existsSync(resultsPath)
+          ? fs.readdirSync(resultsPath)
+              .filter((f: string) => f.startsWith('run-') && f.endsWith('.json'))
+              .map((f: string) => { try { return JSON.parse(fs.readFileSync(path.join(resultsPath, f), 'utf-8')) as RunRecord; } catch { return null; } })
+              .filter((r: RunRecord | null): r is RunRecord => !!r && r.suiteId === record.suiteId)
+          : [];
+
+        // Group once — O(N)
+        const byTestId = groupRunsByTestId(allRunFiles, record.suiteId, fConfig.windowDays);
+        const quarantine = readQuarantine();
+        const justQuarantinedThisRun = new Set<string>();
+
+        for (const [testId, testRuns] of byTestId.entries()) {
+          const qKey   = `${record.suiteId}::${testId}`;
+          const entry  = quarantine[qKey] ?? null;
+          const isQuarantined = entry?.status === 'active';
+
+          // Cooldown: skip if not enough runs since quarantine
+          if (isQuarantined && entry) {
+            const runsSince = allRunFiles
+              .filter((r: RunRecord) => new Date(r.startedAt).getTime() > new Date(entry.quarantinedAt).getTime())
+              .length;
+            if (runsSince < fConfig.minRunsSinceQuarantine) continue;
+          }
+
+          const analysis = analyzeFlakiness(testRuns, fConfig, isQuarantined);
+          if (!analysis) continue;
+
+          const testName = record.tests?.find((t: any) => t.testId === testId)?.name ?? testId;
+
+          if (analysis.shouldQuarantine && !isQuarantined) {
+            upsertQuarantineEntry(record.suiteId, testId, testName, analysis, record.runId);
+            justQuarantinedThisRun.add(testId);
+            emitFlakeNotification('test_quarantined', record.suiteId, testId, record.runId,
+              { testName, flakeScore: analysis.flakeScore });
+          }
+
+          if (analysis.shouldAutoPromote && isQuarantined && entry?.autoQuarantined
+              && !justQuarantinedThisRun.has(testId)) {
+            restoreQuarantineEntry(record.suiteId, testId, record.runId);
+            emitFlakeNotification('test_restored', record.suiteId, testId, record.runId,
+              { testName });
+          }
+        }
+
+        // Update quarantined flag on TestEvents for this run
+        const freshQuarantine = readQuarantine();
+        for (const t of (record.tests ?? [])) {
+          if (!t.testId) {
+            t.testId = generateTestId(record.suiteId, t.name);
+          }
+          const qKey = `${record.suiteId}::${t.testId}`;
+          if (freshQuarantine[qKey]?.status === 'active') {
+            t.quarantined = true;
+          }
+        }
+
+        // Persist updated record with quarantine flags
+        fs.writeFileSync(runFile, JSON.stringify(record, null, 2));
+
+      } catch (fErr) {
+        logger.warn(`[flakiness] Post-run evaluation failed: ${(fErr as Error).message}`);
+      }
+    }
 
     // ── Notifications ─────────────────────────────────────────────────────────
     try {
