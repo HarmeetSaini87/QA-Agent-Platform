@@ -4946,6 +4946,23 @@ let _execSuiteHasTestData = false;
 // Returns true if execution is allowed, false if blocked.
 // Trace toggle — 'on' (Always) | 'on-first-retry' (Failed Only)
 var _execTraceMode = 'on';
+
+function _execTraceWarnCheck() {
+  const warn = document.getElementById('exec-trace-retry-warning');
+  if (!warn) return;
+  if (_execTraceMode !== 'on-first-retry') { warn.style.display = 'none'; return; }
+  const suiteId = document.getElementById('exec-suite-sel')?.value;
+  const suite   = suiteId && typeof allSuites !== 'undefined' ? allSuites.find(s => s.id === suiteId) : null;
+  const retries = suite?.retries ?? 0;
+  if (retries === 0) {
+    const name = suite?.name || 'This suite';
+    warn.textContent = '⚠ "' + name + '" has Auto-Retry disabled (0). No traces will be captured in Failed Only mode. Switch to Always or set Auto-Retry ≥ 1 on the suite.';
+    warn.style.display = '';
+  } else {
+    warn.style.display = 'none';
+  }
+}
+
 function _execToggleTrace() {
   _execTraceMode = _execTraceMode === 'on' ? 'on-first-retry' : 'on';
   const dot   = document.getElementById('exec-trace-dot');
@@ -4965,6 +4982,7 @@ function _execToggleTrace() {
     btn.style.borderColor  = '#d97706';
     btn.style.color        = '#92400e';
   }
+  _execTraceWarnCheck();
 }
 
 function _execCheckBrowserConstraint() {
@@ -5051,6 +5069,8 @@ function execOnSuiteChange() {
 
   // Apply browser constraint (may disable Run button and show warning)
   _execCheckBrowserConstraint();
+  // Re-evaluate trace retry warning for newly selected suite
+  _execTraceWarnCheck();
 }
 
 function _execUpdateRunBtn() {
