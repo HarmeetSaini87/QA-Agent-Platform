@@ -94,6 +94,7 @@ dotenv.config();
 
 const PORT       = config.ui.port;
 const PUBLIC_DIR = path.resolve(__dirname, 'public');
+const TRACE_VIEWER_DIR = path.join(PUBLIC_DIR, 'trace-viewer');
 const UPLOAD_DIR    = path.resolve(config.paths.requirements, 'uploads');
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
@@ -2586,10 +2587,9 @@ app.get('/screenshots/*', requireAuth, (req: Request, res: Response) => {
 
 // ── Playwright Trace Viewer (static SPA) ──────────────────────────────────────
 // Serves the copied viewer files. SPA fallback required — viewer uses client-side routing.
-const traceViewerDir = path.join(__dirname, 'public/trace-viewer');
-app.use('/trace-viewer', requireAuth, express.static(traceViewerDir));
+app.use('/trace-viewer', requireAuth, express.static(TRACE_VIEWER_DIR));
 app.get('/trace-viewer/*', requireAuth, (_req: Request, res: Response) => {
-  res.sendFile(path.join(traceViewerDir, 'index.html'));
+  res.sendFile(path.join(TRACE_VIEWER_DIR, 'index.html'));
 });
 
 // ── Test artifact serving (video + trace) ─────────────────────────────────────
