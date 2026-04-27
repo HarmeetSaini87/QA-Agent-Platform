@@ -150,6 +150,7 @@ interface RunRecord {
   browsers?:       string[];   // browsers used for this run e.g. ['chromium', 'firefox']
   // Self-healing events recorded during this run
   healEvents?:     HealEvent[];
+  traceMode?:      'on-first-retry' | 'off' | 'on';  // populated at run creation
 }
 
 interface TestEvent {
@@ -2592,6 +2593,128 @@ app.get('/trace-viewer/*', requireAuth, (_req: Request, res: Response) => {
   res.sendFile(path.join(TRACE_VIEWER_DIR, 'index.html'));
 });
 
+// ── Secure trace stream: GET + HEAD /api/trace/:runId/:testId ────────────────
+function canAccessTrace(_req: Request, _runId: string): boolean {
+  // v1 stub — always allow. Wire in auth check here in v2.
+  return true;
+}
+
+function handleTraceRequest(req: Request, res: Response, streamFile: boolean): void {
+  const { runId, testId } = req.params;
+  const requestId = uuidv4();
+
+  // 1. Auth stub
+  if (!canAccessTrace(req, runId)) {
+    res.setHeader('X-Error-Code', 'FORBIDDEN');
+    res.status(404).end();
+    return;
+  }
+
+  // 2. Load run file
+  const runFile = path.join(config.paths.results, `run-${runId}.json`);
+  if (!fs.existsSync(runFile)) {
+    res.setHeader('X-Error-Code', 'RUN_NOT_FOUND');
+    res.status(404).json({ error: { code: 'RUN_NOT_FOUND', message: 'Run not found' } });
+    return;
+  }
+
+  let record: RunRecord;
+  try {
+    record = JSON.parse(fs.readFileSync(runFile, 'utf-8')) as RunRecord;
+  } catch {
+    res.setHeader('X-Error-Code', 'RUN_NOT_FOUND');
+    res.status(404).json({ error: { code: 'RUN_NOT_FOUND', message: 'Run not found' } });
+    return;
+  }
+
+  // 3. Find test result
+  const ev = record.tests.find(t => t.testId === testId);
+  if (!ev) {
+    res.setHeader('X-Error-Code', 'TEST_NOT_FOUND');
+    res.status(404).json({ error: { code: 'TEST_NOT_FOUND', message: 'Test not found in run' } });
+    return;
+  }
+
+  // 4. Validate tracePath — non-empty, non-null, not absolute
+  if (!ev.tracePath || path.isAbsolute(ev.tracePath)) {
+    res.setHeader('X-Error-Code', 'TRACE_NOT_FOUND');
+    res.status(404).json({ error: { code: 'TRACE_NOT_FOUND', message: 'Trace not found' } });
+    return;
+  }
+
+  // 5. Path safety guard
+  const baseDir  = path.resolve(config.paths.testResults);
+  const resolved = path.resolve(baseDir, ev.tracePath);
+  if (!resolved.startsWith(baseDir + path.sep)) {
+    res.setHeader('X-Error-Code', 'BAD_REQUEST');
+    res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'Invalid request' } });
+    return;
+  }
+
+  // 6. File existence + size check
+  if (!fs.existsSync(resolved)) {
+    res.setHeader('X-Error-Code', 'TRACE_MISSING_ON_DISK');
+    res.status(404).json({ error: { code: 'TRACE_MISSING_ON_DISK', message: 'Trace artifact not found' } });
+    return;
+  }
+
+  const MAX_TRACE_BYTES = 50 * 1024 * 1024; // 50 MB
+  let stat: fs.Stats;
+  try {
+    stat = fs.statSync(resolved);
+  } catch {
+    res.setHeader('X-Error-Code', 'TRACE_MISSING_ON_DISK');
+    res.status(404).json({ error: { code: 'TRACE_MISSING_ON_DISK', message: 'Trace artifact not found' } });
+    return;
+  }
+  if (stat.size > MAX_TRACE_BYTES) {
+    res.setHeader('X-Error-Code', 'TRACE_TOO_LARGE');
+    res.status(413).json({ error: { code: 'TRACE_TOO_LARGE', message: 'Trace too large to preview' } });
+    return;
+  }
+
+  // 7. Set shared headers
+  res.setHeader('Content-Type', 'application/zip');
+  res.setHeader('Content-Disposition', 'inline; filename="trace.zip"');
+  res.setHeader('Content-Length', stat.size);
+  res.setHeader('Cache-Control', 'private, max-age=300');
+  res.setHeader('Accept-Ranges', 'bytes');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Request-Id', requestId);
+
+  // 8. HEAD — return after headers only
+  if (!streamFile) {
+    res.end();
+    return;
+  }
+
+  // 9. Audit log (GET only)
+  logAudit({
+    userId:       (req as any).session?.userId ?? null,
+    username:     (req as any).session?.username ?? null,
+    action:       'TRACE_VIEWED',
+    resourceType: 'trace',
+    resourceId:   `${runId}::${testId}`,
+    details:      requestId,
+    ip:           req.ip ?? null,
+  });
+
+  // 10. Stream
+  const stream = fs.createReadStream(resolved);
+  stream.on('error', () => {
+    if (!res.headersSent) {
+      res.status(500).json({ error: { code: 'TRACE_READ_FAILED', message: 'Failed to read trace' } });
+    } else {
+      res.destroy();
+    }
+  });
+  req.on('close', () => stream.destroy());
+  stream.pipe(res);
+}
+
+app.get('/api/trace/:runId/:testId',  requireAuthOrApiKey, (req: Request, res: Response) => handleTraceRequest(req, res, true));
+app.head('/api/trace/:runId/:testId', requireAuthOrApiKey, (req: Request, res: Response) => handleTraceRequest(req, res, false));
+
 // ── Test artifact serving (video + trace) ─────────────────────────────────────
 // Serves test-results/**/*.webm (video) and *.zip (trace) for the report page.
 // Video:  opened in a new browser tab via target="_blank" — browser plays it natively.
@@ -3942,6 +4065,7 @@ app.post('/api/suites/:id/run', requireAuthOrApiKey, requireEditor, async (req: 
     environmentName: environment?.name || '',
     executedBy:      req.session.username ?? 'unknown',
     browsers:        runBrowsers,
+    traceMode:       'on-first-retry',
   };
   runs.set(runId, record);
 
@@ -4599,6 +4723,7 @@ function triggerScheduledRun(schedule: ScheduledRun): void {
     environmentId: environment?.id || '', environmentName: environment?.name || '',
     executedBy: `scheduler:${schedule.label}`,
     browsers:   suite.browsers ?? ['chromium'],
+    traceMode:  'on-first-retry',
   };
   runs.set(runId, record);
   enqueueRun(() => spawnRunWithSpec(record, specPath, false, suite.retries ?? 0, suite.browsers ?? ['chromium']));
