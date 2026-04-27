@@ -866,10 +866,71 @@ function renderReport(r) {
     ${metricsHtml}
     ${healHtml}
     ${tcHtml}
+    <!-- Quarantined Tests Section -->
+    <div id="quarantined-section" style="display:none;margin-top:28px">
+      <details style="margin-bottom:20px">
+        <summary style="cursor:pointer;font-size:14px;font-weight:600;color:#f48771;padding:8px 0;user-select:none;outline:none">
+          ⛔ Quarantined Tests (<span id="quarantined-count">0</span>) — excluded from pass/fail
+        </summary>
+        <div style="margin-top:12px">
+          <div style="font-size:12px;color:var(--g400);margin-bottom:12px">These tests ran but their results were <strong>NOT</strong> counted in the suite pass/fail decision.</div>
+          <div class="tc-table-wrap">
+            <table class="tc-table">
+              <thead>
+                <tr>
+                  <th style="width:36px;text-align:center">#</th>
+                  <th>Test Name</th>
+                  <th style="width:120px;text-align:center">Result</th>
+                  <th style="width:90px;text-align:center">Duration</th>
+                </tr>
+              </thead>
+              <tbody id="quarantined-tbody"></tbody>
+            </table>
+          </div>
+          <div id="quarantined-budget" style="margin-top:12px;font-size:12px;color:var(--g400);padding:6px 0;font-style:italic"></div>
+        </div>
+      </details>
+    </div>
     <div class="report-footer">
       <p>QA Agent Platform — Execution Report &nbsp;|&nbsp; Run ID: <code>${esc(r.runId||'—')}</code></p>
     </div>
   `;
+
+  // ── Populate Quarantined Section ──────────────────────────────────────────
+  const quarantinedTests = (tests || []).filter(t => t.quarantined === true);
+  if (quarantinedTests.length > 0) {
+    const section = document.getElementById('quarantined-section');
+    const countEl = document.getElementById('quarantined-count');
+    const tbody   = document.getElementById('quarantined-tbody');
+    const budgetEl = document.getElementById('quarantined-budget');
+
+    if (section) section.style.display = '';
+    if (countEl) countEl.textContent = quarantinedTests.length;
+
+    if (tbody) {
+      let qIndex = 0;
+      tbody.innerHTML = quarantinedTests.map((t) => {
+        qIndex++;
+        const resultLabel = t.status === 'pass'
+          ? `<span style="color:#4ec9b0;font-weight:600">PASSED</span> <span style="font-size:11px;color:var(--g400)">(quarantined)</span>`
+          : `<span style="color:#f48771;font-weight:600">FAILED</span> <span style="font-size:11px;color:var(--g400)">(quarantined)</span>`;
+        const dur = t.durationMs ? `${(t.durationMs/1000).toFixed(1)}s` : '—';
+        return `<tr style="border-left:none">
+          <td style="text-align:center;color:var(--g400);font-size:12px">${qIndex}</td>
+          <td style="color:var(--dark);font-weight:500">${esc(cleanTitle(t.name))}</td>
+          <td style="text-align:center">${resultLabel}</td>
+          <td style="text-align:center;color:var(--g500);font-size:12px;white-space:nowrap">${dur}</td>
+        </tr>`;
+      }).join('');
+    }
+
+    const failedQ = quarantinedTests.filter(t => t.status === 'fail').length;
+    if (budgetEl) {
+      budgetEl.textContent = failedQ > 0
+        ? `${failedQ} quarantined failure(s) this run — these were NOT counted toward suite failure.`
+        : 'All quarantined tests passed this run.';
+    }
+  }
 }
 
 // ── Build one test row pair (main + detail) ───────────────────────────────────
