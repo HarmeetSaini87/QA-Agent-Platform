@@ -1414,6 +1414,12 @@ async function exportHTML() {
       sp.innerHTML = '&#128229; Trace';
       a.replaceWith(sp);
     });
+    clone.querySelectorAll('button.tc-btn-tr').forEach(btn => {
+      btn.disabled = true;
+      btn.removeAttribute('onclick');
+      btn.classList.add('tc-btn-inactive');
+      btn.title = 'Trace viewer not available in saved report';
+    });
 
     // ── 9. Build the self-contained export HTML document ─────────────────────
     const css        = document.querySelector('style')?.textContent || '';
