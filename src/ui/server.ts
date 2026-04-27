@@ -2584,6 +2584,14 @@ app.get('/screenshots/*', requireAuth, (req: Request, res: Response) => {
   res.status(404).end();
 });
 
+// ── Playwright Trace Viewer (static SPA) ──────────────────────────────────────
+// Serves the copied viewer files. SPA fallback required — viewer uses client-side routing.
+const traceViewerDir = path.join(__dirname, 'public/trace-viewer');
+app.use('/trace-viewer', requireAuth, express.static(traceViewerDir));
+app.get('/trace-viewer/*', requireAuth, (_req: Request, res: Response) => {
+  res.sendFile(path.join(traceViewerDir, 'index.html'));
+});
+
 // ── Test artifact serving (video + trace) ─────────────────────────────────────
 // Serves test-results/**/*.webm (video) and *.zip (trace) for the report page.
 // Video:  opened in a new browser tab via target="_blank" — browser plays it natively.
