@@ -25,7 +25,7 @@ export default defineConfig({
     headless: isCI ? true : process.env.HEADLESS === 'true',
     screenshot: (process.env.SCREENSHOT_MODE as 'on' | 'only-on-failure' | 'off') || 'on',
     video: 'on',
-    trace: 'on-first-retry',
+    trace: (process.env.PLAYWRIGHT_TRACE as 'on' | 'on-first-retry' | 'off') || 'on-first-retry',
     slowMo: isCI ? 0 : 300,
     actionTimeout: 15000,
     navigationTimeout: 30000,

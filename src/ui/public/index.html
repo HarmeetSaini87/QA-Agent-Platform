@@ -263,6 +263,24 @@
               </div>
             </div>
 
+            <!-- Trace Capture -->
+            <div class="field" style="margin-bottom:14px">
+              <label style="display:flex;align-items:center;gap:6px">
+                Trace Capture
+                <span class="info-icon" tabindex="0"
+                  data-tooltip="Controls when Playwright trace zips are recorded.&#10;&#10;Always — captures a trace for every test (pass or fail). Full visibility, uses more disk.&#10;Failed Only — captures a trace only when a failed test is retried.&#10;  ⚠ Requires Suite &quot;Auto-Retry&quot; &gt; 0 to work. If retries = 0, no traces are captured even for failures.&#10;&#10;Traces appear as the &#128249; Trace button in the Execution Report.&#10;&#10;Tip: Use Always during development. Use Failed Only in CI with retries enabled.">?</span>
+              </label>
+              <div style="display:flex;align-items:center;gap:10px;margin-top:6px">
+                <button id="exec-trace-toggle"
+                  onclick="_execToggleTrace()"
+                  style="display:flex;align-items:center;gap:8px;padding:5px 14px;border-radius:20px;border:1.5px solid var(--neutral-300);background:#fff;cursor:pointer;font-size:12.5px;font-weight:600;color:var(--neutral-700);transition:all .15s">
+                  <span id="exec-trace-dot" style="width:10px;height:10px;border-radius:50%;background:#16a34a;display:inline-block"></span>
+                  <span id="exec-trace-label">Always</span>
+                </button>
+                <span id="exec-trace-hint" style="font-size:11.5px;color:var(--neutral-400)">Trace recorded for every test (pass &amp; fail)</span>
+              </div>
+            </div>
+
             <!-- Scripts in selected suite -->
             <div id="exec-scripts-wrap" style="display:none;margin-bottom:16px">
               <div style="font-size:12.5px;font-weight:700;color:var(--neutral-600);margin-bottom:6px">

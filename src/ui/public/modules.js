@@ -4944,6 +4944,29 @@ async function execLoad() {
 let _execSuiteHasTestData = false;
 
 // Returns true if execution is allowed, false if blocked.
+// Trace toggle — 'on' (Always) | 'on-first-retry' (Failed Only)
+var _execTraceMode = 'on';
+function _execToggleTrace() {
+  _execTraceMode = _execTraceMode === 'on' ? 'on-first-retry' : 'on';
+  const dot   = document.getElementById('exec-trace-dot');
+  const label = document.getElementById('exec-trace-label');
+  const hint  = document.getElementById('exec-trace-hint');
+  const btn   = document.getElementById('exec-trace-toggle');
+  if (_execTraceMode === 'on') {
+    dot.style.background   = '#16a34a';
+    label.textContent      = 'Always';
+    hint.textContent       = 'Trace recorded for every test (pass & fail)';
+    btn.style.borderColor  = 'var(--neutral-300)';
+    btn.style.color        = 'var(--neutral-700)';
+  } else {
+    dot.style.background   = '#d97706';
+    label.textContent      = 'Failed Only';
+    hint.textContent       = 'Trace recorded only on retry of failed tests (requires Suite Auto-Retry ≥ 1)';
+    btn.style.borderColor  = '#d97706';
+    btn.style.color        = '#92400e';
+  }
+}
+
 function _execCheckBrowserConstraint() {
   const warningEl = document.getElementById('exec-browser-warning');
   const runBtn    = document.getElementById('exec-run-btn');
@@ -5077,7 +5100,7 @@ async function execRun() {
     .filter(b => document.getElementById(`exec-browser-${b}`)?.checked);
   const res  = await fetch(`/api/suites/${suiteId}/run`, {
     method: 'POST', headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ environmentId: envId, browsers: execBrowsers.length ? execBrowsers : ['chromium'] }),
+    body: JSON.stringify({ environmentId: envId, browsers: execBrowsers.length ? execBrowsers : ['chromium'], traceMode: _execTraceMode }),
   });
   const data = await res.json();
   if (!res.ok) {
