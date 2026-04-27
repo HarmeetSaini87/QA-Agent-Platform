@@ -1605,6 +1605,86 @@ document.addEventListener('keydown', function(e) {
   }
 }
 </script>
+<script>
+// ── Trace Viewer Modal (live page) ───────────────────────────────────────────
+var ERROR_CODE_MESSAGES = {
+  TRACE_NOT_FOUND:       'Trace not captured for this test.',
+  TRACE_MISSING_ON_DISK: 'Trace artifact not found (may have expired).',
+  TRACE_TOO_LARGE:       'Trace too large to preview (> 50 MB).',
+  RUN_NOT_FOUND:         'Test result not found.',
+  TEST_NOT_FOUND:        'Test result not found.',
+};
+
+function esc2(s) {
+  return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+async function openTraceViewer(runId, testId, testName) {
+  var origin      = window.location.origin;
+  var traceApiUrl = origin + '/api/trace/' + encodeURIComponent(runId) + '/' + encodeURIComponent(testId);
+  var iframeSrc   = origin + '/trace-viewer/?trace=' + encodeURIComponent(traceApiUrl);
+
+  var modal   = document.getElementById('trace-modal');
+  var loading = document.getElementById('trace-modal-loading');
+  var errDiv  = document.getElementById('trace-modal-error');
+  var iframe  = document.getElementById('trace-iframe');
+  var title   = document.getElementById('trace-modal-title');
+
+  title.textContent     = '📹 Trace: ' + (testName || testId);
+  loading.style.display = 'flex';
+  errDiv.hidden         = true;
+  iframe.style.display  = 'none';
+  iframe.src            = '';
+  modal.hidden          = false;
+
+  try {
+    var head = await fetch(traceApiUrl, { method: 'HEAD' });
+    if (!head.ok) {
+      var code = head.headers.get('X-Error-Code') || 'UNKNOWN';
+      var msg  = ERROR_CODE_MESSAGES[code] || 'Failed to load trace.';
+      loading.style.display = 'none';
+      errDiv.hidden = false;
+      errDiv.innerHTML = '<span>&#9888; ' + esc2(msg) + '</span><span style="font-size:11px;color:#94a3b8">Error code: ' + esc2(code) + '</span>';
+      return;
+    }
+  } catch (e) {
+    loading.style.display = 'none';
+    errDiv.hidden = false;
+    errDiv.innerHTML = '<span>&#9888; Failed to reach trace endpoint.</span>';
+    return;
+  }
+
+  iframe.src = iframeSrc;
+}
+
+function onTraceIframeLoaded() {
+  document.getElementById('trace-modal-loading').style.display = 'none';
+  document.getElementById('trace-iframe').style.display = 'block';
+}
+
+function onTraceIframeError() {
+  var loading = document.getElementById('trace-modal-loading');
+  var errDiv  = document.getElementById('trace-modal-error');
+  var iframe  = document.getElementById('trace-iframe');
+  loading.style.display = 'none';
+  iframe.style.display  = 'none';
+  errDiv.hidden = false;
+  errDiv.innerHTML = '<span>&#9888; Failed to load trace viewer.</span>';
+}
+
+function closeTraceModal() {
+  var modal  = document.getElementById('trace-modal');
+  var iframe = document.getElementById('trace-iframe');
+  iframe.src   = '';
+  modal.hidden = true;
+}
+
+document.addEventListener('keydown', function(e) {
+  if (e.key !== 'Escape') return;
+  var tm = document.getElementById('trace-modal');
+  if (tm && !tm.hidden) closeTraceModal();
+});
+</script>
 <!-- Trace Viewer Modal -->
 <div id="trace-modal" class="trace-modal-overlay" hidden>
   <div class="trace-modal-inner">
