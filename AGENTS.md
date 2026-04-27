@@ -9,6 +9,7 @@
 
 - **Name:** qa-agent-platform-dev (active development instance)
 - **Port:** 3003
+- **Remote access:** `qa-launchpad.test` is a DNS alias for the same local machine — `localhost:3003` = `qa-launchpad.test`. Same server, same files, not a separate environment.
 - **Prod instance:** `e:/AI Agent/qa-agent-platform` on port 3000 — DO NOT TOUCH unless told to promote
 
 ## Stack

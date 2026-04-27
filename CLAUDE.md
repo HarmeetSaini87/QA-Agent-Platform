@@ -28,6 +28,8 @@ Read this entire file before taking any action. These rules are non-negotiable.
 
 **This is `qa-agent-platform-dev` — the active development project (port 3003).**
 
+`localhost:3003` and `qa-launchpad.test` are the **same machine** — `qa-launchpad.test` is the hostname/DNS alias for remote access to the dev server. Never treat them as separate environments.
+
 All code changes, experiments, and new features are developed here FIRST.
 
 ### STRICT RULE — DO NOT TOUCH PROD UNLESS EXPLICITLY ASKED
