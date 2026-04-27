@@ -1002,7 +1002,7 @@ function buildTestRow(t, i, r) {
   // ── Trace button — shown only when trace exists (no disabled clutter) ─────
   const traceCell = (t.tracePath && t.testId)
     ? `<button class="tc-btn tc-btn-tr"
-              onclick="event.stopPropagation();openTraceViewer(${JSON.stringify(r.runId)},${JSON.stringify(t.testId)},${JSON.stringify(t.name)})"
+              onclick="event.stopPropagation();openTraceViewer(${esc(JSON.stringify(r.runId))},${esc(JSON.stringify(t.testId))},${esc(JSON.stringify(t.name))})"
               title="View trace in embedded viewer">&#128249; Trace</button>`
     : '';
 
@@ -1110,14 +1110,14 @@ function buildDetailPanel(t, i, status, traceMode, runId) {
 
   // ── Trace section — always shown in expanded panel ────────────────────────
   {
-    var traceContent;
+    let traceContent;
     if (t.tracePath && t.testId) {
       traceContent = `<button class="tc-btn tc-btn-tr" style="margin:0"
-              onclick="openTraceViewer(${JSON.stringify(runId)},${JSON.stringify(t.testId)},${JSON.stringify(t.name)})"
+              onclick="openTraceViewer(${esc(JSON.stringify(runId))},${esc(JSON.stringify(t.testId))},${esc(JSON.stringify(t.name))})"
               title="View trace in embedded viewer">&#128249; View Trace</button>`;
     } else if (traceMode === 'off') {
       traceContent = '<span style="color:var(--g500)">Tracing not enabled for this run.</span>';
-    } else if (!t.tracePath && !t.retryIndex) {
+    } else if (t.status === 'pass') {
       traceContent = '<span style="color:var(--g500)">Not captured — test passed on first run.</span>' +
         '<div class="trace-det-hint">Traces are captured on retry only (trace: on-first-retry).</div>';
     } else {
