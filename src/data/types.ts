@@ -36,6 +36,7 @@ export interface Project {
   // Legacy — kept for backward compat with old data; ignored by new UI
   appUrl?:      string;
   credentials?: ProjectCredential[];
+  flakinessDefaults?: Partial<import('../utils/flakinessEngine').FlakinessConfig>;
 }
 
 export interface ProjectCredential {
@@ -280,6 +281,7 @@ export interface TestSuite {
   createdAt:     string;
   modifiedBy:    string;
   modifiedAt:    string;
+  flakinessOverrides?: Partial<import('../utils/flakinessEngine').FlakinessConfig>;
 }
 
 // ── Scheduled Run ─────────────────────────────────────────────────────────────
