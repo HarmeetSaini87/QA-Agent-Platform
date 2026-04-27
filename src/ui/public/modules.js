@@ -2011,7 +2011,10 @@ let currentProjectId = '';
 
 async function projDropdownLoad() {
   const res = await fetch('/api/projects');
+  if (res.status === 401) { window.location.href = '/login?reason=expired'; return; }
+  if (!res.ok) return;
   allProjects = await res.json();
+  if (!Array.isArray(allProjects)) { allProjects = []; return; }
   const sel = document.getElementById('global-project-select');
   if (!sel) return;
   const active = allProjects.filter(p => p.isActive);
@@ -5378,104 +5381,290 @@ async function respondT4Heal(action) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// Toast notification helper
+// ══════════════════════════════════════════════════════════════════════════════
+function showToast(msg, level) {
+  const d = document.createElement('div');
+  const bg = level==='error' ? '#f48771' : level==='warn' ? '#dcdcaa' : '#4ec9b0';
+  d.style.cssText = `position:fixed;bottom:24px;right:24px;z-index:9999;padding:10px 18px;border-radius:6px;font-size:13px;font-weight:600;color:#1e1e1e;background:${bg};box-shadow:0 2px 8px rgba(0,0,0,0.3)`;
+  d.textContent = msg;
+  document.body.appendChild(d);
+  setTimeout(() => d.remove(), 4000);
+}
+
 // Flaky Test Detection
 // ══════════════════════════════════════════════════════════════════════════════
 
+let _flakyAllTests = [];
+let _flakyFilter   = 'all';
+let _flakyTop10    = false;
+
+function flakyToggleTop10() {
+  _flakyTop10 = !_flakyTop10;
+  const btn = document.getElementById('flaky-top10-btn');
+  if (btn) btn.classList.toggle('active', _flakyTop10);
+  flakyRender();
+}
+
+function flakySetFilter(f) {
+  _flakyFilter = f;
+  document.querySelectorAll('.flaky-filter-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.filter === f));
+  flakyRender();
+}
+
 async function flakyLoad() {
   if (!currentProjectId) {
-    document.getElementById('flaky-loading').style.display = '';
-    document.getElementById('flaky-loading').textContent = 'Select a project to analyse flaky tests.';
-    document.getElementById('flaky-summary').style.display = 'none';
-    document.getElementById('flaky-table-wrap').style.display = 'none';
-    document.getElementById('flaky-empty').style.display = 'none';
+    const loadEl = document.getElementById('flaky-loading');
+    if (loadEl) { loadEl.style.display = ''; loadEl.textContent = 'Select a project to analyse flaky tests.'; }
+    ['flaky-summary-bar','flaky-table-wrap','flaky-empty','flaky-filter-tabs','flaky-budget-banner']
+      .forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
     return;
   }
 
-  // Populate suite filter from loaded suites
   const suiteSel = document.getElementById('flaky-suite-filter');
-  if (suiteSel) {
+  if (suiteSel && typeof allSuites !== 'undefined') {
     const proj = allSuites.filter(s => s.projectId === currentProjectId);
     suiteSel.innerHTML = '<option value="">All Suites</option>' +
       proj.map(s => `<option value="${escHtml(s.id)}">${escHtml(s.name)}</option>`).join('');
   }
 
-  const limit   = document.getElementById('flaky-limit')?.value || '50';
   const suiteId = document.getElementById('flaky-suite-filter')?.value || '';
+  const sort    = document.getElementById('flaky-sort')?.value || 'flakeScore';
   const loadEl  = document.getElementById('flaky-loading');
-  const tableEl = document.getElementById('flaky-table-wrap');
-  const emptyEl = document.getElementById('flaky-empty');
-  const summaryEl = document.getElementById('flaky-summary');
+  if (loadEl) { loadEl.style.display = ''; loadEl.textContent = 'Analysing runs…'; }
+  ['flaky-summary-bar','flaky-table-wrap','flaky-empty','flaky-filter-tabs','flaky-budget-banner']
+    .forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
 
-  loadEl.style.display = '';
-  loadEl.textContent = 'Analysing runs…';
-  tableEl.style.display = 'none';
-  emptyEl.style.display = 'none';
-  summaryEl.style.display = 'none';
-
-  let url = `/api/flaky?projectId=${encodeURIComponent(currentProjectId)}&limit=${limit}`;
+  let url = `/api/flaky?projectId=${encodeURIComponent(currentProjectId)}&limit=200&sort=${encodeURIComponent(sort)}`;
   if (suiteId) url += `&suiteId=${encodeURIComponent(suiteId)}`;
 
-  const res = await fetch(url);
-  if (!res.ok) { loadEl.textContent = 'Failed to load flaky data.'; return; }
-  const { runs, tests } = await res.json();
-
-  loadEl.style.display = 'none';
-
-  if (tests.length === 0) {
-    document.getElementById('flaky-empty-runs').textContent = runs;
-    emptyEl.style.display = '';
-    summaryEl.style.display = 'none';
-    tableEl.style.display = 'none';
+  try {
+    const res = await fetch(url);
+    if (!res.ok) { if (loadEl) loadEl.textContent = 'Failed to load flaky data.'; return; }
+    const data = await res.json();
+    _flakyAllTests = data.tests || [];
+  } catch (e) {
+    if (loadEl) loadEl.textContent = 'Error loading flaky data.';
     return;
   }
 
-  // Summary cards
-  const high   = tests.filter(t => t.risk === 'high').length;
-  const medium = tests.filter(t => t.risk === 'medium').length;
-  const low    = tests.filter(t => t.risk === 'low').length;
-  summaryEl.style.display = 'flex';
-  summaryEl.innerHTML = `
-    <div class="flaky-card flaky-card-total">
-      <div class="flaky-card-val">${tests.length}</div>
-      <div class="flaky-card-lbl">Flaky Tests</div>
-    </div>
-    <div class="flaky-card flaky-card-runs">
-      <div class="flaky-card-val">${runs}</div>
-      <div class="flaky-card-lbl">Runs Analysed</div>
-    </div>
-    <div class="flaky-card flaky-card-high">
-      <div class="flaky-card-val">${high}</div>
-      <div class="flaky-card-lbl">High Risk (&gt;50%)</div>
-    </div>
-    <div class="flaky-card flaky-card-medium">
-      <div class="flaky-card-val">${medium}</div>
-      <div class="flaky-card-lbl">Medium Risk (20–50%)</div>
-    </div>
-    <div class="flaky-card flaky-card-low">
-      <div class="flaky-card-val">${low}</div>
-      <div class="flaky-card-lbl">Low Risk (&lt;20%)</div>
-    </div>`;
+  if (loadEl) loadEl.style.display = 'none';
 
-  // Table rows
+  if (_flakyAllTests.length === 0) {
+    const empty = document.getElementById('flaky-empty');
+    if (empty) empty.style.display = '';
+    return;
+  }
+
+  const tabs = document.getElementById('flaky-filter-tabs');
+  if (tabs) tabs.style.display = '';
+  flakyRender();
+}
+
+function flakyRender() {
+  let tests = [..._flakyAllTests];
+  if (_flakyFilter === 'flagged')      tests = tests.filter(t => t.evaluationState === 'evaluated' && t.shouldQuarantine && !t.isQuarantined);
+  if (_flakyFilter === 'quarantined')  tests = tests.filter(t => t.isQuarantined);
+  if (_flakyFilter === 'insufficient') tests = tests.filter(t => t.evaluationState === 'insufficient_data');
+  if (_flakyTop10) tests = tests.slice(0, 10);
+
+  const total       = _flakyAllTests.length;
+  const quarantined = _flakyAllTests.filter(t => t.isQuarantined).length;
+  const flagged     = _flakyAllTests.filter(t => t.shouldQuarantine && !t.isQuarantined).length;
+
+  const summaryBar = document.getElementById('flaky-summary-bar');
+  if (summaryBar) {
+    summaryBar.style.display = '';
+    summaryBar.innerHTML = `
+      <span style="color:var(--neutral-300);font-size:13px">
+        ${total} tests &nbsp;·&nbsp;
+        <span style="color:#f48771">${quarantined} quarantined</span> &nbsp;·&nbsp;
+        <span style="color:#dcdcaa">${flagged} flagged</span>
+      </span>`;
+  }
+
+  const empty = document.getElementById('flaky-empty');
+  const wrap  = document.getElementById('flaky-table-wrap');
+  if (tests.length === 0) {
+    if (empty) empty.style.display = '';
+    if (wrap)  wrap.style.display  = 'none';
+    return;
+  }
+  if (empty) empty.style.display = 'none';
+  if (wrap)  wrap.style.display  = '';
+
   const tbody = document.getElementById('flaky-tbody');
-  tbody.innerHTML = tests.map(t => {
-    const bar = `<div class="flaky-bar-wrap"><div class="flaky-bar flaky-bar-${t.risk}" style="width:${t.failRate}%"></div></div>`;
-    const badge = `<span class="flaky-risk flaky-risk-${t.risk}">${t.risk.charAt(0).toUpperCase() + t.risk.slice(1)}</span>`;
-    const dur = t.avgMs < 1000 ? `${t.avgMs}ms` : `${(t.avgMs/1000).toFixed(1)}s`;
-    return `<tr>
-      <td style="font-weight:600;max-width:260px;word-break:break-word">${escHtml(t.name)}</td>
-      <td style="font-size:12px;color:var(--neutral-400)">${escHtml(t.suiteName)}</td>
-      <td style="text-align:center;color:#4ec9b0;font-weight:700">${t.passes}</td>
-      <td style="text-align:center;color:#f48771;font-weight:700">${t.failures}</td>
-      <td style="text-align:center;color:var(--neutral-400)">${t.total}</td>
-      <td style="min-width:120px">${bar}<span style="font-size:11.5px;color:var(--neutral-300)">${t.failRate}%</span></td>
-      <td style="text-align:center">${badge}</td>
-      <td style="font-size:12px;color:var(--neutral-400)">${dur}</td>
-      <td style="font-size:12px;color:var(--neutral-400)">${_histFmtDate(t.lastSeen)}</td>
-    </tr>`;
-  }).join('');
+  if (tbody) tbody.innerHTML = tests.map(t => flakyRow(t)).join('');
+}
 
-  tableEl.style.display = '';
+function flakyRow(t) {
+  const isInsuff = t.evaluationState === 'insufficient_data';
+  const rowStyle = isInsuff ? 'opacity:0.5' : '';
+  const newBadge = t.quarantinedAt && (Date.now() - new Date(t.quarantinedAt).getTime() < 86400000)
+    ? '<span class="flaky-badge-new">NEW</span>' : '';
+  const autoBadge = t.isQuarantined
+    ? `<span class="flaky-badge-q">${t.autoQuarantined ? '⛔ Auto' : '⛔ Manual'}</span>` : '';
+
+  const statusLabel = t.isQuarantined ? 'Quarantined' : isInsuff ? 'Insufficient' : t.shouldQuarantine ? 'Flagged' : 'Active';
+  const statusColor = t.isQuarantined ? '#f48771' : isInsuff ? '#858585' : t.shouldQuarantine ? '#dcdcaa' : '#4ec9b0';
+
+  let scoreCell = '—';
+  if (!isInsuff && t.flakeScore !== undefined) {
+    const sc = t.flakeScore;
+    const thr = 0.30;
+    const near = Math.abs(sc - thr) < 0.05;
+    const color = sc >= thr ? '#f48771' : near ? '#dcdcaa' : '#4ec9b0';
+    const arrow = sc >= thr ? ' ↑' : '';
+    const tooltip = sc >= thr ? `Above threshold (${thr})` : near ? `Near threshold (${thr})` : `Below threshold (${thr})`;
+    scoreCell = `<span style="color:${color};font-weight:700" title="${tooltip}">${sc.toFixed(2)}${arrow}</span>`;
+  }
+
+  const confLabel = !isInsuff && t.confidence !== undefined
+    ? (t.confidence >= 0.7 ? 'High' : t.confidence >= 0.4 ? 'Med' : 'Low') : '—';
+
+  const sparkline = (t.recentRunsPreview || []).map(r =>
+    `<span style="color:${r.status==='pass'?'#4ec9b0':'#f48771'};font-size:10px;font-weight:700">${r.status==='pass'?'P':'F'}</span>`
+  ).join('');
+
+  const cat = t.classification?.primary ?? '—';
+  const catColor = {network:'#569cd6',timing:'#dcdcaa',locator:'#9cdcfe',assertion:'#f48771',environment:'#ce9178',unknown:'#858585'}[cat]||'#858585';
+  const catCell = cat !== '—' ? `<span style="color:${catColor};font-size:11px">${cat}</span>` : '—';
+
+  const lastRun  = t.lastRunAt     ? _flakyFmtDate(t.lastRunAt)     : '—';
+  const lastFail = t.lastFailureAt ? _flakyFmtDate(t.lastFailureAt) : '—';
+
+  let actionBtns = '';
+  if (!isInsuff) {
+    if (t.isQuarantined) {
+      actionBtns = `<button class="btn btn-xs btn-outline" onclick="flakyRestore('${escHtml(t.suiteId)}','${escHtml(t.testId)}','${escHtml(t.testName)}')" title="Restore from quarantine">Restore</button>`;
+    } else {
+      actionBtns = `<button class="btn btn-xs btn-outline" onclick="flakyQuarantine('${escHtml(t.suiteId)}','${escHtml(t.testId)}','${escHtml(t.testName)}')" title="Manually quarantine">Quarantine</button>`;
+    }
+  }
+
+  const expandId = `flaky-expand-${escHtml(t.testId)}`;
+
+  return `
+    <tr style="${rowStyle};cursor:pointer" onclick="flakyToggleExpand('${escHtml(t.testId)}')">
+      <td style="font-weight:600;max-width:280px;word-break:break-word">
+        ${escHtml(t.testName)} ${newBadge} ${autoBadge}
+      </td>
+      <td style="color:${statusColor};font-size:12px;font-weight:600">${statusLabel}</td>
+      <td style="text-align:center">${scoreCell}</td>
+      <td style="text-align:center;font-size:12px;color:var(--neutral-400)">${confLabel}</td>
+      <td style="letter-spacing:2px">${sparkline}</td>
+      <td style="text-align:center">${catCell}</td>
+      <td style="font-size:12px;color:var(--neutral-400)">${lastRun}</td>
+      <td style="font-size:12px;color:var(--neutral-400)">${lastFail}</td>
+      <td onclick="event.stopPropagation()">${actionBtns}</td>
+    </tr>
+    <tr id="${expandId}" style="display:none">
+      <td colspan="9" style="background:var(--bg-2);padding:16px">
+        ${flakyExpandedRow(t)}
+      </td>
+    </tr>`;
+}
+
+function flakyExpandedRow(t) {
+  if (t.evaluationState === 'insufficient_data') {
+    return `<div style="color:#858585;font-size:13px">Insufficient data — need ≥5 runs to compute flake score.</div>`;
+  }
+
+  const thr = 0.30;
+  const eligible = t.shouldQuarantine ? '✔ Eligible for auto-quarantine' : `Below threshold (${thr})`;
+
+  const history = (t.recentRunsPreview || []).map(r =>
+    `<span style="color:${r.status==='pass'?'#4ec9b0':'#f48771'};font-weight:700">${r.status==='pass'?'P':'F'}</span>`
+  ).join(' ');
+
+  const sig = t.signals || {};
+  const sigLines = [];
+  if (sig.timeout)         sigLines.push('· Timeout detected');
+  if (sig.slowTest)        sigLines.push(`· Avg failure duration: ${((sig.durationMs||0)/1000).toFixed(1)}s (baseline p95: ${((sig.baselineP95||0)/1000).toFixed(1)}s)`);
+  if (sig.networkError)    sigLines.push('· Network error detected (ECONNRESET / fetch failed)');
+  if (sig.locatorError)    sigLines.push('· Locator instability detected');
+  if (sig.assertionError)  sigLines.push('· Assertion failure pattern');
+  if (sig.recentFailSpike) sigLines.push('· ⚠ Consistent recent failures (all recent runs failed)');
+  if (sig.rawErrors?.length) sigLines.push(`· Last error: <code style="font-size:11px">${escHtml(sig.rawErrors[sig.rawErrors.length-1].slice(0,120))}</code>`);
+
+  const dominant = t.dominantCategory
+    ? `Dominant cause: <strong>${t.dominantCategory}</strong> (${t.dominantCategoryCount}/${t.dominantCategoryTotal} recent failures)`
+    : '';
+
+  let qBlock = '';
+  if (t.isQuarantined) {
+    const qDate = t.quarantinedAt ? _flakyFmtDate(t.quarantinedAt) : '—';
+    const promoteElig = t.shouldAutoPromote ? '✔ Eligible for auto-promote' : 'Not yet eligible for auto-promote';
+    qBlock = `
+      <div style="margin-top:12px;padding:10px;border:1px solid #f4877155;border-radius:6px">
+        <div style="font-size:12px;font-weight:600;color:#f48771;margin-bottom:6px">⛔ Quarantine Status: Active</div>
+        <div style="font-size:12px;color:var(--neutral-400)">Quarantined: ${qDate} (${t.autoQuarantined?'auto':'manual'})</div>
+        <div style="font-size:12px;color:var(--neutral-400)">Reason: ${escHtml(t.quarantineReason||'—')}</div>
+        <div style="font-size:12px;color:var(--neutral-400)">${promoteElig}</div>
+        <button class="btn btn-sm btn-outline" style="margin-top:8px" onclick="flakyRestore('${escHtml(t.suiteId)}','${escHtml(t.testId)}','${escHtml(t.testName)}')">Restore Manually</button>
+      </div>`;
+  }
+
+  return `
+    <div style="display:grid;gap:12px">
+      <div>
+        <div style="font-size:11px;text-transform:uppercase;color:var(--neutral-500);margin-bottom:4px">Decision</div>
+        <div style="font-size:13px">Flake Score: <strong>${(t.flakeScore||0).toFixed(2)}</strong> &nbsp; Threshold: ${thr} &nbsp; ${eligible}</div>
+        <div style="font-size:12px;color:var(--neutral-400)">Confidence: ${t.confidence>=0.7?'High':t.confidence>=0.4?'Med':'Low'} &nbsp;·&nbsp; Last run: ${t.lastRunAt?_flakyFmtDate(t.lastRunAt):'—'} &nbsp;·&nbsp; Last failure: ${t.lastFailureAt?_flakyFmtDate(t.lastFailureAt):'—'}</div>
+      </div>
+      ${sigLines.length?`<div><div style="font-size:11px;text-transform:uppercase;color:var(--neutral-500);margin-bottom:4px">Signals</div><div style="font-size:12px;color:var(--neutral-300);line-height:1.8">${sigLines.join('<br>')}</div></div>`:''}
+      <div>
+        <div style="font-size:11px;text-transform:uppercase;color:var(--neutral-500);margin-bottom:4px">History (last 10)</div>
+        <div style="letter-spacing:4px;font-size:13px">${history||'—'}</div>
+      </div>
+      <div>
+        <div style="font-size:11px;text-transform:uppercase;color:var(--neutral-500);margin-bottom:4px">Classification</div>
+        <div style="font-size:13px">Primary: <strong>${t.classification?.primary||'—'}</strong> (${((t.classification?.primaryConfidence||0)*100).toFixed(0)}%)
+          ${t.classification?.secondary?`&nbsp;·&nbsp; Secondary: ${t.classification.secondary}`:''}
+        </div>
+        ${dominant?`<div style="font-size:12px;color:var(--neutral-400)">${dominant}</div>`:''}
+        ${t.actionHint?`<div style="font-size:12px;color:#dcdcaa;margin-top:4px">💡 ${escHtml(t.actionHint)}</div>`:''}
+      </div>
+      ${qBlock}
+    </div>`;
+}
+
+function flakyToggleExpand(testId) {
+  const el = document.getElementById(`flaky-expand-${testId}`);
+  if (el) el.style.display = el.style.display === 'none' ? '' : 'none';
+}
+
+function _flakyFmtDate(iso) {
+  try {
+    const d = new Date(iso);
+    const now = new Date();
+    const diff = now - d;
+    if (diff < 60000)   return 'just now';
+    if (diff < 3600000) return Math.floor(diff/60000) + 'm ago';
+    if (diff < 86400000) return Math.floor(diff/3600000) + 'h ago';
+    return d.toLocaleDateString();
+  } catch { return '—'; }
+}
+
+async function flakyQuarantine(suiteId, testId, testName) {
+  if (!confirm('This will exclude the test from suite pass/fail. Continue?')) return;
+  const res = await fetch('/api/flaky/quarantine', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ suiteId, testId, testName, reason: 'manual' })
+  });
+  if (res.ok) { showToast('Test quarantined.', 'info'); flakyLoad(); }
+  else showToast('Quarantine failed.', 'error');
+}
+
+async function flakyRestore(suiteId, testId, testName) {
+  if (!confirm(`Restore "${testName}" from quarantine? It will affect pipeline results again.`)) return;
+  const res = await fetch('/api/flaky/restore', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ suiteId, testId })
+  });
+  if (res.ok) { showToast('Test restored from quarantine.', 'info'); flakyLoad(); }
+  else showToast('Restore failed.', 'error');
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -7501,74 +7690,189 @@ function _akYamlUpdate() {
   const rawKey    = _apikeyRawKey || '$(QA_API_KEY)';
   const suiteIdVal = suiteId || '<SUITE_ID>';
 
-  // Use a plain string (not template literal) for the PowerShell block
-  // so $ signs are never interpreted by JS
-  const ps = [
-    "      $ErrorActionPreference = 'Stop'",
-    "      $platform  = '" + platform + "'",
-    "      $suiteId   = '" + suiteIdVal + "'",
-    "      $envId     = '" + envId + "'",
-    "      $headers   = @{ Authorization = \"Bearer $env:QA_API_KEY\"; 'Content-Type' = 'application/json' }",
-    "      $body      = @{ environmentId = $envId } | ConvertTo-Json",
-    "",
-    "      Write-Host \"Triggering QA suite: " + suiteName.replace(/"/g, "'") + "\"",
-    "      $trigger = Invoke-RestMethod -Uri \"$platform/api/suites/$suiteId/run\" `",
-    "                    -Method POST -Headers $headers -Body $body",
-    "      $runId = $trigger.runId",
-    "      if (-not $runId) { Write-Error \"No runId returned.\"; exit 1 }",
-    "      Write-Host \"Run ID: $runId\"",
-    "",
-    "      $deadline = (Get-Date).AddMinutes(" + timeout + ")",
-    "      do {",
-    "        Start-Sleep -Seconds " + poll,
-    "        $run = Invoke-RestMethod -Uri \"$platform/api/run/$runId\" -Headers $headers",
-    "        Write-Host \"[$($run.status)] passed=$($run.passed) failed=$($run.failed) total=$($run.total)\"",
-    "        if ((Get-Date) -gt $deadline) { Write-Error \"Timed out after " + timeout + " minutes.\"; exit 1 }",
-    "      } while ($run.status -eq 'running')",
-    "",
-    "      $reportUrl = \"$platform/execution-report?runId=$runId\"",
-    "      Write-Host \"Report: $reportUrl\"",
-    "",
-    "      $md = @\"",
-    "## QA Suite Results — " + suiteName,
-    "| | |",
-    "|---|---|",
-    "| Status  | $($run.status) |",
-    "| Passed  | $($run.passed) |",
-    "| Failed  | $($run.failed) |",
-    "| Total   | $($run.total) |",
-    "",
-    "[Open Full Report]($reportUrl)",
-    "\"@",
-    "      $md | Out-File \"$($env:AGENT_TEMPDIRECTORY)/qa-summary.md\" -Encoding utf8",
-    "      Write-Host \"##vso[task.uploadsummary]$($env:AGENT_TEMPDIRECTORY)/qa-summary.md\"",
-    "",
-    "      if ($run.status -eq 'failed' -or $run.failed -gt 0) {",
-    "        Write-Error \"QA suite FAILED ($($run.failed) test(s) failed).\"",
-    "        exit 1",
-    "      }",
-    "      Write-Host \"All tests passed.\"",
-    "      exit 0",
+  // bash + curl - Linux ADO agents (ubuntu-latest)
+  // Fixed: jq JSON, QA_PLATFORM_URL from var group, curl --retry
+  const sh = [
+    '      set -euo pipefail',
+    "      trap 'echo \"ERROR: Script failed at line $LINENO\"' ERR",
+    '      PLATFORM="${QA_PLATFORM_URL}"',
+    "      SUITE_ID='" + suiteIdVal + "'",
+    "      SUITE_NAME='" + suiteName.replace(/'/g, '') + "'",
+    "      ENV_ID='"   + envId + "'",
+    '      TIMEOUT_SECS=$(( ' + timeout + ' * 60 ))',
+    '      POLL_SECS=' + poll,
+    '',
+    '      if ! command -v jq >/dev/null 2>&1; then',
+    '        echo "ERROR: jq is required but not installed on this agent"',
+    '        exit 1',
+    '      fi',
+    '',
+    '      AUTH_HEADER="Authorization: Bearer ${QA_API_KEY}"',
+    '',
+    '      echo "Triggering suite: ${SUITE_NAME}"',
+    '      RESPONSE=$(curl -sS --fail-with-body --retry 3 --retry-delay 5 -X POST "${PLATFORM}/api/suites/${SUITE_ID}/run" \\',
+    '        -H "$AUTH_HEADER" \\',
+    "        -H 'Content-Type: application/json' \\",
+    '        -d \'{"environmentId":"\'${ENV_ID}\'"}\')',
+    '',
+    "      RUN_ID=$(echo \"$RESPONSE\" | jq -r '.runId // empty')",
+    '      [ -z "$RUN_ID" ] && { echo "ERROR: No runId. Response: $RESPONSE"; exit 1; }',
+    '      echo "Run ID: $RUN_ID"',
+    '',
+    '      DEADLINE=$(( $(date +%s) + TIMEOUT_SECS ))',
+    '      while true; do',
+    '        if [ "$(date +%s)" -gt "$DEADLINE" ]; then',
+    "          echo 'ERROR: Timed out after " + timeout + " min.'",
+    '          exit 1',
+    '        fi',
+    '        sleep "$POLL_SECS"',
+    '        [ "$POLL_SECS" -lt 30 ] && POLL_SECS=$(( POLL_SECS + 5 ))',
+    '        [ "$POLL_SECS" -gt 30 ] && POLL_SECS=30',
+    '        echo "Polling run status for RUN_ID=${RUN_ID} ..."',
+    '        RUN=$(curl -sS --fail-with-body --retry 3 --retry-delay 5 "${PLATFORM}/api/run/${RUN_ID}" \\',
+    '          -H "$AUTH_HEADER")',
+    "        STATUS=$(echo \"$RUN\" | jq -r '.status // \"unknown\"')",
+    "        PASSED=$(echo \"$RUN\" | jq -r '.passed // 0')",
+    "        FAILED=$(echo \"$RUN\" | jq -r '.failed // 0')",
+    "        TOTAL=$( echo \"$RUN\" | jq -r '.total  // 0')",
+    '        echo "[$STATUS] passed=${PASSED} | failed=${FAILED} | total=${TOTAL}"',
+    '        case "$STATUS" in',
+    "          running)   ;;",
+    "          passed)    break ;;",
+    "          failed)    break ;;",
+    "          cancelled) echo 'Run was cancelled in TestForge.'; exit 1 ;;",
+    '          *)         echo "ERROR: Unexpected status: $STATUS"; exit 1 ;;',
+    '        esac',
+    '      done',
+    '      echo "Final Status: ${STATUS}"',
+    '',
+    '      REPORT_URL="${PLATFORM}/execution-report?runId=${RUN_ID}"',
+    '      echo "Report: ${REPORT_URL}"',
+    '',
+    '      SUMMARY="${AGENT_TEMPDIRECTORY}/qa-summary.md"',
+    '      printf \'## TestForge Results\\\\n**Suite:** %s\\\\n\\\\n\' "${SUITE_NAME}" > "$SUMMARY"',
+    "      printf '| | |\\\\n|---|---|\\\\n' >> \"$SUMMARY\"",
+    '      printf \'| Status | %s |\\\\n\' "$STATUS"  >> "$SUMMARY"',
+    '      printf \'| Passed | %s |\\\\n\' "$PASSED"  >> "$SUMMARY"',
+    '      printf \'| Failed | %s |\\\\n\' "$FAILED"  >> "$SUMMARY"',
+    '      printf \'| Total  | %s |\\\\n\' "$TOTAL"   >> "$SUMMARY"',
+    '      printf \'\\\\n[Open Report](%s)\\\\n\' "$REPORT_URL" >> "$SUMMARY"',
+    '      echo "##vso[task.uploadsummary]${SUMMARY}"',
+    '',
+    "      if [ \"$STATUS\" = 'failed' ] || [ \"${FAILED}\" -gt 0 ]; then",
+    '        echo "ERROR: Suite FAILED (${FAILED} test(s) failed)."',
+    '        exit 1',
+    '      fi',
+    "      echo 'All tests passed.'",
   ].join('\n');
 
+  // Reusable ADO template content (second download button)
+  const templateYaml =
+"# testforge-run-template.yml\n"
+"# Drop in your repo root. Reference from any pipeline via:\n"
+"#   - template: testforge-run-template.yml\n"
+"#     parameters:\n"
+"#       suiteName: My Suite\n"
+"#       suiteId: <id>\n"
+"#       envId: <env>\n"
+"# Variable Group 'qa-platform-config' must have:\n"
+"#   QA_API_KEY      - secret, from TestForge Admin > API Keys\n"
+"#   QA_PLATFORM_URL - TestForge server base URL\n"
+"\n"
+"parameters:\n"
+"  - name: suiteName\n"
+"    type: string\n"
+"  - name: suiteId\n"
+"    type: string\n"
+"  - name: envId\n"
+"    type: string\n"
+"  - name: timeoutMinutes\n"
+"    type: number\n"
+"    default: 30\n"
+"  - name: pollSeconds\n"
+"    type: number\n"
+"    default: 5\n"
+"\n"
+"steps:\n"
+"- task: Bash@3\n"
+"  displayName: 'TestForge \u2014 ${{ parameters.suiteName }}'\n"
+"  env:\n"
+"    QA_API_KEY:      $(QA_API_KEY)\n"
+"    QA_PLATFORM_URL: $(QA_PLATFORM_URL)\n"
+"  inputs:\n"
+"    targetType: inline\n"
+"    script: |\n"
+"      set -euo pipefail\n"
+"      trap 'echo \"ERROR: Script failed at line $LINENO\"' ERR\n"
+"      PLATFORM=\"${QA_PLATFORM_URL}\"\n"
+"      SUITE_ID='${{ parameters.suiteId }}'\n"
+"      ENV_ID='${{ parameters.envId }}'\n"
+"      TIMEOUT_SECS=$(( ${{ parameters.timeoutMinutes }} * 60 ))\n"
+"      POLL_SECS=${{ parameters.pollSeconds }}\n"
+"      if ! command -v jq >/dev/null 2>&1; then\n"
+"        echo \"ERROR: jq is required but not installed on this agent\"\n"
+"        exit 1\n"
+"      fi\n"
+"      AUTH_HEADER=\"Authorization: Bearer ${QA_API_KEY}\"\n"
+"      echo 'Triggering: ${{ parameters.suiteName }}'\n"
+"      RESPONSE=$(curl -sS --fail-with-body --retry 3 --retry-delay 5 -X POST \"${PLATFORM}/api/suites/${SUITE_ID}/run\" \\\n"
+"        -H \"$AUTH_HEADER\" \\\n"
+"        -H 'Content-Type: application/json' \\\n"
+"        -d '{\"environmentId\":\"${{ parameters.envId }}\"}')\n"
+"      RUN_ID=$(echo \"$RESPONSE\" | jq -r '.runId // empty')\n"
+"      [ -z \"$RUN_ID\" ] && { echo \"ERROR: No runId. Response: $RESPONSE\"; exit 1; }\n"
+"      echo \"Run ID: $RUN_ID\"\n"
+"      DEADLINE=$(( $(date +%s) + TIMEOUT_SECS ))\n"
+"      while true; do\n"
+"        if [ \"$(date +%s)\" -gt \"$DEADLINE\" ]; then\n"
+"          echo 'ERROR: Timed out.'; exit 1\n"
+"        fi\n"
+"        sleep \"$POLL_SECS\"\n"
+"        [ \"$POLL_SECS\" -lt 30 ] && POLL_SECS=$(( POLL_SECS + 5 ))\n"
+"        [ \"$POLL_SECS\" -gt 30 ] && POLL_SECS=30\n"
+"        echo \"Polling run status for RUN_ID=${RUN_ID} ...\"\n"
+"        RUN=$(curl -sS --fail-with-body --retry 3 --retry-delay 5 \"${PLATFORM}/api/run/${RUN_ID}\" \\\n"
+"          -H \"$AUTH_HEADER\")\n"
+"        STATUS=$(echo \"$RUN\" | jq -r '.status // \"unknown\"')\n"
+"        PASSED=$(echo \"$RUN\" | jq -r '.passed // 0')\n"
+"        FAILED=$(echo \"$RUN\" | jq -r '.failed // 0')\n"
+"        TOTAL=$( echo \"$RUN\" | jq -r '.total  // 0')\n"
+"        echo \"[$STATUS] passed=${PASSED} | failed=${FAILED} | total=${TOTAL}\"\n"
+"        case \"$STATUS\" in\n"
+"          running)   ;;\n"
+"          passed)    break ;;\n"
+"          failed)    break ;;\n"
+"          cancelled) echo 'Run was cancelled in TestForge.'; exit 1 ;;\n"
+"          *)         echo \"ERROR: Unexpected status: $STATUS\"; exit 1 ;;\n"
+"        esac\n"
+"      done\n"
+"      echo \"Final Status: ${STATUS}\"\n"
+"      if [ \"$STATUS\" = 'failed' ] || [ \"${FAILED}\" -gt 0 ]; then\n"
+"        echo \"ERROR: Suite FAILED (${FAILED} test(s) failed).\"; exit 1\n"
+"      fi\n"
+"      echo 'All tests passed.'\n";
+
   const yaml =
-"# Generated by QA Agent Platform — " + new Date().toISOString().slice(0,10) + "\n" +
-"# Key: " + keyName + "\n" +
-"# Suite: " + suiteName + "\n" +
-"# Store QA_API_KEY in ADO Library > Variable Groups > qa-platform-config (mark as secret)\n" +
+"# Generated by TestForge \u2014 " + new Date().toISOString().slice(0,10) + "\n" +
+"# Inline pipeline step. For reuse across suites, download testforge-run-template.yml.\n" +
+"# Variable Group 'qa-platform-config' must contain:\n" +
+"#   QA_API_KEY:      (secret) API key from TestForge Admin > API Keys\n" +
+"#   QA_PLATFORM_URL: " + platform + "\n" +
 (_apikeyRawKey ? "# QA_API_KEY value: " + rawKey + "\n" : "") +
 "\n" +
 "variables:\n" +
 "  - group: qa-platform-config\n" +
 "\n" +
-"- task: PowerShell@2\n" +
-"  displayName: 'QA Suite \u2014 " + suiteName.replace(/'/g, "''") + "'\n" +
+"- task: Bash@3\n" +
+"  displayName: 'TestForge Suite \u2014 " + suiteName.replace(/'/g, "''") + "'\n" +
 "  env:\n" +
-"    QA_API_KEY: $(QA_API_KEY)\n" +
+"    QA_API_KEY:      $(QA_API_KEY)\n" +
+"    QA_PLATFORM_URL: $(QA_PLATFORM_URL)\n" +
 "  inputs:\n" +
 "    targetType: inline\n" +
 "    script: |\n" +
-ps;
+sh;
+
 
   document.getElementById('ak-yaml-preview').textContent = yaml;
 
@@ -7635,9 +7939,121 @@ function _akDownloadYaml() {
   const blob = new Blob([yaml], { type: 'text/yaml' });
   const a    = document.createElement('a');
   a.href     = URL.createObjectURL(blob);
-  a.download = `qa-pipeline-${safeName}.yml`;
+  a.download = `testforge-pipeline-${safeName}.yml`;
   a.click();
   URL.revokeObjectURL(a.href);
+}
+
+function _akDownloadTemplate() {
+  const suiteIdVal = (document.getElementById('ak-suite') || {}).value || '';
+  const envId      = (document.getElementById('ak-env')   || {}).value || '';
+  const timeout    = (document.getElementById('ak-timeout')|| {}).value || '30';
+  const poll       = (document.getElementById('ak-poll')  || {}).value || '5';
+  const suiteSel   = document.getElementById('ak-suite');
+  const suiteName  = suiteSel?.options[suiteSel.selectedIndex]?.text || 'My Suite';
+
+  // Build template — uses ADO ${{ parameters.x }} syntax, not runtime values
+  const content = _akBuildTemplateYaml();
+  const blob = new Blob([content], { type: 'text/yaml' });
+  const a    = document.createElement('a');
+  a.href     = URL.createObjectURL(blob);
+  a.download = 'testforge-run-template.yml';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function _akBuildTemplateYaml() {
+  const suiteIdVal = (document.getElementById('ak-suite') || {}).value || '<suite-id>';
+  const envId      = (document.getElementById('ak-env')   || {}).value || '<env-id>';
+  const suiteSel   = document.getElementById('ak-suite');
+  const suiteName  = suiteSel?.options[suiteSel.selectedIndex]?.text || 'My Suite';
+
+  // templateYaml is defined in _akYamlUpdate scope — rebuild inline
+  return (
+"# testforge-run-template.yml\n" +
+"# Drop in your repo root. Reference from any pipeline via:\n" +
+"#   - template: testforge-run-template.yml\n" +
+"#     parameters:\n" +
+"#       suiteName: " + suiteName + "\n" +
+"#       suiteId: " + suiteIdVal + "\n" +
+"#       envId: " + envId + "\n" +
+"# Variable Group 'qa-platform-config' must have:\n" +
+"#   QA_API_KEY      - secret, from TestForge Admin > API Keys\n" +
+"#   QA_PLATFORM_URL - " + window.location.origin + "\n" +
+"\n" +
+"parameters:\n" +
+"  - name: suiteName\n" +
+"    type: string\n" +
+"  - name: suiteId\n" +
+"    type: string\n" +
+"  - name: envId\n" +
+"    type: string\n" +
+"  - name: timeoutMinutes\n" +
+"    type: number\n" +
+"    default: 30\n" +
+"  - name: pollSeconds\n" +
+"    type: number\n" +
+"    default: 5\n" +
+"\n" +
+"steps:\n" +
+"- task: Bash@3\n" +
+"  displayName: 'TestForge — ${{ parameters.suiteName }}'\n" +
+"  env:\n" +
+"    QA_API_KEY:      $(QA_API_KEY)\n" +
+"    QA_PLATFORM_URL: $(QA_PLATFORM_URL)\n" +
+"  inputs:\n" +
+"    targetType: inline\n" +
+"    script: |\n" +
+"      set -euo pipefail\n" +
+"      trap 'echo \"ERROR: Script failed at line $LINENO\"' ERR\n" +
+"      PLATFORM=\"${QA_PLATFORM_URL}\"\n" +
+"      SUITE_ID='${{ parameters.suiteId }}'\n" +
+"      ENV_ID='${{ parameters.envId }}'\n" +
+"      TIMEOUT_SECS=$(( ${{ parameters.timeoutMinutes }} * 60 ))\n" +
+"      POLL_SECS=${{ parameters.pollSeconds }}\n" +
+"      if ! command -v jq >/dev/null 2>&1; then\n" +
+"        echo \"ERROR: jq is required but not installed on this agent\"\n" +
+"        exit 1\n" +
+"      fi\n" +
+"      AUTH_HEADER=\"Authorization: Bearer ${QA_API_KEY}\"\n" +
+"      echo 'Triggering: ${{ parameters.suiteName }}'\n" +
+"      RESPONSE=$(curl -sS --fail-with-body --retry 3 --retry-delay 5 -X POST \"${PLATFORM}/api/suites/${SUITE_ID}/run\" \\\n" +
+"        -H \"$AUTH_HEADER\" \\\n" +
+"        -H 'Content-Type: application/json' \\\n" +
+"        -d '{\"environmentId\":\"${{ parameters.envId }}\"}')\n" +
+"      RUN_ID=$(echo \"$RESPONSE\" | jq -r '.runId // empty')\n" +
+"      [ -z \"$RUN_ID\" ] && { echo \"ERROR: No runId. Response: $RESPONSE\"; exit 1; }\n" +
+"      echo \"Run ID: $RUN_ID\"\n" +
+"      DEADLINE=$(( $(date +%s) + TIMEOUT_SECS ))\n" +
+"      while true; do\n" +
+"        if [ \"$(date +%s)\" -gt \"$DEADLINE\" ]; then\n" +
+"          echo 'ERROR: Timed out.'; exit 1\n" +
+"        fi\n" +
+"        sleep \"$POLL_SECS\"\n" +
+"        [ \"$POLL_SECS\" -lt 30 ] && POLL_SECS=$(( POLL_SECS + 5 ))\n" +
+"        [ \"$POLL_SECS\" -gt 30 ] && POLL_SECS=30\n" +
+"        echo \"Polling run status for RUN_ID=${RUN_ID} ...\"\n" +
+"        RUN=$(curl -sS --fail-with-body --retry 3 --retry-delay 5 \"${PLATFORM}/api/run/${RUN_ID}\" \\\n" +
+"          -H \"$AUTH_HEADER\")\n" +
+"        STATUS=$(echo \"$RUN\" | jq -r '.status // \"unknown\"')\n" +
+"        PASSED=$(echo \"$RUN\" | jq -r '.passed // 0')\n" +
+"        FAILED=$(echo \"$RUN\" | jq -r '.failed // 0')\n" +
+"        TOTAL=$( echo \"$RUN\" | jq -r '.total  // 0')\n" +
+"        echo \"[$STATUS] passed=${PASSED} | failed=${FAILED} | total=${TOTAL}\"\n" +
+"        case \"$STATUS\" in\n" +
+"          running)   ;;\n" +
+"          passed)    break ;;\n" +
+"          failed)    break ;;\n" +
+"          cancelled) echo 'Run was cancelled in TestForge.'; exit 1 ;;\n" +
+"          *)         echo \"ERROR: Unexpected status: $STATUS\"; exit 1 ;;\n" +
+"        esac\n" +
+"      done\n" +
+"      echo \"Final Status: ${STATUS}\"\n" +
+"      if [ \"$STATUS\" = 'failed' ] || [ \"${FAILED}\" -gt 0 ]; then\n" +
+"        echo \"ERROR: Suite FAILED (${FAILED} test(s) failed).\"; exit 1\n" +
+"      fi\n" +
+"      echo 'All tests passed.'\n"
+  );
 }
 
 async function apikeySave() {
