@@ -9,12 +9,23 @@
  * locatorType to pick the right Playwright locator API.
  */
 
-import * as fs   from 'fs';
-import * as path from 'path';
+import * as fs     from 'fs';
+import * as path   from 'path';
+import * as crypto from 'crypto';
 import { TestScript, ScriptStep, Project, ProjectEnvironment, CommonFunction, CommonData, Locator, LocatorAlternative } from '../data/types';
 import { readAll, COMMON_DATA, LOCATORS } from '../data/store';
 import { logger } from './logger';
 import { DOM_SCANNER_IIFE } from './healingEngine';
+
+// ── Stable per-test identifier: TID_<8-hex> ──────────────────────────────────
+// Deterministic: same suiteId + testName always yields the same testId.
+// Used by flakiness intelligence (quarantine, promote, groupRunsByTestId).
+function makeTestId(suiteId: string, testName: string): string {
+  return 'TID_' + crypto.createHash('sha256')
+    .update(`${suiteId}::${testName}`)
+    .digest('hex')
+    .slice(0, 8);
+}
 
 // ── P5: Normalize URL → pageKey (matches recorder.js normalizePageKey) ────────
 // Strips the origin + replaces numeric path segments with :id
@@ -1133,7 +1144,7 @@ export interface CodegenInput {
 }
 
 export function generateCodegenSpec(input: CodegenInput): string {
-  const { suiteName, runId, scripts, project, environment, allFunctions,
+  const { suiteName, suiteId, runId, scripts, project, environment, allFunctions,
           beforeEachSteps = [], afterEachSteps = [],
           fastMode = false, fastModeSteps = [],
           overlayHandlers = [] } = input;
@@ -1475,9 +1486,13 @@ export function generateCodegenSpec(input: CodegenInput): string {
       const testIdx  = scripts.indexOf(script) * numRuns + runIdx;
       const runLabel = numRuns > 1 ? ` [row ${runIdx + 1}]` : '';
       const isFastMode = fastMode && fastModeSteps.length > 0;
+      // Compute stable testId for this test (suiteId + full test title, browser-agnostic)
+      const fullTestTitle = `${testName}${runLabel}`;
+      const testId = makeTestId(suiteId, fullTestTitle);
       if (isFastMode) {
         lines.push(`  test('${testName}${runLabel.replace(/'/g, "\\'")}', async ({ browser, browserName }) => {`);
         lines.push(`    __testIdx++;`);
+        lines.push(`    console.log(\`[QA_TEST_ID]:\${__testIdx}:${testId}\`);`);
         lines.push(`    const __browser = browserName;`);
         lines.push(`    const __sessionVars: Record<string, string> = {};`);
         lines.push(`    // Fast Mode: open context with saved auth state — beforeAll wrote this file`);
@@ -1486,6 +1501,7 @@ export function generateCodegenSpec(input: CodegenInput): string {
       } else {
         lines.push(`  test('${testName}${runLabel.replace(/'/g, "\\'")}', async ({ page, browserName }) => {`);
         lines.push(`    __testIdx++; // increment module-level counter — used by afterEach for FAILED-<idx>.png`);
+        lines.push(`    console.log(\`[QA_TEST_ID]:\${__testIdx}:${testId}\`);`);
         lines.push(`    const __browser = browserName;`);
         lines.push(`    const __sessionVars: Record<string, string> = {};`);
       }

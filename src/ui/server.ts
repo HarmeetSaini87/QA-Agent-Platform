@@ -469,6 +469,9 @@ const RE_FAIL_COUNT = /(\d+) failed/;
 // Phase A: console errors emitted by afterEach as structured log line
 // Format: [QA_CONSOLE_ERRORS]:<testIdx>:<json-array>
 const RE_CONSOLE_ERRORS = /\[QA_CONSOLE_ERRORS\]:(\d+):(.+)$/;
+// Flakiness: stable testId emitted by generated spec at test-start time
+// Format: [QA_TEST_ID]:<testIdx>:<TID_xxxxxxxx>
+const RE_TEST_ID = /\[QA_TEST_ID\]:(\d+):(TID_[0-9a-f]{8})$/;
 
 function classifyLine(line: string): LogLevel {
   if (RE_TEST_PASS.test(line))                  return 'pass';
@@ -1073,6 +1076,12 @@ function spawnRunWithSpec(record: RunRecord, specPath: string, headed?: boolean,
         const durationMs = parseMs(testMatch[3], testMatch[4]);
         const ev: TestEvent = { name, status, durationMs, browser };
         record.tests.push(ev);
+        // Flush any pending testId that arrived before this TestEvent was pushed
+        const pendingTids = (record as any).__pendingTestIds as Record<number, string> | undefined;
+        if (pendingTids) {
+          const idx = record.tests.length - 1;
+          if (pendingTids[idx]) { ev.testId = pendingTids[idx]; delete pendingTids[idx]; }
+        }
         broadcast(runId, { type: 'run:test',  runId, name, status, durationMs, browser });
         broadcast(runId, { type: 'run:stats', runId, passed: record.passed, failed: record.failed, total: record.total, completed: record.tests.length });
       }
@@ -1087,6 +1096,22 @@ function spawnRunWithSpec(record: RunRecord, specPath: string, headed?: boolean,
           (record as any).__pendingConsoleErrors = (record as any).__pendingConsoleErrors || {};
           (record as any).__pendingConsoleErrors[testIdx] = errors;
         } catch { /* malformed JSON — skip */ }
+      }
+
+      // Flakiness: assign stable testId from generated spec's [QA_TEST_ID] log line
+      // Emitted at test-start so testId is set before post-run hook runs.
+      const tidMatch = plain.match(RE_TEST_ID);
+      if (tidMatch) {
+        const testIdx = parseInt(tidMatch[1], 10);
+        const testId  = tidMatch[2];
+        const ev = record.tests[testIdx];
+        if (ev && !ev.testId) ev.testId = testId;
+        // If testEvent not yet in array (log line arrived before test result line),
+        // store pending so we can apply once the testEvent is pushed.
+        if (!ev) {
+          (record as any).__pendingTestIds = (record as any).__pendingTestIds || {};
+          (record as any).__pendingTestIds[testIdx] = testId;
+        }
       }
     }
   };
@@ -1209,6 +1234,14 @@ function spawnRunWithSpec(record: RunRecord, specPath: string, headed?: boolean,
           if (freshQuarantine[qKey]?.status === 'active') {
             t.quarantined = true;
           }
+        }
+
+        // Quarantine budget log — informational; enforcement is handled above
+        const quarantinedFailCount = (record?.tests ?? []).filter(
+          (t: any) => t.quarantined === true && t.status === 'fail'
+        ).length;
+        if (quarantinedFailCount > 0) {
+          console.log(`[budget] Quarantined failures this run: ${quarantinedFailCount}`);
         }
 
         // Persist updated record with quarantine flags
