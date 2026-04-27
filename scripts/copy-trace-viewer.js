@@ -12,7 +12,7 @@ let pwVersion = 'unknown';
 try {
   const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'node_modules', 'playwright-core', 'package.json'), 'utf-8'));
   pwVersion = pkg.version;
-} catch (_) {}
+} catch (e) { console.warn(`[copy-trace-viewer] Could not read playwright-core version: ${e.message}`); }
 
 // Verify source exists
 if (!fs.existsSync(SRC)) {
@@ -37,7 +37,8 @@ function copyDir(src, dest) {
     } else {
       try {
         fs.copyFileSync(srcPath, destPath, fs.constants.COPYFILE_FICLONE_FORCE);
-      } catch (_) {
+      } catch (err) {
+        if (err.code !== 'ENOTSUP') throw err;
         fs.copyFileSync(srcPath, destPath);
       }
       // Preserve timestamps
