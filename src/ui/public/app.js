@@ -849,7 +849,7 @@ connectWS();
     const res = await fetch('/api/branding');
     if (!res.ok) return;
     const { appName, logoUrl, primaryColor } = await res.json();
-    if (appName && appName !== 'QA Agent Platform') {
+    if (appName && appName !== 'QA Agent Platform' && appName !== 'TestForge') {
       document.title = appName;
       const nameEl = document.getElementById('nav-app-name');
       if (nameEl) nameEl.textContent = appName;

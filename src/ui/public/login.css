@@ -1,27 +1,28 @@
-/* ── Login Page Styles ──────────────────────────────────────────────────── */
+/* ── Login Page Styles — Obsidian Pro ────────────────────────────────────── */
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  --brand:        #2563eb;
-  --brand-dark:   #1d4ed8;
-  --brand-light:  #eff6ff;
-  --success:      #22c55e;
-  --success-bg:   #f0fdf4;
+  --brand:        #f59e0b;
+  --brand-dark:   #d97706;
+  --brand-light:  #1c1a0e;
+  --success:      #10b981;
+  --success-bg:   #0a1f16;
   --danger:       #ef4444;
-  --danger-bg:    #fef2f2;
+  --danger-bg:    #1f0a0a;
   --warning:      #f59e0b;
-  --warning-bg:   #fffbeb;
-  --neutral-50:   #f8fafc;
-  --neutral-100:  #f1f5f9;
-  --neutral-200:  #e2e8f0;
-  --neutral-400:  #94a3b8;
-  --neutral-500:  #64748b;
-  --neutral-700:  #334155;
-  --neutral-900:  #0f172a;
+  --warning-bg:   rgba(245,158,11,.08);
+  --neutral-50:   #0e0f11;
+  --neutral-100:  #131417;
+  --neutral-200:  #1c1c20;
+  --neutral-400:  #555968;
+  --neutral-500:  #6b7280;
+  --neutral-700:  #9ca3af;
+  --neutral-900:  #e2e8f0;
   --font: 'Segoe UI', system-ui, -apple-system, sans-serif;
   --radius: 10px;
-  --shadow: 0 20px 60px rgba(0,0,0,.12), 0 4px 16px rgba(0,0,0,.08);
+  --shadow: 0 20px 60px rgba(0,0,0,.6), 0 4px 16px rgba(0,0,0,.4);
+  font-size: 15px;
 }
 
 body {
@@ -40,14 +41,14 @@ body {
   justify-content: center;
   padding: 24px 16px;
   background:
-    radial-gradient(ellipse at 20% 50%, rgba(37,99,235,.08) 0%, transparent 60%),
-    radial-gradient(ellipse at 80% 20%, rgba(34,197,94,.06) 0%, transparent 50%),
-    linear-gradient(135deg, #f0f4ff 0%, #f8fafc 50%, #f0fdf4 100%);
+    radial-gradient(ellipse at 30% 40%, rgba(245,158,11,.07) 0%, transparent 55%),
+    radial-gradient(ellipse at 75% 70%, rgba(245,158,11,.04) 0%, transparent 45%),
+    linear-gradient(135deg, #0a0b0d 0%, #0e0f11 60%, #0b0c0e 100%);
 }
 
 /* ── Card ───────────────────────────────────────────────────────────────── */
 .login-card {
-  background: #fff;
+  background: #131417;
   border-radius: 16px;
   box-shadow: var(--shadow);
   padding: 40px 44px;
@@ -110,9 +111,9 @@ body {
   line-height: 1.45;
 }
 
-.login-alert.error   { background: var(--danger-bg);  color: #b91c1c; border: 1px solid #fecaca; }
-.login-alert.success { background: var(--success-bg); color: #15803d; border: 1px solid #bbf7d0; }
-.login-alert.info    { background: var(--brand-light); color: var(--brand-dark); border: 1px solid #bfdbfe; }
+.login-alert.error   { background: var(--danger-bg);  color: #fca5a5; border: 1px solid rgba(239,68,68,.3); }
+.login-alert.success { background: var(--success-bg); color: #6ee7b7; border: 1px solid rgba(16,185,129,.3); }
+.login-alert.info    { background: var(--brand-light); color: var(--brand); border: 1px solid rgba(245,158,11,.3); }
 
 .login-notice {
   display: flex;
@@ -120,9 +121,9 @@ body {
   gap: 8px;
   padding: 10px 13px;
   background: var(--warning-bg);
-  border: 1px solid #fde68a;
+  border: 1px solid rgba(245,158,11,.35);
   border-radius: 8px;
-  color: #92400e;
+  color: #fcd34d;
   font-size: 13px;
   margin-bottom: 18px;
   line-height: 1.45;
@@ -171,8 +172,8 @@ body {
 
 .input-wrap input:focus {
   border-color: var(--brand);
-  background: #fff;
-  box-shadow: 0 0 0 3px rgba(37,99,235,.12);
+  background: var(--neutral-100);
+  box-shadow: 0 0 0 3px rgba(245,158,11,.15);
 }
 
 .input-wrap input.invalid {
@@ -223,11 +224,11 @@ body {
   width: 100%;
   padding: 13px;
   background: var(--brand);
-  color: #fff;
+  color: #000;
   border: none;
   border-radius: var(--radius);
   font-size: 15px;
-  font-weight: 600;
+  font-weight: 700;
   cursor: pointer;
   transition: background .15s, transform .1s, box-shadow .15s;
   display: flex;
@@ -237,7 +238,7 @@ body {
   margin-top: 4px;
 }
 
-.btn-login:hover   { background: var(--brand-dark); box-shadow: 0 4px 12px rgba(37,99,235,.3); }
+.btn-login:hover   { background: var(--brand-dark); box-shadow: 0 4px 16px rgba(245,158,11,.3); }
 .btn-login:active  { transform: scale(.98); }
 .btn-login:disabled { opacity: .65; cursor: not-allowed; }
 
@@ -260,8 +261,8 @@ body {
 .spinner {
   width: 18px;
   height: 18px;
-  border: 2.5px solid rgba(255,255,255,.35);
-  border-top-color: #fff;
+  border: 2.5px solid rgba(0,0,0,.3);
+  border-top-color: #000;
   border-radius: 50%;
   animation: spin .7s linear infinite;
   flex-shrink: 0;

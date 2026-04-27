@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Sign In — QA Agent Platform</title>
+  <title>Sign In — TestForge</title>
   <link rel="stylesheet" href="/login.css" />
 </head>
 <body>
@@ -14,16 +14,28 @@
       <div class="login-brand">
         <div class="login-logo">
           <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect width="40" height="40" rx="10" fill="#2563eb"/>
-            <path d="M12 20a8 8 0 1 1 16 0 8 8 0 0 1-16 0Z" stroke="#fff" stroke-width="2.5"/>
-            <path d="M20 14v6l4 2" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/>
-            <circle cx="29" cy="29" r="6" fill="#22c55e"/>
-            <path d="M26.5 29l2 2 3-3" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+            <rect width="40" height="40" rx="10" fill="url(#lg-amber)"/>
+            <!-- hammer handle -->
+            <line x1="12" y1="28" x2="22" y2="18" stroke="#000" stroke-width="3" stroke-linecap="round"/>
+            <!-- hammer head body -->
+            <rect x="20" y="9" width="12" height="8" rx="2" fill="#000" transform="rotate(45 26 13)"/>
+            <!-- circuit node dot at hammer head strike face -->
+            <circle cx="29" cy="11" r="2.5" fill="#000" opacity=".7"/>
+            <!-- spark lines radiating outward from hammer head -->
+            <line x1="32" y1="8"  x2="35" y2="5"  stroke="#000" stroke-width="1.5" stroke-linecap="round" opacity=".65"/>
+            <line x1="34" y1="13" x2="38" y2="13" stroke="#000" stroke-width="1.5" stroke-linecap="round" opacity=".65"/>
+            <line x1="31" y1="16" x2="34" y2="19" stroke="#000" stroke-width="1.5" stroke-linecap="round" opacity=".65"/>
+            <defs>
+              <linearGradient id="lg-amber" x1="0" y1="0" x2="40" y2="40" gradientUnits="userSpaceOnUse">
+                <stop offset="0%" stop-color="#f59e0b"/>
+                <stop offset="100%" stop-color="#d97706"/>
+              </linearGradient>
+            </defs>
           </svg>
         </div>
         <div>
-          <div class="login-app-name">QA Agent Platform</div>
-          <div class="login-tagline">Intelligent Test Automation</div>
+          <div class="login-app-name">TestForge</div>
+          <div class="login-tagline">Precision Automation, Zero Code</div>
         </div>
       </div>
 
@@ -97,7 +109,7 @@
 
     </div><!-- /login-card -->
 
-    <p class="login-footer">© 2025 QA Agent Platform. Powered by Claude AI.</p>
+    <p class="login-footer">© 2026 TestForge. All rights reserved.</p>
   </div>
 
   <script src="/login.js"></script>
