@@ -268,7 +268,7 @@
               <label style="display:flex;align-items:center;gap:6px">
                 Trace Capture
                 <span class="info-icon" tabindex="0"
-                  data-tooltip="Controls when Playwright trace zips are recorded.&#10;&#10;Always — captures a trace for every test (pass or fail). Full visibility, uses more disk.&#10;Failed Only — captures a trace only when a failed test is retried.&#10;  ⚠ Requires Suite &quot;Auto-Retry&quot; &gt; 0 to work. If retries = 0, no traces are captured even for failures.&#10;&#10;Traces appear as the &#128249; Trace button in the Execution Report.&#10;&#10;Tip: Use Always during development. Use Failed Only in CI with retries enabled.">?</span>
+                  data-tooltip="Controls when Playwright trace zips are recorded. Click to cycle through modes.&#10;&#10;Always — trace for every test (pass &amp; fail). Full visibility, uses more disk.&#10;Failed Only — trace kept only for failed tests. No retries needed.&#10;Off — no traces recorded.&#10;&#10;Traces appear as the &#128249; Trace button in the Execution Report.&#10;&#10;Tip: Use Always during development, Failed Only in CI.">?</span>
               </label>
               <div style="display:flex;align-items:center;gap:10px;margin-top:6px">
                 <button id="exec-trace-toggle"

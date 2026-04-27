@@ -4944,47 +4944,55 @@ async function execLoad() {
 let _execSuiteHasTestData = false;
 
 // Returns true if execution is allowed, false if blocked.
-// Trace toggle — 'on' (Always) | 'on-first-retry' (Failed Only)
+// Trace toggle — cycles: 'on' → 'retain-on-failure' → 'off'
 var _execTraceMode = 'on';
+
+var _TRACE_STATES = {
+  'on': {
+    next:        'retain-on-failure',
+    dot:         '#16a34a',
+    label:       'Always',
+    hint:        'Trace recorded for every test (pass & fail)',
+    borderColor: 'var(--neutral-300)',
+    color:       'var(--neutral-700)',
+  },
+  'retain-on-failure': {
+    next:        'off',
+    dot:         '#d97706',
+    label:       'Failed Only',
+    hint:        'Trace recorded for failed tests only — no retries required',
+    borderColor: '#d97706',
+    color:       '#92400e',
+  },
+  'off': {
+    next:        'on',
+    dot:         '#94a3b8',
+    label:       'Off',
+    hint:        'No traces recorded',
+    borderColor: '#94a3b8',
+    color:       '#64748b',
+  },
+};
 
 function _execTraceWarnCheck() {
   const warn = document.getElementById('exec-trace-retry-warning');
   if (!warn) return;
-  if (_execTraceMode !== 'on-first-retry') { warn.style.display = 'none'; return; }
-  const suiteId = document.getElementById('exec-suite-sel')?.value;
-  if (!suiteId) { warn.style.display = 'none'; return; }
-  const suite   = typeof allSuites !== 'undefined' ? allSuites.find(s => s.id === suiteId) : null;
-  if (!suite) { warn.style.display = 'none'; return; }
-  const retries = suite.retries ?? 0;
-  if (retries === 0) {
-    const name = suite?.name || 'This suite';
-    warn.textContent = '⚠ "' + name + '" has Auto-Retry disabled (0). "Failed Only" captures traces on the retry attempt — but with no retries configured, failed tests are never retried, so no trace is recorded for any test. Switch to Always to capture traces, or enable Auto-Retry ≥ 1 on the suite.';
-    warn.style.display = '';
-  } else {
-    warn.style.display = 'none';
-  }
+  warn.style.display = 'none'; // no warnings needed with new 3-state model
 }
 
 function _execToggleTrace() {
-  _execTraceMode = _execTraceMode === 'on' ? 'on-first-retry' : 'on';
+  const state = _TRACE_STATES[_execTraceMode] || _TRACE_STATES['on'];
+  _execTraceMode = state.next;
+  const next  = _TRACE_STATES[_execTraceMode];
   const dot   = document.getElementById('exec-trace-dot');
   const label = document.getElementById('exec-trace-label');
   const hint  = document.getElementById('exec-trace-hint');
   const btn   = document.getElementById('exec-trace-toggle');
-  if (_execTraceMode === 'on') {
-    dot.style.background   = '#16a34a';
-    label.textContent      = 'Always';
-    hint.textContent       = 'Trace recorded for every test (pass & fail)';
-    btn.style.borderColor  = 'var(--neutral-300)';
-    btn.style.color        = 'var(--neutral-700)';
-  } else {
-    dot.style.background   = '#d97706';
-    label.textContent      = 'Failed Only';
-    hint.textContent       = 'Trace recorded only on retry of failed tests (requires Suite Auto-Retry ≥ 1)';
-    btn.style.borderColor  = '#d97706';
-    btn.style.color        = '#92400e';
-  }
-  _execTraceWarnCheck();
+  dot.style.background  = next.dot;
+  label.textContent     = next.label;
+  hint.textContent      = next.hint;
+  btn.style.borderColor = next.borderColor;
+  btn.style.color       = next.color;
 }
 
 function _execCheckBrowserConstraint() {
