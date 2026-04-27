@@ -88,25 +88,30 @@ app.get('/trace-viewer/*', (_, res) =>
 
 SPA fallback is required — Playwright viewer uses client-side routing and a direct hit to `/trace-viewer/?trace=...` would 404 without it.
 
-### Route B — Secure Trace Stream
+### Route B — Secure Trace Stream (GET + HEAD)
+
+Both `GET` and `HEAD` are explicitly handled with the same validation logic. HEAD performs all checks and returns headers/status only — no file stream. This allows the UI preflight to read `X-Error-Code` from the HEAD response without parsing a body.
 
 ```
-GET /api/trace/:runId/:testId
+GET  /api/trace/:runId/:testId  — full stream
+HEAD /api/trace/:runId/:testId  — validation only, headers + status, no body
 ```
 
-**Processing steps (in order):**
+Shared handler extracts result. GET streams; HEAD returns after setting headers.
 
-1. **Auth stub** — `canAccessTrace(req, runId)` — returns `true` in v1, structured for future auth. Returns `{ error: { code: 'FORBIDDEN', message: 'Access denied' } }` with status 404 (not 403) to prevent resource enumeration.
+**Processing steps (in order, shared by GET and HEAD):**
 
-2. **Load run file** — read `data/results/run-{runId}.json`. If missing → 404 `RUN_NOT_FOUND`.
+1. **Auth stub** — `canAccessTrace(req, runId)` — returns `true` in v1, structured for future auth. Returns status 404 (not 403) to prevent resource enumeration. Sets `X-Error-Code: FORBIDDEN` on HEAD.
 
-3. **Find test result** — locate result where `result.testId === testId`. If missing → 404 `TEST_NOT_FOUND`.
+2. **Load run file** — read `results/run-{runId}.json` (matches actual path in server.ts). If missing → 404, `X-Error-Code: RUN_NOT_FOUND`.
 
-4. **Check tracePath** — if `result.tracePath` is empty/null → 404 `TRACE_NOT_FOUND`.
+3. **Find test result** — locate result where `result.testId === testId`. If missing → 404, `X-Error-Code: TEST_NOT_FOUND`.
+
+4. **Check tracePath** — validate: non-empty, non-null, not an absolute path. If invalid → 404, `X-Error-Code: TRACE_NOT_FOUND`.
 
 5. **Path safety guard:**
    ```typescript
-   const baseDir = path.resolve(ARTIFACTS_DIR);
+   const baseDir = path.resolve(ARTIFACTS_DIR); // ARTIFACTS_DIR = config.paths.results or 'test-results'
    const resolved = path.resolve(baseDir, result.tracePath);
    if (!resolved.startsWith(baseDir + path.sep))
      return res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'Invalid request' } });
@@ -114,29 +119,40 @@ GET /api/trace/:runId/:testId
    Uses `baseDir + path.sep` to prevent `/baseDirX` prefix false-match.
 
 6. **File existence + size check:**
-   - File missing → 404 `TRACE_MISSING_ON_DISK`
-   - File > 50MB → 413 `{ error: { code: 'TRACE_TOO_LARGE', message: 'Trace too large to preview' } }`
+   - `fs.statSync` — file missing → 404, `X-Error-Code: TRACE_MISSING_ON_DISK`
+   - File > 50MB → 413, `X-Error-Code: TRACE_TOO_LARGE`
 
-7. **Audit log:**
-   ```typescript
-   logAudit({ action: 'trace_viewed', runId, testId, userId: req.user?.id, ip: req.ip, requestId, timestamp: new Date().toISOString() });
-   ```
-
-8. **Stream response:**
+7. **Set shared headers (GET and HEAD):**
    ```typescript
    res.setHeader('Content-Type', 'application/zip');
    res.setHeader('Content-Disposition', 'inline; filename="trace.zip"');
+   res.setHeader('Content-Length', stat.size);
    res.setHeader('Cache-Control', 'private, max-age=300');
    res.setHeader('Accept-Ranges', 'bytes');
    res.setHeader('X-Content-Type-Options', 'nosniff');
    res.setHeader('X-Request-Id', requestId);
-
-   const stream = fs.createReadStream(resolved);
-   stream.on('error', () =>
-     res.status(500).json({ error: { code: 'TRACE_READ_FAILED', message: 'Failed to read trace' } }));
-   req.on('close', () => stream.destroy()); // prevent fd leak on modal close
-   stream.pipe(res);
    ```
+
+8. **HEAD** — `return res.end()` after headers.
+
+9. **Audit log (GET only):**
+   ```typescript
+   logAudit({ action: 'trace_viewed', runId, testId, userId: (req as any).user?.id ?? null, ip: req.ip, requestId, timestamp: new Date().toISOString() });
+   ```
+
+10. **Stream response (GET only):**
+    ```typescript
+    const stream = fs.createReadStream(resolved);
+    stream.on('error', () => {
+      if (!res.headersSent) {
+        res.status(500).json({ error: { code: 'TRACE_READ_FAILED', message: 'Failed to read trace' } });
+      } else {
+        res.destroy();
+      }
+    });
+    req.on('close', () => stream.destroy()); // prevent fd leak on modal close
+    stream.pipe(res);
+    ```
 
 ### Error Envelope (all errors use this shape)
 
@@ -144,16 +160,16 @@ GET /api/trace/:runId/:testId
 { error: { code: string, message: string } }
 ```
 
-| Condition | Status | code |
-|---|---|---|
-| Run file missing | 404 | `RUN_NOT_FOUND` |
-| testId not in run | 404 | `TEST_NOT_FOUND` |
-| tracePath empty | 404 | `TRACE_NOT_FOUND` |
-| Zip deleted from disk | 404 | `TRACE_MISSING_ON_DISK` |
-| Path traversal | 400 | `BAD_REQUEST` |
-| Auth fails | 404 | (opaque — no leak) |
-| File > 50MB | 413 | `TRACE_TOO_LARGE` |
-| Read error | 500 | `TRACE_READ_FAILED` |
+| Condition | Status | code | HEAD header |
+|---|---|---|---|
+| Run file missing | 404 | `RUN_NOT_FOUND` | `X-Error-Code: RUN_NOT_FOUND` |
+| testId not in run | 404 | `TEST_NOT_FOUND` | `X-Error-Code: TEST_NOT_FOUND` |
+| tracePath empty/absolute | 404 | `TRACE_NOT_FOUND` | `X-Error-Code: TRACE_NOT_FOUND` |
+| Zip deleted from disk | 404 | `TRACE_MISSING_ON_DISK` | `X-Error-Code: TRACE_MISSING_ON_DISK` |
+| Path traversal | 400 | `BAD_REQUEST` | `X-Error-Code: BAD_REQUEST` |
+| Auth fails | 404 | (opaque) | `X-Error-Code: FORBIDDEN` |
+| File > 50MB | 413 | `TRACE_TOO_LARGE` | `X-Error-Code: TRACE_TOO_LARGE` |
+| Read error (GET only) | 500 | `TRACE_READ_FAILED` | n/a |
 
 ---
 
@@ -181,11 +197,24 @@ Always renders a **Trace** section. Content depends on state:
 
 ### Preflight Before Opening Modal
 
-Before loading the iframe, the UI does a `HEAD /api/trace/:runId/:testId`:
-- 200 → open modal with iframe
-- 404 → show inline error message in modal (reason from `error.code`)
-- 413 → show "Trace too large to preview (> 50MB)" in modal
-- Any other error → show generic "Failed to load trace"
+Before loading the iframe, the UI does a `HEAD /api/trace/:runId/:testId` and reads the `X-Error-Code` response header (HEAD returns no body):
+
+```javascript
+const resp = await fetch(traceApiUrl, { method: 'HEAD' });
+if (!resp.ok) {
+  const code = resp.headers.get('X-Error-Code') ?? 'UNKNOWN';
+  showTraceModalError(code); // maps code to friendly message
+  return;
+}
+openTraceModal(iframeSrc);
+```
+
+| X-Error-Code | Modal message |
+|---|---|
+| `TRACE_NOT_FOUND` / `TRACE_MISSING_ON_DISK` | "Trace artifact not found (may have expired)" |
+| `TRACE_TOO_LARGE` | "Trace too large to preview (> 50MB)" |
+| `RUN_NOT_FOUND` / `TEST_NOT_FOUND` | "Test result not found" |
+| anything else | "Failed to load trace" |
 
 This prevents the iframe from loading a JSON error body and showing a blank/broken viewer.
 
@@ -210,7 +239,8 @@ This prevents the iframe from loading a JSON error body and showing a blank/brok
 - Spinner shown until `onload` fires
 - `onerror` → hide spinner, show "Failed to load trace viewer"
 - Escape key closes modal
-- Modal close destroys iframe src (stops fetch, releases fd on server via `req.on('close')`)
+- Modal close: `iframe.src = ''` — stops in-flight fetch, triggers `req.on('close')` on server → stream destroyed, fd released
+- `app.set('trust proxy', true)` required if behind nginx/load balancer — ensures `req.ip` logs correct client IP and `window.location.origin` in the browser reflects the public URL correctly
 
 ---
 
@@ -225,6 +255,18 @@ trace: 'on-first-retry',
 ```
 
 Only retried tests generate traces. Tests that pass first time produce no zip — which is the correct signal (no trace = test was healthy enough to pass without retry).
+
+---
+
+## Future Enhancements (NOT in v1)
+
+Noted for roadmap, not in scope:
+
+- **Signed URLs** — `/api/trace/signed?token=...` for secure sharing / iframe independence
+- **Trace retention policy** — auto-delete traces older than N days
+- **"Open in new tab" button** — `[View Trace] [↗ Open]` alongside modal button
+- **ETag caching** — for repeated views of the same trace
+- **206 Range requests** — full implementation (header advertised, partial reads not implemented)
 
 ---
 
