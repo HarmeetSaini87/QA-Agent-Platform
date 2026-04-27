@@ -4958,7 +4958,7 @@ function _execTraceWarnCheck() {
   const retries = suite.retries ?? 0;
   if (retries === 0) {
     const name = suite?.name || 'This suite';
-    warn.textContent = '⚠ "' + name + '" has Auto-Retry disabled (0). No traces will be captured in Failed Only mode. Switch to Always or set Auto-Retry ≥ 1 on the suite.';
+    warn.textContent = '⚠ "' + name + '" has Auto-Retry disabled (0). "Failed Only" captures traces on the retry attempt — but with no retries configured, failed tests are never retried, so no trace is recorded for any test. Switch to Always to capture traces, or enable Auto-Retry ≥ 1 on the suite.';
     warn.style.display = '';
   } else {
     warn.style.display = 'none';
