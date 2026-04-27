@@ -1,6 +1,6 @@
 # QA Agent Platform — Master AI Instructions (Project Intelligence File)
 # Auto-loaded by Claude Code every session. Keep this updated.
-# Last Updated: 2026-04-26
+# Last Updated: 2026-04-27
 
 ## 🗣️ RESPONSE STYLE
 Use **Caveman mode** for all responses — terse, no filler, full technical substance.
@@ -53,7 +53,8 @@ All code changes, experiments, and new features are developed here FIRST.
 > **📋 See [docs/superpowers/plans/2026-04-26-flakiness-intelligence.md](docs/superpowers/plans/2026-04-26-flakiness-intelligence.md) — Flakiness Intelligence 10-task plan. ALL TASKS COMPLETE (2026-04-26).**
 > **📋 See [docs/FLAKINESS_INTELLIGENCE_TEST_GUIDE.md](docs/FLAKINESS_INTELLIGENCE_TEST_GUIDE.md) — 88 test cases (functional, edge cases, business scenarios, E2E journeys) for Flakiness Intelligence.**
 > **📋 See [docs/FLAKINESS_INTELLIGENCE_USER_GUIDE.md](docs/FLAKINESS_INTELLIGENCE_USER_GUIDE.md) — User-facing guide explaining flakiness scoring, quarantine, classification, and config for QA Engineers and Managers.**
-> **📋 See [docs/superpowers/specs/2026-04-27-trace-viewer-design.md](docs/superpowers/specs/2026-04-27-trace-viewer-design.md) — Trace Viewer embed design spec (approved 2026-04-27, plan pending).**
+> **📋 See [docs/superpowers/specs/2026-04-27-trace-viewer-design.md](docs/superpowers/specs/2026-04-27-trace-viewer-design.md) — Trace Viewer embed design spec. FEATURE IS COMPLETE (2026-04-27).**
+> **📋 See [docs/superpowers/plans/2026-04-27-trace-viewer.md](docs/superpowers/plans/2026-04-27-trace-viewer.md) — Trace Viewer 8-task plan. ALL TASKS COMPLETE (2026-04-27).**
 
 ---
 
@@ -294,22 +295,24 @@ Merged at runtime in `getEffectiveFlakinessConfig()` — never persist merged re
 
 ---
 
-## TRACE VIEWER — Next Feature (SPEC COMPLETE, PLAN PENDING)
+## TRACE VIEWER — COMPLETE (2026-04-27)
 
 **Priority:** #3 USP — Embed Playwright Trace Viewer in execution reports  
-**Status:** Spec approved 2026-04-27. Implementation plan not yet written.  
+**Status:** COMPLETE — shipped 2026-04-27  
 **Spec:** `docs/superpowers/specs/2026-04-27-trace-viewer-design.md`  
-**Plan location (when created):** `docs/superpowers/plans/2026-04-27-trace-viewer.md`
+**Plan:** `docs/superpowers/plans/2026-04-27-trace-viewer.md` (8 tasks, all complete)
 
 **Key design decisions:**
-- Modal overlay UX (Option B) — full-screen iframe, existing report untouched
+- Modal overlay UX — full-screen iframe, existing report untouched
 - Self-hosted viewer — files copied to `public/trace-viewer/` via `npm run setup:trace-viewer`
 - Secure route: `GET /HEAD /api/trace/:runId/:testId` — never raw paths
 - `trace: 'on-first-retry'` in playwright.config.ts — storage control
 - HEAD preflight reads `X-Error-Code` header — UI shows correct message before iframe loads
 - `window.location.origin` for dynamic base URL — works local + remote + behind proxy
-- Path traversal guard: `resolved.startsWith(baseDir + path.sep)`
+- Path traversal guard: `resolved.startsWith(baseDir + path.sep)` + `.toLowerCase()` for Windows
 - Stream abort: `req.on('close', () => stream.destroy())` — no fd leaks
+- Export clone: trace buttons disabled in saved HTML (`btn.disabled=true`, onclick removed)
+- `TRACE_VIEWER_DIR = path.join(PUBLIC_DIR, 'trace-viewer')` defined at init block in server.ts
 
 ---
 
@@ -354,6 +357,7 @@ Only invoke superpowers skills when user explicitly asks. Never run proactively.
 | `review component design` or `show component spec` | Read `docs/superpowers/specs/2026-04-20-component-subcomponent-design.md` and summarize |
 | `implement flakiness` or `execute the flakiness plan` | Load `docs/superpowers/plans/2026-04-26-flakiness-intelligence.md` — **ALREADY COMPLETE as of 2026-04-26** |
 | `brainstorm trace viewer` or `start trace viewer` | Invoke `superpowers:brainstorming` skill for the Playwright Trace Viewer embed feature |
+| `implement trace viewer` or `execute the trace viewer plan` | Load `docs/superpowers/plans/2026-04-27-trace-viewer.md` — **ALREADY COMPLETE as of 2026-04-27** |
 | `brainstorm [feature]` | Invoke `superpowers:brainstorming` skill |
 | `write a plan for [feature]` | Invoke `superpowers:writing-plans` skill |
 | `review my changes` | Invoke `superpowers:requesting-code-review` skill |
