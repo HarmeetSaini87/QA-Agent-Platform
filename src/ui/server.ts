@@ -51,6 +51,15 @@ import { logAudit }                                                from '../auth
 import * as crypto from 'crypto';
 import { sendRunNotification, sendTestNotification, formatDuration } from '../utils/notifier';
 import { DEFAULT_FLAKINESS_CONFIG, FlakinessConfig, analyzeFlakiness, CURRENT_ENGINE_VERSION, getActionHint } from '../utils/flakinessEngine';
+import { JiraClient } from '../utils/jiraClient';
+import {
+  loadJiraConfig, saveJiraConfig,
+  loadDefectsRegistry, saveDefectsRegistry,
+  appendDismissEntry, findOpenDefect, findOpenDefectsForRun,
+} from '../utils/defectsStore';
+import {
+  buildDefectDescription, buildAutoCloseCommentADF, buildFailureCommentADF,
+} from '../utils/adfBuilder';
 
 // ── Sensitive value encryption (AES-256-CBC) ──────────────────────────────────
 // Key derived from QA_SECRET_KEY env var, falls back to hostname-derived key.
@@ -1324,6 +1333,13 @@ function requireFeature(feature: keyof LicensePayload['features']) {
     }
     next();
   };
+}
+
+// Returns a configured JiraClient or null if credentials missing
+function getJiraClient(): JiraClient | null {
+  const c = config.jira;
+  if (!c.baseUrl || !c.email || !c.apiToken) return null;
+  return new JiraClient({ baseUrl: c.baseUrl, email: c.email, apiToken: c.apiToken });
 }
 
 // ── Express app ───────────────────────────────────────────────────────────────
@@ -3053,6 +3069,63 @@ app.post('/api/admin/settings/test-notification', requireAdmin, async (req: Requ
     }
   } catch (e: any) {
     res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// ── Jira config (admin) ──────────────────────────────────────────────
+
+app.get('/api/jira/config', requireAuth, (_req: Request, res: Response) => {
+  res.json(loadJiraConfig());
+});
+
+app.put('/api/jira/config', requireAdmin, (req: Request, res: Response) => {
+  const b = req.body || {};
+  const required = ['projectKey', 'issueType', 'defaultPriority', 'parentLinkFieldId', 'closeTransitionName'];
+  for (const k of required) {
+    if (!b[k] || typeof b[k] !== 'string') {
+      res.status(400).json({ error: { code: 'BAD_REQUEST', message: `Missing field: ${k}` } });
+      return;
+    }
+  }
+  const cfg = {
+    projectKey: String(b.projectKey),
+    issueType: String(b.issueType),
+    defaultPriority: String(b.defaultPriority),
+    parentLinkFieldId: String(b.parentLinkFieldId),
+    referSSFieldId: String(b.referSSFieldId || ''),
+    closeTransitionName: String(b.closeTransitionName),
+    maxAttachmentMB: Number.isFinite(b.maxAttachmentMB) ? Number(b.maxAttachmentMB) : 50,
+    updatedAt: new Date().toISOString(),
+    updatedBy: req.session.username || 'unknown',
+  };
+  saveJiraConfig(cfg);
+  logAudit({ userId: req.session.userId!, username: req.session.username!,
+    action: 'JIRA_CONFIG_SAVE', resourceType: 'jira-config', resourceId: 'global',
+    details: cfg.projectKey, ip: req.ip ?? null });
+  res.json({ ok: true });
+});
+
+app.post('/api/jira/test', requireAdmin, async (_req: Request, res: Response) => {
+  const client = getJiraClient();
+  if (!client) {
+    res.status(400).json({ error: { code: 'JIRA_NOT_CONFIGURED', message: 'Set JIRA_BASE_URL, JIRA_EMAIL, JIRA_API_TOKEN in .env' } });
+    return;
+  }
+  const result = await client.testConnection();
+  res.json(result);
+});
+
+app.get('/api/jira/fields', requireAdmin, async (_req: Request, res: Response) => {
+  const client = getJiraClient();
+  if (!client) {
+    res.status(400).json({ error: { code: 'JIRA_NOT_CONFIGURED', message: 'Set JIRA_BASE_URL, JIRA_EMAIL, JIRA_API_TOKEN in .env' } });
+    return;
+  }
+  try {
+    const fields = await client.discoverFields();
+    res.json({ fields });
+  } catch (e: any) {
+    res.status(502).json({ error: { code: e?.code || 'JIRA_ERROR', message: e?.message || 'Field discovery failed' } });
   }
 });
 
