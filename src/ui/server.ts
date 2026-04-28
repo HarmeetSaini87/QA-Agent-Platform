@@ -1340,11 +1340,43 @@ function requireFeature(feature: keyof LicensePayload['features']) {
   };
 }
 
-// Returns a configured JiraClient or null if credentials missing
+// AES-GCM token encryption — key derived from SESSION_SECRET (stable across restarts on same install)
+function _jiraCryptoKey(): Buffer {
+  const secret = process.env.SESSION_SECRET || 'qa-agent-platform-default-secret';
+  return require('crypto').createHash('sha256').update('jira-token-key:' + secret).digest();
+}
+
+function jiraEncryptToken(plain: string): string {
+  const crypto = require('crypto');
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', _jiraCryptoKey(), iv);
+  const enc = Buffer.concat([cipher.update(plain, 'utf8'), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return [iv.toString('base64'), tag.toString('base64'), enc.toString('base64')].join('.');
+}
+
+function jiraDecryptToken(envelope: string): string {
+  const crypto = require('crypto');
+  const [ivB64, tagB64, encB64] = envelope.split('.');
+  if (!ivB64 || !tagB64 || !encB64) throw new Error('Invalid encrypted token envelope');
+  const decipher = crypto.createDecipheriv('aes-256-gcm', _jiraCryptoKey(), Buffer.from(ivB64, 'base64'));
+  decipher.setAuthTag(Buffer.from(tagB64, 'base64'));
+  return Buffer.concat([decipher.update(Buffer.from(encB64, 'base64')), decipher.final()]).toString('utf8');
+}
+
+// Returns a configured JiraClient. Precedence: UI config > .env. Returns null if neither set.
 function getJiraClient(): JiraClient | null {
-  const c = config.jira;
-  if (!c.baseUrl || !c.email || !c.apiToken) return null;
-  return new JiraClient({ baseUrl: c.baseUrl, email: c.email, apiToken: c.apiToken });
+  const cfg = loadJiraConfig();
+  let baseUrl = cfg?.baseUrl || config.jira.baseUrl;
+  let email   = cfg?.email   || config.jira.email;
+  let apiToken = config.jira.apiToken;
+  if (cfg?.apiTokenEnc) {
+    try { apiToken = jiraDecryptToken(cfg.apiTokenEnc); }
+    catch (e: any) { logger.warn('[jira] token decrypt failed, falling back to .env', { err: e?.message }); }
+  }
+  if (!baseUrl || !email || !apiToken) return null;
+  baseUrl = baseUrl.replace(/\/$/, '');
+  return new JiraClient({ baseUrl, email, apiToken });
 }
 
 function readArtifactBuffer(relPath: string, maxBytes: number): { buffer: Buffer; size: number; tooLarge: boolean } | null {
@@ -3147,7 +3179,11 @@ app.post('/api/admin/settings/test-notification', requireAdmin, async (req: Requ
 // ── Jira config (admin) ──────────────────────────────────────────────
 
 app.get('/api/jira/config', requireAuth, (_req: Request, res: Response) => {
-  res.json(loadJiraConfig());
+  const cfg = loadJiraConfig();
+  if (!cfg) { res.json(null); return; }
+  // Redact: never return encrypted token to client
+  const { apiTokenEnc, ...rest } = cfg;
+  res.json({ ...rest, hasTokenSet: !!apiTokenEnc });
 });
 
 app.put('/api/jira/config', requireAdmin, (req: Request, res: Response) => {
@@ -3159,17 +3195,26 @@ app.put('/api/jira/config', requireAdmin, (req: Request, res: Response) => {
       return;
     }
   }
-  const cfg = {
+  const existing = loadJiraConfig();
+  const cfg: any = {
     projectKey: String(b.projectKey),
     issueType: String(b.issueType),
     defaultPriority: String(b.defaultPriority),
-    parentLinkFieldId: String(b.parentLinkFieldId),
+    parentLinkFieldId: String(b.parentLinkFieldId || ''),
     referSSFieldId: String(b.referSSFieldId || ''),
     closeTransitionName: String(b.closeTransitionName),
     maxAttachmentMB: Number.isFinite(b.maxAttachmentMB) ? Number(b.maxAttachmentMB) : 50,
+    baseUrl: b.baseUrl ? String(b.baseUrl).trim().replace(/\/$/, '') : (existing?.baseUrl || ''),
+    email:   b.email   ? String(b.email).trim()   : (existing?.email   || ''),
     updatedAt: new Date().toISOString(),
     updatedBy: req.session.username || 'unknown',
   };
+  // Encrypt new token if provided; otherwise preserve existing
+  if (b.apiToken && typeof b.apiToken === 'string' && b.apiToken.trim()) {
+    cfg.apiTokenEnc = jiraEncryptToken(b.apiToken.trim());
+  } else if (existing?.apiTokenEnc) {
+    cfg.apiTokenEnc = existing.apiTokenEnc;
+  }
   saveJiraConfig(cfg);
   logAudit({ userId: req.session.userId!, username: req.session.username!,
     action: 'JIRA_CONFIG_SAVE', resourceType: 'jira-config', resourceId: 'global',

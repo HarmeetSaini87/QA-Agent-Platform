@@ -419,6 +419,9 @@ export interface JiraConfig {
   referSSFieldId: string;        // captured for future use; v1 uses /attachments endpoint
   closeTransitionName: string;
   maxAttachmentMB: number;
+  baseUrl?: string;              // overrides .env JIRA_BASE_URL when set
+  email?: string;                // overrides .env JIRA_EMAIL when set
+  apiTokenEnc?: string;          // AES-GCM encrypted token (overrides .env JIRA_API_TOKEN)
   updatedAt: string;
   updatedBy: string;
 }

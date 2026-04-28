@@ -1154,6 +1154,11 @@
             </div>
             <input id="jira-parent-field" type="hidden" value="" />
             <input id="jira-refer-ss-field" type="hidden" value="" />
+            <div class="field"><label>Jira Base URL *</label><input id="jira-base-url" type="url" placeholder="https://yourcompany.atlassian.net" /></div>
+            <div class="field"><label>Jira Email *</label><input id="jira-creds-email" type="email" placeholder="bot@yourcompany.com" /></div>
+            <div class="field"><label>Jira API Token *</label><input id="jira-creds-token" type="password" placeholder="(unchanged)" autocomplete="off" />
+              <div style="font-size:11.5px;color:var(--neutral-400);margin-top:4px">Stored encrypted in <code>data/jira-config.json</code>. Leave blank to keep existing token.</div>
+            </div>
             <div class="field"><label>Auto-Close Transition Name *</label><input id="jira-close-transition" type="text" value="Closed" /></div>
             <div class="field"><label>Max Attachment Size (MB)</label><input id="jira-max-attach-mb" type="number" value="50" min="1" max="500" /></div>
 
