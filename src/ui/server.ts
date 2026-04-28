@@ -3428,6 +3428,13 @@ app.get('/api/defects/by-test/:testId', requireAuth, (req: Request, res: Respons
   res.json({ defects: reg.defects.filter(d => d.testId === req.params.testId) });
 });
 
+app.get('/api/defects/open/:defectKey', requireAuth, (req: Request, res: Response) => {
+  const reg = loadDefectsRegistry();
+  const d = reg.defects.find(x => x.defectKey === req.params.defectKey);
+  if (!d) { res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Defect not found' } }); return; }
+  res.redirect(d.jiraUrl);
+});
+
 // ── Projects ──────────────────────────────────────────────────────────────────
 
 app.get('/api/projects', (req: Request, res: Response) => {

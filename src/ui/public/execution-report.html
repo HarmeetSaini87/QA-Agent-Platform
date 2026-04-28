@@ -630,6 +630,60 @@
       font-size: 12px; color: #475569;
     }
     .trace-det-hint { color: #94a3b8; font-style: italic; margin-top: 4px; }
+
+    /* ── Defect button + modal ─────────────────────────────────────────── */
+    .defect-btn {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 4px 10px; border-radius: 14px;
+      font-size: 11.5px; font-weight: 700; cursor: pointer;
+      border: none; transition: .15s; white-space: nowrap;
+    }
+    .defect-btn-file   { background: #fef3c7; color: #92400e; }
+    .defect-btn-file:hover { background: #fde68a; }
+    .defect-btn-file[disabled] { background: #e5e7eb; color: #9ca3af; cursor: not-allowed; }
+    .defect-btn-open   { background: #fee2e2; color: #7f1d1d; }
+    .defect-btn-closed { background: #d1fae5; color: #065f46; }
+
+    .defect-modal-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,.7);
+      z-index: 9998; display: flex; align-items: center; justify-content: center;
+    }
+    .defect-modal-overlay[hidden] { display: none !important; }
+    .defect-modal-inner {
+      width: 80vw; max-width: 1100px; height: 90vh;
+      background: #fff; border-radius: 8px;
+      display: flex; flex-direction: column;
+    }
+    .defect-modal-header {
+      padding: 14px 18px; border-bottom: 1px solid #e5e7eb;
+      font-weight: 700; display: flex; align-items: center; justify-content: space-between;
+    }
+    .defect-modal-header button {
+      background: none; border: 1px solid #d1d5db; border-radius: 6px;
+      padding: 5px 10px; cursor: pointer; font-size: 12px;
+    }
+    .defect-modal-body { flex: 1; overflow: auto; padding: 16px 18px; }
+    .defect-modal-footer {
+      padding: 12px 18px; border-top: 1px solid #e5e7eb;
+      display: flex; gap: 8px; justify-content: flex-end; align-items: center; flex-wrap: wrap;
+    }
+    .defect-section { margin-bottom: 14px; }
+    .defect-section h4 { margin: 0 0 6px; font-size: 12.5px; color: #374151; }
+    .defect-section textarea, .defect-section input, .defect-section select {
+      width: 100%; box-sizing: border-box; padding: 7px 10px;
+      border: 1px solid #d1d5db; border-radius: 5px;
+      font: inherit; font-size: 13px;
+    }
+    .defect-section textarea { min-height: 220px; resize: vertical; font-family: ui-monospace, monospace; }
+    .defect-banner-warn  { padding: 10px 14px; background: #fff7ed; border: 1px solid #fed7aa; border-radius: 6px; color: #9a3412; margin-bottom: 14px; }
+    .defect-banner-error { padding: 10px 14px; background: #fee2e2; border: 1px solid #fca5a5; border-radius: 6px; color: #7f1d1d; margin-bottom: 14px; }
+    .defect-banner-ok    { padding: 10px 14px; background: #d1fae5; border: 1px solid #6ee7b7; border-radius: 6px; color: #065f46; margin-bottom: 14px; }
+    .defect-modal-footer .btn {
+      padding: 6px 14px; border-radius: 6px; font-size: 12.5px; font-weight: 600;
+      border: 1px solid #d1d5db; background: #fff; cursor: pointer;
+    }
+    .defect-modal-footer .btn-primary { background: #16a34a; color: #fff; border-color: #16a34a; }
+    .defect-modal-footer .btn-primary:hover { background: #15803d; }
   </style>
 </head>
 <body>
@@ -891,6 +945,7 @@ function renderReport(r) {
             <th style="width:100px;text-align:center">Screenshot</th>
             <th style="width:90px;text-align:center">Video</th>
             <th style="width:90px;text-align:center">Trace</th>
+            <th style="width:130px;text-align:center">Defect</th>
           </tr>
         </thead>
         <tbody id="tc-tbody">${tcRowsHtml}</tbody>
@@ -1006,6 +1061,22 @@ function buildTestRow(t, i, r) {
               title="View trace in embedded viewer">&#128249; Trace</button>`
     : '';
 
+  // ── Defect button — only on failed rows; badge if already filed ─────
+  let defectCell = '';
+  if (status === 'fail' && t.testId) {
+    if (t.defectKey) {
+      const cls = t.defectStatus === 'closed' ? 'defect-btn-closed' : 'defect-btn-open';
+      const label = t.defectStatus === 'closed' ? 'Closed' : 'Open';
+      defectCell = `<button class="defect-btn ${cls}"
+        onclick="event.stopPropagation();openDefectExisting(${esc(JSON.stringify(t.defectKey))})"
+        title="View defect ${esc(t.defectKey)}">&#128030; ${esc(t.defectKey)} (${label})</button>`;
+    } else {
+      defectCell = `<button class="defect-btn defect-btn-file"
+        onclick="event.stopPropagation();openDefectModal(${esc(JSON.stringify(r.runId))},${esc(JSON.stringify(t.testId))})"
+        title="File a Jira defect for this failure">&#128030; File Defect</button>`;
+    }
+  }
+
   // Detail row content
   const detailHtml = buildDetailPanel(t, i, status, r.traceMode, r.runId);
 
@@ -1025,9 +1096,10 @@ function buildTestRow(t, i, r) {
       <td style="text-align:center">${ssCell}</td>
       <td style="text-align:center">${videoCell}</td>
       <td style="text-align:center">${traceCell}</td>
+      <td style="text-align:center">${defectCell}</td>
     </tr>
     <tr class="tc-detail-row ${detailOpenClass}" id="detail-${rowId}">
-      <td colspan="10">
+      <td colspan="11">
         <div class="tc-detail-inner">${detailHtml}</div>
       </td>
     </tr>`;
@@ -1699,5 +1771,216 @@ document.addEventListener('keydown', function(e) {
             onerror="onTraceIframeError()"></iframe>
   </div>
 </div>
+
+<!-- Defect Modal -->
+<div id="defect-modal" class="defect-modal-overlay" hidden>
+  <div class="defect-modal-inner">
+    <div class="defect-modal-header">
+      <span id="defect-modal-title">&#128030; File Defect to Jira</span>
+      <button onclick="closeDefectModal()">&#10005; Close</button>
+    </div>
+    <div class="defect-modal-body" id="defect-modal-body">Loading…</div>
+    <div class="defect-modal-footer" id="defect-modal-footer"></div>
+  </div>
+</div>
+
+<script>
+// ── Defect Modal (live page) ─────────────────────────────────────────
+
+let _defectDraft = null;
+
+async function openDefectModal(runId, testId) {
+  const m = document.getElementById('defect-modal');
+  const body = document.getElementById('defect-modal-body');
+  const footer = document.getElementById('defect-modal-footer');
+  m.hidden = false;
+  body.innerHTML = '⏳ Loading draft…';
+  footer.innerHTML = '';
+  let draft;
+  try {
+    const r = await fetch('/api/defects/draft', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ runId, testId }),
+    });
+    draft = await r.json();
+    if (!r.ok) throw new Error(draft?.error?.message || 'Draft failed');
+  } catch (e) {
+    body.innerHTML = '<div class="defect-banner-error">✗ ' + esc2(e.message) + '</div>';
+    footer.innerHTML = '<button class="btn" onclick="closeDefectModal()">Close</button>';
+    return;
+  }
+  _defectDraft = { runId, testId, draft };
+
+  if (draft.existingDefect) {
+    const d = draft.existingDefect;
+    body.innerHTML =
+      '<div class="defect-banner-warn">⚠ Already filed as <strong>' + esc2(d.defectKey) + '</strong> (' + esc2(d.status) + ').<br>' +
+      '<a href="' + esc2(d.jiraUrl) + '" target="_blank" rel="noopener">Open in Jira ↗</a></div>' +
+      '<p>You can add this run\'s failure as a comment on the existing ticket, or cancel.</p>';
+    footer.innerHTML =
+      '<button class="btn" onclick="closeDefectModal()">Cancel</button>' +
+      '<button class="btn btn-primary" onclick="commentOnExisting(' + esc2(JSON.stringify(d.defectKey)) + ')">Add as Comment</button>';
+    return;
+  }
+
+  if (!draft.config) {
+    body.innerHTML = '<div class="defect-banner-error">✗ Jira not configured. Ask an admin to configure mapping in Admin → Notification Settings.</div>';
+    footer.innerHTML = '<button class="btn" onclick="closeDefectModal()">Close</button>';
+    return;
+  }
+
+  const cfg = draft.config;
+  const attachRows = (draft.attachments || []).map(function(a) {
+    var sizeMb = (a.sizeBytes/1024/1024).toFixed(2);
+    var disabled = a.tooLarge ? 'disabled' : 'checked';
+    var note = a.tooLarge ? '<span style="color:#dc2626"> — too large, will be skipped</span>' : '';
+    return '<label style="display:block;margin:4px 0">' +
+      '<input type="checkbox" class="defect-attach" data-kind="' + esc2(a.kind) + '" ' + disabled + '> ' +
+      esc2(a.kind) + ' — ' + esc2(a.name) + ' (' + sizeMb + ' MB)' + note +
+    '</label>';
+  }).join('');
+
+  body.innerHTML =
+    '<div class="defect-section"><h4>Project Key</h4>' +
+      '<input id="dfx-project-key" type="text" value="' + esc2(cfg.projectKey || '') + '" readonly></div>' +
+    '<div class="defect-section"><h4>Issue Type</h4>' +
+      '<input id="dfx-issue-type" type="text" value="' + esc2(cfg.issueType || 'Defect') + '" readonly></div>' +
+    '<div class="defect-section"><h4>Priority *</h4>' +
+      '<select id="dfx-priority">' +
+        ['Highest','High','Medium','Low','Lowest'].map(function(p) {
+          return '<option ' + (draft.suggestedPriority === p ? 'selected' : '') + '>' + p + '</option>';
+        }).join('') +
+      '</select></div>' +
+    '<div class="defect-section"><h4>User Story * (e.g. ' + esc2(cfg.projectKey || 'PROJ') + '-123)</h4>' +
+      '<input id="dfx-parent" type="text" placeholder="' + esc2(cfg.projectKey || 'PROJ') + '-_____"></div>' +
+    '<div class="defect-section"><h4>Summary *</h4>' +
+      '<input id="dfx-summary" type="text" value="' + esc2(draft.summary || '') + '" maxlength="255"></div>' +
+    '<div class="defect-section"><h4>Description (auto-built; rich text in Jira)</h4>' +
+      '<textarea id="dfx-description-preview" readonly>' + esc2(adfPreview(draft.descriptionADF)) + '</textarea>' +
+      '<div style="font-size:11.5px;color:#6b7280;margin-top:4px">Preview only — Jira will render the rich-text formatting. Edit "Expected Result" in Jira after creation.</div></div>' +
+    '<div class="defect-section"><h4>Attachments</h4>' + (attachRows || '<em>(no artifacts available)</em>') + '</div>' +
+    '<div id="dfx-msg" style="margin-top:8px;font-size:12.5px"></div>';
+
+  footer.innerHTML =
+    '<button class="btn" onclick="closeDefectModal()">Cancel</button>' +
+    '<select id="dfx-dismiss-cat" style="padding:6px 10px;border-radius:5px">' +
+      '<option value="">Not a Bug ▾</option>' +
+      '<option value="script-issue">script-issue</option>' +
+      '<option value="locator-issue">locator-issue</option>' +
+      '<option value="flaky">flaky</option>' +
+      '<option value="data-issue">data-issue</option>' +
+      '<option value="env-issue">env-issue</option>' +
+    '</select>' +
+    '<button class="btn" onclick="dismissDefectFromModal()">Dismiss</button>' +
+    '<button class="btn btn-primary" onclick="approveAndFile()">Approve & File</button>';
+}
+
+function adfPreview(adf) {
+  if (!adf || !adf.content) return '';
+  const lines = [];
+  for (const node of adf.content) {
+    if (node.type === 'heading') lines.push('\n## ' + (node.content && node.content[0] && node.content[0].text || ''));
+    else if (node.type === 'paragraph') lines.push((node.content || []).map(c => c.text || '').join(''));
+    else if (node.type === 'orderedList') (node.content || []).forEach((li, i) => {
+      const txt = li.content && li.content[0] && li.content[0].content && li.content[0].content[0] && li.content[0].content[0].text || '';
+      lines.push((i+1) + '. ' + txt);
+    });
+    else if (node.type === 'codeBlock') lines.push('```\n' + (node.content && node.content[0] && node.content[0].text || '') + '\n```');
+  }
+  return lines.join('\n');
+}
+
+function closeDefectModal() {
+  document.getElementById('defect-modal').hidden = true;
+  _defectDraft = null;
+}
+
+async function approveAndFile() {
+  if (!_defectDraft) return;
+  const parent = document.getElementById('dfx-parent').value.trim();
+  if (!/^[A-Z][A-Z0-9_]+-\d+$/.test(parent)) {
+    document.getElementById('dfx-msg').innerHTML = '<span style="color:#dc2626">User Story key must look like ABC-123</span>';
+    return;
+  }
+  const summary  = document.getElementById('dfx-summary').value.trim();
+  if (!summary) { document.getElementById('dfx-msg').innerHTML = '<span style="color:#dc2626">Summary required</span>'; return; }
+  const priority = document.getElementById('dfx-priority').value;
+  const attachKinds = Array.from(document.querySelectorAll('.defect-attach'))
+    .filter(c => c.checked && !c.disabled).map(c => c.dataset.kind);
+
+  document.getElementById('dfx-msg').textContent = '⏳ Filing…';
+  const r = await fetch('/api/defects/file', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      runId: _defectDraft.runId, testId: _defectDraft.testId,
+      summary, descriptionADF: _defectDraft.draft.descriptionADF,
+      priority, parentStoryKey: parent, attachKinds,
+    }),
+  });
+  const j = await r.json();
+  const msg = document.getElementById('dfx-msg');
+  if (r.ok) {
+    msg.innerHTML = '<div class="defect-banner-ok">✓ Filed as <strong>' + esc2(j.defectKey) + '</strong>. ' +
+      '<a href="' + esc2(j.jiraUrl) + '" target="_blank" rel="noopener">Open in Jira ↗</a></div>';
+    document.getElementById('defect-modal-footer').innerHTML =
+      '<button class="btn btn-primary" onclick="location.reload()">Close & Refresh</button>';
+  } else if (r.status === 409) {
+    const existing = j && j.error && j.error.details || {};
+    msg.innerHTML = '<div class="defect-banner-warn">⚠ Already filed as <strong>' + esc2(existing.defectKey) + '</strong>. ' +
+      '<a href="' + esc2(existing.jiraUrl) + '" target="_blank" rel="noopener">Open in Jira ↗</a></div>';
+  } else {
+    msg.innerHTML = '<div class="defect-banner-error">✗ ' + esc2(j && j.error && j.error.message || 'File failed') + '</div>';
+  }
+}
+
+async function commentOnExisting(defectKey) {
+  if (!_defectDraft) return;
+  document.getElementById('defect-modal-body').innerHTML = '⏳ Posting comment…';
+  const r = await fetch('/api/defects/comment', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      defectKey, runId: _defectDraft.runId, testId: _defectDraft.testId,
+      attachKinds: ['screenshot'],
+    }),
+  });
+  const j = await r.json();
+  const body = document.getElementById('defect-modal-body');
+  if (r.ok) body.innerHTML = '<div class="defect-banner-ok">✓ Comment posted on ' + esc2(defectKey) + '</div>';
+  else body.innerHTML = '<div class="defect-banner-error">✗ ' + esc2(j && j.error && j.error.message || 'Comment failed') + '</div>';
+  document.getElementById('defect-modal-footer').innerHTML = '<button class="btn btn-primary" onclick="closeDefectModal()">Close</button>';
+}
+
+async function dismissDefectFromModal() {
+  if (!_defectDraft) return;
+  const cat = document.getElementById('dfx-dismiss-cat').value;
+  if (!cat) { document.getElementById('dfx-msg').innerHTML = '<span style="color:#dc2626">Pick a category</span>'; return; }
+  const r = await fetch('/api/defects/dismiss', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ runId: _defectDraft.runId, testId: _defectDraft.testId, category: cat }),
+  });
+  const body = document.getElementById('defect-modal-body');
+  if (r.ok) body.innerHTML = '<div class="defect-banner-ok">✓ Logged as: ' + esc2(cat) + '</div>';
+  else body.innerHTML = '<div class="defect-banner-error">✗ Dismiss failed</div>';
+  document.getElementById('defect-modal-footer').innerHTML = '<button class="btn btn-primary" onclick="closeDefectModal()">Close</button>';
+}
+
+function openDefectExisting(defectKey) {
+  const m = document.getElementById('defect-modal');
+  const body = document.getElementById('defect-modal-body');
+  const footer = document.getElementById('defect-modal-footer');
+  m.hidden = false;
+  body.innerHTML = '<p>Defect <strong>' + esc2(defectKey) + '</strong> is filed for this test.</p>' +
+    '<p>Use the link below to open it in Jira.</p>';
+  footer.innerHTML =
+    '<button class="btn" onclick="closeDefectModal()">Close</button>' +
+    '<a class="btn btn-primary" href="/api/defects/open/' + encodeURIComponent(defectKey) + '" target="_blank" rel="noopener">Open in Jira ↗</a>';
+}
+
+document.addEventListener('keydown', function(e) {
+  if (e.key !== 'Escape') return;
+  const dm = document.getElementById('defect-modal');
+  if (dm && !dm.hidden) closeDefectModal();
+});
+</script>
 </body>
 </html>
