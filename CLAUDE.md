@@ -1,6 +1,6 @@
 # QA Agent Platform — Master AI Instructions (Project Intelligence File)
 # Auto-loaded by Claude Code every session. Keep this updated.
-# Last Updated: 2026-04-27
+# Last Updated: 2026-04-28
 
 ## 🗣️ RESPONSE STYLE
 Use **Caveman mode** for all responses — terse, no filler, full technical substance.
@@ -57,6 +57,8 @@ All code changes, experiments, and new features are developed here FIRST.
 > **📋 See [docs/FLAKINESS_INTELLIGENCE_USER_GUIDE.md](docs/FLAKINESS_INTELLIGENCE_USER_GUIDE.md) — User-facing guide explaining flakiness scoring, quarantine, classification, and config for QA Engineers and Managers.**
 > **📋 See [docs/superpowers/specs/2026-04-27-trace-viewer-design.md](docs/superpowers/specs/2026-04-27-trace-viewer-design.md) — Trace Viewer embed design spec. FEATURE IS COMPLETE (2026-04-27).**
 > **📋 See [docs/superpowers/plans/2026-04-27-trace-viewer.md](docs/superpowers/plans/2026-04-27-trace-viewer.md) — Trace Viewer 8-task plan. ALL TASKS COMPLETE (2026-04-27).**
+> **📋 See [docs/superpowers/specs/2026-04-27-auto-file-defect-design.md](docs/superpowers/specs/2026-04-27-auto-file-defect-design.md) — Auto-File Jira Defect design spec. FEATURE IS COMPLETE (2026-04-28).**
+> **📋 See [docs/superpowers/plans/2026-04-27-auto-file-defect.md](docs/superpowers/plans/2026-04-27-auto-file-defect.md) — Auto-File Defect 9-task plan. ALL TASKS COMPLETE (2026-04-28). Manual E2E testing pending against Jira sandbox.**
 
 ---
 
@@ -318,6 +320,40 @@ Merged at runtime in `getEffectiveFlakinessConfig()` — never persist merged re
 
 ---
 
+## AUTO-FILE JIRA DEFECT — COMPLETE (2026-04-28)
+
+**Status:** Shipped 2026-04-28 (manual E2E testing against Jira sandbox pending)
+**Spec:** `docs/superpowers/specs/2026-04-27-auto-file-defect-design.md`
+**Plan:** `docs/superpowers/plans/2026-04-27-auto-file-defect.md` (9 tasks complete)
+
+**Key files:**
+- `src/utils/jiraClient.ts` — pure REST wrapper for Jira API v3 (typed errors)
+- `src/utils/adfBuilder.ts` — Atlassian Document Format builders (description / comments)
+- `src/utils/defectsStore.ts` — `data/jira-config.json` + `data/defects.json` + `data/dismissed-defects.ndjson`
+- `src/ui/server.ts` — `/api/jira/*` config routes, `/api/defects/*` lifecycle routes, `autoCloseHookOnRunComplete()` + `attachDefectInfo()`
+- `src/ui/public/index.html` — Admin Jira Integration panel (in Notification Settings)
+- `src/ui/public/modules.js` — `jiraConfigLoad/Save/Test/DiscoverFields` handlers
+- `src/ui/public/execution-report.html` — `[🐞 File Defect]` button, defect modal, Open/Closed badge
+
+**Invariants:**
+- Editor role required for filing/commenting/dismissing; Admin for config
+- Credentials in `.env` (`JIRA_BASE_URL`, `JIRA_EMAIL`, `JIRA_API_TOKEN`); mapping in UI
+- Dedup uses live JQL `text ~ testId` plus local registry on `(testId, suiteId, status=open)`
+- Auto-close scoped to `(testId, suiteId, environmentId)`; failure tolerated, retried next run
+- All errors use envelope `{ error: { code, message, details? } }`
+- "Not a Bug" categories: script-issue / locator-issue / flaky / data-issue / env-issue → fed to NDJSON for Flakiness Engine + Locator Health
+- Description rendered as ADF (Atlassian Document Format) with 5 headings: Description / Precondition / Steps / Actual Result / Expected Result
+- testId embedded literally in description body for JQL search-based dedup
+- Attachment soft-skip when > maxAttachmentMB (default 50); ticket still created
+- `referSSFieldId` config captured but unused in v1 (uses standard `/attachments` endpoint)
+
+**Out of v1 (in spec, NOT implemented):**
+- AI pre-classification, bulk filing, multi-Jira, per-project templates
+- Re-open auto-closed defects (creates fresh ticket via dedup)
+- Webhooks, defect filing from Execution History / Flaky Tests / Analytics tabs
+
+---
+
 ## USER COMMANDS
 
 These are explicit user-triggered commands. Only act on them when user says the keyword.
@@ -360,6 +396,7 @@ Only invoke superpowers skills when user explicitly asks. Never run proactively.
 | `implement flakiness` or `execute the flakiness plan` | Load `docs/superpowers/plans/2026-04-26-flakiness-intelligence.md` — **ALREADY COMPLETE as of 2026-04-26** |
 | `brainstorm trace viewer` or `start trace viewer` | Invoke `superpowers:brainstorming` skill for the Playwright Trace Viewer embed feature |
 | `implement trace viewer` or `execute the trace viewer plan` | Load `docs/superpowers/plans/2026-04-27-trace-viewer.md` — **ALREADY COMPLETE as of 2026-04-27** |
+| `implement defect filing` or `execute the defect plan` | Load `docs/superpowers/plans/2026-04-27-auto-file-defect.md` — **ALREADY COMPLETE as of 2026-04-28** |
 | `brainstorm [feature]` | Invoke `superpowers:brainstorming` skill |
 | `write a plan for [feature]` | Invoke `superpowers:writing-plans` skill |
 | `review my changes` | Invoke `superpowers:requesting-code-review` skill |

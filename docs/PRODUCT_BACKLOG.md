@@ -1,5 +1,5 @@
 # QA Agent Platform — Product Backlog
-# Last Updated: 2026-04-27
+# Last Updated: 2026-04-28
 
 ---
 
@@ -28,37 +28,13 @@
 | User Management | Admin/Tester roles, force password change, account lockout, audit log |
 | Notification Settings UI | Admin panel with collapsible SMTP/Slack/Teams config + test button |
 | Installation Scripts | Windows (install.ps1 + NSSM service) + Linux (install.sh + systemd) |
+| Auto-File Jira Defect | Human-validated draft modal on Execution Report; ADF rich-text body; embedded attachments; auto-close on next-run pass; "Not a Bug" classify feeds Flakiness/Locator engines (shipped 2026-04-28) |
 
 ---
 
 ## 🔲 BACKLOG — PRIORITIZED
 
-### Priority 1 — Auto-File Jira/ADO Defect on Test Failure (with Human Validation Gate)
-**What:** When a test fails in a run, surface a "File Defect" action in the execution report. Auto-draft a defect with full context (test name, suite, env, error message, stack trace, screenshot, video, trace zip link, console errors, run ID). **Do NOT push to Jira/ADO automatically.** A QA reviewer validates the draft → confirms it's a genuine AUT bug → only then is it created in Jira/ADO via the existing API integration.
-
-**Why:** Not every failure is an application bug — it could be a stale element, brittle locator, bad test data, missing wait, or user-error in the script. Auto-pushing every failure as a Jira bug creates noise, false defects, and erodes trust with developers. Human-in-the-loop validation is the differentiator vs. mabl/Functionize blind auto-filing.
-
-**How it fits:**
-- New "Defects" panel/tab on the execution report — lists failed tests with `[Review & File]` button per row
-- Defect draft modal: pre-filled fields (title, severity, description with all artifacts, environment, AUT version, steps to reproduce). Editor can:
-  - **Approve & File** → POST to Jira/ADO via existing integration → defect ID stored on TestEvent + audit log
-  - **Mark as "Not a Bug"** → categorize: `script-issue` / `locator-issue` / `flaky` / `data-issue` / `env-issue` → feeds Flakiness Intelligence + healing engine, no Jira ticket created
-  - **Defer** → skip for now, can review later
-- Bulk mode: select multiple failures, batch-validate
-- Defect ID badge on test row in future runs (so users see "this failure already filed as JIRA-1234")
-- Optional AI assist: pre-classify whether failure looks like AUT bug vs. test issue (using errorDetail + console errors + healing data), but final decision stays human
-- Reuse existing ADO API key auth + add Jira API token config in Notification Settings UI
-
-**Effort:** Medium-High — needs defect draft data model, validation modal UI, Jira API client (ADO already exists), classification taxonomy, dedup against existing Jira tickets, audit trail.
-
-**Open questions:**
-- Custom field mapping per project (Jira projects have varied required fields)?
-- Auto-link defects to ADO test cases that triggered them?
-- "Verify on next run" — auto-close defect if test passes after fix?
-
----
-
-### Priority 2 — Visual Regression Testing
+### Priority 1 — Visual Regression Testing
 **What:** Capture baseline screenshots of UI elements/pages, then diff against future runs. Highlight pixel-level changes. Set pass/fail threshold (e.g. <2% diff = pass).
 
 **Why:** Catch unintended visual changes (broken layouts, missing elements, style regressions) that functional assertions miss. One of the top enterprise QA platform features.
@@ -69,7 +45,7 @@
 
 ---
 
-### Priority 3 — API Testing Keywords
+### Priority 2 — API Testing Keywords
 **What:** New keywords for HTTP calls alongside UI steps:
 - `API GET`, `API POST`, `API PUT`, `API DELETE`
 - `ASSERT RESPONSE STATUS` (e.g. 200, 404)
@@ -84,7 +60,7 @@
 
 ---
 
-### Priority 4 — Bulk Actions on Test Scripts
+### Priority 3 — Bulk Actions on Test Scripts
 **What:** Multi-select scripts in the Script list, then:
 - Add selected to a suite in one click
 - Delete multiple scripts at once
@@ -99,7 +75,7 @@
 
 ---
 
-### Priority 5 — Run Comparison (Diff Two Reports)
+### Priority 4 — Run Comparison (Diff Two Reports)
 **What:** Select any two historical runs and see a side-by-side diff:
 - Tests that newly failed (regression)
 - Tests that newly passed (fixed)
@@ -114,7 +90,7 @@
 
 ---
 
-### Priority 6 — Role-based Access per Project
+### Priority 5 — Role-based Access per Project
 **What:** Restrict testers to specific projects only. Currently Admin vs Tester is global — a tester can see all projects.
 
 **Why:** Enterprise clients have separate teams per product. A tester on Project A should not see Project B data.
@@ -125,7 +101,7 @@
 
 ---
 
-### Priority 7 — NL → Keyword Suggestion (AI Assist)
+### Priority 6 — NL → Keyword Suggestion (AI Assist)
 **What:** NL = **Natural Language**. The user types a plain English description of what they want to test — e.g.:
 
 > *"Login as admin, go to the Patients tab, search for John Smith, open his record, and verify his status is Active"*
@@ -140,7 +116,7 @@ The AI reads the description and suggests the matching keywords + locators from 
 
 ---
 
-### Priority 8 — SaaS Multi-tenancy
+### Priority 7 — SaaS Multi-tenancy
 **What:** Multiple organizations share one hosted instance, each with fully isolated data (projects, users, scripts, runs). Subdomain routing (`acme.qaplatform.io`, `globex.qaplatform.io`).
 
 **Why:** Required for offering this as a hosted SaaS product rather than on-premise only.
