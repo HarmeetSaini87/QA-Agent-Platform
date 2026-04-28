@@ -43,7 +43,7 @@ import { logger }  from '../utils/logger';
 // ── Auth + Data imports ────────────────────────────────────────────────────────
 import { seedDefaults }            from '../data/seed';
 import { readAll, upsert, remove, findById, writeAll, USERS, PROJECTS, LOCATORS, FUNCTIONS, AUDIT, SETTINGS, SCRIPTS, SUITES, COMMON_DATA, SCHEDULES, APIKEYS, COMPONENTS } from '../data/store';
-import { User, Project, ProjectEnvironment, Locator, CommonFunction, CommonData, AuditEntry, AppSettings, NotificationSettings, DEFAULT_SETTINGS, DEFAULT_NOTIFICATION_SETTINGS, ProjectCredential, TestScript, ScriptStep, TestSuite, ScheduledRun, HealingProposal, LicensePayload, ApiKey, BrowserName, ComponentDef, Subcomponent } from '../data/types';
+import { User, Project, ProjectEnvironment, Locator, CommonFunction, CommonData, AuditEntry, AppSettings, NotificationSettings, DEFAULT_SETTINGS, DEFAULT_NOTIFICATION_SETTINGS, ProjectCredential, TestScript, ScriptStep, TestSuite, ScheduledRun, HealingProposal, LicensePayload, ApiKey, BrowserName, ComponentDef, Subcomponent, DefectRecord } from '../data/types';
 import { hashPassword, verifyPassword, validatePasswordStrength } from '../auth/crypto';
 import { requireAuth, requireAdmin, requireEditor, requireAuthOrApiKey, sanitizeInput } from '../auth/middleware';
 import rateLimit from 'express-rate-limit';
@@ -1186,6 +1186,11 @@ function spawnRunWithSpec(record: RunRecord, specPath: string, headed?: boolean,
     fs.mkdirSync(config.paths.results, { recursive: true });
     fs.writeFileSync(runFile, JSON.stringify(record, null, 2));
 
+    // Auto-close defects when test passes again (fire-and-forget, errors logged)
+    autoCloseHookOnRunComplete(record).catch(err =>
+      logger.warn('[autoClose] hook crashed', { runId: record.runId, err: err?.message })
+    );
+
     // ── Flakiness Intelligence: auto-quarantine + auto-promote ────────────────
     if (record.suiteId && record.projectId) {
       try {
@@ -1356,6 +1361,52 @@ function readArtifactBuffer(relPath: string, maxBytes: number): { buffer: Buffer
 function firstNLines(s: string, n: number): string {
   if (!s) return '';
   return s.split(/\r?\n/).slice(0, n).join('\n');
+}
+
+// ── Auto-close defects on next-run pass ──────────────────────────────
+
+async function closeDefectAsync(
+  defect: DefectRecord, runId: string, transitionName: string, client: JiraClient
+): Promise<void> {
+  await client.transitionIssue(defect.defectKey, transitionName);
+  await client.addComment(defect.defectKey, buildAutoCloseCommentADF(runId, new Date().toISOString()));
+  const reg = loadDefectsRegistry();
+  const d = reg.defects.find(x => x.defectKey === defect.defectKey);
+  if (d) {
+    d.status = 'closed';
+    d.closedAt = new Date().toISOString();
+    d.closedByRunId = runId;
+    saveDefectsRegistry(reg);
+  }
+  logAudit({ userId: 'system', username: 'system',
+    action: 'DEFECT_AUTO_CLOSED', resourceType: 'defect', resourceId: defect.defectKey,
+    details: runId, ip: null });
+  broadcast(runId, { type: 'defect_auto_closed', defectKey: defect.defectKey } as any);
+}
+
+async function autoCloseHookOnRunComplete(record: RunRecord): Promise<void> {
+  const cfg = loadJiraConfig();
+  const client = getJiraClient();
+  if (!cfg || !client) return;
+  const passedTestIds = new Set(record.tests.filter(t => t.status === 'pass' && t.testId).map(t => t.testId!));
+  if (!passedTestIds.size) return;
+  const candidates = findOpenDefectsForRun(record.suiteId || '', record.environmentId || '')
+    .filter(d => passedTestIds.has(d.testId));
+  for (const d of candidates) {
+    closeDefectAsync(d, record.runId, cfg.closeTransitionName, client).catch(err =>
+      logger.warn('[autoClose] failed', { defectKey: d.defectKey, err: err?.message })
+    );
+  }
+}
+
+function attachDefectInfo<T extends RunRecord>(record: T): T {
+  const reg = loadDefectsRegistry();
+  for (const t of record.tests) {
+    if (!t.testId) continue;
+    const d = reg.defects.find(x => x.testId === t.testId && x.suiteId === (record.suiteId || ''));
+    if (d) { t.defectKey = d.defectKey; t.defectStatus = d.status; }
+  }
+  return record;
 }
 
 // ── Express app ───────────────────────────────────────────────────────────────
@@ -1646,10 +1697,15 @@ app.get('/api/run/:runId', requireAuthOrApiKey, (req: Request, res: Response) =>
   const record = runs.get(req.params.runId);
   if (!record) {
     const runFile = path.join(config.paths.results, `run-${req.params.runId}.json`);
-    if (fs.existsSync(runFile)) { res.json(JSON.parse(fs.readFileSync(runFile, 'utf-8'))); return; }
+    if (fs.existsSync(runFile)) {
+      const loaded = JSON.parse(fs.readFileSync(runFile, 'utf-8')) as RunRecord;
+      res.json(attachDefectInfo(loaded));
+      return;
+    }
     res.status(404).json({ error: 'Run not found' }); return;
   }
-  res.json({ ...record, output: record.output.slice(-100) });
+  const decorated = attachDefectInfo({ ...record, output: record.output.slice(-100) } as RunRecord);
+  res.json(decorated);
 });
 
 app.get('/api/runs', (req: Request, res: Response) => {
