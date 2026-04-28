@@ -170,6 +170,9 @@ interface TestEvent {
   steps?: { name: string; status: 'pass' | 'fail' | 'skip'; durationMs: number }[];
   testId?:       string;    // stable hash(suiteId+scriptTitle+name) — set at run time
   quarantined?:  boolean;   // true = executed but excluded from suite pass/fail gate
+  // Auto-File Defect feature
+  defectKey?: string;
+  defectStatus?: 'open' | 'closed';
 }
 
 // ── Debug session types ───────────────────────────────────────────────────────

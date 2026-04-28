@@ -408,3 +408,68 @@ export interface LicensePayload {
     primaryColor?: string;   // CSS hex e.g. "#3b82f6"
   };
 }
+
+// ── Jira Defect Filing ───────────────────────────────────────────────
+
+export interface JiraConfig {
+  projectKey: string;
+  issueType: string;
+  defaultPriority: string;
+  parentLinkFieldId: string;
+  referSSFieldId: string;        // captured for future use; v1 uses /attachments endpoint
+  closeTransitionName: string;
+  maxAttachmentMB: number;
+  updatedAt: string;
+  updatedBy: string;
+}
+
+export type DefectAttachmentStatus = 'ok' | 'failed' | 'skipped';
+
+export interface DefectRecord {
+  defectKey: string;
+  jiraId: string;
+  testId: string;
+  testName: string;
+  suiteId: string;
+  suiteName: string;
+  environmentId: string;
+  environmentName: string;
+  projectId: string;
+  parentStoryKey: string;
+  status: 'open' | 'closed';
+  createdAt: string;
+  createdBy: string;
+  filedFromRunId: string;
+  closedAt?: string;
+  closedByRunId?: string;
+  jiraUrl: string;
+  attachments: {
+    screenshot?: DefectAttachmentStatus;
+    video?: DefectAttachmentStatus;
+    trace?: DefectAttachmentStatus;
+  };
+  comments: Array<{ runId: string; addedAt: string; addedBy: string }>;
+}
+
+export interface DefectsRegistry {
+  _schemaVersion: 1;
+  defects: DefectRecord[];
+}
+
+export type DismissCategory =
+  | 'script-issue'
+  | 'locator-issue'
+  | 'flaky'
+  | 'data-issue'
+  | 'env-issue';
+
+export interface DismissEntry {
+  timestamp: string;
+  runId: string;
+  testId: string;
+  testName: string;
+  suiteId: string;
+  category: DismissCategory;
+  dismissedBy: string;
+  errorMessage: string;
+}
