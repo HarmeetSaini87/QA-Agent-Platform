@@ -1152,14 +1152,13 @@
                 <option>Highest</option><option>High</option><option selected>Medium</option><option>Low</option><option>Lowest</option>
               </select>
             </div>
-            <div class="field"><label>Parent / User Story Field ID *</label><select id="jira-parent-field"><option value="">(Discover fields first)</option></select></div>
-            <div class="field"><label>Refer SS Field ID (optional)</label><select id="jira-refer-ss-field"><option value="">(none)</option></select></div>
+            <input id="jira-parent-field" type="hidden" value="" />
+            <input id="jira-refer-ss-field" type="hidden" value="" />
             <div class="field"><label>Auto-Close Transition Name *</label><input id="jira-close-transition" type="text" value="Closed" /></div>
             <div class="field"><label>Max Attachment Size (MB)</label><input id="jira-max-attach-mb" type="number" value="50" min="1" max="500" /></div>
 
             <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px">
               <button class="btn btn-outline" onclick="jiraTestConnection()">Test Connection</button>
-              <button class="btn btn-outline" onclick="jiraDiscoverFields()">Discover Fields</button>
               <button class="btn btn-primary" onclick="jiraConfigSave()">Save Configuration</button>
             </div>
             <div id="jira-config-msg" style="margin-top:10px;font-size:12.5px"></div>

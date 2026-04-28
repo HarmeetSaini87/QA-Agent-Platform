@@ -3152,7 +3152,7 @@ app.get('/api/jira/config', requireAuth, (_req: Request, res: Response) => {
 
 app.put('/api/jira/config', requireAdmin, (req: Request, res: Response) => {
   const b = req.body || {};
-  const required = ['projectKey', 'issueType', 'defaultPriority', 'parentLinkFieldId', 'closeTransitionName'];
+  const required = ['projectKey', 'issueType', 'defaultPriority', 'closeTransitionName'];
   for (const k of required) {
     if (!b[k] || typeof b[k] !== 'string') {
       res.status(400).json({ error: { code: 'BAD_REQUEST', message: `Missing field: ${k}` } });
