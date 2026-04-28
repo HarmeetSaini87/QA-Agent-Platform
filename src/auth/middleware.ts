@@ -20,6 +20,24 @@ declare module 'express-session' {
 /** Require authenticated session — redirects to /login for browser requests */
 export function requireAuth(req: Request, res: Response, next: NextFunction): void {
   if (req.session?.userId) { next(); return; }
+
+  // Bearer API key path — same logic as requireAuthOrApiKey, lets CI/CD requests pass the global gate
+  const authHeader = req.headers['authorization'];
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const raw  = authHeader.slice(7).trim();
+    const hash = crypto.createHash('sha256').update(raw).digest('hex');
+    const keys = readAll<ApiKey>(APIKEYS);
+    const key  = keys.find(k => k.keyHash === hash && (k.expiresAt === null || new Date(k.expiresAt) > new Date()));
+    if (key) {
+      const updated = keys.map(k => k.id === key.id ? { ...k, lastUsedAt: new Date().toISOString() } : k);
+      writeAll(APIKEYS, updated);
+      (req as any).apiKeyId  = key.id;
+      (req as any).apiKeyName = key.name;
+      (req as any).apiKeyProjectId = key.projectId;
+      next(); return;
+    }
+  }
+
   // Use originalUrl (not req.path, which strips mount prefix) to distinguish API vs browser
   if (req.originalUrl.startsWith('/api/')) {
     res.status(401).json({ error: 'Unauthorized' });
@@ -33,6 +51,8 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
  * Use on all POST/PUT/PATCH/DELETE endpoints that mutate project data.
  */
 export function requireEditor(req: Request, res: Response, next: NextFunction): void {
+  // Allow API-key-authenticated requests through (key issuance implies editor-level trust)
+  if ((req as any).apiKeyId) { next(); return; }
   if (!req.session?.userId) {
     if (req.originalUrl.startsWith('/api/')) { res.status(401).json({ error: 'Unauthorized' }); return; }
     res.redirect('/login'); return;
