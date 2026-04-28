@@ -1342,6 +1342,22 @@ function getJiraClient(): JiraClient | null {
   return new JiraClient({ baseUrl: c.baseUrl, email: c.email, apiToken: c.apiToken });
 }
 
+function readArtifactBuffer(relPath: string, maxBytes: number): { buffer: Buffer; size: number; tooLarge: boolean } | null {
+  if (!relPath) return null;
+  const baseDir = path.resolve((config.paths && (config.paths as any).testResults) || 'test-results');
+  const resolved = path.resolve(baseDir, relPath);
+  if (!resolved.toLowerCase().startsWith((baseDir + path.sep).toLowerCase())) return null;
+  let stat: import('fs').Stats;
+  try { stat = fs.statSync(resolved); } catch { return null; }
+  if (stat.size > maxBytes) return { buffer: Buffer.alloc(0), size: stat.size, tooLarge: true };
+  return { buffer: fs.readFileSync(resolved), size: stat.size, tooLarge: false };
+}
+
+function firstNLines(s: string, n: number): string {
+  if (!s) return '';
+  return s.split(/\r?\n/).slice(0, n).join('\n');
+}
+
 // ── Express app ───────────────────────────────────────────────────────────────
 
 const app = express();
@@ -3127,6 +3143,233 @@ app.get('/api/jira/fields', requireAdmin, async (_req: Request, res: Response) =
   } catch (e: any) {
     res.status(502).json({ error: { code: e?.code || 'JIRA_ERROR', message: e?.message || 'Field discovery failed' } });
   }
+});
+
+// ── Defect lifecycle ─────────────────────────────────────────────────
+
+app.post('/api/defects/draft', requireEditor, async (req: Request, res: Response) => {
+  const { runId, testId } = req.body || {};
+  if (!runId || !testId) {
+    res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'runId and testId required' } });
+    return;
+  }
+  const run = runs.get(runId);
+  if (!run) { res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Run not found' } }); return; }
+  const t = run.tests.find(x => x.testId === testId);
+  if (!t) { res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Test not found in run' } }); return; }
+
+  const cfg = loadJiraConfig();
+  const existing = findOpenDefect(testId, run.suiteId || '');
+
+  const descriptionADF = buildDefectDescription({
+    testName: t.name,
+    testId,
+    suiteName: run.suiteName || '',
+    projectName: run.projectName || '',
+    runTimestamp: run.startedAt,
+    runId,
+    envName: run.environmentName || '',
+    envUrl: '',
+    browser: t.browser || (run.browsers?.[0] || 'chromium'),
+    os: process.platform,
+    steps: (t.steps || []).map((s: any) => `${s.keyword || ''} ${s.locator || s.value || ''}`.trim()).filter(Boolean),
+    errorMessage: t.errorMessage || '',
+    errorDetailFirst5: firstNLines(t.errorDetail || '', 5),
+  });
+
+  const summary = `${t.name} failed in ${run.suiteName}`.slice(0, 255);
+  const attachments: Array<{ kind: 'screenshot' | 'video' | 'trace'; path: string; sizeBytes: number; name: string; tooLarge: boolean }> = [];
+  const max = (cfg?.maxAttachmentMB ?? 50) * 1024 * 1024;
+  for (const [kind, p] of [['screenshot', t.screenshotPath], ['video', t.videoPath], ['trace', t.tracePath]] as const) {
+    if (!p) continue;
+    const head = readArtifactBuffer(p, max);
+    if (!head) continue;
+    attachments.push({
+      kind, path: p, sizeBytes: head.size,
+      name: path.basename(p),
+      tooLarge: head.tooLarge,
+    });
+  }
+
+  res.json({
+    summary,
+    descriptionADF,
+    suggestedPriority: cfg?.defaultPriority || 'Medium',
+    attachments,
+    existingDefect: existing,
+    config: cfg,
+  });
+});
+
+app.post('/api/defects/file', requireEditor, async (req: Request, res: Response) => {
+  const { runId, testId, summary, descriptionADF, priority, parentStoryKey, attachKinds } = req.body || {};
+  if (!runId || !testId || !summary || !descriptionADF || !priority || !parentStoryKey) {
+    res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'Missing required field' } }); return;
+  }
+  if (!/^[A-Z][A-Z0-9_]+-\d+$/.test(String(parentStoryKey))) {
+    res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'parentStoryKey must look like ABC-123' } }); return;
+  }
+  const cfg = loadJiraConfig();
+  if (!cfg) { res.status(400).json({ error: { code: 'JIRA_NOT_CONFIGURED', message: 'Configure Jira mapping in Admin' } }); return; }
+  const client = getJiraClient();
+  if (!client) { res.status(400).json({ error: { code: 'JIRA_NOT_CONFIGURED', message: 'Set Jira credentials in .env' } }); return; }
+
+  const run = runs.get(runId);
+  if (!run) { res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Run not found' } }); return; }
+  const t = run.tests.find(x => x.testId === testId);
+  if (!t) { res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Test not found' } }); return; }
+
+  // Server-side dedup check (live JQL)
+  try {
+    const existingKey = await client.searchOpenDefectByTestId(testId, run.suiteId || '', cfg.projectKey);
+    if (existingKey) {
+      res.status(409).json({
+        error: { code: 'ALREADY_FILED', message: 'Open defect already exists', details: { defectKey: existingKey, jiraUrl: `${config.jira.baseUrl}/browse/${existingKey}` } },
+      });
+      return;
+    }
+  } catch (e: any) {
+    res.status(502).json({ error: { code: e?.code || 'JIRA_ERROR', message: e?.message || 'Dedup check failed' } });
+    return;
+  }
+
+  // Create issue
+  let created: { key: string; id: string; self: string };
+  try {
+    created = await client.createIssue({
+      projectKey: cfg.projectKey,
+      issueType: cfg.issueType,
+      summary: String(summary).slice(0, 255),
+      descriptionADF,
+      priority,
+      parentStoryKey: String(parentStoryKey),
+    });
+  } catch (e: any) {
+    const status = e?.httpStatus && e.httpStatus >= 400 && e.httpStatus < 500 ? 400 : 502;
+    res.status(status).json({ error: { code: e?.code || 'JIRA_ERROR', message: e?.message || 'Issue creation failed', details: e?.details } });
+    return;
+  }
+
+  // Upload attachments
+  const attachStatus: { screenshot?: 'ok' | 'failed' | 'skipped'; video?: 'ok' | 'failed' | 'skipped'; trace?: 'ok' | 'failed' | 'skipped' } = {};
+  const max = cfg.maxAttachmentMB * 1024 * 1024;
+  const kinds: Array<'screenshot' | 'video' | 'trace'> = Array.isArray(attachKinds) ? attachKinds : [];
+  const mimeFor = (k: string) => k === 'screenshot' ? 'image/png' : k === 'video' ? 'video/webm' : 'application/zip';
+  for (const k of kinds) {
+    const relPath = k === 'screenshot' ? t.screenshotPath : k === 'video' ? t.videoPath : t.tracePath;
+    if (!relPath) { attachStatus[k] = 'skipped'; continue; }
+    const data = readArtifactBuffer(relPath, max);
+    if (!data || data.tooLarge) { attachStatus[k] = 'skipped'; continue; }
+    try {
+      await client.addAttachment(created.key, { name: path.basename(relPath), buffer: data.buffer, mime: mimeFor(k) });
+      attachStatus[k] = 'ok';
+    } catch (e: any) {
+      logger.warn(`[defect.file] attachment failed`, { key: created.key, kind: k, err: e?.message });
+      attachStatus[k] = 'failed';
+    }
+  }
+
+  // Persist DefectRecord
+  const reg = loadDefectsRegistry();
+  const jiraUrl = `${config.jira.baseUrl.replace(/\/$/, '')}/browse/${created.key}`;
+  const record = {
+    defectKey: created.key, jiraId: created.id, testId, testName: t.name,
+    suiteId: run.suiteId || '', suiteName: run.suiteName || '',
+    environmentId: run.environmentId || '', environmentName: run.environmentName || '',
+    projectId: run.projectId || '',
+    parentStoryKey: String(parentStoryKey),
+    status: 'open' as const,
+    createdAt: new Date().toISOString(),
+    createdBy: req.session.username || 'unknown',
+    filedFromRunId: runId, jiraUrl,
+    attachments: attachStatus,
+    comments: [],
+  };
+  reg.defects.push(record);
+  saveDefectsRegistry(reg);
+
+  // Update RunRecord TestEvent for badge rendering on subsequent loads
+  t.defectKey = created.key;
+  t.defectStatus = 'open';
+
+  logAudit({ userId: req.session.userId!, username: req.session.username!,
+    action: 'DEFECT_FILED', resourceType: 'defect', resourceId: created.key,
+    details: `${t.name} (${runId})`, ip: req.ip ?? null });
+
+  res.json({ defectKey: created.key, jiraUrl, attachments: attachStatus });
+});
+
+app.post('/api/defects/comment', requireEditor, async (req: Request, res: Response) => {
+  const { defectKey, runId, testId, attachKinds } = req.body || {};
+  if (!defectKey || !runId || !testId) {
+    res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'defectKey, runId, testId required' } }); return;
+  }
+  const cfg = loadJiraConfig();
+  const client = getJiraClient();
+  if (!cfg || !client) { res.status(400).json({ error: { code: 'JIRA_NOT_CONFIGURED', message: 'Jira not configured' } }); return; }
+
+  const run = runs.get(runId);
+  const t = run?.tests.find(x => x.testId === testId);
+  if (!run || !t) { res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Run/test not found' } }); return; }
+
+  const body = buildFailureCommentADF({
+    runId,
+    timestamp: run.startedAt,
+    errorMessage: t.errorMessage || '',
+    errorDetailFirst5: firstNLines(t.errorDetail || '', 5),
+  });
+  try {
+    const out = await client.addComment(defectKey, body);
+    const max = cfg.maxAttachmentMB * 1024 * 1024;
+    const kinds: Array<'screenshot' | 'video' | 'trace'> = Array.isArray(attachKinds) ? attachKinds : [];
+    const mimeFor = (k: string) => k === 'screenshot' ? 'image/png' : k === 'video' ? 'video/webm' : 'application/zip';
+    for (const k of kinds) {
+      const relPath = k === 'screenshot' ? t.screenshotPath : k === 'video' ? t.videoPath : t.tracePath;
+      if (!relPath) continue;
+      const data = readArtifactBuffer(relPath, max);
+      if (!data || data.tooLarge) continue;
+      try { await client.addAttachment(defectKey, { name: path.basename(relPath), buffer: data.buffer, mime: mimeFor(k) }); }
+      catch (e: any) { logger.warn('[defect.comment] attachment failed', { defectKey, kind: k, err: e?.message }); }
+    }
+    const reg = loadDefectsRegistry();
+    const d = reg.defects.find(x => x.defectKey === defectKey);
+    if (d) {
+      d.comments.push({ runId, addedAt: new Date().toISOString(), addedBy: req.session.username || 'unknown' });
+      saveDefectsRegistry(reg);
+    }
+    logAudit({ userId: req.session.userId!, username: req.session.username!,
+      action: 'DEFECT_COMMENT', resourceType: 'defect', resourceId: defectKey, details: runId, ip: req.ip ?? null });
+    res.json({ commentId: out.id });
+  } catch (e: any) {
+    res.status(502).json({ error: { code: e?.code || 'JIRA_ERROR', message: e?.message || 'Comment failed' } });
+  }
+});
+
+app.post('/api/defects/dismiss', requireEditor, (req: Request, res: Response) => {
+  const { runId, testId, category } = req.body || {};
+  const validCategories = ['script-issue', 'locator-issue', 'flaky', 'data-issue', 'env-issue'];
+  if (!runId || !testId || !validCategories.includes(category)) {
+    res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'Invalid request' } }); return;
+  }
+  const run = runs.get(runId);
+  const t = run?.tests.find(x => x.testId === testId);
+  if (!run || !t) { res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Run/test not found' } }); return; }
+
+  appendDismissEntry({
+    timestamp: new Date().toISOString(),
+    runId, testId, testName: t.name, suiteId: run.suiteId || '',
+    category,
+    dismissedBy: req.session.username || 'unknown',
+    errorMessage: t.errorMessage || '',
+  });
+  logAudit({ userId: req.session.userId!, username: req.session.username!,
+    action: 'DEFECT_DISMISSED', resourceType: 'test', resourceId: testId, details: category, ip: req.ip ?? null });
+  res.json({ ok: true });
+});
+
+app.get('/api/defects/by-test/:testId', requireAuth, (req: Request, res: Response) => {
+  const reg = loadDefectsRegistry();
+  res.json({ defects: reg.defects.filter(d => d.testId === req.params.testId) });
 });
 
 // ── Projects ──────────────────────────────────────────────────────────────────
