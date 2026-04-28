@@ -59,6 +59,8 @@ All code changes, experiments, and new features are developed here FIRST.
 > **📋 See [docs/superpowers/plans/2026-04-27-trace-viewer.md](docs/superpowers/plans/2026-04-27-trace-viewer.md) — Trace Viewer 8-task plan. ALL TASKS COMPLETE (2026-04-27).**
 > **📋 See [docs/superpowers/specs/2026-04-27-auto-file-defect-design.md](docs/superpowers/specs/2026-04-27-auto-file-defect-design.md) — Auto-File Jira Defect design spec. FEATURE IS COMPLETE (2026-04-28).**
 > **📋 See [docs/superpowers/plans/2026-04-27-auto-file-defect.md](docs/superpowers/plans/2026-04-27-auto-file-defect.md) — Auto-File Defect 9-task plan. ALL TASKS COMPLETE (2026-04-28). Manual E2E testing pending against Jira sandbox.**
+> **📋 See [docs/AUTO_FILE_DEFECT_USER_GUIDE.md](docs/AUTO_FILE_DEFECT_USER_GUIDE.md) — User-facing guide for Editors / Admins / SDETs.**
+> **📋 See [docs/AUTO_FILE_DEFECT_TEST_GUIDE.md](docs/AUTO_FILE_DEFECT_TEST_GUIDE.md) — 65-test E2E checklist against Jira sandbox.**
 
 ---
 
