@@ -6,7 +6,7 @@
 'use strict';
 
 function _escHtml(s) {
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 // ── Auth bootstrap ─────────────────────────────────────────────────────────────
@@ -15,12 +15,12 @@ let currentUser = null;   // { userId, username, role }
 
 async function authBootstrap() {
   try {
-    const res  = await fetch('/api/auth/me');
+    const res = await fetch('/api/auth/me');
     if (!res.ok) { window.location.href = '/login'; return; }
     currentUser = await res.json();
     document.body.classList.add('auth-checked');
     document.getElementById('sidebar-username').textContent = currentUser.username;
-    document.getElementById('sidebar-role').textContent     = currentUser.role;
+    document.getElementById('sidebar-role').textContent = currentUser.role;
 
     // Show/hide admin-only elements
     if (currentUser.role !== 'admin') {
@@ -82,7 +82,7 @@ function modClearAlert(containerId) {
   if (el) { el.style.display = 'none'; el.textContent = ''; }
 }
 
-function openModal(id)  { document.getElementById(id).style.display = 'flex'; }
+function openModal(id) { document.getElementById(id).style.display = 'flex'; }
 function closeModal(id) { document.getElementById(id).style.display = 'none'; }
 
 function formatDate(iso) {
@@ -91,7 +91,7 @@ function formatDate(iso) {
 }
 
 function escHtml(s) {
-  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 // ── Admin sub-tab switcher ─────────────────────────────────────────────────────
@@ -101,11 +101,11 @@ function adminSubTab(name, btn) {
   document.querySelectorAll('.sub-panel').forEach(p => p.classList.remove('active'));
   btn.classList.add('active');
   document.getElementById(`admin-${name}`).classList.add('active');
-  if (name === 'users')    usersLoad();
-  if (name === 'audit')    auditLoad();
+  if (name === 'users') usersLoad();
+  if (name === 'audit') auditLoad();
   if (name === 'settings') settingsLoad();
-  if (name === 'license')  licenseLoad();
-  if (name === 'apikeys')  apikeyLoad();
+  if (name === 'license') licenseLoad();
+  if (name === 'apikeys') apikeyLoad();
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -115,7 +115,7 @@ function adminSubTab(name, btn) {
 let editingUserId = null;
 
 async function usersLoad() {
-  const res   = await fetch('/api/admin/users');
+  const res = await fetch('/api/admin/users');
   const users = await res.json();
   const tbody = document.getElementById('user-tbody');
   if (!tbody) return;
@@ -139,8 +139,8 @@ function userOpenModal(userId = null) {
   document.getElementById('user-modal-title').textContent = userId ? 'Edit User' : 'Add User';
   if (!userId) {
     document.getElementById('um-username').value = '';
-    document.getElementById('um-email').value    = '';
-    document.getElementById('um-role').value     = 'tester';
+    document.getElementById('um-email').value = '';
+    document.getElementById('um-role').value = 'tester';
     document.getElementById('um-password').value = '';
     document.getElementById('um-force-change').checked = true;
     document.getElementById('um-username').disabled = false;
@@ -149,18 +149,18 @@ function userOpenModal(userId = null) {
 }
 
 async function userEdit(id) {
-  const res  = await fetch('/api/admin/users');
+  const res = await fetch('/api/admin/users');
   const list = await res.json();
-  const u    = list.find(x => x.id === id);
+  const u = list.find(x => x.id === id);
   if (!u) return;
   editingUserId = id;
   document.getElementById('user-modal-title').textContent = 'Edit User';
-  document.getElementById('um-username').value            = u.username;
-  document.getElementById('um-username').disabled         = true;
-  document.getElementById('um-email').value               = u.email || '';
-  document.getElementById('um-role').value                = u.role;
-  document.getElementById('um-password').value            = '';
-  document.getElementById('um-force-change').checked      = !!u.forcePasswordChange;
+  document.getElementById('um-username').value = u.username;
+  document.getElementById('um-username').disabled = true;
+  document.getElementById('um-email').value = u.email || '';
+  document.getElementById('um-role').value = u.role;
+  document.getElementById('um-password').value = '';
+  document.getElementById('um-force-change').checked = !!u.forcePasswordChange;
   modClearAlert('user-modal-alert');
   openModal('modal-user');
 }
@@ -168,20 +168,20 @@ async function userEdit(id) {
 async function userSave() {
   modClearAlert('user-modal-alert');
   const body = {
-    username:            document.getElementById('um-username').value.trim(),
-    email:               document.getElementById('um-email').value.trim(),
-    role:                document.getElementById('um-role').value,
-    password:            document.getElementById('um-password').value,
+    username: document.getElementById('um-username').value.trim(),
+    email: document.getElementById('um-email').value.trim(),
+    role: document.getElementById('um-role').value,
+    password: document.getElementById('um-password').value,
     forcePasswordChange: document.getElementById('um-force-change').checked,
   };
-  if (!body.username) { modAlert('user-modal-alert','error','Username is required'); return; }
-  if (!editingUserId && !body.password) { modAlert('user-modal-alert','error','Password is required for new users'); return; }
+  if (!body.username) { modAlert('user-modal-alert', 'error', 'Username is required'); return; }
+  if (!editingUserId && !body.password) { modAlert('user-modal-alert', 'error', 'Password is required for new users'); return; }
 
   const method = editingUserId ? 'PUT' : 'POST';
-  const url    = editingUserId ? `/api/admin/users/${editingUserId}` : '/api/admin/users';
-  const res    = await fetch(url, { method, headers: { 'Content-Type':'application/json' }, body: JSON.stringify(body) });
-  const data   = await res.json();
-  if (!res.ok) { modAlert('user-modal-alert','error', data.error || 'Error saving user'); return; }
+  const url = editingUserId ? `/api/admin/users/${editingUserId}` : '/api/admin/users';
+  const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const data = await res.json();
+  if (!res.ok) { modAlert('user-modal-alert', 'error', data.error || 'Error saving user'); return; }
   userCloseModal();
   await usersLoad();
 }
@@ -203,7 +203,7 @@ let auditPage = 1;
 
 async function auditLoad(page = 1) {
   auditPage = page;
-  const res  = await fetch(`/api/admin/audit?page=${page}&size=50`);
+  const res = await fetch(`/api/admin/audit?page=${page}&size=50`);
   const data = await res.json();
   const tbody = document.getElementById('audit-tbody');
   if (!tbody) return;
@@ -221,9 +221,9 @@ async function auditLoad(page = 1) {
   if (pg) {
     const totalPages = Math.ceil(data.total / data.size);
     pg.innerHTML = `
-      <button class="tbl-btn" ${page <= 1 ? 'disabled' : ''} onclick="auditLoad(${page-1})">← Prev</button>
+      <button class="tbl-btn" ${page <= 1 ? 'disabled' : ''} onclick="auditLoad(${page - 1})">← Prev</button>
       <span style="font-size:12px;color:var(--neutral-500)">Page ${page} / ${totalPages} &nbsp;(${data.total} entries)</span>
-      <button class="tbl-btn" ${page >= totalPages ? 'disabled' : ''} onclick="auditLoad(${page+1})">Next →</button>`;
+      <button class="tbl-btn" ${page >= totalPages ? 'disabled' : ''} onclick="auditLoad(${page + 1})">Next →</button>`;
   }
 }
 
@@ -235,18 +235,18 @@ async function auditLoad(page = 1) {
 let _nlProviders = [];
 
 async function settingsLoad() {
-  const res  = await fetch('/api/admin/settings');
+  const res = await fetch('/api/admin/settings');
   const data = await res.json();
-  document.getElementById('set-app-name').value    = data.appName ?? '';
-  document.getElementById('set-timeout').value     = data.sessionTimeoutMinutes ?? 60;
-  document.getElementById('set-max-logins').value  = data.maxFailedLogins ?? 5;
+  document.getElementById('set-app-name').value = data.appName ?? '';
+  document.getElementById('set-timeout').value = data.sessionTimeoutMinutes ?? 60;
+  document.getElementById('set-max-logins').value = data.maxFailedLogins ?? 5;
   document.getElementById('set-allow-reg').checked = !!data.allowRegistration;
 
   // Load NL provider metadata then restore saved settings
   try {
     const pr = await fetch('/api/nl-providers');
     if (pr.ok) _nlProviders = await pr.json();
-  } catch {}
+  } catch { }
 
   const provSel = document.getElementById('set-nl-provider');
   if (provSel && data.nlProvider) provSel.value = data.nlProvider;
@@ -258,23 +258,23 @@ async function settingsLoad() {
 
 async function settingsSave() {
   modClearAlert('settings-alert');
-  const keyVal     = document.getElementById('set-nl-key')?.value.trim();
+  const keyVal = document.getElementById('set-nl-key')?.value.trim();
   const customModel = document.getElementById('set-nl-model-custom')?.value.trim();
   const selectModel = document.getElementById('set-nl-model-select')?.value || '';
   const body = {
-    appName:               document.getElementById('set-app-name').value.trim(),
+    appName: document.getElementById('set-app-name').value.trim(),
     sessionTimeoutMinutes: parseInt(document.getElementById('set-timeout').value) || 60,
-    maxFailedLogins:       parseInt(document.getElementById('set-max-logins').value) || 5,
-    allowRegistration:     document.getElementById('set-allow-reg').checked,
-    nlProvider:            document.getElementById('set-nl-provider')?.value || '',
-    nlModel:               customModel || selectModel || '',
-    nlBaseUrl:             document.getElementById('set-nl-baseurl')?.value.trim() || '',
+    maxFailedLogins: parseInt(document.getElementById('set-max-logins').value) || 5,
+    allowRegistration: document.getElementById('set-allow-reg').checked,
+    nlProvider: document.getElementById('set-nl-provider')?.value || '',
+    nlModel: customModel || selectModel || '',
+    nlBaseUrl: document.getElementById('set-nl-baseurl')?.value.trim() || '',
     ...(keyVal ? { nlApiKey: keyVal } : {}),
   };
-  const res  = await fetch('/api/admin/settings', { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+  const res = await fetch('/api/admin/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   const data = await res.json();
   if (res.ok) {
-    modAlert('settings-alert','success','Settings saved successfully');
+    modAlert('settings-alert', 'success', 'Settings saved successfully');
     if (keyVal) {
       const el = document.getElementById('set-nl-key');
       if (el) { el.value = ''; el.placeholder = '●●●●●●●●●●●● (saved)'; }
@@ -283,7 +283,7 @@ async function settingsSave() {
     }
     settingsLoad();
   } else {
-    modAlert('settings-alert','error', data.error || 'Error saving settings');
+    modAlert('settings-alert', 'error', data.error || 'Error saving settings');
   }
 }
 
@@ -294,21 +294,21 @@ function toggleApiKeyVisibility() {
 }
 
 function nlProviderChanged(savedData) {
-  const provId   = document.getElementById('set-nl-provider')?.value || '';
-  const prov     = _nlProviders.find(p => p.id === provId);
+  const provId = document.getElementById('set-nl-provider')?.value || '';
+  const prov = _nlProviders.find(p => p.id === provId);
 
-  const helpEl   = document.getElementById('nl-help-text');
+  const helpEl = document.getElementById('nl-help-text');
   const keyField = document.getElementById('nl-key-field');
   const urlField = document.getElementById('nl-url-field');
   const mdlField = document.getElementById('nl-model-field');
   const statusEl = document.getElementById('set-nl-status');
 
   if (!provId || !prov) {
-    if (helpEl)   { helpEl.style.display = 'none'; helpEl.textContent = ''; }
-    if (keyField)  keyField.style.display = 'none';
-    if (urlField)  urlField.style.display = 'none';
-    if (mdlField)  mdlField.style.display = 'none';
-    if (statusEl)  { statusEl.textContent = 'NL Suggestion disabled.'; statusEl.style.color = 'var(--neutral-400)'; }
+    if (helpEl) { helpEl.style.display = 'none'; helpEl.textContent = ''; }
+    if (keyField) keyField.style.display = 'none';
+    if (urlField) urlField.style.display = 'none';
+    if (mdlField) mdlField.style.display = 'none';
+    if (statusEl) { statusEl.textContent = 'NL Suggestion disabled.'; statusEl.style.color = 'var(--neutral-400)'; }
     return;
   }
 
@@ -385,15 +385,15 @@ function notifLoad(n) {
   // Trigger rules
   const onF = document.getElementById('notif-on-failure'); if (onF) onF.checked = n.notifyOnFailure !== false;
   const onS = document.getElementById('notif-on-success'); if (onS) onS.checked = !!n.notifyOnSuccess;
-  const onA = document.getElementById('notif-on-always');  if (onA) onA.checked = !!n.notifyOnAlways;
+  const onA = document.getElementById('notif-on-always'); if (onA) onA.checked = !!n.notifyOnAlways;
   // Email
   const emailEn = document.getElementById('notif-email-enabled'); if (emailEn) { emailEn.checked = !!n.emailEnabled; notifToggleSection('email', !!n.emailEnabled); }
-  document.getElementById('notif-smtp-host').value  = n.smtpHost  ?? '';
-  document.getElementById('notif-smtp-port').value  = n.smtpPort  ?? 587;
-  document.getElementById('notif-smtp-user').value  = n.smtpUser  ?? '';
-  document.getElementById('notif-smtp-pass').value  = n.smtpPass  ?? '';
+  document.getElementById('notif-smtp-host').value = n.smtpHost ?? '';
+  document.getElementById('notif-smtp-port').value = n.smtpPort ?? 587;
+  document.getElementById('notif-smtp-user').value = n.smtpUser ?? '';
+  document.getElementById('notif-smtp-pass').value = n.smtpPass ?? '';
   document.getElementById('notif-email-from').value = n.emailFrom ?? '';
-  document.getElementById('notif-email-to').value   = n.emailTo   ?? '';
+  document.getElementById('notif-email-to').value = n.emailTo ?? '';
   const secureEl = document.getElementById('notif-smtp-secure'); if (secureEl) secureEl.checked = !!n.smtpSecure;
   // Slack
   const slackEn = document.getElementById('notif-slack-enabled'); if (slackEn) { slackEn.checked = !!n.slackEnabled; notifToggleSection('slack', !!n.slackEnabled); }
@@ -409,41 +409,41 @@ function notifCollect() {
   return {
     notifyOnFailure: c('notif-on-failure'),
     notifyOnSuccess: c('notif-on-success'),
-    notifyOnAlways:  c('notif-on-always'),
-    emailEnabled:    c('notif-email-enabled'),
-    smtpHost:        v('notif-smtp-host').trim(),
-    smtpPort:        parseInt(v('notif-smtp-port')) || 587,
-    smtpSecure:      c('notif-smtp-secure'),
-    smtpUser:        v('notif-smtp-user').trim(),
-    smtpPass:        v('notif-smtp-pass'),
-    emailFrom:       v('notif-email-from').trim(),
-    emailTo:         v('notif-email-to').trim(),
-    slackEnabled:    c('notif-slack-enabled'),
-    slackWebhook:    v('notif-slack-webhook').trim(),
-    teamsEnabled:    c('notif-teams-enabled'),
-    teamsWebhook:    v('notif-teams-webhook').trim(),
+    notifyOnAlways: c('notif-on-always'),
+    emailEnabled: c('notif-email-enabled'),
+    smtpHost: v('notif-smtp-host').trim(),
+    smtpPort: parseInt(v('notif-smtp-port')) || 587,
+    smtpSecure: c('notif-smtp-secure'),
+    smtpUser: v('notif-smtp-user').trim(),
+    smtpPass: v('notif-smtp-pass'),
+    emailFrom: v('notif-email-from').trim(),
+    emailTo: v('notif-email-to').trim(),
+    slackEnabled: c('notif-slack-enabled'),
+    slackWebhook: v('notif-slack-webhook').trim(),
+    teamsEnabled: c('notif-teams-enabled'),
+    teamsWebhook: v('notif-teams-webhook').trim(),
   };
 }
 
 async function notifSave() {
   modClearAlert('notif-alert');
   const body = { notifications: notifCollect() };
-  const res  = await fetch('/api/admin/settings', { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+  const res = await fetch('/api/admin/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   const data = await res.json();
-  if (res.ok) modAlert('notif-alert','success','Notification settings saved');
-  else        modAlert('notif-alert','error', data.error || 'Error saving');
+  if (res.ok) modAlert('notif-alert', 'success', 'Notification settings saved');
+  else modAlert('notif-alert', 'error', data.error || 'Error saving');
 }
 
 async function notifTest() {
   modClearAlert('notif-alert');
-  modAlert('notif-alert','info','Sending test notification…');
-  const res  = await fetch('/api/admin/settings/test-notification', { method:'POST', headers:{'Content-Type':'application/json'} });
+  modAlert('notif-alert', 'info', 'Sending test notification…');
+  const res = await fetch('/api/admin/settings/test-notification', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
   const data = await res.json();
   if (data.success) {
-    modAlert('notif-alert','success','Test notification sent successfully to all enabled channels');
+    modAlert('notif-alert', 'success', 'Test notification sent successfully to all enabled channels');
   } else {
-    const errs = Object.entries(data.errors || {}).filter(([,v]) => v).map(([k,v]) => `${k}: ${v}`).join('; ');
-    modAlert('notif-alert','error', errs || data.error || 'Test notification failed — check server logs');
+    const errs = Object.entries(data.errors || {}).filter(([, v]) => v).map(([k, v]) => `${k}: ${v}`).join('; ');
+    modAlert('notif-alert', 'error', errs || data.error || 'Test notification failed — check server logs');
   }
 }
 
@@ -453,7 +453,7 @@ async function notifTest() {
 // Common Data
 // ══════════════════════════════════════════════════════════════════════════════
 
-let editingCdId  = null;
+let editingCdId = null;
 let allCommonData = [];
 let _cdPage = 0;
 const CD_PAGE_SIZE = 10;
@@ -495,8 +495,8 @@ async function cdLoad() {
     return;
   }
   const env = document.getElementById('cd-env-filter')?.value || '';
-  const qs  = `?projectId=${encodeURIComponent(currentProjectId)}${env ? '&environment=' + encodeURIComponent(env) : ''}`;
-  const res  = await fetch(`/api/common-data${qs}`);
+  const qs = `?projectId=${encodeURIComponent(currentProjectId)}${env ? '&environment=' + encodeURIComponent(env) : ''}`;
+  const res = await fetch(`/api/common-data${qs}`);
   allCommonData = await res.json();
   _cdPage = 0;
   cdRender();
@@ -504,7 +504,7 @@ async function cdLoad() {
 
 function cdRender() {
   const tbody = document.getElementById('cd-tbody');
-  const pgEl  = document.getElementById('cd-pagination');
+  const pgEl = document.getElementById('cd-pagination');
   if (!tbody) return;
   const list = allCommonData;
   if (!list.length) {
@@ -520,11 +520,11 @@ function cdRender() {
       <td title="${escHtml('\${' + d.dataName + '}')}" ><code style="background:var(--neutral-100);padding:2px 6px;border-radius:3px;font-size:12.5px">\${${escHtml(d.dataName)}}</code></td>
       <td>
         ${d.sensitive
-          ? `<span class="cd-masked-wrap" data-id="${escHtml(d.id)}" style="display:inline-flex;align-items:center;gap:6px">
+      ? `<span class="cd-masked-wrap" data-id="${escHtml(d.id)}" style="display:inline-flex;align-items:center;gap:6px">
                <span class="cd-masked-dots" style="letter-spacing:2px;color:var(--neutral-400);font-size:13px">••••••••</span>
                <button class="tbl-btn cd-eye-btn" style="font-size:14px;padding:1px 5px;line-height:1;min-width:26px" title="Show value" onclick="cdToggleReveal(this)">👁</button>
              </span>`
-          : `<span title="${escHtml(d.value)}">${escHtml(d.value)}</span>`}
+      : `<span title="${escHtml(d.value)}">${escHtml(d.value)}</span>`}
       </td>
       <td><span class="badge badge-${d.environment === 'PROD' ? 'fail' : d.environment === 'UAT' ? 'medium' : 'active'}">${escHtml(d.environment)}</span></td>
       <td>${escHtml(d.createdBy || '—')}</td>
@@ -536,7 +536,7 @@ function cdRender() {
     </tr>`).join('');
   if (pgEl) {
     const start = list.length ? _cdPage * CD_PAGE_SIZE + 1 : 0;
-    const end   = Math.min((_cdPage + 1) * CD_PAGE_SIZE, list.length);
+    const end = Math.min((_cdPage + 1) * CD_PAGE_SIZE, list.length);
     pgEl.innerHTML = totalPages <= 1 ? '' : `
       <button class="tbl-btn" onclick="_cdPageGo(-1)" ${_cdPage === 0 ? 'disabled' : ''}>&#8592; Prev</button>
       <span>Page ${_cdPage + 1} / ${totalPages} &nbsp;(${start}–${end} of ${list.length})</span>
@@ -551,9 +551,9 @@ function cdOpenModal(id = null) {
   modClearAlert('cd-modal-alert');
   document.getElementById('cd-modal-title').textContent = id ? 'Edit Common Data' : 'Add Common Data';
   if (!id) {
-    document.getElementById('cd-name').value  = '';
+    document.getElementById('cd-name').value = '';
     document.getElementById('cd-value').value = '';
-    document.getElementById('cd-env').value   = '';
+    document.getElementById('cd-env').value = '';
     const mu = document.getElementById('cd-env-url'); if (mu) mu.textContent = '';
     const sensEl = document.getElementById('cd-sensitive');
     if (sensEl) sensEl.checked = false;
@@ -563,18 +563,18 @@ function cdOpenModal(id = null) {
 
 async function cdEdit(id) {
   const env = document.getElementById('cd-env-filter')?.value || '';
-  const qs  = `?projectId=${encodeURIComponent(currentProjectId)}${env ? '&environment=' + encodeURIComponent(env) : ''}`;
-  const res  = await fetch(`/api/common-data${qs}`);
+  const qs = `?projectId=${encodeURIComponent(currentProjectId)}${env ? '&environment=' + encodeURIComponent(env) : ''}`;
+  const res = await fetch(`/api/common-data${qs}`);
   const list = await res.json();
-  const d    = list.find(x => x.id === id);
+  const d = list.find(x => x.id === id);
   if (!d) return;
   editingCdId = id;
   document.getElementById('cd-modal-title').textContent = 'Edit Common Data';
-  document.getElementById('cd-name').value  = d.dataName;
+  document.getElementById('cd-name').value = d.dataName;
   // Sensitive values show placeholder — user must re-type to change, or leave to keep existing
   document.getElementById('cd-value').value = d.sensitive ? '' : d.value;
   document.getElementById('cd-value').placeholder = d.sensitive ? 'Leave blank to keep existing value' : '';
-  document.getElementById('cd-env').value   = d.environment;
+  document.getElementById('cd-env').value = d.environment;
   _cdShowEnvUrl('cd-env', 'cd-env-url');
   const sensEl = document.getElementById('cd-sensitive');
   if (sensEl) sensEl.checked = !!d.sensitive;
@@ -584,30 +584,32 @@ async function cdEdit(id) {
 
 async function cdSave() {
   modClearAlert('cd-modal-alert');
-  const dataName    = document.getElementById('cd-name').value.trim();
-  const value       = document.getElementById('cd-value').value.trim();
+  const dataName = document.getElementById('cd-name').value.trim();
+  const value = document.getElementById('cd-value').value.trim();
   const environment = document.getElementById('cd-env').value;
-  const sensitive   = !!(document.getElementById('cd-sensitive')?.checked);
-  if (!dataName)    { modAlert('cd-modal-alert', 'error', 'Data Name is required'); return; }
+  const sensitive = !!(document.getElementById('cd-sensitive')?.checked);
+  if (!dataName) { modAlert('cd-modal-alert', 'error', 'Data Name is required'); return; }
   if (!environment) { modAlert('cd-modal-alert', 'error', 'Environment is required'); return; }
   if (!currentProjectId) { modAlert('cd-modal-alert', 'error', 'Select a project first'); return; }
   // On edit of sensitive entry: if value blank, omit it — server keeps existing encrypted value
-  const body   = { projectId: currentProjectId, dataName, environment, sensitive,
-                   ...(value || !editingCdId ? { value } : {}) };
-  const method = editingCdId ? 'PUT'  : 'POST';
-  const url    = editingCdId ? `/api/common-data/${editingCdId}` : '/api/common-data';
-  const res    = await fetch(url, { method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
-  const data   = await res.json();
+  const body = {
+    projectId: currentProjectId, dataName, environment, sensitive,
+    ...(value || !editingCdId ? { value } : {})
+  };
+  const method = editingCdId ? 'PUT' : 'POST';
+  const url = editingCdId ? `/api/common-data/${editingCdId}` : '/api/common-data';
+  const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const data = await res.json();
   if (!res.ok) { modAlert('cd-modal-alert', 'error', data.error || 'Error saving'); return; }
   cdCloseModal();
   await cdLoad();
 }
 
 async function cdToggleReveal(btn) {
-  const wrap    = btn.closest('.cd-masked-wrap');
-  const dotsEl  = wrap.querySelector('.cd-masked-dots');
+  const wrap = btn.closest('.cd-masked-wrap');
+  const dotsEl = wrap.querySelector('.cd-masked-dots');
   const plainEl = wrap.querySelector('.cd-plain-value');
-  const id      = wrap.dataset.id;
+  const id = wrap.dataset.id;
 
   // If already revealed — hide it
   if (plainEl) {
@@ -657,9 +659,9 @@ let editingProjectId = null;
 
 async function projLoad() {
   const url = currentUser?.role === 'admin' ? '/api/projects/all' : '/api/projects';
-  const res  = await fetch(url);
+  const res = await fetch(url);
   const list = await res.json();
-  const el   = document.getElementById('proj-list');
+  const el = document.getElementById('proj-list');
   if (!el) return;
   if (!list.length) { el.innerHTML = '<div class="builder-hint">No projects yet. Click <strong>+ New Project</strong> to create one.</div>'; return; }
 
@@ -676,7 +678,7 @@ async function projLoad() {
             ${!envs.length ? '<span style="font-size:12px;color:var(--neutral-400)">No environments configured</span>' : ''}
           </div>
           <div style="font-size:12px;color:var(--neutral-400);margin-top:4px">
-            TC Prefix: <strong>${escHtml(p.tcIdPrefix || 'TC')}</strong> &nbsp;·&nbsp; Next ID: <strong>${escHtml(p.tcIdPrefix || 'TC')}-${String(p.tcIdCounter || 1).padStart(2,'0')}</strong>
+            TC Prefix: <strong>${escHtml(p.tcIdPrefix || 'TC')}</strong> &nbsp;·&nbsp; Next ID: <strong>${escHtml(p.tcIdPrefix || 'TC')}-${String(p.tcIdCounter || 1).padStart(2, '0')}</strong>
           </div>
         </div>
         <div style="flex-shrink:0;display:flex;gap:6px;align-items:center">
@@ -695,24 +697,24 @@ function projOpenModal(id = null) {
   modClearAlert('proj-modal-alert');
   document.getElementById('proj-modal-title').textContent = id ? 'Edit Project' : 'New Project';
   if (!id) {
-    document.getElementById('pm-name').value   = '';
+    document.getElementById('pm-name').value = '';
     document.getElementById('pm-prefix').value = '';
-    document.getElementById('pm-desc').value   = '';
+    document.getElementById('pm-desc').value = '';
     document.getElementById('proj-envs').innerHTML = '';
   }
   openModal('modal-project');
 }
 
 async function projEdit(id) {
-  const res  = await fetch('/api/projects/all');
+  const res = await fetch('/api/projects/all');
   const list = await res.json();
-  const p    = list.find(x => x.id === id);
+  const p = list.find(x => x.id === id);
   if (!p) return;
   editingProjectId = id;
   document.getElementById('proj-modal-title').textContent = 'Edit Project';
-  document.getElementById('pm-name').value   = p.name;
+  document.getElementById('pm-name').value = p.name;
   document.getElementById('pm-prefix').value = p.tcIdPrefix || '';
-  document.getElementById('pm-desc').value   = p.description || '';
+  document.getElementById('pm-desc').value = p.description || '';
   const envsEl = document.getElementById('proj-envs');
   envsEl.innerHTML = '';
   (p.environments || []).forEach(e => projAddEnv(e.id, e.name, e.url));
@@ -734,15 +736,15 @@ function projAddEnv(id = '', name = '', url = '') {
 
 async function projSave() {
   modClearAlert('proj-modal-alert');
-  const name   = document.getElementById('pm-name').value.trim();
+  const name = document.getElementById('pm-name').value.trim();
   const prefix = document.getElementById('pm-prefix').value.trim().toUpperCase();
-  if (!name)   { modAlert('proj-modal-alert','error','Project name is required'); return; }
-  if (!prefix) { modAlert('proj-modal-alert','error','TC ID Prefix is required'); return; }
+  if (!name) { modAlert('proj-modal-alert', 'error', 'Project name is required'); return; }
+  if (!prefix) { modAlert('proj-modal-alert', 'error', 'TC ID Prefix is required'); return; }
 
   const environments = [...document.querySelectorAll('#proj-envs .env-row')].map(row => ({
-    id:   row.dataset.envId || ('env-' + Date.now() + Math.random()),
+    id: row.dataset.envId || ('env-' + Date.now() + Math.random()),
     name: row.querySelector('.env-name').value,
-    url:  row.querySelector('.env-url').value.trim(),
+    url: row.querySelector('.env-url').value.trim(),
   })).filter(e => e.url);
 
   const body = {
@@ -752,9 +754,9 @@ async function projSave() {
   };
   const method = editingProjectId ? 'PUT' : 'POST';
   const apiUrl = editingProjectId ? `/api/projects/${editingProjectId}` : '/api/projects';
-  const res  = await fetch(apiUrl, { method, headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+  const res = await fetch(apiUrl, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   const data = await res.json();
-  if (!res.ok) { modAlert('proj-modal-alert','error', data.error || 'Error'); return; }
+  if (!res.ok) { modAlert('proj-modal-alert', 'error', data.error || 'Error'); return; }
   projCloseModal();
   await projLoad();
 }
@@ -955,7 +957,7 @@ function sePopulateComponent(currentValue) {
 
 function sePopulateSubcomponent(currentValue) {
   const compSel = document.getElementById('se-component');
-  const subSel  = document.getElementById('se-subcomponent');
+  const subSel = document.getElementById('se-subcomponent');
   if (!subSel || !compSel) return;
   const selectedComp = _seCompDefs.find(c => c.name === compSel.value);
   subSel.innerHTML = '<option value="">— Select Subcomponent —</option>';
@@ -1014,12 +1016,12 @@ async function locatorLoad() {
 }
 
 function locatorRender() {
-  const nameF   = (document.getElementById('loc-filter-name')?.value   ?? '').toLowerCase();
-  const typeF   = (document.getElementById('loc-filter-type')?.value   ?? '').toLowerCase();
+  const nameF = (document.getElementById('loc-filter-name')?.value ?? '').toLowerCase();
+  const typeF = (document.getElementById('loc-filter-type')?.value ?? '').toLowerCase();
 
   const filtered = allLocators.filter(l =>
-    (!nameF   || l.name.toLowerCase().includes(nameF)) &&
-    (!typeF   || (l.selectorType || '').toLowerCase() === typeF)
+    (!nameF || l.name.toLowerCase().includes(nameF)) &&
+    (!typeF || (l.selectorType || '').toLowerCase() === typeF)
   );
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / LOC_PAGE_SIZE));
@@ -1031,20 +1033,20 @@ function locatorRender() {
   if (!tbody) return;
 
   tbody.innerHTML = pageItems.map(l => {
-    const isAuto    = (l.description || '').toLowerCase().includes('auto-captured');
-    const autoTag   = isAuto ? `<span class="badge" style="background:#7c3aed;color:#fff;font-size:10px;margin-left:4px">Auto</span>` : '';
-    const truncSel  = l.selector.length > 60 ? `<span title="${escHtml(l.selector)}">${escHtml(l.selector.substring(0, 60))}…</span>` : escHtml(l.selector);
+    const isAuto = (l.description || '').toLowerCase().includes('auto-captured');
+    const autoTag = isAuto ? `<span class="badge" style="background:#7c3aed;color:#fff;font-size:10px;margin-left:4px">Auto</span>` : '';
+    const truncSel = l.selector.length > 60 ? `<span title="${escHtml(l.selector)}">${escHtml(l.selector.substring(0, 60))}…</span>` : escHtml(l.selector);
 
     // ── Stability Badge (pill) ────────────────────────────────────────────────
     // Reflects PRIMARY locator health based on REAL test run history.
     // Colour = how many times the primary locator needed auto-repair during runs.
     let stabilityBadge = '';
     {
-      const hs            = l.healingStats;
-      const healCount     = hs?.healCount ?? 0;
-      const lastHealed    = hs?.lastHealedAt ? new Date(hs.lastHealedAt) : null;
+      const hs = l.healingStats;
+      const healCount = hs?.healCount ?? 0;
+      const lastHealed = hs?.lastHealedAt ? new Date(hs.lastHealedAt) : null;
       const daysSinceHeal = lastHealed ? Math.floor((Date.now() - lastHealed.getTime()) / 86400000) : null;
-      const hasRunData    = healCount > 0 || lastHealed != null;
+      const hasRunData = healCount > 0 || lastHealed != null;
 
       let bg, border, color, icon, lbl, tipLines;
 
@@ -1063,7 +1065,7 @@ function locatorRender() {
             : 'No quality score available (manually created locator).',
           sc != null && sc >= 80 ? '→ Well-anchored selector (has testid / aria-label / role).' : '',
           sc != null && sc >= 50 && sc < 80 ? '→ Average selector — some identifiers present.' : '',
-          sc != null && sc < 50  ? '→ Weak selector — no stable identifiers. Consider adding data-testid to the element.' : '',
+          sc != null && sc < 50 ? '→ Weak selector — no stable identifiers. Consider adding data-testid to the element.' : '',
           '',
           'Run a test suite to get a real stability rating.',
         ].filter(x => x !== undefined);
@@ -1085,7 +1087,7 @@ function locatorRender() {
           '🟡 STABILITY BADGE — Healed (Monitor)',
           '',
           `This locator needed auto-repair ${healCount} time${healCount > 1 ? 's' : ''} during test runs.`,
-          `Last repaired: ${hs?.lastHealedAt?.slice(0,10) ?? '—'}`,
+          `Last repaired: ${hs?.lastHealedAt?.slice(0, 10) ?? '—'}`,
           '',
           'What this means:',
           '→ The test kept running by using a fallback locator.',
@@ -1101,7 +1103,7 @@ function locatorRender() {
           '🔴 STABILITY BADGE — Fragile (Action Required)',
           '',
           `This locator has broken and needed auto-repair ${healCount} time${healCount > 1 ? 's' : ''}.`,
-          `Last repaired: ${hs?.lastHealedAt?.slice(0,10) ?? '—'}`,
+          `Last repaired: ${hs?.lastHealedAt?.slice(0, 10) ?? '—'}`,
           '',
           'What this means:',
           '→ The primary locator keeps failing — the element has changed significantly.',
@@ -1126,9 +1128,9 @@ function locatorRender() {
     }
 
     // ── Fallbacks chip ────────────────────────────────────────────────────────
-    const alts     = l.alternatives || [];
+    const alts = l.alternatives || [];
     const altCount = alts.length;
-    const altChip  = altCount
+    const altChip = altCount
       ? `<span onclick="locatorToggleAlts('${escHtml(l.id)}')"
            id="loc-alt-chip-${escHtml(l.id)}"
            title="${escHtml('FALLBACK LOCATORS — ' + altCount + ' backup selector' + (altCount > 1 ? 's' : '') + ' stored\n\nIf the primary locator above fails during a test run, the system automatically tries these backups in order from highest to lowest confidence.\n\nClick to expand and see each fallback selector and its confidence score.\nYou can also promote any fallback to become the new primary.')}"
@@ -1147,10 +1149,10 @@ function locatorRender() {
       .map((a, i) => {
         const conf = a.confidence ?? 0;
         // Confidence pill per fallback row
-        const confBg     = conf >= 80 ? '#dcfce7' : conf >= 60 ? '#fef9c3' : '#fee2e2';
+        const confBg = conf >= 80 ? '#dcfce7' : conf >= 60 ? '#fef9c3' : '#fee2e2';
         const confBorder = conf >= 80 ? '#86efac' : conf >= 60 ? '#fde047' : '#fca5a5';
-        const confColor  = conf >= 80 ? '#15803d' : conf >= 60 ? '#a16207' : '#b91c1c';
-        const confLabel  = conf >= 80 ? 'High' : conf >= 60 ? 'Medium' : 'Low';
+        const confColor = conf >= 80 ? '#15803d' : conf >= 60 ? '#a16207' : '#b91c1c';
+        const confLabel = conf >= 80 ? 'High' : conf >= 60 ? 'Medium' : 'Low';
         const confTip = [
           'CONFIDENCE SCORE — ' + conf + '/100 (' + confLabel + ')',
           '',
@@ -1160,23 +1162,23 @@ function locatorRender() {
           conf >= 80
             ? '✔ High confidence — uses a stable attribute like data-testid or aria-label.\n  Very unlikely to break if the app changes.'
             : conf >= 60
-            ? '⚠ Medium confidence — uses a role, label or placeholder.\n  Fairly stable but could break if copy or layout changes.'
-            : '✖ Low confidence — uses a structural path (XPath) or name attribute.\n  Will break if the page structure or element position changes.',
+              ? '⚠ Medium confidence — uses a role, label or placeholder.\n  Fairly stable but could break if copy or layout changes.'
+              : '✖ Low confidence — uses a structural path (XPath) or name attribute.\n  Will break if the page structure or element position changes.',
           '',
           'Higher score = tried first when primary locator fails.',
           'Lower score = last resort before the test reports a failure.',
         ].join('\n');
 
-        const truncAlt  = (a.selector || '').length > 70 ? escHtml((a.selector||'').substring(0,70)) + '…' : escHtml(a.selector||'');
+        const truncAlt = (a.selector || '').length > 70 ? escHtml((a.selector || '').substring(0, 70)) + '…' : escHtml(a.selector || '');
         const promoteBtn = isViewer() ? '' :
           `<button class="tbl-btn" style="font-size:10px;padding:1px 7px" onclick="locatorPromoteAlt('${escHtml(l.id)}',${i})" title="Set this as the primary locator — current primary moves to fallbacks">Set Primary</button>`;
         return `<tr id="loc-alt-row-${escHtml(l.id)}-${i}" style="display:none;background:var(--neutral-50)">
           <td></td>
           <td colspan="2" style="padding:4px 10px 4px 28px">
-            <span style="font-size:10px;color:var(--neutral-400);margin-right:6px">#${i+1}</span>
+            <span style="font-size:10px;color:var(--neutral-400);margin-right:6px">#${i + 1}</span>
             <code style="font-size:11px">${truncAlt}</code>
           </td>
-          <td><span class="badge badge-tester" style="font-size:10px">${escHtml(a.selectorType||'css')}</span></td>
+          <td><span class="badge badge-tester" style="font-size:10px">${escHtml(a.selectorType || 'css')}</span></td>
           <td>
             <span title="${escHtml(confTip)}"
               style="display:inline-flex;align-items:center;gap:3px;padding:1px 7px;border-radius:20px;
@@ -1220,7 +1222,7 @@ function locatorRender() {
   const wrap = document.getElementById('loc-pagination');
   if (wrap) {
     const start = filtered.length ? _locPage * LOC_PAGE_SIZE + 1 : 0;
-    const end   = Math.min((_locPage + 1) * LOC_PAGE_SIZE, filtered.length);
+    const end = Math.min((_locPage + 1) * LOC_PAGE_SIZE, filtered.length);
     wrap.innerHTML = `
       <span style="font-size:13px;color:var(--neutral-500)">${start}–${end} of ${filtered.length}</span>
       <button class="tbl-btn" onclick="_locPageGo(-1)" ${_locPage === 0 ? 'disabled' : ''}>&#8592; Prev</button>
@@ -1233,12 +1235,12 @@ function locatorRender() {
 function locSubTab(tab) {
   ['repo', 'proposals', 'heallog'].forEach(t => {
     const panel = document.getElementById(`loc-subpanel-${t}`);
-    const btn   = document.getElementById(`loc-subtab-${t}`);
+    const btn = document.getElementById(`loc-subtab-${t}`);
     if (panel) panel.style.display = t === tab ? '' : 'none';
-    if (btn)   btn.classList.toggle('loc-subtab-active', t === tab);
+    if (btn) btn.classList.toggle('loc-subtab-active', t === tab);
   });
   if (tab === 'proposals') proposalLoad();
-  if (tab === 'heallog')   healLogLoad();
+  if (tab === 'heallog') healLogLoad();
 }
 
 // ── Healing Proposals ─────────────────────────────────────────────────────────
@@ -1276,18 +1278,18 @@ function proposalRender() {
 
   tbody.innerHTML = items.map(p => {
     const statusBadge = {
-      'auto-applied':        `<span class="prop-badge prop-badge-auto">Auto Applied</span>`,
-      'pending-review':      `<span class="prop-badge prop-badge-pending">Pending Review</span>`,
-      'approved':            `<span class="prop-badge prop-badge-ok">Approved (Permanent)</span>`,
-      'approved-temporary':  `<span class="prop-badge" style="background:#d97706;color:#fff">Approved (Temp)</span>`,
-      'rejected':            `<span class="prop-badge prop-badge-reject">Rejected</span>`,
+      'auto-applied': `<span class="prop-badge prop-badge-auto">Auto Applied</span>`,
+      'pending-review': `<span class="prop-badge prop-badge-pending">Pending Review</span>`,
+      'approved': `<span class="prop-badge prop-badge-ok">Approved (Permanent)</span>`,
+      'approved-temporary': `<span class="prop-badge" style="background:#d97706;color:#fff">Approved (Temp)</span>`,
+      'rejected': `<span class="prop-badge prop-badge-reject">Rejected</span>`,
     }[p.status] || `<span class="prop-badge">${escHtml(p.status)}</span>`;
 
     const scoreColor = p.confidence >= 75 ? '#4ec9b0' : p.confidence >= 50 ? '#eab308' : '#f48771';
-    const truncOld = (p.oldSelector?.length ?? 0) > 50 ? `<span title="${escHtml(p.oldSelector)}">${escHtml(p.oldSelector.substring(0,50))}…</span>` : escHtml(p.oldSelector || '—');
-    const truncNew = (p.newSelector?.length ?? 0) > 50 ? `<span title="${escHtml(p.newSelector)}">${escHtml(p.newSelector.substring(0,50))}…</span>` : escHtml(p.newSelector || '—');
-    const healedAt  = p.healedAt ? new Date(p.healedAt).toLocaleString() : '—';
-    const usedTag   = p.usedInRun
+    const truncOld = (p.oldSelector?.length ?? 0) > 50 ? `<span title="${escHtml(p.oldSelector)}">${escHtml(p.oldSelector.substring(0, 50))}…</span>` : escHtml(p.oldSelector || '—');
+    const truncNew = (p.newSelector?.length ?? 0) > 50 ? `<span title="${escHtml(p.newSelector)}">${escHtml(p.newSelector.substring(0, 50))}…</span>` : escHtml(p.newSelector || '—');
+    const healedAt = p.healedAt ? new Date(p.healedAt).toLocaleString() : '—';
+    const usedTag = p.usedInRun
       ? `<span title="This candidate was used to continue test execution during the run" style="font-size:10px;padding:1px 6px;border-radius:8px;background:#d97706;color:#fff;margin-left:4px">Used in run</span>`
       : '';
 
@@ -1313,9 +1315,9 @@ function proposalRender() {
 
 async function proposalReview(id, action) {
   const labels = {
-    'approved':           'Approve as Permanent? The T3 candidate will become the new primary selector.',
+    'approved': 'Approve as Permanent? The T3 candidate will become the new primary selector.',
     'approved-temporary': 'Approve as Temporary? The candidate will be added to the fallbacks list. Primary selector unchanged.',
-    'rejected':           'Reject this proposal? The candidate will be discarded. Next run will re-trigger T3.',
+    'rejected': 'Reject this proposal? The candidate will be discarded. Next run will re-trigger T3.',
   };
   if (!confirm(labels[action] || 'Confirm?')) return;
   try {
@@ -1344,14 +1346,14 @@ function locatorToggleSelection(id) {
 }
 
 function locatorSelectAll(el) {
-  const nameF   = (document.getElementById('loc-filter-name')?.value   ?? '').toLowerCase();
-  const typeF   = (document.getElementById('loc-filter-type')?.value   ?? '').toLowerCase();
+  const nameF = (document.getElementById('loc-filter-name')?.value ?? '').toLowerCase();
+  const typeF = (document.getElementById('loc-filter-type')?.value ?? '').toLowerCase();
   const filtered = allLocators.filter(l =>
-    (!nameF   || l.name.toLowerCase().includes(nameF)) &&
-    (!typeF   || (l.selectorType || '').toLowerCase() === typeF)
+    (!nameF || l.name.toLowerCase().includes(nameF)) &&
+    (!typeF || (l.selectorType || '').toLowerCase() === typeF)
   );
   const pageItems = filtered.slice(_locPage * LOC_PAGE_SIZE, (_locPage + 1) * LOC_PAGE_SIZE);
-  
+
   if (el.checked) {
     pageItems.forEach(l => selectedLocators.add(l.id));
   } else {
@@ -1372,14 +1374,14 @@ async function locatorDeleteSelected() {
   if (isViewer()) return;
   if (!selectedLocators.size) return;
   if (!confirm(`Delete ${selectedLocators.size} selected locator(s)?`)) return;
-  
+
   const ids = Array.from(selectedLocators);
   const res = await fetch('/api/locators/bulk-delete', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ ids })
   });
-  
+
   if (res.ok) {
     selectedLocators.clear();
     await locatorLoad();
@@ -1394,7 +1396,7 @@ function locatorOpenModal(id = null) {
   modClearAlert('loc-modal-alert');
   document.getElementById('loc-modal-title').textContent = id ? 'Edit Locator' : 'Add Locator';
   if (!id) {
-    ['loc-name','loc-selector','loc-page','loc-desc'].forEach(i => document.getElementById(i).value = '');
+    ['loc-name', 'loc-selector', 'loc-page', 'loc-desc'].forEach(i => document.getElementById(i).value = '');
     document.getElementById('loc-type').value = 'css';
   }
   openModal('modal-locator');
@@ -1405,11 +1407,11 @@ async function locatorEdit(id) {
   if (!loc) return;
   editingLocatorId = id;
   document.getElementById('loc-modal-title').textContent = 'Edit Locator';
-  document.getElementById('loc-name').value     = loc.name;
+  document.getElementById('loc-name').value = loc.name;
   document.getElementById('loc-selector').value = loc.selector;
-  document.getElementById('loc-type').value     = loc.selectorType;
-  document.getElementById('loc-page').value     = loc.pageModule || '';
-  document.getElementById('loc-desc').value     = loc.description || '';
+  document.getElementById('loc-type').value = loc.selectorType;
+  document.getElementById('loc-page').value = loc.pageModule || '';
+  document.getElementById('loc-desc').value = loc.description || '';
   modClearAlert('loc-modal-alert');
   _locatorEditRenderAlts(loc);
   openModal('modal-locator');
@@ -1427,12 +1429,12 @@ function _locatorEditRenderAlts(loc) {
   const tbody = document.getElementById('loc-alts-tbody');
   if (!tbody) return;
   tbody.innerHTML = alts.map((a, i) => {
-    const confDot  = (a.confidence ?? 0) >= 80 ? '🟢' : (a.confidence ?? 0) >= 60 ? '🟡' : '🔴';
-    const truncSel = (a.selector||'').length > 55 ? escHtml((a.selector||'').substring(0,55)) + '…' : escHtml(a.selector||'');
+    const confDot = (a.confidence ?? 0) >= 80 ? '🟢' : (a.confidence ?? 0) >= 60 ? '🟡' : '🔴';
+    const truncSel = (a.selector || '').length > 55 ? escHtml((a.selector || '').substring(0, 55)) + '…' : escHtml(a.selector || '');
     return `<tr id="loc-edit-alt-row-${i}">
-      <td style="font-size:11px;color:var(--neutral-400);padding:4px 6px">#${i+1}</td>
-      <td style="padding:4px 6px"><code style="font-size:11px" title="${escHtml(a.selector||'')}">${truncSel}</code></td>
-      <td style="padding:4px 6px"><span class="badge badge-tester" style="font-size:10px">${escHtml(a.selectorType||'css')}</span></td>
+      <td style="font-size:11px;color:var(--neutral-400);padding:4px 6px">#${i + 1}</td>
+      <td style="padding:4px 6px"><code style="font-size:11px" title="${escHtml(a.selector || '')}">${truncSel}</code></td>
+      <td style="padding:4px 6px"><span class="badge badge-tester" style="font-size:10px">${escHtml(a.selectorType || 'css')}</span></td>
       <td style="padding:4px 6px;font-size:11px">${confDot} ${a.confidence ?? '—'}/100</td>
       <td style="padding:4px 6px">
         <button class="tbl-btn" style="font-size:10px;padding:1px 7px" onclick="_locEditPromoteAlt(${i})" title="Set as primary">Set Primary</button>
@@ -1442,18 +1444,18 @@ function _locatorEditRenderAlts(loc) {
 }
 
 function _locEditPromoteAlt(altIdx) {
-  const loc  = allLocators.find(l => l.id === editingLocatorId);
+  const loc = allLocators.find(l => l.id === editingLocatorId);
   if (!loc) return;
-  const alts   = (loc.alternatives || []).slice().sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0));
+  const alts = (loc.alternatives || []).slice().sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0));
   const chosen = alts[altIdx];
   if (!chosen) return;
   // Swap into the form fields
-  const curSel  = document.getElementById('loc-selector').value.trim();
+  const curSel = document.getElementById('loc-selector').value.trim();
   const curType = document.getElementById('loc-type').value;
   document.getElementById('loc-selector').value = chosen.selector;
-  document.getElementById('loc-type').value     = chosen.selectorType;
+  document.getElementById('loc-type').value = chosen.selectorType;
   // Rebuild in-memory alternatives: demote current primary, remove chosen
-  const demoted   = { selector: curSel, selectorType: curType, confidence: 50 };
+  const demoted = { selector: curSel, selectorType: curType, confidence: 50 };
   const remaining = alts.filter((_, i) => i !== altIdx);
   // Store updated alts temporarily so _locatorEditRenderAlts re-renders correctly
   loc._editAlts = [demoted, ...remaining];
@@ -1462,16 +1464,16 @@ function _locEditPromoteAlt(altIdx) {
 
 async function locatorSave() {
   modClearAlert('loc-modal-alert');
-  const name     = document.getElementById('loc-name').value.trim();
+  const name = document.getElementById('loc-name').value.trim();
   const selector = document.getElementById('loc-selector').value.trim();
-  if (!name || !selector) { modAlert('loc-modal-alert','error','Name and Selector are required'); return; }
+  if (!name || !selector) { modAlert('loc-modal-alert', 'error', 'Name and Selector are required'); return; }
 
   const body = {
     name, selector,
     selectorType: document.getElementById('loc-type').value,
-    pageModule:   document.getElementById('loc-page').value.trim(),
-    description:  document.getElementById('loc-desc').value.trim(),
-    projectId:    currentProjectId || null,
+    pageModule: document.getElementById('loc-page').value.trim(),
+    description: document.getElementById('loc-desc').value.trim(),
+    projectId: currentProjectId || null,
   };
 
   // If a "Set Primary" swap was performed in the modal, include the updated alternatives
@@ -1484,10 +1486,10 @@ async function locatorSave() {
   }
 
   const method = editingLocatorId ? 'PUT' : 'POST';
-  const url    = editingLocatorId ? `/api/locators/${editingLocatorId}` : '/api/locators';
-  const res    = await fetch(url, { method, headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
-  const data   = await res.json();
-  if (!res.ok) { modAlert('loc-modal-alert','error', data.error || 'Error'); return; }
+  const url = editingLocatorId ? `/api/locators/${editingLocatorId}` : '/api/locators';
+  const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const data = await res.json();
+  if (!res.ok) { modAlert('loc-modal-alert', 'error', data.error || 'Error'); return; }
   locatorCloseModal();
   await locatorLoad();
 }
@@ -1525,10 +1527,10 @@ function locatorCloseModal() {
 const _locAltOpen = new Set(); // tracks which locator IDs have expanded fallbacks
 
 function locatorToggleAlts(locId) {
-  const loc      = allLocators.find(l => l.id === locId);
-  const alts     = loc?.alternatives || [];
-  const chip     = document.getElementById(`loc-alt-chip-${locId}`);
-  const isOpen   = _locAltOpen.has(locId);
+  const loc = allLocators.find(l => l.id === locId);
+  const alts = loc?.alternatives || [];
+  const chip = document.getElementById(`loc-alt-chip-${locId}`);
+  const isOpen = _locAltOpen.has(locId);
   alts.forEach((_, i) => {
     const row = document.getElementById(`loc-alt-row-${locId}-${i}`);
     if (row) row.style.display = isOpen ? 'none' : '';
@@ -1544,18 +1546,18 @@ function locatorToggleAlts(locId) {
 async function locatorPromoteAlt(locId, altIdx) {
   const loc = allLocators.find(l => l.id === locId);
   if (!loc) return;
-  const alts    = (loc.alternatives || []).slice().sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0));
-  const chosen  = alts[altIdx];
+  const alts = (loc.alternatives || []).slice().sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0));
+  const chosen = alts[altIdx];
   if (!chosen) return;
   if (!confirm(`Set "${chosen.selector}" (${chosen.selectorType}) as the primary locator for "${loc.name}"?\n\nThe current primary will move to the fallbacks list.`)) return;
 
   // Build new alternatives: old primary demoted, chosen removed from list
-  const demoted    = { selector: loc.selector, selectorType: loc.selectorType, confidence: 50 };
-  const remaining  = alts.filter((_, i) => i !== altIdx);
-  const newAlts    = [demoted, ...remaining];
+  const demoted = { selector: loc.selector, selectorType: loc.selectorType, confidence: 50 };
+  const remaining = alts.filter((_, i) => i !== altIdx);
+  const newAlts = [demoted, ...remaining];
 
   const body = {
-    selector:     chosen.selector,
+    selector: chosen.selector,
     selectorType: chosen.selectorType,
     alternatives: newAlts,
   };
@@ -1594,7 +1596,7 @@ async function healLogLoad() {
 
 function healLogRender() {
   const tierF = (document.getElementById('heallog-filter-tier')?.value ?? '').toUpperCase();
-  const rows  = _healLog.filter(e => !tierF || (e.tier || '').toUpperCase() === tierF);
+  const rows = _healLog.filter(e => !tierF || (e.tier || '').toUpperCase() === tierF);
   const tbody = document.getElementById('heallog-tbody');
   if (!tbody) return;
 
@@ -1606,24 +1608,24 @@ function healLogRender() {
   const tierBadge = t => {
     const colours = { T2: '#2563eb', T3: '#7c3aed', T4: '#16a34a' };
     const bg = colours[t] || '#6b7280';
-    return `<span style="font-size:10px;font-weight:700;padding:1px 7px;border-radius:10px;background:${bg};color:#fff">${escHtml(t||'—')}</span>`;
+    return `<span style="font-size:10px;font-weight:700;padding:1px 7px;border-radius:10px;background:${bg};color:#fff">${escHtml(t || '—')}</span>`;
   };
   const confDot = c => c >= 80 ? '🟢' : c >= 60 ? '🟡' : '🔴';
   const shortId = id => id ? id.substring(0, 8) + '…' : '—';
-  const truncSel = s => (s||'').length > 45 ? `<span title="${escHtml(s)}">${escHtml((s||'').substring(0,45))}…</span>` : escHtml(s||'—');
+  const truncSel = s => (s || '').length > 45 ? `<span title="${escHtml(s)}">${escHtml((s || '').substring(0, 45))}…</span>` : escHtml(s || '—');
 
   tbody.innerHTML = rows.map((e, i) => `<tr>
     <td style="color:var(--neutral-400);font-size:11px">${i + 1}</td>
-    <td style="font-size:11px"><code title="${escHtml(e.runId||'')}">${shortId(e.runId)}</code></td>
+    <td style="font-size:11px"><code title="${escHtml(e.runId || '')}">${shortId(e.runId)}</code></td>
     <td style="font-size:11px">${escHtml(e.suiteName || '—')}</td>
     <td style="font-size:11px">${escHtml(e.tcId || '—')}</td>
     <td style="font-size:11px;text-align:center">${e.stepOrder ?? '—'}</td>
     <td style="font-size:11px"><strong>${escHtml(e.locatorName || e.locatorId || '—')}</strong></td>
-    <td style="font-size:11px"><code style="color:var(--red-600)">${truncSel(e.oldSelector)}</code> <span style="font-size:10px;color:var(--neutral-400)">${escHtml(e.oldSelectorType||'')}</span></td>
-    <td style="font-size:11px"><code style="color:var(--green-700)">${truncSel(e.healed)}</code> <span style="font-size:10px;color:var(--neutral-400)">${escHtml(e.healedType||'')}</span></td>
+    <td style="font-size:11px"><code style="color:var(--red-600)">${truncSel(e.oldSelector)}</code> <span style="font-size:10px;color:var(--neutral-400)">${escHtml(e.oldSelectorType || '')}</span></td>
+    <td style="font-size:11px"><code style="color:var(--green-700)">${truncSel(e.healed)}</code> <span style="font-size:10px;color:var(--neutral-400)">${escHtml(e.healedType || '')}</span></td>
     <td>${tierBadge(e.tier)}</td>
     <td style="font-size:11px">${confDot(e.confidence ?? 0)} ${e.confidence ?? '—'}</td>
-    <td style="font-size:11px;color:var(--neutral-400)">${(e.at||'').slice(0,16).replace('T',' ')}</td>
+    <td style="font-size:11px;color:var(--neutral-400)">${(e.at || '').slice(0, 16).replace('T', ' ')}</td>
   </tr>`).join('');
 }
 
@@ -1645,8 +1647,8 @@ async function locatorPickerOpen(callback) {
 function locatorPickerClose() { closeModal('modal-locator-picker'); _locatorPickerCallback = null; }
 
 function locatorPickerFilter() {
-  const q   = document.getElementById('loc-picker-search').value.toLowerCase();
-  const el  = document.getElementById('loc-picker-list');
+  const q = document.getElementById('loc-picker-search').value.toLowerCase();
+  const el = document.getElementById('loc-picker-list');
   const filtered = allLocators.filter(l =>
     !q || l.name.toLowerCase().includes(q) || l.selector.toLowerCase().includes(q) || (l.pageModule || '').toLowerCase().includes(q)
   );
@@ -1670,7 +1672,7 @@ function locatorPickerSelect(id) {
 // ══════════════════════════════════════════════════════════════════════════════
 
 let allFunctions = [];
-let editingFnId  = null;
+let editingFnId = null;
 let _fnPage = 0;
 const FN_PAGE_SIZE = 10;
 
@@ -1685,11 +1687,11 @@ async function fnLoad() {
 
 function fnRender() {
   const tbody = document.getElementById('fn-tbody');
-  const pgEl  = document.getElementById('fn-pagination');
+  const pgEl = document.getElementById('fn-pagination');
   if (!tbody) return;
   const q = (document.getElementById('fn-search')?.value || '').toLowerCase();
   const filtered = allFunctions.filter(f =>
-    !q || f.name.toLowerCase().includes(q) || (f.identifier||'').toLowerCase().includes(q) || (f.description||'').toLowerCase().includes(q)
+    !q || f.name.toLowerCase().includes(q) || (f.identifier || '').toLowerCase().includes(q) || (f.description || '').toLowerCase().includes(q)
   );
   if (!filtered.length) {
     tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--neutral-400);padding:24px">
@@ -1715,7 +1717,7 @@ function fnRender() {
     </tr>`).join('');
   if (pgEl) {
     const start = filtered.length ? _fnPage * FN_PAGE_SIZE + 1 : 0;
-    const end   = Math.min((_fnPage + 1) * FN_PAGE_SIZE, filtered.length);
+    const end = Math.min((_fnPage + 1) * FN_PAGE_SIZE, filtered.length);
     pgEl.innerHTML = totalPages <= 1 ? '' : `
       <button class="tbl-btn" onclick="_fnPageGo(-1)" ${_fnPage === 0 ? 'disabled' : ''}>&#8592; Prev</button>
       <span>Page ${_fnPage + 1} / ${totalPages} &nbsp;(${start}–${end} of ${filtered.length})</span>
@@ -1731,9 +1733,9 @@ async function fnOpenModal(id = null) {
   modClearAlert('fn-modal-alert');
   document.getElementById('fn-modal-title').textContent = id ? 'Edit Function' : 'New Function';
   if (!id) {
-    document.getElementById('fn-name').value       = '';
+    document.getElementById('fn-name').value = '';
     document.getElementById('fn-identifier').value = '';
-    document.getElementById('fn-desc').value       = '';
+    document.getElementById('fn-desc').value = '';
     document.getElementById('fn-steps-container').innerHTML = '';
     fnAddStep();
   }
@@ -1746,9 +1748,9 @@ async function fnEdit(id) {
   if (!fn) return;
   editingFnId = id;
   document.getElementById('fn-modal-title').textContent = 'Edit Function';
-  document.getElementById('fn-name').value       = fn.name;
+  document.getElementById('fn-name').value = fn.name;
   document.getElementById('fn-identifier').value = fn.identifier || '';
-  document.getElementById('fn-desc').value       = fn.description || '';
+  document.getElementById('fn-desc').value = fn.description || '';
   const container = document.getElementById('fn-steps-container');
   container.innerHTML = '';
   (fn.steps || []).forEach(s => fnAddStep(s, true));
@@ -1761,12 +1763,12 @@ function fnAddStep(step = {}, _skipReorder = false) {
   const container = document.getElementById('fn-steps-container');
   const idx = container.querySelectorAll('.fn-step-card').length;
 
-  const curKw    = _seKwGet(step.keyword);
+  const curKw = _seKwGet(step.keyword);
   const needsLoc = curKw ? curKw.needsLocator : true;
-  const isAuto   = curKw?.autoFromProject || false;
-  const helpLbl  = curKw?.helpLabel || '';
-  const tipObj   = curKw?.tooltip || null;
-  const tipJson  = (tipObj && (tipObj.what || tipObj.example || tipObj.tip)) ? JSON.stringify(tipObj) : '';
+  const isAuto = curKw?.autoFromProject || false;
+  const helpLbl = curKw?.helpLabel || '';
+  const tipObj = curKw?.tooltip || null;
+  const tipJson = (tipObj && (tipObj.what || tipObj.example || tipObj.tip)) ? JSON.stringify(tipObj) : '';
 
   const row = document.createElement('div');
   row.className = 'fn-step-card';
@@ -1820,7 +1822,7 @@ function fnAddStep(step = {}, _skipReorder = false) {
 
   // Set keyword + locator type selections via JS
   row.querySelector('.fn-step-kw-select').value = step.keyword || '';
-  row.querySelector('.fn-step-loc-type').value  = step.locatorType || 'css';
+  row.querySelector('.fn-step-loc-type').value = step.locatorType || 'css';
 
   container.appendChild(row);
   fnStepKwChange(row.querySelector('.fn-step-kw-select'));
@@ -1828,12 +1830,12 @@ function fnAddStep(step = {}, _skipReorder = false) {
 }
 
 function fnStepKwChange(sel) {
-  const row  = sel.closest('.fn-step-card');
-  const opt  = sel.selectedOptions[0];
-  const needsLoc  = opt?.dataset.nl === 'true';
-  const isAuto    = opt?.dataset.auto === 'true';
-  const helpText  = opt?.dataset.help || '';
-  const tipJson   = opt?.dataset.tooltipJson || '';
+  const row = sel.closest('.fn-step-card');
+  const opt = sel.selectedOptions[0];
+  const needsLoc = opt?.dataset.nl === 'true';
+  const isAuto = opt?.dataset.auto === 'true';
+  const helpText = opt?.dataset.help || '';
+  const tipJson = opt?.dataset.tooltipJson || '';
 
   row.querySelector('.fn-step-locator').style.display = (needsLoc && !isAuto) ? '' : 'none';
   row.querySelector('.fn-step-auto-badge').style.display = isAuto ? '' : 'none';
@@ -1862,16 +1864,16 @@ function fnStepPickLoc(btn) {
 }
 
 function _fnStepLockLocator(row, locked) {
-  const nameInput  = row.querySelector('.fn-step-loc-name');
-  const valInput   = row.querySelector('.fn-step-selector');
+  const nameInput = row.querySelector('.fn-step-loc-name');
+  const valInput = row.querySelector('.fn-step-selector');
   const typeSelect = row.querySelector('.fn-step-loc-type');
-  const lockBadge  = row.querySelector('.loc-repo-badge');
-  const unlockBtn  = row.querySelector('.loc-unlock-btn');
-  if (nameInput)  { nameInput.readOnly = locked;  nameInput.classList.toggle('loc-locked', locked); }
-  if (valInput)   { valInput.readOnly  = locked;  valInput.classList.toggle('loc-locked', locked); }
-  if (typeSelect) { typeSelect.disabled = locked;  typeSelect.classList.toggle('loc-locked', locked); }
-  if (lockBadge)  lockBadge.style.display = locked ? '' : 'none';
-  if (unlockBtn)  unlockBtn.style.display = locked ? '' : 'none';
+  const lockBadge = row.querySelector('.loc-repo-badge');
+  const unlockBtn = row.querySelector('.loc-unlock-btn');
+  if (nameInput) { nameInput.readOnly = locked; nameInput.classList.toggle('loc-locked', locked); }
+  if (valInput) { valInput.readOnly = locked; valInput.classList.toggle('loc-locked', locked); }
+  if (typeSelect) { typeSelect.disabled = locked; typeSelect.classList.toggle('loc-locked', locked); }
+  if (lockBadge) lockBadge.style.display = locked ? '' : 'none';
+  if (unlockBtn) unlockBtn.style.display = locked ? '' : 'none';
 }
 
 function fnStepUnlockLoc(btn) {
@@ -1893,31 +1895,31 @@ function fnReorderNums() {
 
 async function fnSave() {
   modClearAlert('fn-modal-alert');
-  const name       = document.getElementById('fn-name').value.trim();
+  const name = document.getElementById('fn-name').value.trim();
   const identifier = document.getElementById('fn-identifier').value.trim();
-  if (!name)       { modAlert('fn-modal-alert','error','Function name is required'); return; }
-  if (!identifier) { modAlert('fn-modal-alert','error','Identifier is required'); return; }
-  if (!/^[a-zA-Z0-9_]+$/.test(identifier)) { modAlert('fn-modal-alert','error','Identifier must be alphanumeric and underscores only'); return; }
+  if (!name) { modAlert('fn-modal-alert', 'error', 'Function name is required'); return; }
+  if (!identifier) { modAlert('fn-modal-alert', 'error', 'Identifier is required'); return; }
+  if (!/^[a-zA-Z0-9_]+$/.test(identifier)) { modAlert('fn-modal-alert', 'error', 'Identifier must be alphanumeric and underscores only'); return; }
 
   const steps = [...document.querySelectorAll('#fn-steps-container .fn-step-card')].map((row, i) => {
     return {
-      order:       i + 1,
-      keyword:     row.querySelector('.fn-step-kw-select')?.value || '',
+      order: i + 1,
+      keyword: row.querySelector('.fn-step-kw-select')?.value || '',
       locatorName: row.querySelector('.fn-step-loc-name')?.value?.trim() || null,
       locatorType: row.querySelector('.fn-step-loc-type')?.value || 'css',
-      selector:    row.querySelector('.fn-step-selector')?.value?.trim() || null,
+      selector: row.querySelector('.fn-step-selector')?.value?.trim() || null,
       description: row.querySelector('.fn-step-desc')?.value?.trim() || '',
     };
   }).filter(s => s.keyword);
 
-  if (!steps.length) { modAlert('fn-modal-alert','error','At least one step is required'); return; }
+  if (!steps.length) { modAlert('fn-modal-alert', 'error', 'At least one step is required'); return; }
 
-  const body   = { name, identifier, description: document.getElementById('fn-desc').value.trim(), steps, projectId: currentProjectId || null };
+  const body = { name, identifier, description: document.getElementById('fn-desc').value.trim(), steps, projectId: currentProjectId || null };
   const method = editingFnId ? 'PUT' : 'POST';
-  const url    = editingFnId ? `/api/functions/${editingFnId}` : '/api/functions';
-  const res    = await fetch(url, { method, headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
-  const data   = await res.json();
-  if (!res.ok) { modAlert('fn-modal-alert','error', data.error || 'Error'); return; }
+  const url = editingFnId ? `/api/functions/${editingFnId}` : '/api/functions';
+  const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const data = await res.json();
+  if (!res.ok) { modAlert('fn-modal-alert', 'error', data.error || 'Error'); return; }
 
   // Close modal + refresh list immediately — don't wait for locator sync
   const stepsForSync = steps.map(s => ({
@@ -1936,7 +1938,7 @@ async function fnSave() {
       _syncFailedLocators = new Set(failed);
       _showSyncFailBanner(failed, 'function');
     }
-  }).catch(() => {});
+  }).catch(() => { });
 }
 
 async function fnDelete(id, name) {
@@ -1957,18 +1959,18 @@ const _panelLoaded = new Set();
 const _HIDE_PROJ_DROPDOWN_TABS = new Set(['projects', 'admin']);
 
 function onModuleTabSwitch(tab) {
-  if (tab === 'admin')     usersLoad();
-  if (tab === 'projects')  projLoad();
-  if (tab === 'locators')   { locatorLoad(); proposalLoad(); }
-  if (tab === 'functions')  fnLoad();
+  if (tab === 'admin') usersLoad();
+  if (tab === 'projects') projLoad();
+  if (tab === 'locators') { locatorLoad(); proposalLoad(); }
+  if (tab === 'functions') fnLoad();
   if (tab === 'commondata') cdLoad();
-  if (tab === 'scripts')    { scriptLoad(); _debugSessionsPollStart(); }
-  if (tab === 'suites')     suiteLoad();
-  if (tab === 'execution')  execLoad();
-  if (tab === 'history')    histLoad();
-  if (tab === 'flaky')      flakyLoad();
-  if (tab === 'analytics')  analyticsLoad();
-  if (tab === 'visual')     vrLoad();
+  if (tab === 'scripts') { scriptLoad(); _debugSessionsPollStart(); }
+  if (tab === 'suites') suiteLoad();
+  if (tab === 'execution') execLoad();
+  if (tab === 'history') histLoad();
+  if (tab === 'flaky') flakyLoad();
+  if (tab === 'analytics') analyticsLoad();
+  if (tab === 'visual') vrLoad();
   if (tab === 'locator-health') locatorHealthLoad();
   if (tab === 'admin' && !_panelLoaded.has('admin')) adminSubTab('users', document.querySelector('.sub-tab'));
   _panelLoaded.add(tab);
@@ -2013,7 +2015,7 @@ function injectLocatorPickerBtn(stepRow) {
 // PROJECT DROPDOWN + ISOLATION
 // ══════════════════════════════════════════════════════════════════════════════
 
-let allProjects      = [];
+let allProjects = [];
 let currentProjectId = '';
 
 async function projDropdownLoad() {
@@ -2031,7 +2033,7 @@ async function projDropdownLoad() {
 }
 
 // Panels that require a project to be selected before any interaction
-const PROJECT_SCOPED_TABS = new Set(['scripts','suites','locators','functions','commondata','history','flaky','analytics','visual','locator-health']);
+const PROJECT_SCOPED_TABS = new Set(['scripts', 'suites', 'locators', 'functions', 'commondata', 'history', 'flaky', 'analytics', 'visual', 'locator-health']);
 
 const _PROJ_BANNER_ID = 'proj-required-banner';
 
@@ -2039,7 +2041,7 @@ function _guardCheck(tab) {
   _removeProjBanner();
   if (!PROJECT_SCOPED_TABS.has(tab)) { _projDropdownNormal(); return; }
   if (!currentProjectId) { _showProjBanner(); _projDropdownPulse(); }
-  else                   { _projDropdownNormal(); }
+  else { _projDropdownNormal(); }
 }
 
 function _showProjBanner() {
@@ -2067,7 +2069,7 @@ function _projDropdownNormal() {
 
 function onProjectChange() {
   currentProjectId = document.getElementById('global-project-select')?.value || '';
-  const activeTab  = document.querySelector('.nav-item.active')?.dataset?.tab || '';
+  const activeTab = document.querySelector('.nav-item.active')?.dataset?.tab || '';
   _guardCheck(activeTab);
   _toggleModuleAddButtons(!!currentProjectId);
   _scriptPage = 0; _fnPage = 0; _cdPage = 0; _locPage = 0;
@@ -2086,7 +2088,7 @@ function onProjectChange() {
 }
 
 function _toggleModuleAddButtons(enabled) {
-  ['btn-new-script','btn-new-suite','btn-add-locator','btn-new-function','btn-add-cd'].forEach(id => {
+  ['btn-new-script', 'btn-new-suite', 'btn-add-locator', 'btn-new-function', 'btn-add-cd'].forEach(id => {
     const btn = document.getElementById(id);
     if (btn) btn.disabled = !enabled;
   });
@@ -2107,8 +2109,8 @@ let scriptKeywords = { categories: [], dynamicTokens: [] };
 
 // ── Keyword option HTML caches — built once after keywordsLoad(), reused per step ──
 let _kwOptionsScriptHtml = '';  // script steps: all kws except GOTO
-let _kwOptionsFnHtml     = '';  // fn steps: all kws except GOTO + CALL FUNCTION
-let _locTypeOptsHtml     = '';  // locator type options (same for both)
+let _kwOptionsFnHtml = '';  // fn steps: all kws except GOTO + CALL FUNCTION
+let _locTypeOptsHtml = '';  // locator type options (same for both)
 
 // Locators that failed to sync on last save — shown as step-level badges on re-open
 let _syncFailedLocators = new Set();
@@ -2161,19 +2163,19 @@ async function keywordsLoad() {
 // TEST SCRIPT BUILDER
 // ══════════════════════════════════════════════════════════════════════════════
 
-let allScripts      = [];
+let allScripts = [];
 let editingScriptId = null;
 let _compDefs = [];   // ComponentDef[] for current project in modal
 let _seCompDefs = [];   // ComponentDef[] for current project, used in script editor
-let _scriptPage     = 0;
+let _scriptPage = 0;
 const SCRIPT_PAGE_SIZE = 10;
 
 async function scriptLoad() {
   const emptyEl = document.getElementById('script-list-empty');
-  const listEl  = document.getElementById('script-list');
+  const listEl = document.getElementById('script-list');
   if (!currentProjectId) {
     if (emptyEl) emptyEl.style.display = '';
-    if (listEl)  listEl.innerHTML = '';
+    if (listEl) listEl.innerHTML = '';
     allScripts = [];
     return;
   }
@@ -2185,18 +2187,18 @@ async function scriptLoad() {
 
 function scriptRender() {
   const qTitle = (document.getElementById('script-filter-title')?.value ?? '').toLowerCase();
-  const qTag   = (document.getElementById('script-filter-tag')?.value ?? '').toLowerCase();
-  const qComp  = (document.getElementById('script-filter-comp')?.value ?? '').toLowerCase();
+  const qTag = (document.getElementById('script-filter-tag')?.value ?? '').toLowerCase();
+  const qComp = (document.getElementById('script-filter-comp')?.value ?? '').toLowerCase();
   const qSubcomp = (document.getElementById('script-filter-subcomp')?.value ?? '').toLowerCase();
-  const listEl  = document.getElementById('script-list');
+  const listEl = document.getElementById('script-list');
   const emptyEl = document.getElementById('script-list-empty');
   if (!listEl) return;
   if (!currentProjectId) { emptyEl.style.display = ''; listEl.innerHTML = ''; return; }
   emptyEl.style.display = 'none';
   const filtered = allScripts.filter(s => {
     if (qTitle && !s.title.toLowerCase().includes(qTitle)) return false;
-    if (qTag   && !(s.tags || []).some(t => t.toLowerCase().includes(qTag))) return false;
-    if (qComp  && !(s.component || '').toLowerCase().includes(qComp)) return false;
+    if (qTag && !(s.tags || []).some(t => t.toLowerCase().includes(qTag))) return false;
+    if (qComp && !(s.component || '').toLowerCase().includes(qComp)) return false;
     if (qSubcomp && !(s.subcomponent || '').toLowerCase().includes(qSubcomp)) return false;
     return true;
   });
@@ -2208,7 +2210,7 @@ function scriptRender() {
   if (_scriptPage >= totalPages) _scriptPage = totalPages - 1;
   const page = filtered.slice(_scriptPage * SCRIPT_PAGE_SIZE, (_scriptPage + 1) * SCRIPT_PAGE_SIZE);
   const start = filtered.length ? _scriptPage * SCRIPT_PAGE_SIZE + 1 : 0;
-  const end   = Math.min((_scriptPage + 1) * SCRIPT_PAGE_SIZE, filtered.length);
+  const end = Math.min((_scriptPage + 1) * SCRIPT_PAGE_SIZE, filtered.length);
   const pgHtml = totalPages <= 1 ? '' : `
     <div class="lt-pagination">
       <button class="tbl-btn" onclick="_scriptPageGo(-1)" ${_scriptPage === 0 ? 'disabled' : ''}>&#8592; Prev</button>
@@ -2252,7 +2254,7 @@ function scriptRender() {
               <td title="${escHtml(s.title)}"><div style="font-weight:500">${escHtml(s.title)}</div></td>
               <td title="${escHtml(s.component || '')}">${escHtml(s.component || '—')}</td>
               <td title="${escHtml(s.subcomponent || '')}">${escHtml(s.subcomponent || '—')}</td>
-              <td>${(s.tags||[]).length ? (s.tags||[]).map(t=>`<span class="badge badge-tester">${escHtml(t)}</span>`).join(' ') : '—'}</td>
+              <td>${(s.tags || []).length ? (s.tags || []).map(t => `<span class="badge badge-tester">${escHtml(t)}</span>`).join(' ') : '—'}</td>
               <td><span class="badge badge-${escHtml(s.priority)}">${escHtml(s.priority)}</span></td>
               <td style="font-size:12px">${escHtml(s.createdBy || '—')}</td>
               <td style="font-size:12px">${formatDate(s.createdAt)}</td>
@@ -2275,7 +2277,7 @@ function scriptRender() {
 
 function _scriptSubcompFilter() {
   const compVal = (document.getElementById('script-filter-comp')?.value ?? '').trim().toLowerCase();
-  const subSel  = document.getElementById('script-filter-subcomp');
+  const subSel = document.getElementById('script-filter-subcomp');
   if (!subSel) return;
   subSel.innerHTML = '<option value="">All Subcomponents</option>';
   if (!compVal) {
@@ -2305,14 +2307,14 @@ function scriptSelectAll(chk) {
 }
 
 function scriptSelectionChanged() {
-  const checked  = [...document.querySelectorAll('.script-row-chk:checked')];
-  const allChk   = document.getElementById('script-select-all');
+  const checked = [...document.querySelectorAll('.script-row-chk:checked')];
+  const allChk = document.getElementById('script-select-all');
   const allBoxes = document.querySelectorAll('.script-row-chk');
   if (allChk) allChk.indeterminate = checked.length > 0 && checked.length < allBoxes.length;
   const bulkBar = document.getElementById('script-bulk-bar');
   const countEl = document.getElementById('script-sel-count');
   if (bulkBar) bulkBar.style.display = checked.length > 0 ? 'flex' : 'none';
-  if (countEl) countEl.textContent   = checked.length > 0 ? `${checked.length} selected` : '';
+  if (countEl) countEl.textContent = checked.length > 0 ? `${checked.length} selected` : '';
 }
 
 async function scriptDeleteSelected() {
@@ -2341,7 +2343,7 @@ async function scriptBulkAddToSuite() {
   modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center';
   modal.innerHTML = `
     <div style="background:#1e2329;border-radius:10px;padding:28px 32px;min-width:340px;box-shadow:0 8px 32px rgba(0,0,0,.5)">
-      <div style="font-size:15px;font-weight:700;color:#f1f5f9;margin-bottom:16px">&#10133; Add ${ids.length} Script${ids.length>1?'s':''} to Suite</div>
+      <div style="font-size:15px;font-weight:700;color:#f1f5f9;margin-bottom:16px">&#10133; Add ${ids.length} Script${ids.length > 1 ? 's' : ''} to Suite</div>
       <select id="bulk-suite-sel" class="fm-input" style="width:100%;margin-bottom:16px">
         <option value="">— Select a suite —</option>${options}
       </select>
@@ -2359,7 +2361,7 @@ async function scriptBulkAddToSuiteConfirm(ids) {
   const suiteId = document.getElementById('bulk-suite-sel')?.value;
   const alertEl = document.getElementById('bulk-suite-alert');
   if (!suiteId) { alertEl.textContent = 'Select a suite first.'; alertEl.style.display = ''; return; }
-  const res  = await fetch('/api/scripts/bulk-suite', {
+  const res = await fetch('/api/scripts/bulk-suite', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids, suiteId }),
   });
   const data = await res.json();
@@ -2369,7 +2371,7 @@ async function scriptBulkAddToSuiteConfirm(ids) {
   // Brief success toast
   const toast = document.createElement('div');
   toast.style.cssText = 'position:fixed;bottom:24px;right:24px;background:#166534;color:#fff;padding:12px 20px;border-radius:8px;font-size:13px;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,.3)';
-  toast.textContent = `✓ ${data.count} script${data.count!==1?'s':''} added to "${suiteName}"`;
+  toast.textContent = `✓ ${data.count} script${data.count !== 1 ? 's' : ''} added to "${suiteName}"`;
   document.body.appendChild(toast);
   setTimeout(() => toast.remove(), 3500);
   await suiteLoad();
@@ -2378,32 +2380,32 @@ async function scriptBulkAddToSuiteConfirm(ids) {
 async function scriptBulkSetPriority() {
   const ids = [...document.querySelectorAll('.script-row-chk:checked')].map(c => c.value);
   if (!ids.length) return;
-  const priorities = ['low','medium','high','critical'];
+  const priorities = ['low', 'medium', 'high', 'critical'];
   const choice = await _bulkPickModal(
-    `&#9881; Set Priority for ${ids.length} Script${ids.length>1?'s':''}`,
-    'Priority', priorities.map(p => ({ value: p, label: p.charAt(0).toUpperCase()+p.slice(1) }))
+    `&#9881; Set Priority for ${ids.length} Script${ids.length > 1 ? 's' : ''}`,
+    'Priority', priorities.map(p => ({ value: p, label: p.charAt(0).toUpperCase() + p.slice(1) }))
   );
   if (!choice) return;
-  const res  = await fetch('/api/scripts/bulk', {
+  const res = await fetch('/api/scripts/bulk', {
     method: 'PATCH', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ ids, patch: { priority: choice } }),
   });
   if (!res.ok) { alert('Failed to update priority'); return; }
-  _bulkToast(`✓ Priority set to "${choice}" for ${ids.length} script${ids.length>1?'s':''}`);
+  _bulkToast(`✓ Priority set to "${choice}" for ${ids.length} script${ids.length > 1 ? 's' : ''}`);
   await scriptLoad();
 }
 
 async function scriptBulkSetTag() {
   const ids = [...document.querySelectorAll('.script-row-chk:checked')].map(c => c.value);
   if (!ids.length) return;
-  const tag = await _bulkInputModal(`&#127991; Set Tag for ${ids.length} Script${ids.length>1?'s':''}`, 'Tag value');
+  const tag = await _bulkInputModal(`&#127991; Set Tag for ${ids.length} Script${ids.length > 1 ? 's' : ''}`, 'Tag value');
   if (tag === null) return;
   const res = await fetch('/api/scripts/bulk', {
     method: 'PATCH', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ ids, patch: { tags: [tag.trim()] } }),
   });
   if (!res.ok) { alert('Failed to update tag'); return; }
-  _bulkToast(`✓ Tag "${tag}" applied to ${ids.length} script${ids.length>1?'s':''}`);
+  _bulkToast(`✓ Tag "${tag}" applied to ${ids.length} script${ids.length > 1 ? 's' : ''}`);
   await scriptLoad();
 }
 
@@ -2473,7 +2475,7 @@ function _bulkToast(msg) {
 async function scriptOpenEditor(id = null) {
   await keywordsLoad();
   await seLoadComponents();
-  if (!allFunctions.length) { try { await fnLoad(); } catch {} }
+  if (!allFunctions.length) { try { await fnLoad(); } catch { } }
   editingScriptId = id;
   document.getElementById('script-editor-title').textContent = id ? 'Edit Script' : 'New Script';
   modClearAlert('script-editor-alert');
@@ -2485,15 +2487,15 @@ async function scriptOpenEditor(id = null) {
     if (!sc) return;
     sePopulateComponent(sc.component || '');
     sePopulateSubcomponent(sc.subcomponent || null);
-    document.getElementById('se-title').value      = sc.title;
-    document.getElementById('se-desc').value       = sc.description || '';
-    document.getElementById('se-priority').value   = sc.priority;
-    document.getElementById('se-tags').value       = (sc.tags || []).join(', ');
+    document.getElementById('se-title').value = sc.title;
+    document.getElementById('se-desc').value = sc.description || '';
+    document.getElementById('se-priority').value = sc.priority;
+    document.getElementById('se-tags').value = (sc.tags || []).join(', ');
     const mc = document.getElementById('se-metadata-card');
     if (mc) {
       mc.style.display = '';
-      document.getElementById('se-meta-createdby').textContent  = sc.createdBy  || '—';
-      document.getElementById('se-meta-createdat').textContent  = formatDate(sc.createdAt);
+      document.getElementById('se-meta-createdby').textContent = sc.createdBy || '—';
+      document.getElementById('se-meta-createdat').textContent = formatDate(sc.createdAt);
       document.getElementById('se-meta-modifiedby').textContent = sc.modifiedBy || '—';
       document.getElementById('se-meta-modifiedat').textContent = formatDate(sc.modifiedAt);
     }
@@ -2502,10 +2504,10 @@ async function scriptOpenEditor(id = null) {
   } else {
     sePopulateComponent('');
     sePopulateSubcomponent(null);
-    document.getElementById('se-title').value      = '';
-    document.getElementById('se-desc').value       = '';
-    document.getElementById('se-priority').value   = 'medium';
-    document.getElementById('se-tags').value       = '';
+    document.getElementById('se-title').value = '';
+    document.getElementById('se-desc').value = '';
+    document.getElementById('se-priority').value = 'medium';
+    document.getElementById('se-tags').value = '';
     const mc = document.getElementById('se-metadata-card');
     if (mc) mc.style.display = 'none';
     scriptAddStep();
@@ -2531,18 +2533,18 @@ async function scriptOpenDetail(id) {
   const sc = await res.json();
 
   document.getElementById('sd-title-header').textContent = `${sc.tcId || ''} — ${sc.title}`;
-  document.getElementById('sd-tcid').textContent        = sc.tcId || '—';
-  document.getElementById('sd-component').textContent   = sc.component || '—';
-  document.getElementById('sd-priority').innerHTML      = `<span class="badge badge-${escHtml(sc.priority)}">${escHtml(sc.priority)}</span>`;
-  document.getElementById('sd-tags').innerHTML          = (sc.tags||[]).length
-    ? (sc.tags||[]).map(t=>`<span class="badge badge-tester">${escHtml(t)}</span>`).join(' ')
+  document.getElementById('sd-tcid').textContent = sc.tcId || '—';
+  document.getElementById('sd-component').textContent = sc.component || '—';
+  document.getElementById('sd-priority').innerHTML = `<span class="badge badge-${escHtml(sc.priority)}">${escHtml(sc.priority)}</span>`;
+  document.getElementById('sd-tags').innerHTML = (sc.tags || []).length
+    ? (sc.tags || []).map(t => `<span class="badge badge-tester">${escHtml(t)}</span>`).join(' ')
     : '—';
   document.getElementById('sd-description').textContent = sc.description || '—';
-  document.getElementById('sd-createdby').textContent   = sc.createdBy || '—';
-  document.getElementById('sd-createdat').textContent   = formatDate(sc.createdAt);
-  document.getElementById('sd-modifiedby').textContent  = sc.modifiedBy || '—';
-  document.getElementById('sd-modifiedat').textContent  = formatDate(sc.modifiedAt);
-  document.getElementById('sd-step-count').textContent  = `(${(sc.steps||[]).length} steps)`;
+  document.getElementById('sd-createdby').textContent = sc.createdBy || '—';
+  document.getElementById('sd-createdat').textContent = formatDate(sc.createdAt);
+  document.getElementById('sd-modifiedby').textContent = sc.modifiedBy || '—';
+  document.getElementById('sd-modifiedat').textContent = formatDate(sc.modifiedAt);
+  document.getElementById('sd-step-count').textContent = `(${(sc.steps || []).length} steps)`;
 
   // Build steps list with function expand/collapse
   const stepsEl = document.getElementById('sd-steps-list');
@@ -2568,8 +2570,8 @@ function _renderDetailSteps(steps) {
             ${isCall && fn ? `<button class="tbl-btn sd-fn-toggle" onclick="_sdToggleFn('${expandId}',this)" style="font-size:11px;padding:2px 7px">▶ ${escHtml(fn.name)}</button>` : ''}
             ${isCall && !fn ? `<span style="color:var(--neutral-400);font-size:12px">Function: ${escHtml(step.value || '—')}</span>` : ''}
           </div>
-          ${!isCall && step.locator ? `<div class="sd-step-locator"><span class="sd-locator-type">${escHtml(step.locatorType||'css')}</span> <code>${escHtml(step.locator)}</code></div>` : ''}
-          ${!isCall && step.value   ? `<div class="sd-step-value">Value: <code>${escHtml(step.value)}</code></div>` : ''}
+          ${!isCall && step.locator ? `<div class="sd-step-locator"><span class="sd-locator-type">${escHtml(step.locatorType || 'css')}</span> <code>${escHtml(step.locator)}</code></div>` : ''}
+          ${!isCall && step.value ? `<div class="sd-step-value">Value: <code>${escHtml(step.value)}</code></div>` : ''}
           ${isCall && fn ? `
             <div class="sd-fn-steps" id="${expandId}" style="display:none">
               ${fnSteps.map((fs, fi) => `
@@ -2581,7 +2583,7 @@ function _renderDetailSteps(steps) {
                       ${fs.detail ? `<span class="sd-step-desc-txt">${escHtml(fs.detail)}</span>` : ''}
                     </div>
                     ${fs.selector ? `<div class="sd-step-locator"><code>${escHtml(fs.selector)}</code></div>` : ''}
-                    ${fs.value    ? `<div class="sd-step-value">Value: <code>${escHtml(fs.value)}</code></div>` : ''}
+                    ${fs.value ? `<div class="sd-step-value">Value: <code>${escHtml(fs.value)}</code></div>` : ''}
                   </div>
                 </div>`).join('')}
             </div>` : ''}
@@ -2625,28 +2627,28 @@ function _kwTipShow(trigger) {
   }
   const raw = trigger.dataset.tooltipJson || '';
   let tip = {};
-  try { if (raw) tip = JSON.parse(raw); } catch (e) {}
+  try { if (raw) tip = JSON.parse(raw); } catch (e) { }
   if (!tip.what && !tip.example && !tip.tip) return;
 
-  _kwTipPopup.querySelector('.kw-tp-what').textContent    = tip.what    || '';
+  _kwTipPopup.querySelector('.kw-tp-what').textContent = tip.what || '';
   _kwTipPopup.querySelector('.kw-tp-example').textContent = tip.example || '';
-  _kwTipPopup.querySelector('.kw-tp-tip').textContent     = tip.tip     || '';
-  _kwTipPopup.querySelector('.kw-tp-what-wrap').style.display    = tip.what    ? '' : 'none';
+  _kwTipPopup.querySelector('.kw-tp-tip').textContent = tip.tip || '';
+  _kwTipPopup.querySelector('.kw-tp-what-wrap').style.display = tip.what ? '' : 'none';
   _kwTipPopup.querySelector('.kw-tp-example-wrap').style.display = tip.example ? '' : 'none';
-  _kwTipPopup.querySelector('.kw-tp-tip-wrap').style.display     = tip.tip     ? '' : 'none';
+  _kwTipPopup.querySelector('.kw-tp-tip-wrap').style.display = tip.tip ? '' : 'none';
 
   _kwTipPopup.style.display = 'block';
   // position after layout so offsetWidth/Height are valid
   requestAnimationFrame(() => {
     const rect = trigger.getBoundingClientRect();
-    const pw   = _kwTipPopup.offsetWidth;
-    const ph   = _kwTipPopup.offsetHeight;
-    let left   = rect.right + 10;
+    const pw = _kwTipPopup.offsetWidth;
+    const ph = _kwTipPopup.offsetHeight;
+    let left = rect.right + 10;
     if (left + pw > window.innerWidth - 8) left = rect.left - pw - 10;
-    let top    = rect.top - 4;
+    let top = rect.top - 4;
     if (top + ph > window.innerHeight - 8) top = window.innerHeight - ph - 8;
     _kwTipPopup.style.left = Math.max(8, left) + 'px';
-    _kwTipPopup.style.top  = Math.max(8, top)  + 'px';
+    _kwTipPopup.style.top = Math.max(8, top) + 'px';
   });
 }
 
@@ -2674,8 +2676,8 @@ function _infoTipShow(trigger) {
   _infoTipPopup.style.display = 'block';
   requestAnimationFrame(() => {
     const rect = trigger.getBoundingClientRect();
-    const pw   = _infoTipPopup.offsetWidth;
-    const ph   = _infoTipPopup.offsetHeight;
+    const pw = _infoTipPopup.offsetWidth;
+    const ph = _infoTipPopup.offsetHeight;
     // prefer right of icon, fall back to left
     let left = rect.right + 10;
     if (left + pw > window.innerWidth - 8) left = rect.left - pw - 10;
@@ -2684,7 +2686,7 @@ function _infoTipShow(trigger) {
     if (top < 8) top = rect.bottom + 8;
     if (top + ph > window.innerHeight - 8) top = window.innerHeight - ph - 8;
     _infoTipPopup.style.left = Math.max(8, left) + 'px';
-    _infoTipPopup.style.top  = Math.max(8, top)  + 'px';
+    _infoTipPopup.style.top = Math.max(8, top) + 'px';
   });
 }
 function _infoTipHideNow() {
@@ -2708,26 +2710,26 @@ function scriptAddStep(step = {}, insertBeforeRow = null, _skipReorder = false) 
   document.getElementById('se-steps-hint').style.display = 'none';
   const idx = container.querySelectorAll('.script-step-row').length;
 
-  const valMode   = step.valueMode || 'static';   // 'static' | 'dynamic' | 'commondata' | 'testdata'
-  const isDyn     = valMode === 'dynamic';
-  const isCd      = valMode === 'commondata';
-  const isTd      = valMode === 'testdata';
+  const valMode = step.valueMode || 'static';   // 'static' | 'dynamic' | 'commondata' | 'testdata'
+  const isDyn = valMode === 'dynamic';
+  const isCd = valMode === 'commondata';
+  const isTd = valMode === 'testdata';
   const tokenOpts = `<option value="">— choose token —</option>` +
     scriptKeywords.dynamicTokens.map(t =>
       `<option value="${escHtml(t.token)}"${isDyn && step.value === t.token ? ' selected' : ''}>${escHtml(t.label)}</option>`
     ).join('');
 
-  const curKw    = _seKwGet(step.keyword);
+  const curKw = _seKwGet(step.keyword);
   const needsLoc = curKw ? curKw.needsLocator : true;
-  const needsVal = curKw ? curKw.needsValue   : false;
-  const isAuto   = curKw?.autoFromProject || false;
-  const valHint  = curKw?.valueHint || 'Value';
-  const helpLbl  = curKw?.helpLabel || '';
-  const tipObj   = curKw?.tooltip || null;
-  const tipJson  = (tipObj && (tipObj.what || tipObj.example || tipObj.tip)) ? JSON.stringify(tipObj) : '';
+  const needsVal = curKw ? curKw.needsValue : false;
+  const isAuto = curKw?.autoFromProject || false;
+  const valHint = curKw?.valueHint || 'Value';
+  const helpLbl = curKw?.helpLabel || '';
+  const tipObj = curKw?.tooltip || null;
+  const tipJson = (tipObj && (tipObj.what || tipObj.example || tipObj.tip)) ? JSON.stringify(tipObj) : '';
 
   const row = document.createElement('div');
-  row.className      = 'script-step-row';
+  row.className = 'script-step-row';
   row.dataset.stepId = step.id || `new-${Date.now()}-${idx}`;
   row.innerHTML = `
     <div class="step-actions-top">
@@ -2768,8 +2770,8 @@ function scriptAddStep(step = {}, insertBeforeRow = null, _skipReorder = false) 
       <span class="step-help-label">${escHtml(helpLbl)}</span>
       <span class="step-tooltip-trigger" data-tooltip-json="${escHtml(tipJson)}" onmouseenter="_kwTipShow(this)" onmouseleave="_kwTipHide()"${tipJson ? '' : ' style="display:none"'}>?</span>
     </div>
-    <div class="step-pin-badge${(step.storeAs && !isTd) ? '' : ' step-pin-badge-hidden'}${step.storeScope==='global' ? ' step-pin-badge-global' : ''}" data-store-as="${escHtml(isTd ? '' : (step.storeAs||''))}" data-store-scope="${escHtml(step.storeScope||'session')}" data-store-source="${escHtml(step.storeSource||'text')}" data-store-attr="${escHtml(step.storeAttrName||'')}">
-      <span class="pin-badge-label">${step.storeScope==='global' ? '🌐' : '📌'} Saved as <code>{{var.${escHtml(step.storeAs||'')}}}</code><span class="pin-scope-tag">${step.storeScope==='global' ? 'Global' : 'Session'}</span></span>
+    <div class="step-pin-badge${(step.storeAs && !isTd) ? '' : ' step-pin-badge-hidden'}${step.storeScope === 'global' ? ' step-pin-badge-global' : ''}" data-store-as="${escHtml(isTd ? '' : (step.storeAs || ''))}" data-store-scope="${escHtml(step.storeScope || 'session')}" data-store-source="${escHtml(step.storeSource || 'text')}" data-store-attr="${escHtml(step.storeAttrName || '')}">
+      <span class="pin-badge-label">${step.storeScope === 'global' ? '🌐' : '📌'} Saved as <code>{{var.${escHtml(step.storeAs || '')}}}</code><span class="pin-scope-tag">${step.storeScope === 'global' ? 'Global' : 'Session'}</span></span>
       <button type="button" class="pin-badge-clear" onclick="scriptStepPinClear(this)" title="Remove variable">✕</button>
     </div>
     <div class="se-step-auto-badge"${isAuto ? '' : ' style="display:none"'}>
@@ -2804,23 +2806,23 @@ function scriptAddStep(step = {}, insertBeforeRow = null, _skipReorder = false) 
         <div class="field" style="margin:0">
           <label style="font-size:11px">Value Source</label>
           <div class="value-toggle">
-            <button type="button" class="value-toggle-btn${valMode==='static'   ?' active':''}" onclick="scriptStepToggleVal(this,'static')">Static</button>
-            <button type="button" class="value-toggle-btn${valMode==='dynamic'  ?' active':''}" onclick="scriptStepToggleVal(this,'dynamic')">Dynamic</button>
-            <button type="button" class="value-toggle-btn${isCd                 ?' active':''}" onclick="scriptStepToggleVal(this,'commondata')">Common Data</button>
-            <button type="button" class="value-toggle-btn value-toggle-td${isTd ?' active':''}" onclick="scriptStepToggleVal(this,'testdata')" title="Placeholder — future Test Data dataset integration">Test Data (Static)</button>
-            <button type="button" class="value-toggle-btn value-toggle-var${valMode==='variable'?' active':''}" onclick="scriptStepToggleVal(this,'variable')" title="Use a pinned variable from an earlier step">📌 Variable</button>
+            <button type="button" class="value-toggle-btn${valMode === 'static' ? ' active' : ''}" onclick="scriptStepToggleVal(this,'static')">Static</button>
+            <button type="button" class="value-toggle-btn${valMode === 'dynamic' ? ' active' : ''}" onclick="scriptStepToggleVal(this,'dynamic')">Dynamic</button>
+            <button type="button" class="value-toggle-btn${isCd ? ' active' : ''}" onclick="scriptStepToggleVal(this,'commondata')">Common Data</button>
+            <button type="button" class="value-toggle-btn value-toggle-td${isTd ? ' active' : ''}" onclick="scriptStepToggleVal(this,'testdata')" title="Placeholder — future Test Data dataset integration">Test Data (Static)</button>
+            <button type="button" class="value-toggle-btn value-toggle-var${valMode === 'variable' ? ' active' : ''}" onclick="scriptStepToggleVal(this,'variable')" title="Use a pinned variable from an earlier step">📌 Variable</button>
           </div>
-          <input class="fm-input se-step-val-static" style="font-size:12px${valMode!=='static'?';display:none':''}"
-                 placeholder="${escHtml(valHint)}" value="${escHtml(valMode==='static' ? (step.value ?? '') : '')}" />
-          <select class="fm-select se-step-val-dynamic" style="font-size:12.5px${valMode!=='dynamic'?';display:none':''}">${tokenOpts}</select>
-          <div class="se-step-val-cd" style="${isCd?'':'display:none'}">
+          <input class="fm-input se-step-val-static" style="font-size:12px${valMode !== 'static' ? ';display:none' : ''}"
+                 placeholder="${escHtml(valHint)}" value="${escHtml(valMode === 'static' ? (step.value ?? '') : '')}" />
+          <select class="fm-select se-step-val-dynamic" style="font-size:12.5px${valMode !== 'dynamic' ? ';display:none' : ''}">${tokenOpts}</select>
+          <div class="se-step-val-cd" style="${isCd ? '' : 'display:none'}">
             <select class="fm-select se-step-cd-select" style="font-size:12.5px" onchange="scriptStepCdSelected(this)"
-                    data-saved-cd="${escHtml(isCd && step.value ? step.value.replace(/^\$\{|\}$/g,'') : '')}">
+                    data-saved-cd="${escHtml(isCd && step.value ? step.value.replace(/^\$\{|\}$/g, '') : '')}">
               <option value="">— loading Common Data… —</option>
             </select>
             ${isCd && step.value ? `<div class="cd-token-preview">Reference: <code>${escHtml(step.value)}</code></div>` : '<div class="cd-token-preview" style="display:none"></div>'}
           </div>
-          <div class="se-step-val-var" style="${valMode==='variable'?'':'display:none'}">
+          <div class="se-step-val-var" style="${valMode === 'variable' ? '' : 'display:none'}">
             <select class="fm-select se-step-var-select" style="font-size:12.5px" onchange="_varSelectChanged(this)">
               <option value="">— pick a variable —</option>
             </select>
@@ -2831,7 +2833,7 @@ function scriptAddStep(step = {}, insertBeforeRow = null, _skipReorder = false) 
               No variables defined yet. Use the 📌 pin icon on an earlier FILL or TYPE step to create one.
             </div>
           </div>
-          <div class="se-step-val-td" style="${isTd?'':'display:none'}">
+          <div class="se-step-val-td" style="${isTd ? '' : 'display:none'}">
             <div class="td-frame">
               <div class="td-frame-header">
                 <span style="font-size:11.5px;font-weight:700;color:var(--neutral-600)">Test Data</span>
@@ -2840,9 +2842,9 @@ function scriptAddStep(step = {}, insertBeforeRow = null, _skipReorder = false) 
               <table class="td-table">
                 <thead><tr><th style="width:28px">#</th><th>Value <span style="color:var(--danger)">*</span></th><th style="width:32px"></th></tr></thead>
                 <tbody class="td-tbody">
-                  ${(step.testData||[]).map((r,ri)=>`
+                  ${(step.testData || []).map((r, ri) => `
                     <tr class="td-row">
-                      <td style="color:var(--neutral-400);font-size:11px;text-align:center;width:28px">${ri+1}</td>
+                      <td style="color:var(--neutral-400);font-size:11px;text-align:center;width:28px">${ri + 1}</td>
                       <td><input class="fm-input td-val" style="font-size:12px;font-family:monospace" placeholder="value" value="${escHtml(r.value)}" /></td>
                       <td><button type="button" class="step-action-btn step-del-icon" onclick="scriptStepTdDelRow(this)" title="Delete row"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg></button></td>
                     </tr>`).join('')}
@@ -2869,7 +2871,7 @@ function scriptAddStep(step = {}, insertBeforeRow = null, _skipReorder = false) 
       </div>
       <!-- FILE CHOOSER upload widget -->
       <div class="se-filechooser-widget" style="display:none">
-        <div class="fc-upload-area" style="${step.keyword==='FILE CHOOSER' && step.value ? 'display:none' : ''}">
+        <div class="fc-upload-area" style="${step.keyword === 'FILE CHOOSER' && step.value ? 'display:none' : ''}">
           <label class="fc-browse-btn">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
             Browse &amp; Upload File
@@ -2877,10 +2879,10 @@ function scriptAddStep(step = {}, insertBeforeRow = null, _skipReorder = false) 
           </label>
           <span class="fc-hint">File is uploaded to the server and used during test execution</span>
         </div>
-        <div class="fc-file-info" style="${step.keyword==='FILE CHOOSER' && step.value ? '' : 'display:none'}" data-server-path="${escHtml(step.value||'')}">
+        <div class="fc-file-info" style="${step.keyword === 'FILE CHOOSER' && step.value ? '' : 'display:none'}" data-server-path="${escHtml(step.value || '')}">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
           <span class="fc-filename">${escHtml(step.value ? step.value.split('/').pop() : '')}</span>
-          <span class="fc-server-path">${escHtml(step.value||'')}</span>
+          <span class="fc-server-path">${escHtml(step.value || '')}</span>
           <button type="button" class="fc-replace-btn" onclick="scriptStepFileChooserReplace(this)" title="Replace with a different file">
             Replace
             <input type="file" class="fc-file-input" style="display:none" accept=".xlsx,.xls,.csv,.pdf,.docx,.doc,.txt,.json,.xml,.zip" onchange="scriptStepFileChooserUpload(this)" />
@@ -2896,44 +2898,44 @@ function scriptAddStep(step = {}, insertBeforeRow = null, _skipReorder = false) 
         <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:4px">
           <div class="field" style="margin:0;flex:1;min-width:140px">
             <label style="font-size:11px">Read From</label>
-            <select class="fm-select se-setvar-source" style="font-size:12px" onchange="_setVarSourceChanged(this)" data-saved="${escHtml(step.storeSource||'text')}">
-              <option value="text"  ${(step.storeSource||'text')==='text' ?'selected':''}>Text shown on page</option>
-              <option value="value" ${step.storeSource==='value'?'selected':''}>Value inside an input field</option>
-              <option value="attr"  ${step.storeSource==='attr' ?'selected':''}>Element attribute</option>
-              <option value="js"    ${step.storeSource==='js'   ?'selected':''}>Run JavaScript (advanced)</option>
+            <select class="fm-select se-setvar-source" style="font-size:12px" onchange="_setVarSourceChanged(this)" data-saved="${escHtml(step.storeSource || 'text')}">
+              <option value="text"  ${(step.storeSource || 'text') === 'text' ? 'selected' : ''}>Text shown on page</option>
+              <option value="value" ${step.storeSource === 'value' ? 'selected' : ''}>Value inside an input field</option>
+              <option value="attr"  ${step.storeSource === 'attr' ? 'selected' : ''}>Element attribute</option>
+              <option value="js"    ${step.storeSource === 'js' ? 'selected' : ''}>Run JavaScript (advanced)</option>
             </select>
           </div>
-          <div class="field se-setvar-attr-wrap" style="margin:0;width:130px;${step.storeSource==='attr'?'':'display:none'}">
+          <div class="field se-setvar-attr-wrap" style="margin:0;width:130px;${step.storeSource === 'attr' ? '' : 'display:none'}">
             <label style="font-size:11px">Attribute Name</label>
-            <input class="fm-input se-setvar-attr" style="font-size:12px" placeholder="e.g. href" value="${escHtml(step.storeAttrName||'')}"/>
+            <input class="fm-input se-setvar-attr" style="font-size:12px" placeholder="e.g. href" value="${escHtml(step.storeAttrName || '')}"/>
           </div>
           <div class="field" style="margin:0;flex:1;min-width:140px">
             <label style="font-size:11px">Save As (variable name)</label>
             <input class="fm-input se-setvar-name" style="font-size:12px;font-family:monospace"
-                   placeholder="e.g. patientId" value="${escHtml(step.storeAs||'')}"
+                   placeholder="e.g. patientId" value="${escHtml(step.storeAs || '')}"
                    oninput="_setVarNameHint(this)" pattern="[A-Za-z0-9_]+" title="Letters, numbers and _ only"/>
           </div>
           <div class="field" style="margin:0;min-width:160px">
             <label style="font-size:11px">Scope</label>
             <div class="setvar-scope-toggle">
-              <label class="setvar-scope-opt${(step.storeScope||'session')==='session'?' active':''}">
-                <input type="radio" name="setvar-scope-${step.id||'new'}" class="se-setvar-scope" value="session" ${(step.storeScope||'session')==='session'?'checked':''} onchange="_setVarScopeChanged(this)"/>
+              <label class="setvar-scope-opt${(step.storeScope || 'session') === 'session' ? ' active' : ''}">
+                <input type="radio" name="setvar-scope-${step.id || 'new'}" class="se-setvar-scope" value="session" ${(step.storeScope || 'session') === 'session' ? 'checked' : ''} onchange="_setVarScopeChanged(this)"/>
                 📌 Session
               </label>
-              <label class="setvar-scope-opt${step.storeScope==='global'?' active':''}">
-                <input type="radio" name="setvar-scope-${step.id||'new'}" class="se-setvar-scope" value="global" ${step.storeScope==='global'?'checked':''} onchange="_setVarScopeChanged(this)"/>
+              <label class="setvar-scope-opt${step.storeScope === 'global' ? ' active' : ''}">
+                <input type="radio" name="setvar-scope-${step.id || 'new'}" class="se-setvar-scope" value="global" ${step.storeScope === 'global' ? 'checked' : ''} onchange="_setVarScopeChanged(this)"/>
                 🌐 Global
               </label>
             </div>
           </div>
         </div>
-        <div class="setvar-hint" style="font-size:11px;color:var(--neutral-500);margin-top:5px;display:${step.storeAs?'block':'none'}">
-          Use <code>{{var.${escHtml(step.storeAs||'')}}}</code> in any later step's value field
-          <span class="setvar-scope-hint">${step.storeScope==='global' ? ' — 🌐 visible across all scripts in this suite' : ' — 📌 visible only within this script'}</span>
+        <div class="setvar-hint" style="font-size:11px;color:var(--neutral-500);margin-top:5px;display:${step.storeAs ? 'block' : 'none'}">
+          Use <code>{{var.${escHtml(step.storeAs || '')}}}</code> in any later step's value field
+          <span class="setvar-scope-hint">${step.storeScope === 'global' ? ' — 🌐 visible across all scripts in this suite' : ' — 📌 visible only within this script'}</span>
         </div>
-        <div class="se-setvar-js-wrap" style="${step.storeSource==='js'?'margin-top:6px':'display:none'}">
+        <div class="se-setvar-js-wrap" style="${step.storeSource === 'js' ? 'margin-top:6px' : 'display:none'}">
           <label style="font-size:11px">JavaScript Expression</label>
-          <input class="fm-input se-step-val-static" style="font-size:12px;font-family:monospace" placeholder="e.g. document.title" value="${escHtml(step.storeSource==='js'?(step.value||''):'')}" />
+          <input class="fm-input se-step-val-static" style="font-size:12px;font-family:monospace" placeholder="e.g. document.title" value="${escHtml(step.storeSource === 'js' ? (step.value || '') : '')}" />
         </div>
       </div>
     </div>
@@ -2944,7 +2946,7 @@ function scriptAddStep(step = {}, insertBeforeRow = null, _skipReorder = false) 
 
   // Set keyword + locator type selections via JS (avoids per-step option string rebuild)
   row.querySelector('.se-step-kw-select').value = step.keyword || '';
-  row.querySelector('.se-step-loc-type').value  = step.locatorType || 'css';
+  row.querySelector('.se-step-loc-type').value = step.locatorType || 'css';
 
   // Sync-fail badge — shown when this step's locator failed to sync on last save
   if (step.locatorName && _syncFailedLocators.has(step.locatorName)) {
@@ -2992,7 +2994,7 @@ function nlStepDebounce(input) {
 async function nlStepSuggest(input, row, statusEl) {
   if (statusEl) { statusEl.textContent = '⏳'; statusEl.style.color = 'var(--neutral-400)'; }
   try {
-    const res  = await fetch('/api/nl-suggest', {
+    const res = await fetch('/api/nl-suggest', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ description: input.value.trim(), projectId: currentProjectId || '' }),
@@ -3051,38 +3053,38 @@ function _seResolveLocName(row, name) {
     .then(locs => {
       const match = locs.find(l => l.name?.toLowerCase() === name.toLowerCase());
       if (!match) return;
-      const locNameEl  = row.querySelector('.se-step-loc-name');
-      const locTypeEl  = row.querySelector('.se-step-loc-type');
-      const locSelEl   = row.querySelector('.se-step-selector');
-      const repoEl     = row.querySelector('.loc-repo-badge');
-      const unlockEl   = row.querySelector('.loc-unlock-btn');
-      if (locNameEl)  { locNameEl.value = match.name; locNameEl.readOnly = true; }
-      if (locTypeEl)  locTypeEl.value = match.selectorType || match.locatorType || 'css';
-      if (locSelEl)   { locSelEl.value = match.selector || ''; locSelEl.readOnly = true; }
-      if (repoEl)     repoEl.style.display = '';
-      if (unlockEl)   unlockEl.style.display = '';
+      const locNameEl = row.querySelector('.se-step-loc-name');
+      const locTypeEl = row.querySelector('.se-step-loc-type');
+      const locSelEl = row.querySelector('.se-step-selector');
+      const repoEl = row.querySelector('.loc-repo-badge');
+      const unlockEl = row.querySelector('.loc-unlock-btn');
+      if (locNameEl) { locNameEl.value = match.name; locNameEl.readOnly = true; }
+      if (locTypeEl) locTypeEl.value = match.selectorType || match.locatorType || 'css';
+      if (locSelEl) { locSelEl.value = match.selector || ''; locSelEl.readOnly = true; }
+      if (repoEl) repoEl.style.display = '';
+      if (unlockEl) unlockEl.style.display = '';
       row.dataset.locatorId = match.id;
-    }).catch(() => {});
+    }).catch(() => { });
 }
 
 function scriptStepKwChange(sel) {
-  const row  = sel.closest('.script-step-row');
-  const opt  = sel.selectedOptions[0];
-  const kwKey    = opt?.value || '';
+  const row = sel.closest('.script-step-row');
+  const opt = sel.selectedOptions[0];
+  const kwKey = opt?.value || '';
   const needsLoc = opt?.dataset.nl === 'true';
   const needsVal = opt?.dataset.nv === 'true';
-  const isAuto   = opt?.dataset.auto === 'true';
+  const isAuto = opt?.dataset.auto === 'true';
   const isFnCall = kwKey === 'CALL FUNCTION';
-  const hint     = opt?.dataset.hint || 'Value';
-  const helpText  = opt?.dataset.help || '';
-  const tipJson   = opt?.dataset.tooltipJson || '';
+  const hint = opt?.dataset.hint || 'Value';
+  const helpText = opt?.dataset.help || '';
+  const tipJson = opt?.dataset.tooltipJson || '';
 
-  const isSetVar    = kwKey === 'SET VARIABLE';
+  const isSetVar = kwKey === 'SET VARIABLE';
   const isFileChooser = kwKey === 'FILE CHOOSER';
 
   // GOTO auto-config: hide locator + value, show auto badge
-  row.querySelector('.se-step-locator').style.display  = (needsLoc && !isAuto && !isSetVar && !isFileChooser) ? '' : 'none';
-  row.querySelector('.se-step-value').style.display    = (needsVal && !isAuto && !isFnCall && !isSetVar && !isFileChooser) ? '' : 'none';
+  row.querySelector('.se-step-locator').style.display = (needsLoc && !isAuto && !isSetVar && !isFileChooser) ? '' : 'none';
+  row.querySelector('.se-step-value').style.display = (needsVal && !isAuto && !isFnCall && !isSetVar && !isFileChooser) ? '' : 'none';
   row.querySelector('.se-step-auto-badge').style.display = isAuto ? '' : 'none';
 
   // FILE CHOOSER: show custom upload widget, show locator for the trigger button
@@ -3131,7 +3133,7 @@ function _populateFnSelect(row) {
   const sel = row.querySelector('.se-step-fn-select');
   if (!sel) return;
   // Restore saved value: data-saved-fn on picker div (set at render time from step.value)
-  const picker   = row.querySelector('.se-step-fn-picker');
+  const picker = row.querySelector('.se-step-fn-picker');
   const savedVal = picker?.dataset.savedFn || sel.value || '';
   sel.innerHTML = '<option value="">— select function —</option>' +
     allFunctions.map(f =>
@@ -3149,18 +3151,18 @@ function scriptStepFnSelected(sel) {
 }
 
 function _renderFnExpandArea(row) {
-  const sel      = row.querySelector('.se-step-fn-select');
+  const sel = row.querySelector('.se-step-fn-select');
   const expandEl = row.querySelector('.se-fn-expand-area');
   if (!sel || !expandEl) return;
   const fnName = sel.value;
-  const fn     = allFunctions.find(f => f.name === fnName);
+  const fn = allFunctions.find(f => f.name === fnName);
   if (!fn || !(fn.steps || []).length) { expandEl.style.display = 'none'; expandEl.innerHTML = ''; return; }
 
-  const picker   = row.querySelector('.se-step-fn-picker');
-  let savedVals  = [];
-  try { savedVals = JSON.parse(picker?.dataset.fnStepValues || '[]'); } catch {}
+  const picker = row.querySelector('.se-step-fn-picker');
+  let savedVals = [];
+  try { savedVals = JSON.parse(picker?.dataset.fnStepValues || '[]'); } catch { }
 
-  const stepNum  = row.querySelector('.step-num')?.textContent || '?';
+  const stepNum = row.querySelector('.step-num')?.textContent || '?';
 
   expandEl.style.display = '';
   expandEl.innerHTML = `
@@ -3171,26 +3173,26 @@ function _renderFnExpandArea(row) {
     </div>
     <div class="fn-child-steps" style="display:none">
       ${fn.steps.map((fs, fi) => {
-        const kwMeta   = _seKwGet(fs.keyword);
-        const needsVal = kwMeta ? kwMeta.needsValue : false;
-        const valHint  = kwMeta?.valueHint || 'Value';
-        const saved    = savedVals.find(v => v.fnStepIdx === fi) || {};
-        const valMode  = saved.valueMode || 'static';
-        const isDyn    = valMode === 'dynamic';
-        const isCd     = valMode === 'commondata';
-        const isTd     = valMode === 'testdata';
-        const locDisplay = [fs.locatorName || fs.detail, fs.selector].filter(Boolean).join(' → ');
-        const dynOpts  = '<option value="">— choose token —</option>' +
-          (scriptKeywords.dynamicTokens || []).map(t =>
-            `<option value="${escHtml(t.token)}"${isDyn && saved.value === t.token ? ' selected' : ''}>${escHtml(t.label)}</option>`
-          ).join('');
-        const tdRows   = (saved.testData || []).map((r, ri) => `
+    const kwMeta = _seKwGet(fs.keyword);
+    const needsVal = kwMeta ? kwMeta.needsValue : false;
+    const valHint = kwMeta?.valueHint || 'Value';
+    const saved = savedVals.find(v => v.fnStepIdx === fi) || {};
+    const valMode = saved.valueMode || 'static';
+    const isDyn = valMode === 'dynamic';
+    const isCd = valMode === 'commondata';
+    const isTd = valMode === 'testdata';
+    const locDisplay = [fs.locatorName || fs.detail, fs.selector].filter(Boolean).join(' → ');
+    const dynOpts = '<option value="">— choose token —</option>' +
+      (scriptKeywords.dynamicTokens || []).map(t =>
+        `<option value="${escHtml(t.token)}"${isDyn && saved.value === t.token ? ' selected' : ''}>${escHtml(t.label)}</option>`
+      ).join('');
+    const tdRows = (saved.testData || []).map((r, ri) => `
           <tr class="fn-cs-td-row">
             <td style="color:var(--neutral-400);font-size:11px;text-align:center;width:28px">${ri + 1}</td>
             <td><input class="fm-input fn-cs-td-val" style="font-size:12px;font-family:monospace" placeholder="value" value="${escHtml(r.value || '')}" /></td>
             <td><button type="button" class="step-action-btn step-del-icon" onclick="fnCsTdDelRow(this)" title="Delete row"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg></button></td>
           </tr>`).join('');
-        return `
+    return `
         <div class="fn-child-row" data-fn-step-idx="${fi}">
           <div class="fn-cs-header">
             <span class="fn-child-num">${stepNum}.${fi + 1}</span>
@@ -3200,10 +3202,10 @@ function _renderFnExpandArea(row) {
           ${needsVal ? `
           <div class="fn-cs-value">
             <div class="value-toggle" style="margin-bottom:6px">
-              <button type="button" class="value-toggle-btn${valMode === 'static'   ? ' active' : ''}" onclick="fnCsToggleVal(this,'static')">Static</button>
-              <button type="button" class="value-toggle-btn${isDyn                  ? ' active' : ''}" onclick="fnCsToggleVal(this,'dynamic')">Dynamic</button>
-              <button type="button" class="value-toggle-btn${isCd                   ? ' active' : ''}" onclick="fnCsToggleVal(this,'commondata')">Common Data</button>
-              <button type="button" class="value-toggle-btn value-toggle-td${isTd  ? ' active' : ''}" onclick="fnCsToggleVal(this,'testdata')">Test Data (Static)</button>
+              <button type="button" class="value-toggle-btn${valMode === 'static' ? ' active' : ''}" onclick="fnCsToggleVal(this,'static')">Static</button>
+              <button type="button" class="value-toggle-btn${isDyn ? ' active' : ''}" onclick="fnCsToggleVal(this,'dynamic')">Dynamic</button>
+              <button type="button" class="value-toggle-btn${isCd ? ' active' : ''}" onclick="fnCsToggleVal(this,'commondata')">Common Data</button>
+              <button type="button" class="value-toggle-btn value-toggle-td${isTd ? ' active' : ''}" onclick="fnCsToggleVal(this,'testdata')">Test Data (Static)</button>
             </div>
             <input class="fm-input fn-cs-val-static" style="font-size:12px${valMode !== 'static' ? ';display:none' : ''}"
                    placeholder="${escHtml(valHint)}" value="${escHtml(valMode === 'static' ? (saved.value || '') : '')}" />
@@ -3214,8 +3216,8 @@ function _renderFnExpandArea(row) {
                 <option value="">— loading Common Data… —</option>
               </select>
               ${isCd && saved.value
-                ? `<div class="cd-token-preview">Reference: <code>${escHtml(saved.value)}</code></div>`
-                : '<div class="cd-token-preview" style="display:none"></div>'}
+          ? `<div class="cd-token-preview">Reference: <code>${escHtml(saved.value)}</code></div>`
+          : '<div class="cd-token-preview" style="display:none"></div>'}
             </div>
             <div class="fn-cs-val-td" style="${isTd ? '' : 'display:none'}">
               <div class="td-frame">
@@ -3232,7 +3234,7 @@ function _renderFnExpandArea(row) {
             </div>
           </div>` : ''}
         </div>`;
-      }).join('')}
+  }).join('')}
     </div>`;
 
   // Load CD options for any child step already set to commondata
@@ -3257,17 +3259,17 @@ function fnCsToggleVal(btn, mode) {
   const childRow = btn.closest('.fn-child-row');
   childRow.querySelectorAll('.value-toggle-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
-  childRow.querySelector('.fn-cs-val-static')?.style  && (childRow.querySelector('.fn-cs-val-static').style.display  = mode === 'static'     ? '' : 'none');
-  childRow.querySelector('.fn-cs-val-dynamic')?.style && (childRow.querySelector('.fn-cs-val-dynamic').style.display = mode === 'dynamic'    ? '' : 'none');
-  childRow.querySelector('.fn-cs-val-cd')?.style      && (childRow.querySelector('.fn-cs-val-cd').style.display      = mode === 'commondata' ? '' : 'none');
-  childRow.querySelector('.fn-cs-val-td')?.style      && (childRow.querySelector('.fn-cs-val-td').style.display      = mode === 'testdata'   ? '' : 'none');
+  childRow.querySelector('.fn-cs-val-static')?.style && (childRow.querySelector('.fn-cs-val-static').style.display = mode === 'static' ? '' : 'none');
+  childRow.querySelector('.fn-cs-val-dynamic')?.style && (childRow.querySelector('.fn-cs-val-dynamic').style.display = mode === 'dynamic' ? '' : 'none');
+  childRow.querySelector('.fn-cs-val-cd')?.style && (childRow.querySelector('.fn-cs-val-cd').style.display = mode === 'commondata' ? '' : 'none');
+  childRow.querySelector('.fn-cs-val-td')?.style && (childRow.querySelector('.fn-cs-val-td').style.display = mode === 'testdata' ? '' : 'none');
   if (mode === 'commondata') _loadFnCsOptions(childRow);
 }
 
 async function _loadFnCsOptions(childRow) {
   const sel = childRow.querySelector('.fn-cs-cd-select');
   if (!sel || !currentProjectId) return;
-  const res   = await fetch(`/api/common-data?projectId=${encodeURIComponent(currentProjectId)}`);
+  const res = await fetch(`/api/common-data?projectId=${encodeURIComponent(currentProjectId)}`);
   if (!res.ok) return;
   const items = await res.json();
   const curVal = sel.dataset.savedCd || sel.value || '';
@@ -3285,18 +3287,18 @@ function fnCsCdSelected(sel) {
 }
 
 function _updateFnCsTokenPreview(childRow) {
-  const sel     = childRow.querySelector('.fn-cs-cd-select');
+  const sel = childRow.querySelector('.fn-cs-cd-select');
   const preview = childRow.querySelector('.fn-cs-val-cd .cd-token-preview');
   if (!preview) return;
   const name = sel?.value || '';
   if (name) { preview.style.display = ''; preview.innerHTML = `Reference: <code>\${${escHtml(name)}}</code>`; }
-  else        preview.style.display = 'none';
+  else preview.style.display = 'none';
 }
 
 function fnCsTdAddRow(btn) {
-  const tbody  = btn.closest('.td-frame').querySelector('.fn-cs-td-tbody');
+  const tbody = btn.closest('.td-frame').querySelector('.fn-cs-td-tbody');
   const rowNum = tbody.querySelectorAll('.fn-cs-td-row').length + 1;
-  const tr     = document.createElement('tr');
+  const tr = document.createElement('tr');
   tr.className = 'fn-cs-td-row';
   tr.innerHTML = `
     <td style="color:var(--neutral-400);font-size:11px;text-align:center;width:28px">${rowNum}</td>
@@ -3325,16 +3327,16 @@ function scriptStepToggleVal(btn, mode) {
   const row = btn.closest('.script-step-row');
   row.querySelectorAll('.value-toggle-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
-  row.querySelector('.se-step-val-static')?.style && (row.querySelector('.se-step-val-static').style.display  = mode === 'static'     ? '' : 'none');
-  row.querySelector('.se-step-val-dynamic')?.style && (row.querySelector('.se-step-val-dynamic').style.display = mode === 'dynamic'    ? '' : 'none');
-  row.querySelector('.se-step-val-cd')?.style      && (row.querySelector('.se-step-val-cd').style.display      = mode === 'commondata' ? '' : 'none');
-  row.querySelector('.se-step-val-td')?.style      && (row.querySelector('.se-step-val-td').style.display      = mode === 'testdata'   ? '' : 'none');
-  row.querySelector('.se-step-val-var')?.style     && (row.querySelector('.se-step-val-var').style.display     = mode === 'variable'   ? '' : 'none');
+  row.querySelector('.se-step-val-static')?.style && (row.querySelector('.se-step-val-static').style.display = mode === 'static' ? '' : 'none');
+  row.querySelector('.se-step-val-dynamic')?.style && (row.querySelector('.se-step-val-dynamic').style.display = mode === 'dynamic' ? '' : 'none');
+  row.querySelector('.se-step-val-cd')?.style && (row.querySelector('.se-step-val-cd').style.display = mode === 'commondata' ? '' : 'none');
+  row.querySelector('.se-step-val-td')?.style && (row.querySelector('.se-step-val-td').style.display = mode === 'testdata' ? '' : 'none');
+  row.querySelector('.se-step-val-var')?.style && (row.querySelector('.se-step-val-var').style.display = mode === 'variable' ? '' : 'none');
   if (mode === 'commondata') _loadCdOptions(row);
-  if (mode === 'variable')   _loadVarOptions(row);
+  if (mode === 'variable') _loadVarOptions(row);
 
   // Pin (Store As Variable) is not allowed when Value Source is Test Data (Static)
-  const pinBtn   = row.querySelector('.step-pin-icon');
+  const pinBtn = row.querySelector('.step-pin-icon');
   const pinBadge = row.querySelector('.step-pin-badge');
   if (mode === 'testdata') {
     // Disable pin button
@@ -3421,8 +3423,8 @@ function _loadVarOptions(row) {
   });
 
   const savedVal = sel.dataset.savedVar || sel.value || '';
-  const noHint   = row.querySelector('.var-no-vars-hint');
-  const useHint  = row.querySelector('.var-usage-hint');
+  const noHint = row.querySelector('.var-no-vars-hint');
+  const useHint = row.querySelector('.var-usage-hint');
 
   if (!sessionVars.length && !globalVars.length) {
     sel.innerHTML = '<option value="">— no variables yet —</option>';
@@ -3435,12 +3437,12 @@ function _loadVarOptions(row) {
   let html = '<option value="">— pick a variable —</option>';
   if (sessionVars.length) {
     html += `<optgroup label="📌 This Script (session)">`;
-    html += sessionVars.map(v => `<option value="${escHtml(v)}"${v===savedVal?' selected':''}>${escHtml(v)}</option>`).join('');
+    html += sessionVars.map(v => `<option value="${escHtml(v)}"${v === savedVal ? ' selected' : ''}>${escHtml(v)}</option>`).join('');
     html += `</optgroup>`;
   }
   if (globalVars.length) {
     html += `<optgroup label="🌐 Suite — all scripts (global)">`;
-    html += globalVars.map(v => `<option value="${escHtml(v)}"${v===savedVal?' selected':''}>${escHtml(v)}</option>`).join('');
+    html += globalVars.map(v => `<option value="${escHtml(v)}"${v === savedVal ? ' selected' : ''}>${escHtml(v)}</option>`).join('');
     html += `</optgroup>`;
   }
   sel.innerHTML = html;
@@ -3449,20 +3451,20 @@ function _loadVarOptions(row) {
 }
 
 function _varSelectChanged(sel) {
-  const row   = sel.closest('.script-step-row');
-  const hint  = row?.querySelector('.var-usage-hint');
+  const row = sel.closest('.script-step-row');
+  const hint = row?.querySelector('.var-usage-hint');
   const token = row?.querySelector('.var-usage-token');
-  const v     = sel.value;
+  const v = sel.value;
   if (hint && token) {
     if (v) { token.textContent = `{{var.${v}}}`; hint.style.display = ''; }
-    else   { hint.style.display = 'none'; }
+    else { hint.style.display = 'none'; }
   }
 }
 
 // ── 📌 Pin icon handlers ───────────────────────────────────────────────────────
 
 function scriptStepPinOpen(btn) {
-  const row      = btn.closest('.script-step-row');
+  const row = btn.closest('.script-step-row');
 
   // Block pin when Value Source is Test Data (Static) — N rows would overwrite same variable unpredictably
   const isTestData = row.querySelector('.value-toggle-td.active') !== null;
@@ -3471,8 +3473,8 @@ function scriptStepPinOpen(btn) {
     return;
   }
 
-  const badge    = row.querySelector('.step-pin-badge');
-  const curName  = badge?.dataset.storeAs || '';
+  const badge = row.querySelector('.step-pin-badge');
+  const curName = badge?.dataset.storeAs || '';
   const curScope = badge?.dataset.storeScope || 'session';
 
   // Build inline modal
@@ -3491,12 +3493,12 @@ function scriptStepPinOpen(btn) {
         <div style="margin-top:10px">
           <label style="font-size:11px;font-weight:600;display:block;margin-bottom:6px">Scope</label>
           <div class="setvar-scope-toggle">
-            <label class="setvar-scope-opt${curScope==='session'?' active':''}">
-              <input type="radio" name="pin-scope" value="session" ${curScope==='session'?'checked':''}/> 📌 Session
+            <label class="setvar-scope-opt${curScope === 'session' ? ' active' : ''}">
+              <input type="radio" name="pin-scope" value="session" ${curScope === 'session' ? 'checked' : ''}/> 📌 Session
               <span style="font-size:10px;display:block;color:var(--neutral-500);margin-top:2px">This script only</span>
             </label>
-            <label class="setvar-scope-opt${curScope==='global'?' active':''}">
-              <input type="radio" name="pin-scope" value="global" ${curScope==='global'?'checked':''}/> 🌐 Global
+            <label class="setvar-scope-opt${curScope === 'global' ? ' active' : ''}">
+              <input type="radio" name="pin-scope" value="global" ${curScope === 'global' ? 'checked' : ''}/> 🌐 Global
               <span style="font-size:10px;display:block;color:var(--neutral-500);margin-top:2px">All scripts in suite</span>
             </label>
           </div>
@@ -3521,12 +3523,12 @@ function scriptStepPinOpen(btn) {
   overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
 
   document.getElementById('pin-modal-save').onclick = () => {
-    const nameVal  = document.getElementById('pin-modal-name').value.trim().replace(/[^A-Za-z0-9_]/g, '');
+    const nameVal = document.getElementById('pin-modal-name').value.trim().replace(/[^A-Za-z0-9_]/g, '');
     const scopeVal = overlay.querySelector('input[name="pin-scope"]:checked')?.value || 'session';
     overlay.remove();
     if (!nameVal) { scriptStepPinClear(btn); return; }
     if (badge) {
-      badge.dataset.storeAs    = nameVal;
+      badge.dataset.storeAs = nameVal;
       badge.dataset.storeScope = scopeVal;
       const icon = scopeVal === 'global' ? '🌐' : '📌';
       const scopeTag = scopeVal === 'global' ? 'Global' : 'Session';
@@ -3543,10 +3545,10 @@ function scriptStepPinOpen(btn) {
 }
 
 function scriptStepPinClear(btn) {
-  const row   = btn.closest('.script-step-row');
+  const row = btn.closest('.script-step-row');
   const badge = row.querySelector('.step-pin-badge');
   if (badge) {
-    badge.dataset.storeAs    = '';
+    badge.dataset.storeAs = '';
     badge.dataset.storeScope = 'session';
     badge.classList.add('step-pin-badge-hidden');
     badge.classList.remove('step-pin-badge-global');
@@ -3558,28 +3560,28 @@ function scriptStepPinClear(btn) {
 function _setVarSourceChanged(sel) {
   const row = sel.closest('.script-step-row');
   const isAttr = sel.value === 'attr';
-  const isJs   = sel.value === 'js';
-  const attrW  = row.querySelector('.se-setvar-attr-wrap');
-  const jsW    = row.querySelector('.se-setvar-js-wrap');
+  const isJs = sel.value === 'js';
+  const attrW = row.querySelector('.se-setvar-attr-wrap');
+  const jsW = row.querySelector('.se-setvar-js-wrap');
   const locDiv = row.querySelector('.se-step-locator');
   if (attrW) attrW.style.display = isAttr ? '' : 'none';
-  if (jsW)   jsW.style.display   = isJs   ? '' : 'none';
+  if (jsW) jsW.style.display = isJs ? '' : 'none';
   if (locDiv) locDiv.style.display = isJs ? 'none' : '';
 }
 
 function _setVarNameHint(inp) {
-  const row  = inp.closest('.script-step-row');
+  const row = inp.closest('.script-step-row');
   const hint = row?.querySelector('.setvar-hint');
   const code = hint?.querySelector('code');
   if (!hint || !code) return;
   const v = inp.value.trim();
   if (v) { code.textContent = `{{var.${v}}}`; hint.style.display = 'block'; }
-  else   { hint.style.display = 'none'; }
+  else { hint.style.display = 'none'; }
 }
 
 function _setVarScopeChanged(radio) {
-  const row       = radio.closest('.script-step-row');
-  const isGlobal  = radio.value === 'global';
+  const row = radio.closest('.script-step-row');
+  const isGlobal = radio.value === 'global';
   // Update active style on scope labels
   row.querySelectorAll('.setvar-scope-opt').forEach(l => l.classList.remove('active'));
   radio.closest('.setvar-scope-opt')?.classList.add('active');
@@ -3601,10 +3603,10 @@ async function scriptStepFileChooserUpload(input) {
   if (!file) return;
   if (!currentProjectId) { alert('Select a project first'); return; }
 
-  const widget    = input.closest('.se-filechooser-widget');
-  const row       = input.closest('.script-step-row');
+  const widget = input.closest('.se-filechooser-widget');
+  const row = input.closest('.script-step-row');
   const uploadArea = widget.querySelector('.fc-upload-area');
-  const fileInfo  = widget.querySelector('.fc-file-info');
+  const fileInfo = widget.querySelector('.fc-file-info');
   const uploading = widget.querySelector('.fc-uploading');
 
   // Delete previous file from server if replacing
@@ -3612,26 +3614,26 @@ async function scriptStepFileChooserUpload(input) {
   if (prevPath) {
     const parts = prevPath.split('/');
     if (parts.length >= 3) {
-      await fetch(`/api/test-files/${encodeURIComponent(parts[1])}/${encodeURIComponent(parts[2])}`, { method: 'DELETE' }).catch(() => {});
+      await fetch(`/api/test-files/${encodeURIComponent(parts[1])}/${encodeURIComponent(parts[2])}`, { method: 'DELETE' }).catch(() => { });
     }
   }
 
   // Show uploading state
   if (uploadArea) uploadArea.style.display = 'none';
-  if (fileInfo)   fileInfo.style.display   = 'none';
-  if (uploading)  uploading.style.display  = '';
+  if (fileInfo) fileInfo.style.display = 'none';
+  if (uploading) uploading.style.display = '';
 
   try {
     const fd = new FormData();
     fd.append('file', file);
-    const res  = await fetch(`/api/test-files/upload?projectId=${encodeURIComponent(currentProjectId)}`, { method: 'POST', body: fd });
+    const res = await fetch(`/api/test-files/upload?projectId=${encodeURIComponent(currentProjectId)}`, { method: 'POST', body: fd });
     if (!res.ok) throw new Error(await res.text());
     const data = await res.json();
 
     // Update widget to show file info
     if (fileInfo) {
       fileInfo.dataset.serverPath = data.serverPath;
-      fileInfo.querySelector('.fc-filename').textContent  = data.filename;
+      fileInfo.querySelector('.fc-filename').textContent = data.filename;
       fileInfo.querySelector('.fc-server-path').textContent = data.serverPath;
       fileInfo.style.display = '';
     }
@@ -3652,18 +3654,18 @@ function scriptStepFileChooserReplace(btn) {
 
 async function scriptStepFileChooserRemove(btn) {
   if (!confirm('Remove this file from the server?')) return;
-  const widget    = btn.closest('.se-filechooser-widget');
-  const fileInfo  = widget.querySelector('.fc-file-info');
+  const widget = btn.closest('.se-filechooser-widget');
+  const fileInfo = widget.querySelector('.fc-file-info');
   const uploadArea = widget.querySelector('.fc-upload-area');
-  const prevPath  = fileInfo?.dataset.serverPath;
+  const prevPath = fileInfo?.dataset.serverPath;
 
   if (prevPath) {
     const parts = prevPath.split('/');
     if (parts.length >= 3) {
-      await fetch(`/api/test-files/${encodeURIComponent(parts[1])}/${encodeURIComponent(parts[2])}`, { method: 'DELETE' }).catch(() => {});
+      await fetch(`/api/test-files/${encodeURIComponent(parts[1])}/${encodeURIComponent(parts[2])}`, { method: 'DELETE' }).catch(() => { });
     }
   }
-  if (fileInfo)  { fileInfo.dataset.serverPath = ''; fileInfo.style.display = 'none'; }
+  if (fileInfo) { fileInfo.dataset.serverPath = ''; fileInfo.style.display = 'none'; }
   if (uploadArea) uploadArea.style.display = '';
 }
 
@@ -3671,7 +3673,7 @@ async function scriptStepFileChooserRemove(btn) {
 async function _loadCdOptions(row) {
   const sel = row.querySelector('.se-step-cd-select');
   if (!sel || !currentProjectId) return;
-  const res  = await fetch(`/api/common-data?projectId=${encodeURIComponent(currentProjectId)}`);
+  const res = await fetch(`/api/common-data?projectId=${encodeURIComponent(currentProjectId)}`);
   if (!res.ok) return;
   const items = await res.json();
   const curVal = sel.dataset.savedCd || sel.value || '';
@@ -3690,8 +3692,8 @@ function scriptStepCdSelected(sel) {
 }
 
 function _updateCdTokenPreview(row) {
-  const sel      = row.querySelector('.se-step-cd-select');
-  const preview  = row.querySelector('.cd-token-preview');
+  const sel = row.querySelector('.se-step-cd-select');
+  const preview = row.querySelector('.cd-token-preview');
   if (!preview) return;
   const name = sel?.value || '';
   if (name) {
@@ -3744,10 +3746,10 @@ function scriptStepPickLoc(btn) {
   const row = btn.closest('.script-step-row');
   locatorPickerOpen((selector, selectorType, name) => {
     const nameInput = row.querySelector('.se-step-loc-name');
-    const valInput  = row.querySelector('.se-step-selector');
+    const valInput = row.querySelector('.se-step-selector');
     const typeSelect = row.querySelector('.se-step-loc-type');
     if (nameInput) nameInput.value = name || '';
-    if (valInput)  valInput.value  = selector || '';
+    if (valInput) valInput.value = selector || '';
     if (typeSelect && selectorType) typeSelect.value = selectorType;
     // Lock fields as read-only (inherited from Locator Repo)
     _scriptStepLockLocator(row, true);
@@ -3755,16 +3757,16 @@ function scriptStepPickLoc(btn) {
 }
 
 function _scriptStepLockLocator(row, locked) {
-  const nameInput  = row.querySelector('.se-step-loc-name');
-  const valInput   = row.querySelector('.se-step-selector');
+  const nameInput = row.querySelector('.se-step-loc-name');
+  const valInput = row.querySelector('.se-step-selector');
   const typeSelect = row.querySelector('.se-step-loc-type');
-  const lockBadge  = row.querySelector('.loc-repo-badge');
-  const unlockBtn  = row.querySelector('.loc-unlock-btn');
-  if (nameInput)  { nameInput.readOnly = locked;  nameInput.classList.toggle('loc-locked', locked); }
-  if (valInput)   { valInput.readOnly  = locked;  valInput.classList.toggle('loc-locked', locked); }
-  if (typeSelect) { typeSelect.disabled = locked;  typeSelect.classList.toggle('loc-locked', locked); }
-  if (lockBadge)  lockBadge.style.display = locked ? '' : 'none';
-  if (unlockBtn)  unlockBtn.style.display = locked ? '' : 'none';
+  const lockBadge = row.querySelector('.loc-repo-badge');
+  const unlockBtn = row.querySelector('.loc-unlock-btn');
+  if (nameInput) { nameInput.readOnly = locked; nameInput.classList.toggle('loc-locked', locked); }
+  if (valInput) { valInput.readOnly = locked; valInput.classList.toggle('loc-locked', locked); }
+  if (typeSelect) { typeSelect.disabled = locked; typeSelect.classList.toggle('loc-locked', locked); }
+  if (lockBadge) lockBadge.style.display = locked ? '' : 'none';
+  if (unlockBtn) unlockBtn.style.display = locked ? '' : 'none';
 }
 
 function scriptStepUnlockLoc(btn) {
@@ -3806,53 +3808,53 @@ function scriptStepInsertBelow(btn) {
 function scriptStepClone(btn) {
   const row = btn.closest('.script-step-row');
   const activeTab = row.querySelector('.value-toggle-btn.active')?.textContent?.trim() || 'Static';
-  const kw        = row.querySelector('.se-step-kw-select')?.value || '';
-  const isFnCall  = kw === 'CALL FUNCTION';
+  const kw = row.querySelector('.se-step-kw-select')?.value || '';
+  const isFnCall = kw === 'CALL FUNCTION';
   let valueMode, value, fnStepValues;
   if (isFnCall) {
-    valueMode    = 'static';
-    value        = row.querySelector('.se-step-fn-select')?.value || null;
+    valueMode = 'static';
+    value = row.querySelector('.se-step-fn-select')?.value || null;
     fnStepValues = [...(row.querySelectorAll('.fn-child-row') || [])]
       .filter(cr => cr.querySelector('.fn-cs-value'))
       .map(cr => {
-        const fi       = parseInt(cr.dataset.fnStepIdx);
+        const fi = parseInt(cr.dataset.fnStepIdx);
         const activeCs = cr.querySelector('.value-toggle-btn.active')?.textContent?.trim() || 'Static';
         let csMode, csValue, csTestData = [];
         if (activeCs === 'Dynamic') {
-          csMode  = 'dynamic';
+          csMode = 'dynamic';
           csValue = cr.querySelector('.fn-cs-val-dynamic')?.value || null;
         } else if (activeCs === 'Common Data') {
-          csMode  = 'commondata';
+          csMode = 'commondata';
           const cdName = cr.querySelector('.fn-cs-cd-select')?.value || '';
           csValue = cdName ? `\${${cdName}}` : null;
         } else if (activeCs === 'Test Data (Static)') {
-          csMode     = 'testdata';
-          csValue    = null;
+          csMode = 'testdata';
+          csValue = null;
           csTestData = [...(cr.querySelectorAll('.fn-cs-td-row') || [])].map(tr => ({
             value: tr.querySelector('.fn-cs-td-val')?.value?.trim() || '',
           })).filter(r => r.value);
         } else {
-          csMode  = 'static';
+          csMode = 'static';
           csValue = cr.querySelector('.fn-cs-val-static')?.value?.trim() || null;
         }
         return { fnStepIdx: fi, valueMode: csMode, value: csValue, testData: csTestData };
       });
   } else if (activeTab === '📌 Variable') {
     valueMode = 'variable';
-    value     = row.querySelector('.se-step-var-select')?.value || null;
+    value = row.querySelector('.se-step-var-select')?.value || null;
   } else if (activeTab === 'Dynamic') {
     valueMode = 'dynamic';
-    value     = row.querySelector('.se-step-val-dynamic')?.value || null;
+    value = row.querySelector('.se-step-val-dynamic')?.value || null;
   } else if (activeTab === 'Common Data') {
     valueMode = 'commondata';
     const cdName = row.querySelector('.se-step-cd-select')?.value || '';
     value = cdName ? `\${${cdName}}` : null;
   } else if (activeTab === 'Test Data (Static)') {
     valueMode = 'testdata';
-    value     = null;
+    value = null;
   } else {
     valueMode = 'static';
-    value     = row.querySelector('.se-step-val-static')?.value?.trim() || null;
+    value = row.querySelector('.se-step-val-static')?.value?.trim() || null;
   }
   const testData = [...(row.querySelectorAll('.td-row') || [])].map(tr => ({
     value: tr.querySelector('.td-val')?.value?.trim() || '',
@@ -3860,21 +3862,21 @@ function scriptStepClone(btn) {
 
   const badge = row.querySelector('.step-pin-badge');
   const clonedStep = {
-    id:            `clone-${Date.now()}`,
-    keyword:       kw,
-    locatorName:   row.querySelector('.se-step-loc-name')?.value?.trim() || null,
-    locatorType:   row.querySelector('.se-step-loc-type')?.value || 'css',
-    locator:       row.querySelector('.se-step-selector')?.value?.trim() || null,
-    locatorId:     row.dataset.locatorId || null,
+    id: `clone-${Date.now()}`,
+    keyword: kw,
+    locatorName: row.querySelector('.se-step-loc-name')?.value?.trim() || null,
+    locatorType: row.querySelector('.se-step-loc-type')?.value || 'css',
+    locator: row.querySelector('.se-step-selector')?.value?.trim() || null,
+    locatorId: row.dataset.locatorId || null,
     valueMode,
     value,
     testData,
-    fnStepValues:  fnStepValues || [],
-    description:   row.querySelector('.se-step-desc')?.value?.trim() || '',
-    screenshot:    row.querySelector('.se-step-screenshot')?.checked || false,
-    storeAs:       badge?.dataset.storeAs || undefined,
-    storeScope:    badge?.dataset.storeAs ? (badge.dataset.storeScope || 'session') : undefined,
-    storeSource:   row.querySelector('.se-setvar-source')?.value || undefined,
+    fnStepValues: fnStepValues || [],
+    description: row.querySelector('.se-step-desc')?.value?.trim() || '',
+    screenshot: row.querySelector('.se-step-screenshot')?.checked || false,
+    storeAs: badge?.dataset.storeAs || undefined,
+    storeScope: badge?.dataset.storeAs ? (badge.dataset.storeScope || 'session') : undefined,
+    storeSource: row.querySelector('.se-setvar-source')?.value || undefined,
     storeAttrName: row.querySelector('.se-setvar-attr')?.value?.trim() || undefined,
   };
   scriptAddStep(clonedStep, row.nextSibling);
@@ -3890,13 +3892,13 @@ function scriptReorderNums() {
 async function scriptSave() {
   modClearAlert('script-editor-alert');
   const title = document.getElementById('se-title').value.trim();
-  if (!title)            { modAlert('script-editor-alert', 'error', 'Title is required'); return; }
+  if (!title) { modAlert('script-editor-alert', 'error', 'Title is required'); return; }
   if (!currentProjectId) { modAlert('script-editor-alert', 'error', 'Select a project first'); return; }
 
   const steps = [...document.querySelectorAll('#se-steps-container .script-step-row')].map((row, i) => {
     const activeTab = row.querySelector('.value-toggle-btn.active')?.textContent?.trim() || 'Static';
-    const kw       = row.querySelector('.se-step-kw-select')?.value || '';
-    const isFnCall     = kw === 'CALL FUNCTION';
+    const kw = row.querySelector('.se-step-kw-select')?.value || '';
+    const isFnCall = kw === 'CALL FUNCTION';
     const isFileChooser = kw === 'FILE CHOOSER';
     let valueMode, value, fnStepValues;
     if (isFileChooser) {
@@ -3904,48 +3906,48 @@ async function scriptSave() {
       value = row.querySelector('.fc-file-info')?.dataset.serverPath || null;
     } else if (isFnCall) {
       valueMode = 'static';
-      value     = row.querySelector('.se-step-fn-select')?.value || null;
+      value = row.querySelector('.se-step-fn-select')?.value || null;
       fnStepValues = [...(row.querySelectorAll('.fn-child-row') || [])]
         .filter(cr => cr.querySelector('.fn-cs-value'))
         .map(cr => {
-          const fi        = parseInt(cr.dataset.fnStepIdx);
-          const activeCs  = cr.querySelector('.value-toggle-btn.active')?.textContent?.trim() || 'Static';
+          const fi = parseInt(cr.dataset.fnStepIdx);
+          const activeCs = cr.querySelector('.value-toggle-btn.active')?.textContent?.trim() || 'Static';
           let csMode, csValue, csTestData = [];
           if (activeCs === 'Dynamic') {
-            csMode  = 'dynamic';
+            csMode = 'dynamic';
             csValue = cr.querySelector('.fn-cs-val-dynamic')?.value || null;
           } else if (activeCs === 'Common Data') {
-            csMode  = 'commondata';
+            csMode = 'commondata';
             const cdName = cr.querySelector('.fn-cs-cd-select')?.value || '';
             csValue = cdName ? `\${${cdName}}` : null;
           } else if (activeCs === 'Test Data (Static)') {
-            csMode     = 'testdata';
-            csValue    = null;
+            csMode = 'testdata';
+            csValue = null;
             csTestData = [...(cr.querySelectorAll('.fn-cs-td-row') || [])].map(tr => ({
               value: tr.querySelector('.fn-cs-td-val')?.value?.trim() || '',
             })).filter(r => r.value);
           } else {
-            csMode  = 'static';
+            csMode = 'static';
             csValue = cr.querySelector('.fn-cs-val-static')?.value?.trim() || null;
           }
           return { fnStepIdx: fi, valueMode: csMode, value: csValue, testData: csTestData };
         });
     } else if (activeTab === '📌 Variable') {
       valueMode = 'variable';
-      value     = row.querySelector('.se-step-var-select')?.value || null;
+      value = row.querySelector('.se-step-var-select')?.value || null;
     } else if (activeTab === 'Dynamic') {
       valueMode = 'dynamic';
-      value     = row.querySelector('.se-step-val-dynamic')?.value || null;
+      value = row.querySelector('.se-step-val-dynamic')?.value || null;
     } else if (activeTab === 'Common Data') {
       valueMode = 'commondata';
       const cdName = row.querySelector('.se-step-cd-select')?.value || '';
       value = cdName ? `\${${cdName}}` : null;
     } else if (activeTab === 'Test Data (Static)') {
       valueMode = 'testdata';
-      value     = null;
+      value = null;
     } else {
       valueMode = 'static';
-      value     = row.querySelector('.se-step-val-static')?.value?.trim() || null;
+      value = row.querySelector('.se-step-val-static')?.value?.trim() || null;
     }
 
     // SET VARIABLE — override value with JS expression if source=js
@@ -3961,51 +3963,51 @@ async function scriptSave() {
     })).filter(r => r.value);
 
     // 📌 Pin fields
-    const badge       = row.querySelector('.step-pin-badge');
-    const storeAs     = badge?.dataset.storeAs || undefined;
-    const storeAttr   = isSetVar ? (row.querySelector('.se-setvar-attr')?.value?.trim() || undefined) : undefined;
+    const badge = row.querySelector('.step-pin-badge');
+    const storeAs = badge?.dataset.storeAs || undefined;
+    const storeAttr = isSetVar ? (row.querySelector('.se-setvar-attr')?.value?.trim() || undefined) : undefined;
     const storeVarName = isSetVar ? (row.querySelector('.se-setvar-name')?.value?.trim() || undefined) : storeAs;
 
     return {
-      id:            row.dataset.stepId || `step-${i + 1}`,
-      order:         i + 1,
-      keyword:       kw,
-      locatorName:   row.querySelector('.se-step-loc-name')?.value?.trim() || null,
-      locatorType:   row.querySelector('.se-step-loc-type')?.value || 'css',
-      locator:       row.querySelector('.se-step-selector')?.value?.trim() || null,
-      locatorId:     null,
+      id: row.dataset.stepId || `step-${i + 1}`,
+      order: i + 1,
+      keyword: kw,
+      locatorName: row.querySelector('.se-step-loc-name')?.value?.trim() || null,
+      locatorType: row.querySelector('.se-step-loc-type')?.value || 'css',
+      locator: row.querySelector('.se-step-selector')?.value?.trim() || null,
+      locatorId: null,
       valueMode,
       value,
       testData,
-      fnStepValues:  fnStepValues || [],
-      description:   row.querySelector('.se-step-desc')?.value?.trim() || '',
-      screenshot:    row.querySelector('.se-step-screenshot')?.checked || false,
-      storeAs:       isSetVar ? storeVarName : (storeAs || undefined),
-      storeScope:    isSetVar
+      fnStepValues: fnStepValues || [],
+      description: row.querySelector('.se-step-desc')?.value?.trim() || '',
+      screenshot: row.querySelector('.se-step-screenshot')?.checked || false,
+      storeAs: isSetVar ? storeVarName : (storeAs || undefined),
+      storeScope: isSetVar
         ? (row.querySelector('.se-setvar-scope:checked')?.value || 'session')
         : (storeAs ? (badge?.dataset.storeScope || 'session') : undefined),
-      storeSource:   isSetVar ? storeSource : undefined,
+      storeSource: isSetVar ? storeSource : undefined,
       storeAttrName: storeAttr || undefined,
     };
   });
 
   // Validate: each testdata step must have at least one value row
-  const emptyTdStep = steps.findIndex(s => s.valueMode === 'testdata' && !(s.testData||[]).length);
+  const emptyTdStep = steps.findIndex(s => s.valueMode === 'testdata' && !(s.testData || []).length);
   if (emptyTdStep !== -1) { modAlert('script-editor-alert', 'error', `Step ${emptyTdStep + 1}: Test Data (Static) requires at least one value row.`); return; }
 
   const tags = document.getElementById('se-tags').value.split(',').map(t => t.trim()).filter(Boolean);
   const subcompVal = document.getElementById('se-subcomponent')?.value || '';
   const body = {
-    projectId:    currentProjectId, title,
-    component:    document.getElementById('se-component').value,
+    projectId: currentProjectId, title,
+    component: document.getElementById('se-component').value,
     subcomponent: subcompVal || undefined,
-    description:  document.getElementById('se-desc').value.trim(),
+    description: document.getElementById('se-desc').value.trim(),
     tags, priority: document.getElementById('se-priority').value, steps,
   };
-  const method = editingScriptId ? 'PUT'  : 'POST';
-  const url    = editingScriptId ? `/api/scripts/${editingScriptId}` : '/api/scripts';
-  const res    = await fetch(url, { method, headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) });
-  const data   = await res.json();
+  const method = editingScriptId ? 'PUT' : 'POST';
+  const url = editingScriptId ? `/api/scripts/${editingScriptId}` : '/api/scripts';
+  const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const data = await res.json();
   if (!res.ok) { modAlert('script-editor-alert', 'error', data.error || 'Error saving script'); return; }
 
   // Close editor + refresh list immediately — don't wait for locator sync
@@ -4020,7 +4022,7 @@ async function scriptSave() {
       _syncFailedLocators = new Set(failed);
       _showSyncFailBanner(failed, 'script');
     }
-  }).catch(() => {});
+  }).catch(() => { });
 }
 
 async function _syncLocatorsToRepo(steps) {
@@ -4068,13 +4070,13 @@ function _showSyncFailBanner(failedNames, context) {
   // Remove any stale banner first
   document.getElementById('locator-sync-fail-banner')?.remove();
 
-  const count   = failedNames.length;
-  const names   = failedNames.map(n => `<strong>${escHtml(n)}</strong>`).join(', ');
+  const count = failedNames.length;
+  const names = failedNames.map(n => `<strong>${escHtml(n)}</strong>`).join(', ');
   const subject = context === 'function' ? 'Function' : 'Script';
   const panelId = context === 'function' ? 'panel-functions' : 'panel-scripts';
 
   const banner = document.createElement('div');
-  banner.id        = 'locator-sync-fail-banner';
+  banner.id = 'locator-sync-fail-banner';
   banner.className = 'sync-fail-banner';
   banner.innerHTML = `
     <span class="sync-fail-icon">⚠</span>
@@ -4099,20 +4101,20 @@ async function scriptDelete(id, title) {
 // TEST SUITE MODULE
 // ══════════════════════════════════════════════════════════════════════════════
 
-let allSuites      = [];
+let allSuites = [];
 let editingSuiteId = null;
 let currentSuiteId = null;
 
 // ── Suite Hooks state ─────────────────────────────────────────────────────────
-let _hookBefore    = []; // [{ keyword, locator, value, description }]
-let _hookAfter     = [];
-let _hookFastMode  = []; // login steps for Fast Mode beforeAll
+let _hookBefore = []; // [{ keyword, locator, value, description }]
+let _hookAfter = [];
+let _hookFastMode = []; // login steps for Fast Mode beforeAll
 
 // Keywords allowed in hooks (excludes CALL FUNCTION, GOTO, SET VARIABLE, DATE TOKEN, CALL API, file keywords)
 const HOOK_EXCLUDED_KW = new Set([
-  'CALL FUNCTION','GOTO','SET VARIABLE','DATE TOKEN','CALL API',
-  'ASSERT FILE DOWNLOADED','ASSERT DOWNLOAD COUNT','READ EXCEL VALUE',
-  'ASSERT EXCEL ROW COUNT','READ PDF TEXT',
+  'CALL FUNCTION', 'GOTO', 'SET VARIABLE', 'DATE TOKEN', 'CALL API',
+  'ASSERT FILE DOWNLOADED', 'ASSERT DOWNLOAD COUNT', 'READ EXCEL VALUE',
+  'ASSERT EXCEL ROW COUNT', 'READ PDF TEXT',
 ]);
 
 function _hookKeywords() {
@@ -4132,10 +4134,10 @@ function fastModeToggle() {
 }
 
 function _hookRender(which) {
-  const arr     = which === 'before' ? _hookBefore : which === 'after' ? _hookAfter : _hookFastMode;
-  const listId  = which === 'fastmode' ? 'hook-fastmode-list'  : `hook-${which}-list`;
+  const arr = which === 'before' ? _hookBefore : which === 'after' ? _hookAfter : _hookFastMode;
+  const listId = which === 'fastmode' ? 'hook-fastmode-list' : `hook-${which}-list`;
   const emptyId = which === 'fastmode' ? 'hook-fastmode-empty' : `hook-${which}-empty`;
-  const listEl  = document.getElementById(listId);
+  const listEl = document.getElementById(listId);
   const emptyEl = document.getElementById(emptyId);
   if (!listEl) return;
 
@@ -4150,25 +4152,25 @@ function _hookRender(which) {
 
   const kws = _hookKeywords();
   arr.forEach((step, idx) => {
-    const kw      = kws.find(k => k.key === step.keyword) || null;
+    const kw = kws.find(k => k.key === step.keyword) || null;
     const needLoc = kw ? kw.needsLocator : true;
-    const needVal = kw ? kw.needsValue   : true;
+    const needVal = kw ? kw.needsValue : true;
     const valHint = kw ? (kw.valueHint || '') : '';
 
     const row = document.createElement('div');
     row.className = 'hook-step-row';
     row.dataset.which = which;
-    row.dataset.idx   = idx;
+    row.dataset.idx = idx;
     row.innerHTML = `
       <div class="hook-step-num">${idx + 1}</div>
       <select class="hook-kw-sel fm-input" style="flex:0 0 160px;font-size:12px" onchange="_hookKwChange('${which}',${idx},this)">
         ${kws.map(k => `<option value="${escHtml(k.key)}"${k.key === step.keyword ? ' selected' : ''}>${escHtml(k.label)}</option>`).join('')}
       </select>
-      <input class="hook-loc-inp fm-input" style="flex:1;font-size:12px;${needLoc?'':'opacity:.4'}" placeholder="Locator / selector"
-             value="${escHtml(step.locator || '')}" ${needLoc?'':'disabled'}
+      <input class="hook-loc-inp fm-input" style="flex:1;font-size:12px;${needLoc ? '' : 'opacity:.4'}" placeholder="Locator / selector"
+             value="${escHtml(step.locator || '')}" ${needLoc ? '' : 'disabled'}
              oninput="_hookFieldChange('${which}',${idx},'locator',this.value)" />
-      <input class="hook-val-inp fm-input" style="flex:1;font-size:12px;${needVal?'':'opacity:.4'}" placeholder="${escHtml(valHint || 'Value')}"
-             value="${escHtml(step.value || '')}" ${needVal?'':'disabled'}
+      <input class="hook-val-inp fm-input" style="flex:1;font-size:12px;${needVal ? '' : 'opacity:.4'}" placeholder="${escHtml(valHint || 'Value')}"
+             value="${escHtml(step.value || '')}" ${needVal ? '' : 'disabled'}
              oninput="_hookFieldChange('${which}',${idx},'value',this.value)" />
       <input class="hook-desc-inp fm-input" style="flex:1;font-size:12px" placeholder="Description (optional)"
              value="${escHtml(step.description || '')}"
@@ -4205,12 +4207,12 @@ function _hookKwChange(which, idx, sel) {
 }
 
 function _hookInit(beforeSteps, afterSteps, fastModeOn, fastSteps) {
-  _hookBefore   = (beforeSteps || []).map(s => ({ keyword: s.keyword || 'CLICK', locator: s.locator || '', value: s.value || '', description: s.description || '' }));
-  _hookAfter    = (afterSteps  || []).map(s => ({ keyword: s.keyword || 'CLICK', locator: s.locator || '', value: s.value || '', description: s.description || '' }));
-  _hookFastMode = (fastSteps   || []).map(s => ({ keyword: s.keyword || 'FILL',  locator: s.locator || '', value: s.value || '', description: s.description || '' }));
-  const chk  = document.getElementById('sm-fast-mode');
+  _hookBefore = (beforeSteps || []).map(s => ({ keyword: s.keyword || 'CLICK', locator: s.locator || '', value: s.value || '', description: s.description || '' }));
+  _hookAfter = (afterSteps || []).map(s => ({ keyword: s.keyword || 'CLICK', locator: s.locator || '', value: s.value || '', description: s.description || '' }));
+  _hookFastMode = (fastSteps || []).map(s => ({ keyword: s.keyword || 'FILL', locator: s.locator || '', value: s.value || '', description: s.description || '' }));
+  const chk = document.getElementById('sm-fast-mode');
   const body = document.getElementById('sm-fast-mode-body');
-  if (chk)  chk.checked = !!fastModeOn;
+  if (chk) chk.checked = !!fastModeOn;
   if (body) body.style.display = fastModeOn ? '' : 'none';
   _hookRender('before');
   _hookRender('after');
@@ -4236,7 +4238,7 @@ function _overlayChange(idx, field, val) {
 }
 
 function _overlayRender() {
-  const listEl  = document.getElementById('overlay-handler-list');
+  const listEl = document.getElementById('overlay-handler-list');
   const emptyEl = document.getElementById('overlay-handler-empty');
   if (!listEl) return;
   listEl.querySelectorAll('.overlay-row').forEach(el => el.remove());
@@ -4254,18 +4256,18 @@ function _overlayRender() {
     row.innerHTML = `
       <div class="hook-step-num">${idx + 1}</div>
       <select class="fm-input" style="flex:0 0 110px;font-size:12px" onchange="_overlayChange(${idx},'type',this.value)">
-        <option value="any"     ${h.type==='any'     ?'selected':''}>Any dialog</option>
-        <option value="alert"   ${h.type==='alert'   ?'selected':''}>alert()</option>
-        <option value="confirm" ${h.type==='confirm' ?'selected':''}>confirm()</option>
-        <option value="prompt"  ${h.type==='prompt'  ?'selected':''}>prompt()</option>
+        <option value="any"     ${h.type === 'any' ? 'selected' : ''}>Any dialog</option>
+        <option value="alert"   ${h.type === 'alert' ? 'selected' : ''}>alert()</option>
+        <option value="confirm" ${h.type === 'confirm' ? 'selected' : ''}>confirm()</option>
+        <option value="prompt"  ${h.type === 'prompt' ? 'selected' : ''}>prompt()</option>
       </select>
       <span style="font-size:12px;color:var(--neutral-500);flex:0 0 auto">&#8594;</span>
       <select class="fm-input" style="flex:0 0 100px;font-size:12px" onchange="_overlayChange(${idx},'action',this.value)">
-        <option value="accept"  ${h.action==='accept' ?'selected':''}>Accept</option>
-        <option value="dismiss" ${h.action==='dismiss'?'selected':''}>Dismiss</option>
+        <option value="accept"  ${h.action === 'accept' ? 'selected' : ''}>Accept</option>
+        <option value="dismiss" ${h.action === 'dismiss' ? 'selected' : ''}>Dismiss</option>
       </select>
-      <input class="fm-input" style="flex:1;font-size:12px;display:${showText?'block':'none'}" placeholder="Prompt text (optional)"
-             value="${escHtml(h.text||'')}" oninput="_overlayChange(${idx},'text',this.value)" />
+      <input class="fm-input" style="flex:1;font-size:12px;display:${showText ? 'block' : 'none'}" placeholder="Prompt text (optional)"
+             value="${escHtml(h.text || '')}" oninput="_overlayChange(${idx},'text',this.value)" />
       <button class="tbl-btn del" onclick="_overlayRemove(${idx})" title="Remove">✕</button>
     `;
     listEl.appendChild(row);
@@ -4279,10 +4281,10 @@ function _overlayInit(handlers) {
 
 async function suiteLoad() {
   const emptyEl = document.getElementById('suite-list-empty');
-  const listEl  = document.getElementById('suite-list');
+  const listEl = document.getElementById('suite-list');
   if (!currentProjectId) {
     if (emptyEl) emptyEl.style.display = '';
-    if (listEl)  listEl.innerHTML = '';
+    if (listEl) listEl.innerHTML = '';
     allSuites = [];
     return;
   }
@@ -4293,8 +4295,8 @@ async function suiteLoad() {
 }
 
 function suiteRender() {
-  const q       = (document.getElementById('suite-filter')?.value ?? '').toLowerCase();
-  const listEl  = document.getElementById('suite-list');
+  const q = (document.getElementById('suite-filter')?.value ?? '').toLowerCase();
+  const listEl = document.getElementById('suite-list');
   const emptyEl = document.getElementById('suite-list-empty');
   if (!listEl) return;
   const filtered = allSuites.filter(s => !q || s.name.toLowerCase().includes(q));
@@ -4307,7 +4309,7 @@ function suiteRender() {
         <div style="flex:1">
           <div class="suite-name">${escHtml(s.name)}</div>
           ${s.description ? `<div style="font-size:12.5px;color:var(--neutral-500);margin-top:3px">${escHtml(s.description)}</div>` : ''}
-          <div class="suite-meta">${(s.scriptIds||[]).length} script${(s.scriptIds||[]).length !== 1 ? 's' : ''} · By ${escHtml(s.createdBy || '—')} · ${formatDate(s.createdAt)}</div>
+          <div class="suite-meta">${(s.scriptIds || []).length} script${(s.scriptIds || []).length !== 1 ? 's' : ''} · By ${escHtml(s.createdBy || '—')} · ${formatDate(s.createdAt)}</div>
         </div>
         <div style="flex-shrink:0;display:flex;gap:6px;align-items:center">
           ${isViewer() ? '' : `<button class="tbl-btn" onclick="suiteEditById('${escHtml(s.id)}')">Edit</button>`}
@@ -4321,7 +4323,7 @@ function _populateEnvDropdown(selectedEnvId = '') {
   const sel = document.getElementById('sm-env');
   if (!sel) return;
   const project = allProjects.find(p => p.id === currentProjectId);
-  const envs    = project?.environments || [];
+  const envs = project?.environments || [];
   sel.innerHTML = '<option value="">— Use project default (first environment) —</option>';
   envs.forEach(e => {
     const opt = document.createElement('option');
@@ -4333,36 +4335,36 @@ function _populateEnvDropdown(selectedEnvId = '') {
 }
 
 // ── Suite Modal — state ───────────────────────────────────────────────────────
-let _smSelectedIds  = [];   // ordered list of selected script ids (Zone B)
-let _smCheckedIds   = new Set(); // checkboxes ticked in Zone A (for bulk-add)
-let _smPage         = 1;
-let _smPageSize     = 10;
-let _smSortCol      = 'tcid';
-let _smSortDir      = 'asc';  // 'asc' | 'desc'
-let _smFiltered     = [];   // filtered+sorted slice of allScripts for Zone A
+let _smSelectedIds = [];   // ordered list of selected script ids (Zone B)
+let _smCheckedIds = new Set(); // checkboxes ticked in Zone A (for bulk-add)
+let _smPage = 1;
+let _smPageSize = 10;
+let _smSortCol = 'tcid';
+let _smSortDir = 'asc';  // 'asc' | 'desc'
+let _smFiltered = [];   // filtered+sorted slice of allScripts for Zone A
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function _smTcId(s) { return s.tcId || s.id || ''; }
 
 function _smApplyFilter() {
-  const qTcid  = (document.getElementById('sm-filter-tcid')?.value      ?? '').toLowerCase().trim();
-  const qTitle = (document.getElementById('sm-filter-title')?.value     ?? '').toLowerCase().trim();
-  const qComp  = (document.getElementById('sm-filter-component')?.value ?? '').toLowerCase().trim();
-  const qTag   = (document.getElementById('sm-filter-tag')?.value       ?? '').toLowerCase().trim();
+  const qTcid = (document.getElementById('sm-filter-tcid')?.value ?? '').toLowerCase().trim();
+  const qTitle = (document.getElementById('sm-filter-title')?.value ?? '').toLowerCase().trim();
+  const qComp = (document.getElementById('sm-filter-component')?.value ?? '').toLowerCase().trim();
+  const qTag = (document.getElementById('sm-filter-tag')?.value ?? '').toLowerCase().trim();
   let list = allScripts.filter(s => {
-    if (qTcid  && !(_smTcId(s)).toLowerCase().includes(qTcid))         return false;
-    if (qTitle && !(s.title     || '').toLowerCase().includes(qTitle))  return false;
-    if (qComp  && !(s.component || '').toLowerCase().includes(qComp))   return false;
-    if (qTag   && !(s.tag       || '').toLowerCase().includes(qTag))    return false;
+    if (qTcid && !(_smTcId(s)).toLowerCase().includes(qTcid)) return false;
+    if (qTitle && !(s.title || '').toLowerCase().includes(qTitle)) return false;
+    if (qComp && !(s.component || '').toLowerCase().includes(qComp)) return false;
+    if (qTag && !(s.tag || '').toLowerCase().includes(qTag)) return false;
     return true;
   });
   // Sort
   list.sort((a, b) => {
     let va, vb;
-    if (_smSortCol === 'tcid')      { va = _smTcId(a);     vb = _smTcId(b); }
-    else if (_smSortCol === 'title')     { va = a.title     || ''; vb = b.title     || ''; }
+    if (_smSortCol === 'tcid') { va = _smTcId(a); vb = _smTcId(b); }
+    else if (_smSortCol === 'title') { va = a.title || ''; vb = b.title || ''; }
     else if (_smSortCol === 'component') { va = a.component || ''; vb = b.component || ''; }
-    else                                 { va = _smTcId(a);        vb = _smTcId(b); }
+    else { va = _smTcId(a); vb = _smTcId(b); }
     const cmp = va.localeCompare(vb, undefined, { numeric: true });
     return _smSortDir === 'asc' ? cmp : -cmp;
   });
@@ -4371,7 +4373,7 @@ function _smApplyFilter() {
 }
 
 function _smRenderSortIndicators() {
-  ['tcid','title','component'].forEach(col => {
+  ['tcid', 'title', 'component'].forEach(col => {
     const el = document.getElementById(`sm-sort-${col}`);
     if (!el) return;
     if (col === _smSortCol) el.textContent = _smSortDir === 'asc' ? '▲' : '▼';
@@ -4386,7 +4388,7 @@ function _smRenderZoneA() {
   const totalPages = Math.max(1, Math.ceil(_smFiltered.length / _smPageSize));
   if (_smPage > totalPages) _smPage = totalPages;
   const start = (_smPage - 1) * _smPageSize;
-  const page  = _smFiltered.slice(start, start + _smPageSize);
+  const page = _smFiltered.slice(start, start + _smPageSize);
 
   // Count label
   const countEl = document.getElementById('sm-script-count');
@@ -4396,8 +4398,8 @@ function _smRenderZoneA() {
   const prevBtn = document.getElementById('sm-prev-btn');
   const nextBtn = document.getElementById('sm-next-btn');
   const pageLabel = document.getElementById('sm-page-label');
-  if (prevBtn)  prevBtn.disabled  = _smPage <= 1;
-  if (nextBtn)  nextBtn.disabled  = _smPage >= totalPages;
+  if (prevBtn) prevBtn.disabled = _smPage <= 1;
+  if (nextBtn) nextBtn.disabled = _smPage >= totalPages;
   if (pageLabel) pageLabel.textContent = `Page ${_smPage} of ${totalPages}`;
 
   if (!page.length) {
@@ -4412,8 +4414,8 @@ function _smRenderZoneA() {
   _smCheckedIds = new Set([..._smCheckedIds].filter(id => pageIds.has(id)));
 
   el.innerHTML = page.map(s => {
-    const already  = selectedSet.has(s.id);
-    const checked  = _smCheckedIds.has(s.id);
+    const already = selectedSet.has(s.id);
+    const checked = _smCheckedIds.has(s.id);
     return `<div style="display:grid;grid-template-columns:32px 110px 1fr 130px 110px;align-items:center;border-bottom:1px solid var(--neutral-100);${already ? 'opacity:.45;' : ''}"
                  onmouseover="this.style.background='var(--brand-light)'" onmouseout="this.style.background=''">
       <div style="padding:7px 8px;display:flex;align-items:center;justify-content:center">
@@ -4433,7 +4435,7 @@ function _smRenderZoneA() {
   if (allChk) {
     const available = page.filter(s => !selectedSet.has(s.id));
     const checkedCount = available.filter(s => _smCheckedIds.has(s.id)).length;
-    allChk.checked       = available.length > 0 && checkedCount === available.length;
+    allChk.checked = available.length > 0 && checkedCount === available.length;
     allChk.indeterminate = checkedCount > 0 && checkedCount < available.length;
   }
   _smUpdateBulkBar();
@@ -4442,39 +4444,40 @@ function _smRenderZoneA() {
 let _smbCheckedIds = new Set(); // checkboxes ticked in Zone B (for bulk-remove)
 
 function _smbUpdateBulkBar() {
-  const bar     = document.getElementById('smb-bulk-bar');
-  const countEl = document.getElementById('smb-bulk-count');
+  const bars = document.querySelectorAll('.smb-bulk-bar');
+  const countEls = document.querySelectorAll('.smb-bulk-count');
   const n = _smbCheckedIds.size;
-  if (!bar) return;
-  if (n > 0) {
-    bar.style.display = 'flex';
-    if (countEl) countEl.textContent = `${n} selected`;
-  } else {
-    bar.style.display = 'none';
-  }
+  bars.forEach(bar => {
+    bar.style.display = n > 0 ? 'flex' : 'none';
+  });
+  countEls.forEach(el => {
+    el.textContent = n > 0 ? `${n} selected` : '';
+  });
 }
 
 function smbRowCheckChange(chk) {
   const id = chk.dataset.id;
   if (chk.checked) _smbCheckedIds.add(id);
-  else             _smbCheckedIds.delete(id);
+  else _smbCheckedIds.delete(id);
   // Sync select-all checkbox
   const allChk = document.getElementById('smb-chk-all');
   if (allChk) {
-    const n = _smSelectedIds.length;
-    const checked = _smbCheckedIds.size;
-    allChk.checked       = n > 0 && checked === n;
-    allChk.indeterminate = checked > 0 && checked < n;
+    const displayList = _smGetZoneBDisplayList();
+    const n = displayList.length;
+    const checkedCount = displayList.filter(item => _smbCheckedIds.has(item.id)).length;
+    allChk.checked = n > 0 && checkedCount === n;
+    allChk.indeterminate = checkedCount > 0 && checkedCount < n;
   }
   _smbUpdateBulkBar();
 }
 
 function smbToggleSelectAll() {
   const allChk = document.getElementById('smb-chk-all');
+  const displayList = _smGetZoneBDisplayList();
   if (allChk?.checked) {
-    _smSelectedIds.forEach(id => _smbCheckedIds.add(id));
+    displayList.forEach(item => _smbCheckedIds.add(item.id));
   } else {
-    _smbCheckedIds.clear();
+    displayList.forEach(item => _smbCheckedIds.delete(item.id));
   }
   document.querySelectorAll('#sm-selected-list .smb-row-chk').forEach(chk => {
     chk.checked = _smbCheckedIds.has(chk.dataset.id);
@@ -4498,8 +4501,21 @@ function smbDeselectAll() {
   _smbUpdateBulkBar();
 }
 
+function _smGetZoneBDisplayList() {
+  const searchInput = document.getElementById('smb-search')?.value.toLowerCase() || '';
+  const scriptMap = Object.fromEntries(allScripts.map(s => [s.id, s]));
+  return _smSelectedIds.map((id, idx) => ({ id, idx, s: scriptMap[id] })).filter(item => {
+    if (!item.s) return false;
+    if (!searchInput) return true;
+    return item.s.title.toLowerCase().includes(searchInput) || 
+           (item.s.tcid || '').toLowerCase().includes(searchInput) ||
+           (item.s.tags || '').toLowerCase().includes(searchInput) ||
+           (item.s.component || '').toLowerCase().includes(searchInput);
+  });
+}
+
 function _smRenderZoneB() {
-  const el    = document.getElementById('sm-selected-list');
+  const el = document.getElementById('sm-selected-list');
   const empty = document.getElementById('sm-selected-empty');
   const countEl = document.getElementById('sm-selected-count');
   if (!el) return;
@@ -4514,33 +4530,38 @@ function _smRenderZoneB() {
   }
   if (empty) empty.style.display = 'none';
 
-  const scriptMap = Object.fromEntries(allScripts.map(s => [s.id, s]));
-  const n = _smSelectedIds.length;
-  const checkedCount = [..._smbCheckedIds].filter(id => _smSelectedIds.includes(id)).length;
+  const displayList = _smGetZoneBDisplayList();
+  const n = displayList.length;
+  const checkedCount = displayList.filter(item => _smbCheckedIds.has(item.id)).length;
+
+  if (n === 0) {
+    el.innerHTML = `<div style="padding:12px 10px;color:var(--neutral-400);font-size:12px;text-align:center">No selected scripts match your filter.</div>`;
+    _smbUpdateBulkBar();
+    return;
+  }
 
   el.innerHTML =
     // Select-all header row
     `<div id="sm-selected-empty" style="display:none"></div>
      <div style="display:flex;align-items:center;gap:6px;padding:4px 10px;background:var(--neutral-50);border-bottom:1px solid var(--neutral-200);border-radius:4px 4px 0 0">
        <input type="checkbox" id="smb-chk-all" title="Select / deselect all"
-              ${checkedCount === n ? 'checked' : ''}
+              ${checkedCount === n && n > 0 ? 'checked' : ''}
               onchange="smbToggleSelectAll()" />
        <span style="font-size:11.5px;color:var(--neutral-500);flex:1">Select all</span>
      </div>` +
-    _smSelectedIds.map((id, idx) => {
-      const s = scriptMap[id];
-      if (!s) return '';
-      const isFirst   = idx === 0;
-      const isLast    = idx === n - 1;
+    displayList.map(({ id, idx, s }) => {
+      const isFirst = idx === 0;
+      const isLast = idx === _smSelectedIds.length - 1;
       const isChecked = _smbCheckedIds.has(id);
-      return `<div style="display:flex;align-items:center;gap:6px;padding:5px 10px;border-bottom:1px solid var(--neutral-100);${isChecked ? 'background:var(--red-50,#fff1f2);' : ''}">
+      return `<div draggable="true" ondragstart="smDragStart(event, ${idx})" ondragover="smDragOver(event)" ondragleave="smDragLeave(event)" ondrop="smDrop(event, ${idx})" ondragend="smDragEnd(event)" style="display:flex;align-items:center;gap:6px;padding:5px 10px;border-bottom:1px solid var(--neutral-100);${isChecked ? 'background:var(--red-50,#fff1f2);' : ''}">
+        <span style="cursor:grab;color:var(--neutral-400);user-select:none;font-size:14px;line-height:1;margin-right:2px" title="Drag to reorder">⋮⋮</span>
         <input type="checkbox" class="smb-row-chk" data-id="${escHtml(id)}"
                ${isChecked ? 'checked' : ''} onchange="smbRowCheckChange(this)" />
         <span style="font-size:12px;color:var(--neutral-400);min-width:22px;text-align:right">${idx + 1}</span>
         <span style="font-size:12px;color:var(--neutral-500);min-width:76px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(_smTcId(s))}</span>
         <span style="flex:1;font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(s.title)}">${escHtml(s.title)}</span>
         <button class="tbl-btn" title="Move up"   ${isFirst ? 'disabled' : ''} onclick="smMoveScript(${idx},-1)">↑</button>
-        <button class="tbl-btn" title="Move down" ${isLast  ? 'disabled' : ''} onclick="smMoveScript(${idx}, 1)">↓</button>
+        <button class="tbl-btn" title="Move down" ${isLast ? 'disabled' : ''} onclick="smMoveScript(${idx}, 1)">↓</button>
         <button class="tbl-btn del" title="Remove" onclick="smRemoveScript('${escHtml(id)}')">×</button>
       </div>`;
     }).join('');
@@ -4548,7 +4569,7 @@ function _smRenderZoneB() {
   // Set indeterminate state if partially selected
   const allChk = document.getElementById('smb-chk-all');
   if (allChk) {
-    allChk.checked       = checkedCount === n && n > 0;
+    allChk.checked = checkedCount === n && n > 0;
     allChk.indeterminate = checkedCount > 0 && checkedCount < n;
   }
   _smbUpdateBulkBar();
@@ -4565,17 +4586,17 @@ function smAddScript(id) {
 function smRowCheckChange(chk) {
   const id = chk.dataset.id;
   if (chk.checked) _smCheckedIds.add(id);
-  else             _smCheckedIds.delete(id);
+  else _smCheckedIds.delete(id);
   _smUpdateBulkBar();
   // sync select-all checkbox
   const selectedSet = new Set(_smSelectedIds);
-  const start  = (_smPage - 1) * _smPageSize;
-  const page   = _smFiltered.slice(start, start + _smPageSize);
+  const start = (_smPage - 1) * _smPageSize;
+  const page = _smFiltered.slice(start, start + _smPageSize);
   const available = page.filter(s => !selectedSet.has(s.id));
   const checkedCount = available.filter(s => _smCheckedIds.has(s.id)).length;
   const allChk = document.getElementById('sm-chk-all');
   if (allChk) {
-    allChk.checked       = available.length > 0 && checkedCount === available.length;
+    allChk.checked = available.length > 0 && checkedCount === available.length;
     allChk.indeterminate = checkedCount > 0 && checkedCount < available.length;
   }
 }
@@ -4583,8 +4604,8 @@ function smRowCheckChange(chk) {
 function smToggleSelectAll() {
   const allChk = document.getElementById('sm-chk-all');
   const selectedSet = new Set(_smSelectedIds);
-  const start  = (_smPage - 1) * _smPageSize;
-  const page   = _smFiltered.slice(start, start + _smPageSize);
+  const start = (_smPage - 1) * _smPageSize;
+  const page = _smFiltered.slice(start, start + _smPageSize);
   const available = page.filter(s => !selectedSet.has(s.id));
   if (allChk?.checked) {
     available.forEach(s => _smCheckedIds.add(s.id));
@@ -4616,16 +4637,15 @@ function smDeselectAll() {
 }
 
 function _smUpdateBulkBar() {
-  const bar      = document.getElementById('sm-bulk-bar');
-  const countEl  = document.getElementById('sm-bulk-count');
+  const bars = document.querySelectorAll('.sm-bulk-bar');
+  const countEls = document.querySelectorAll('.sm-bulk-count');
   const n = _smCheckedIds.size;
-  if (!bar) return;
-  if (n > 0) {
-    bar.style.display = 'flex';
-    if (countEl) countEl.textContent = `${n} script${n !== 1 ? 's' : ''} selected`;
-  } else {
-    bar.style.display = 'none';
-  }
+  bars.forEach(bar => {
+    bar.style.display = n > 0 ? 'flex' : 'none';
+  });
+  countEls.forEach(el => {
+    el.textContent = n > 0 ? `${n} script${n !== 1 ? 's' : ''} selected` : '';
+  });
 }
 
 function smRemoveScript(id) {
@@ -4641,6 +4661,55 @@ function smMoveScript(idx, dir) {
   const arr = [..._smSelectedIds];
   [arr[idx], arr[newIdx]] = [arr[newIdx], arr[idx]];
   _smSelectedIds = arr;
+  _smRenderZoneB();
+}
+
+let _smDragSourceIds = [];
+
+function smDragStart(e, idx) {
+  const draggedId = _smSelectedIds[idx];
+  if (_smbCheckedIds.has(draggedId)) {
+    // Drag all checked items
+    _smDragSourceIds = _smSelectedIds.filter(id => _smbCheckedIds.has(id));
+  } else {
+    // Drag only this item
+    _smDragSourceIds = [draggedId];
+  }
+  e.dataTransfer.effectAllowed = 'move';
+  setTimeout(() => e.target.style.opacity = '0.4', 0);
+}
+
+function smDragOver(e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  e.currentTarget.style.borderTop = '2px solid var(--brand-500)';
+}
+
+function smDragLeave(e) {
+  e.currentTarget.style.borderTop = '';
+}
+
+function smDragEnd(e) {
+  e.target.style.opacity = '1';
+  _smDragSourceIds = [];
+}
+
+function smDrop(e, dropIdx) {
+  e.preventDefault();
+  e.currentTarget.style.borderTop = '';
+  
+  if (!_smDragSourceIds.length) return;
+  const targetId = _smSelectedIds[dropIdx];
+  if (_smDragSourceIds.includes(targetId)) return;
+  
+  let arr = [..._smSelectedIds];
+  arr = arr.filter(id => !_smDragSourceIds.includes(id));
+  
+  const newTargetIdx = arr.indexOf(targetId);
+  arr.splice(newTargetIdx, 0, ..._smDragSourceIds);
+  
+  _smSelectedIds = arr;
+  _smDragSourceIds = [];
   _smRenderZoneB();
 }
 
@@ -4671,7 +4740,7 @@ function smPageSizeChange() {
 
 // ── Open / Edit modal ─────────────────────────────────────────────────────────
 function smClearFilters() {
-  ['sm-filter-tcid','sm-filter-title','sm-filter-component','sm-filter-tag'].forEach(id => {
+  ['sm-filter-tcid', 'sm-filter-title', 'sm-filter-component', 'sm-filter-tag'].forEach(id => {
     const el = document.getElementById(id); if (el) el.value = '';
   });
   smScriptSearch();
@@ -4679,13 +4748,13 @@ function smClearFilters() {
 
 function _smInit(selectedIds) {
   _smSelectedIds = [...selectedIds];
-  _smCheckedIds  = new Set();
+  _smCheckedIds = new Set();
   _smbCheckedIds = new Set();
-  _smPage     = 1;
+  _smPage = 1;
   _smPageSize = 10;
-  _smSortCol  = 'tcid';
-  _smSortDir  = 'asc';
-  ['sm-filter-tcid','sm-filter-title','sm-filter-component','sm-filter-tag'].forEach(id => {
+  _smSortCol = 'tcid';
+  _smSortDir = 'asc';
+  ['sm-filter-tcid', 'sm-filter-title', 'sm-filter-component', 'sm-filter-tag'].forEach(id => {
     const el = document.getElementById(id); if (el) el.value = '';
   });
   const pageSizeSel = document.getElementById('sm-page-size');
@@ -4710,6 +4779,10 @@ function suiteOpenModal(id = null) {
     if (schedWrap) schedWrap.style.display = 'none';
     _hookInit([], [], false, []);
     _overlayInit([]);
+    // Reset preset to Custom and populate Intelligence tab defaults
+    const presetEl = document.getElementById('flaky-preset');
+    if (presetEl) presetEl.value = '';
+    flakyApplyPreset();
   }
   _smInit(id ? (allSuites.find(x => x.id === id)?.scriptIds || []) : []);
   openModal('modal-suite');
@@ -4765,40 +4838,34 @@ function suiteTab(paneId, btn) {
 async function suiteSave() {
   modClearAlert('suite-modal-alert');
   const name = document.getElementById('sm-name').value.trim();
-  if (!name)             { modAlert('suite-modal-alert', 'error', 'Suite name is required'); return; }
+  if (!name) { modAlert('suite-modal-alert', 'error', 'Suite name is required'); return; }
   if (!currentProjectId) { modAlert('suite-modal-alert', 'error', 'Select a project first'); return; }
-  const scriptIds     = [..._smSelectedIds];   // Zone B order is authoritative
+  const scriptIds = [..._smSelectedIds];   // Zone B order is authoritative
   const retries = parseInt(document.getElementById('sm-retries')?.value || '0', 10);
-  const browsers = [];
-  if (document.getElementById('sm-br-chromium').checked) browsers.push('chromium');
-  if (document.getElementById('sm-br-firefox').checked)  browsers.push('firefox');
-  if (document.getElementById('sm-br-webkit').checked)   browsers.push('webkit');
 
   const body = {
     projectId: currentProjectId, name,
-    description:   document.getElementById('sm-desc').value.trim(),
+    description: document.getElementById('sm-desc').value.trim(),
     scriptIds,
-    environmentId: document.getElementById('sm-env-default').value || null,
-    retries:       [0,1,2].includes(retries) ? retries : 0,
-    browsers,
-    beforeEachSteps: _hookBefore.map((s, i)   => ({ order: i + 1, keyword: s.keyword, locator: s.locator, value: s.value, description: s.description })),
-    afterEachSteps:  _hookAfter.map((s, i)    => ({ order: i + 1, keyword: s.keyword, locator: s.locator, value: s.value, description: s.description })),
-    fastMode:        !!(document.getElementById('sm-fast-mode')?.checked),
-    fastModeSteps:   _hookFastMode.map((s, i) => ({ order: i + 1, keyword: s.keyword, locator: s.locator, value: s.value, description: s.description })),
+    retries: [0, 1, 2].includes(retries) ? retries : 0,
+    beforeEachSteps: _hookBefore.map((s, i) => ({ order: i + 1, keyword: s.keyword, locator: s.locator, value: s.value, description: s.description })),
+    afterEachSteps: _hookAfter.map((s, i) => ({ order: i + 1, keyword: s.keyword, locator: s.locator, value: s.value, description: s.description })),
+    fastMode: !!(document.getElementById('sm-fast-mode')?.checked),
+    fastModeSteps: _hookFastMode.map((s, i) => ({ order: i + 1, keyword: s.keyword, locator: s.locator, value: s.value, description: s.description })),
     overlayHandlers: _overlayHandlers.map(h => ({ type: h.type, action: h.action, text: h.text || '' })),
     // Unified Save: Include flakiness intelligence
     flakinessOverrides: {
       threshold: parseInt(document.getElementById('flaky-cfg-threshold').value) || 30,
-      minRuns:   parseInt(document.getElementById('flaky-cfg-minruns').value)   || 5,
+      minRuns: parseInt(document.getElementById('flaky-cfg-minruns').value) || 5,
       quarantineBudget: parseInt(document.getElementById('flaky-cfg-budget').value) || 5,
       autoPromotePassRate: parseInt(document.getElementById('flaky-cfg-passrate').value) || 95
     }
   };
-  const method = editingSuiteId ? 'PUT'  : 'POST';
-  const url    = editingSuiteId ? `/api/suites/${editingSuiteId}` : '/api/suites';
-  
+  const method = editingSuiteId ? 'PUT' : 'POST';
+  const url = editingSuiteId ? `/api/suites/${editingSuiteId}` : '/api/suites';
+
   try {
-    const res = await fetch(url, { method, headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) });
+    const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Error saving suite');
 
@@ -4819,7 +4886,7 @@ let smLocalSchedules = [];
 function schedSaveLocal() {
   const label = document.getElementById('sched-label').value.trim();
   const envId = document.getElementById('sched-env').value;
-  const cron  = document.getElementById('sched-cron').value.trim() || document.getElementById('sched-preset').value;
+  const cron = document.getElementById('sched-cron').value.trim() || document.getElementById('sched-preset').value;
   if (!label || !envId || !cron) return modAlert('suite-modal-alert', 'error', 'All schedule fields required');
   smLocalSchedules.push({ label, environmentId: envId, cronExpression: cron });
   _renderLocalSchedules();
@@ -4853,11 +4920,11 @@ function suiteCloseModal() { closeModal('modal-suite'); editingSuiteId = null; c
 // ══════════════════════════════════════════════════════════════════════════════
 
 const CRON_PRESETS = {
-  '0 9 * * *':     'Daily at 9am',
-  '0 0 * * *':     'Nightly at midnight',
-  '0 9 * * 1-5':   'Weekdays at 9am',
-  '0 */4 * * *':   'Every 4 hours',
-  '0 * * * *':     'Every hour',
+  '0 9 * * *': 'Daily at 9am',
+  '0 0 * * *': 'Nightly at midnight',
+  '0 9 * * 1-5': 'Weekdays at 9am',
+  '0 */4 * * *': 'Every 4 hours',
+  '0 * * * *': 'Every hour',
 };
 
 function schedPresetLabel(expr) {
@@ -4866,7 +4933,7 @@ function schedPresetLabel(expr) {
 
 function schedPresetChange() {
   const preset = document.getElementById('sched-preset')?.value;
-  const wrap   = document.getElementById('sched-custom-wrap');
+  const wrap = document.getElementById('sched-custom-wrap');
   if (wrap) wrap.style.display = preset === 'custom' ? '' : 'none';
 }
 
@@ -4925,21 +4992,21 @@ async function schedLoad() {
 
 async function schedSave() {
   if (!currentSuiteId) return;
-  const label   = document.getElementById('sched-label')?.value.trim();
-  const envId   = document.getElementById('sched-env')?.value;
-  const preset  = document.getElementById('sched-preset')?.value;
+  const label = document.getElementById('sched-label')?.value.trim();
+  const envId = document.getElementById('sched-env')?.value;
+  const preset = document.getElementById('sched-preset')?.value;
   const cronVal = preset === 'custom' ? document.getElementById('sched-cron')?.value.trim() : preset;
-  const editId  = document.getElementById('sched-edit-id')?.value;
+  const editId = document.getElementById('sched-edit-id')?.value;
 
-  if (!label)  { alert('Please enter a label.'); return; }
-  if (!envId)  { alert('Please select an environment.'); return; }
-  if (!cronVal){ alert('Please enter or select a cron expression.'); return; }
+  if (!label) { alert('Please enter a label.'); return; }
+  if (!envId) { alert('Please select an environment.'); return; }
+  if (!cronVal) { alert('Please enter or select a cron expression.'); return; }
 
   const body = { suiteId: currentSuiteId, environmentId: envId, cronExpression: cronVal, label };
 
   const res = editId
-    ? await fetch(`/api/schedules/${editId}`, { method: 'PUT',  headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) })
-    : await fetch('/api/schedules',            { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    ? await fetch(`/api/schedules/${editId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    : await fetch('/api/schedules', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 
   const data = await res.json();
   if (!res.ok) { alert(data.error || 'Failed to save schedule'); return; }
@@ -4950,7 +5017,7 @@ async function schedSave() {
 
 async function schedToggle(id, enabled) {
   await fetch(`/api/schedules/${id}`, {
-    method: 'PUT', headers: {'Content-Type':'application/json'},
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ enabled }),
   });
   await schedLoad();
@@ -4968,23 +5035,23 @@ async function schedDelete(id) {
 // Execution Module
 // ══════════════════════════════════════════════════════════════════════════════
 
-let _execLastRunId   = null;   // last runId launched from Execution tab
-let _execPollTimer   = null;
+let _execLastRunId = null;   // last runId launched from Execution tab
+let _execPollTimer = null;
 let _execPollStopped = false;
 
 async function execLoad() {
-  const noProj  = document.getElementById('exec-no-project');
-  const body    = document.getElementById('exec-body');
+  const noProj = document.getElementById('exec-no-project');
+  const body = document.getElementById('exec-body');
   const suiteSel = document.getElementById('exec-suite-sel');
   if (!suiteSel) return;
 
   if (!currentProjectId) {
     if (noProj) noProj.style.display = '';
-    if (body)   body.style.display   = 'none';
+    if (body) body.style.display = 'none';
     return;
   }
   if (noProj) noProj.style.display = 'none';
-  if (body)   body.style.display   = '';
+  if (body) body.style.display = '';
 
   // Populate suite dropdown
   const suites = allSuites.filter(s => s.projectId === currentProjectId)
@@ -5013,28 +5080,28 @@ var _execTraceMode = 'on';
 
 var _TRACE_STATES = {
   'on': {
-    next:        'retain-on-failure',
-    dot:         '#16a34a',
-    label:       'Always',
-    hint:        'Trace recorded for every test (pass & fail)',
+    next: 'retain-on-failure',
+    dot: '#16a34a',
+    label: 'Always',
+    hint: 'Trace recorded for every test (pass & fail)',
     borderColor: 'var(--neutral-300)',
-    color:       'var(--neutral-700)',
+    color: 'var(--neutral-700)',
   },
   'retain-on-failure': {
-    next:        'off',
-    dot:         '#d97706',
-    label:       'Failed Only',
-    hint:        'Trace recorded for failed tests only — no retries required',
+    next: 'off',
+    dot: '#d97706',
+    label: 'Failed Only',
+    hint: 'Trace recorded for failed tests only — no retries required',
     borderColor: '#d97706',
-    color:       '#92400e',
+    color: '#92400e',
   },
   'off': {
-    next:        'on',
-    dot:         '#94a3b8',
-    label:       'Off',
-    hint:        'No traces recorded',
+    next: 'on',
+    dot: '#94a3b8',
+    label: 'Off',
+    hint: 'No traces recorded',
     borderColor: '#94a3b8',
-    color:       '#64748b',
+    color: '#64748b',
   },
 };
 
@@ -5047,22 +5114,22 @@ function _execTraceWarnCheck() {
 function _execToggleTrace() {
   const state = _TRACE_STATES[_execTraceMode] || _TRACE_STATES['on'];
   _execTraceMode = state.next;
-  const next  = _TRACE_STATES[_execTraceMode];
-  const dot   = document.getElementById('exec-trace-dot');
+  const next = _TRACE_STATES[_execTraceMode];
+  const dot = document.getElementById('exec-trace-dot');
   const label = document.getElementById('exec-trace-label');
-  const hint  = document.getElementById('exec-trace-hint');
-  const btn   = document.getElementById('exec-trace-toggle');
-  dot.style.background  = next.dot;
-  label.textContent     = next.label;
-  hint.textContent      = next.hint;
+  const hint = document.getElementById('exec-trace-hint');
+  const btn = document.getElementById('exec-trace-toggle');
+  dot.style.background = next.dot;
+  label.textContent = next.label;
+  hint.textContent = next.hint;
   btn.style.borderColor = next.borderColor;
-  btn.style.color       = next.color;
+  btn.style.color = next.color;
 }
 
 function _execCheckBrowserConstraint() {
   const warningEl = document.getElementById('exec-browser-warning');
-  const runBtn    = document.getElementById('exec-run-btn');
-  const hintEl    = document.getElementById('exec-run-hint');
+  const runBtn = document.getElementById('exec-run-btn');
+  const hintEl = document.getElementById('exec-run-hint');
 
   if (!_execSuiteHasTestData) {
     // No testdata steps — no restriction, hide warning
@@ -5076,8 +5143,8 @@ function _execCheckBrowserConstraint() {
 
   if (selectedCount > 1) {
     if (warningEl) warningEl.style.display = '';
-    if (runBtn)    runBtn.disabled = true;
-    if (hintEl)    hintEl.textContent = '';
+    if (runBtn) runBtn.disabled = true;
+    if (hintEl) hintEl.textContent = '';
     return false;
   }
 
@@ -5088,13 +5155,13 @@ function _execCheckBrowserConstraint() {
 }
 
 function execOnSuiteChange() {
-  const suiteId  = document.getElementById('exec-suite-sel')?.value;
-  const envSel   = document.getElementById('exec-env-sel');
+  const suiteId = document.getElementById('exec-suite-sel')?.value;
+  const envSel = document.getElementById('exec-env-sel');
   const scriptsWrap = document.getElementById('exec-scripts-wrap');
-  const scriptList  = document.getElementById('exec-script-list');
-  const countEl     = document.getElementById('exec-script-count');
-  const runBtn      = document.getElementById('exec-run-btn');
-  const hintEl      = document.getElementById('exec-run-hint');
+  const scriptList = document.getElementById('exec-script-list');
+  const countEl = document.getElementById('exec-script-count');
+  const runBtn = document.getElementById('exec-run-btn');
+  const hintEl = document.getElementById('exec-run-hint');
 
   if (!suiteId) {
     envSel.innerHTML = '<option value="">— Select Environment —</option>';
@@ -5107,9 +5174,9 @@ function execOnSuiteChange() {
     return;
   }
 
-  const suite   = allSuites.find(s => s.id === suiteId);
+  const suite = allSuites.find(s => s.id === suiteId);
   const project = allProjects.find(p => p.id === currentProjectId);
-  const envs    = project?.environments || [];
+  const envs = project?.environments || [];
 
   // Populate environment dropdown
   envSel.innerHTML = '<option value="">— Select Environment —</option>' +
@@ -5118,7 +5185,7 @@ function execOnSuiteChange() {
   // Show scripts
   const scriptIds = suite?.scriptIds || [];
   const scriptMap = Object.fromEntries(allScripts.map(s => [s.id, s]));
-  const scripts   = scriptIds.map(id => scriptMap[id]).filter(Boolean);
+  const scripts = scriptIds.map(id => scriptMap[id]).filter(Boolean);
 
   if (countEl) countEl.textContent = `(${scripts.length})`;
 
@@ -5149,17 +5216,17 @@ function execOnSuiteChange() {
 
 function _execUpdateRunBtn() {
   const suiteId = document.getElementById('exec-suite-sel')?.value;
-  const envId   = document.getElementById('exec-env-sel')?.value;
-  const runBtn  = document.getElementById('exec-run-btn');
-  const hintEl  = document.getElementById('exec-run-hint');
-  const ready   = !!(suiteId && envId);
+  const envId = document.getElementById('exec-env-sel')?.value;
+  const runBtn = document.getElementById('exec-run-btn');
+  const hintEl = document.getElementById('exec-run-hint');
+  const ready = !!(suiteId && envId);
   runBtn.disabled = !ready;
   hintEl.textContent = ready ? '' : (!suiteId ? 'Select a suite first' : 'Select an environment to run');
 }
 
 async function execRun() {
   const suiteId = document.getElementById('exec-suite-sel')?.value;
-  const envId   = document.getElementById('exec-env-sel')?.value;
+  const envId = document.getElementById('exec-env-sel')?.value;
   if (!suiteId || !envId) { alert('Select a suite and environment first.'); return; }
 
   // Guard: re-validate browser constraint before executing (defence-in-depth)
@@ -5169,15 +5236,15 @@ async function execRun() {
   _execPollStopped = true;
   clearTimeout(_execPollTimer);
 
-  const runBtn    = document.getElementById('exec-run-btn');
+  const runBtn = document.getElementById('exec-run-btn');
   const reportBtn = document.getElementById('exec-report-btn');
   const progressWrap = document.getElementById('exec-progress-wrap');
-  const statusEl  = document.getElementById('exec-run-status');
-  const metaEl    = document.getElementById('exec-run-meta');
+  const statusEl = document.getElementById('exec-run-status');
+  const metaEl = document.getElementById('exec-run-meta');
   const progressBar = document.getElementById('exec-progress-bar');
   const resultsTable = document.getElementById('exec-results-table');
-  const resultsBody  = document.getElementById('exec-results-body');
-  const summaryEl    = document.getElementById('exec-summary');
+  const resultsBody = document.getElementById('exec-results-body');
+  const summaryEl = document.getElementById('exec-summary');
 
   runBtn.disabled = true;
   runBtn.innerHTML = '⏳ Starting…';
@@ -5186,14 +5253,14 @@ async function execRun() {
   resultsTable.style.display = 'none';
   resultsBody.innerHTML = '';
   summaryEl.style.display = 'none';
-  if (statusEl)  statusEl.textContent = '⏳ Starting…';
-  if (metaEl)    metaEl.textContent   = '';
+  if (statusEl) statusEl.textContent = '⏳ Starting…';
+  if (metaEl) metaEl.textContent = '';
   if (progressBar) progressBar.style.width = '0%';
 
   const execBrowsers = ['chromium', 'firefox', 'webkit']
     .filter(b => document.getElementById(`exec-browser-${b}`)?.checked);
-  const res  = await fetch(`/api/suites/${suiteId}/run`, {
-    method: 'POST', headers: {'Content-Type': 'application/json'},
+  const res = await fetch(`/api/suites/${suiteId}/run`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ environmentId: envId, browsers: execBrowsers.length ? execBrowsers : ['chromium'], traceMode: _execTraceMode }),
   });
   const data = await res.json();
@@ -5205,34 +5272,34 @@ async function execRun() {
   }
 
   const { runId } = data;
-  _execLastRunId   = runId;
+  _execLastRunId = runId;
   _execPollStopped = false;
 
   // Render known tests as pending immediately
-  const suite     = allSuites.find(s => s.id === suiteId);
+  const suite = allSuites.find(s => s.id === suiteId);
   const scriptMap = Object.fromEntries(allScripts.map(s => [s.id, s]));
-  const scripts   = (suite?.scriptIds || []).map(id => scriptMap[id]).filter(Boolean);
+  const scripts = (suite?.scriptIds || []).map(id => scriptMap[id]).filter(Boolean);
 
   function _execRenderResultsTable(tests) {
     if (!tests?.length && !scripts.length) return;
     resultsTable.style.display = '';
     function _execBrBadge(b) {
       if (b === 'firefox') return `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 7px;border-radius:20px;font-size:10px;font-weight:700;background:#E66000;color:#fff">● Firefox</span>`;
-      if (b === 'webkit')  return `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 7px;border-radius:20px;font-size:10px;font-weight:700;background:#006CFF;color:#fff">● Safari</span>`;
-      return                      `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 7px;border-radius:20px;font-size:10px;font-weight:700;background:#4285F4;color:#fff">● Chrome</span>`;
+      if (b === 'webkit') return `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 7px;border-radius:20px;font-size:10px;font-weight:700;background:#006CFF;color:#fff">● Safari</span>`;
+      return `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 7px;border-radius:20px;font-size:10px;font-weight:700;background:#4285F4;color:#fff">● Chrome</span>`;
     }
     const rows = tests?.length
       ? tests.map(t => {
-          const colour = t.status === 'pass' ? '#4ec9b0' : '#f48771';
-          const icon   = t.status === 'pass' ? '✓' : '✗';
-          const dur    = t.durationMs != null ? `${(t.durationMs / 1000).toFixed(1)}s` : '';
-          return `<div style="display:grid;grid-template-columns:1fr 100px 90px 80px;border-bottom:1px solid var(--neutral-100)">
+        const colour = t.status === 'pass' ? '#4ec9b0' : '#f48771';
+        const icon = t.status === 'pass' ? '✓' : '✗';
+        const dur = t.durationMs != null ? `${(t.durationMs / 1000).toFixed(1)}s` : '';
+        return `<div style="display:grid;grid-template-columns:1fr 100px 90px 80px;border-bottom:1px solid var(--neutral-100)">
             <div style="padding:7px 10px;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(t.name)}">${escHtml(t.name)}</div>
             <div style="padding:7px 10px;display:flex;align-items:center">${_execBrBadge(t.browser || 'chromium')}</div>
             <div style="padding:7px 10px;font-size:12px;font-weight:700;color:${colour}">${icon} ${t.status}</div>
             <div style="padding:7px 10px;font-size:12px;color:var(--neutral-400)">${dur}</div>
           </div>`;
-        }).join('')
+      }).join('')
       : scripts.map(s => `
           <div style="display:grid;grid-template-columns:1fr 100px 90px 80px;border-bottom:1px solid var(--neutral-100);opacity:.5">
             <div style="padding:7px 10px;font-size:12.5px">${escHtml(s.title)}</div>
@@ -5248,13 +5315,13 @@ async function execRun() {
   async function execPoll() {
     if (_execPollStopped) return;
     try {
-      const r   = await fetch(`/api/run/${runId}`);
+      const r = await fetch(`/api/run/${runId}`);
       if (!r.ok) { _execPollTimer = setTimeout(execPoll, 1500); return; }
       const rec = await r.json();
 
-      const total  = rec.total  || scripts.length || 1;
-      const done   = (rec.passed || 0) + (rec.failed || 0);
-      const pct    = Math.min(100, Math.round((done / total) * 100));
+      const total = rec.total || scripts.length || 1;
+      const done = (rec.passed || 0) + (rec.failed || 0);
+      const pct = Math.min(100, Math.round((done / total) * 100));
       if (progressBar) progressBar.style.width = `${pct}%`;
       if (metaEl) metaEl.textContent = rec.status === 'running' ? `${done} / ${total}` : '';
 
@@ -5268,12 +5335,12 @@ async function execRun() {
           .then(proposal => {
             if (proposal) showT4ProposalCard(proposal, runId);
             else hideT4ProposalCard();
-          }).catch(() => {});
+          }).catch(() => { });
         // P5-E: poll for prescan health results (written by spec beforeAll)
         fetch(`/api/prescan?runId=${encodeURIComponent(runId)}`)
           .then(r => r.ok ? r.json() : null)
           .then(data => { if (data?.locators?.length) renderPrescanHealth(data); })
-          .catch(() => {});
+          .catch(() => { });
         _execPollTimer = setTimeout(execPoll, 1500);
         return;
       }
@@ -5308,28 +5375,28 @@ function execViewReport() {
 
 // ── P5-E: Pre-Scan Health Grid ────────────────────────────────────────────────
 function renderPrescanHealth(data) {
-  const wrap    = document.getElementById('exec-prescan-wrap');
-  const grid    = document.getElementById('exec-prescan-grid');
-  const pageEl  = document.getElementById('exec-prescan-page');
-  const sumEl   = document.getElementById('exec-prescan-summary');
+  const wrap = document.getElementById('exec-prescan-wrap');
+  const grid = document.getElementById('exec-prescan-grid');
+  const pageEl = document.getElementById('exec-prescan-page');
+  const sumEl = document.getElementById('exec-prescan-summary');
   if (!wrap || !grid) return;
 
   const locators = data.locators || [];
-  const healthy  = locators.filter(l => l.status === 'healthy').length;
+  const healthy = locators.filter(l => l.status === 'healthy').length;
   const degraded = locators.filter(l => l.status === 'degraded').length;
-  const broken   = locators.filter(l => l.status === 'broken').length;
+  const broken = locators.filter(l => l.status === 'broken').length;
 
   if (pageEl) pageEl.textContent = data.pageKey || '';
-  if (sumEl)  sumEl.innerHTML =
+  if (sumEl) sumEl.innerHTML =
     `<span class="ps-chip ps-healthy">${healthy} healthy</span>` +
     (degraded ? `<span class="ps-chip ps-degraded">${degraded} degraded</span>` : '') +
-    (broken   ? `<span class="ps-chip ps-broken">${broken} broken</span>`   : '');
+    (broken ? `<span class="ps-chip ps-broken">${broken} broken</span>` : '');
 
   grid.innerHTML = locators.map(l => {
-    const icon  = l.status === 'healthy' ? '🟢' : l.status === 'degraded' ? '🟡' : '🔴';
+    const icon = l.status === 'healthy' ? '🟢' : l.status === 'degraded' ? '🟡' : '🔴';
     const score = l.score != null ? `${Math.round(l.score)}%` : '—';
-    const barW  = Math.max(0, Math.min(100, Math.round(l.score || 0)));
-    const barC  = l.status === 'healthy' ? '#4ec9b0' : l.status === 'degraded' ? '#eab308' : '#f48771';
+    const barW = Math.max(0, Math.min(100, Math.round(l.score || 0)));
+    const barC = l.status === 'healthy' ? '#4ec9b0' : l.status === 'degraded' ? '#eab308' : '#f48771';
     return `<div class="ps-row">
       <span class="ps-icon">${icon}</span>
       <span class="ps-name" title="${escHtml(l.selector || '')}">${escHtml(l.name)}</span>
@@ -5404,17 +5471,17 @@ async function prescanRun() {
       const locators = data.locators || [];
       grid.innerHTML = locators.length
         ? locators.map(l => {
-            const icon  = l.status === 'healthy' ? '🟢' : l.status === 'degraded' ? '🟡' : '🔴';
-            const score = l.score != null ? `${Math.round(l.score)}%` : '—';
-            const barW  = Math.max(0, Math.min(100, Math.round(l.score || 0)));
-            const barC  = l.status === 'healthy' ? '#4ec9b0' : l.status === 'degraded' ? '#eab308' : '#f48771';
-            return `<div class="ps-row">
+          const icon = l.status === 'healthy' ? '🟢' : l.status === 'degraded' ? '🟡' : '🔴';
+          const score = l.score != null ? `${Math.round(l.score)}%` : '—';
+          const barW = Math.max(0, Math.min(100, Math.round(l.score || 0)));
+          const barC = l.status === 'healthy' ? '#4ec9b0' : l.status === 'degraded' ? '#eab308' : '#f48771';
+          return `<div class="ps-row">
               <span class="ps-icon">${icon}</span>
               <span class="ps-name" title="${escHtml(l.selector || '')}">${escHtml(l.name)}</span>
               <div class="ps-bar-wrap"><div class="ps-bar" style="width:${barW}%;background:${barC}"></div></div>
               <span class="ps-score" style="color:${barC}">${score}</span>
             </div>`;
-          }).join('')
+        }).join('')
         : `<div style="color:var(--neutral-400);font-size:12px;padding:8px">No locators with healing profiles found for this page (${escHtml(data.pageKey || '')}). Record some interactions first.</div>`;
       wrap.style.display = '';
       if (runBtn) { runBtn.disabled = false; runBtn.textContent = 'Scan'; }
@@ -5435,12 +5502,12 @@ function showT4ProposalCard(proposal, runId) {
 
   // Populate fields
   const el = id => document.getElementById(id);
-  if (el('t4-step-info'))  el('t4-step-info').textContent  = `Step ${proposal.stepOrder} — ${proposal.keyword}`;
+  if (el('t4-step-info')) el('t4-step-info').textContent = `Step ${proposal.stepOrder} — ${proposal.keyword}`;
   if (el('t4-tier-badge')) el('t4-tier-badge').textContent = proposal.isAssert ? 'ASSERT (forced T4)' : 'T3 score < 75';
-  if (el('t4-old-sel'))    el('t4-old-sel').textContent    = proposal.oldSelector  || '(unknown — locator not found)';
-  if (el('t4-cand-sel'))   el('t4-cand-sel').textContent   = proposal.candidateSelector || '(no candidate found)';
-  if (el('t4-cand-type'))  el('t4-cand-type').textContent  = proposal.candidateSelectorType || '';
-  if (el('t4-score'))      el('t4-score').textContent      = proposal.candidateSelector ? `${Math.round(proposal.score)}%` : '—';
+  if (el('t4-old-sel')) el('t4-old-sel').textContent = proposal.oldSelector || '(unknown — locator not found)';
+  if (el('t4-cand-sel')) el('t4-cand-sel').textContent = proposal.candidateSelector || '(no candidate found)';
+  if (el('t4-cand-type')) el('t4-cand-type').textContent = proposal.candidateSelectorType || '';
+  if (el('t4-score')) el('t4-score').textContent = proposal.candidateSelector ? `${Math.round(proposal.score)}%` : '—';
 
   const approveBtn = el('t4-approve-btn');
   if (approveBtn) approveBtn.disabled = !proposal.candidateSelector;
@@ -5465,13 +5532,13 @@ async function respondT4Heal(action) {
   const p = _t4ActiveProposal;
 
   // On approve, use override input if user edited it
-  let selector    = p.candidateSelector;
+  let selector = p.candidateSelector;
   let selectorType = p.candidateSelectorType || 'css';
   if (action === 'approve') {
     const overrideInput = document.getElementById('t4-override-sel');
-    const overrideType  = document.getElementById('t4-override-type');
-    if (overrideInput?.value?.trim()) selector     = overrideInput.value.trim();
-    if (overrideType?.value?.trim())  selectorType = overrideType.value.trim();
+    const overrideType = document.getElementById('t4-override-type');
+    if (overrideInput?.value?.trim()) selector = overrideInput.value.trim();
+    if (overrideType?.value?.trim()) selectorType = overrideType.value.trim();
     if (!selector) { alert('No candidate selector available — cannot approve. You can type one in the override field.'); return; }
   }
 
@@ -5480,17 +5547,17 @@ async function respondT4Heal(action) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        runId:          p.runId,
+        runId: p.runId,
         action,
-        selector:       action === 'approve' ? selector : undefined,
-        selectorType:   action === 'approve' ? selectorType : undefined,
-        locatorId:      p.locatorId,
-        stepOrder:      p.stepOrder,
-        keyword:        p.keyword,
-        oldSelector:    p.oldSelector,
+        selector: action === 'approve' ? selector : undefined,
+        selectorType: action === 'approve' ? selectorType : undefined,
+        locatorId: p.locatorId,
+        stepOrder: p.stepOrder,
+        keyword: p.keyword,
+        oldSelector: p.oldSelector,
         oldSelectorType: p.candidateSelectorType,
-        score:          p.score,
-        projectId:      currentProjectId,
+        score: p.score,
+        projectId: currentProjectId,
       }),
     });
     if (!res.ok) { const e = await res.json(); alert(e.error || 'Failed to send response'); return; }
@@ -5503,7 +5570,7 @@ async function respondT4Heal(action) {
 // ══════════════════════════════════════════════════════════════════════════════
 function showToast(msg, level) {
   const d = document.createElement('div');
-  const bg = level==='error' ? '#f48771' : level==='warn' ? '#dcdcaa' : '#4ec9b0';
+  const bg = level === 'error' ? '#f48771' : level === 'warn' ? '#dcdcaa' : '#4ec9b0';
   d.style.cssText = `position:fixed;bottom:24px;right:24px;z-index:9999;padding:10px 18px;border-radius:6px;font-size:13px;font-weight:600;color:#1e1e1e;background:${bg};box-shadow:0 2px 8px rgba(0,0,0,0.3)`;
   d.textContent = msg;
   document.body.appendChild(d);
@@ -5514,8 +5581,8 @@ function showToast(msg, level) {
 // ══════════════════════════════════════════════════════════════════════════════
 
 let _flakyAllTests = [];
-let _flakyFilter   = 'all';
-let _flakyTop10    = false;
+let _flakyFilter = 'all';
+let _flakyTop10 = false;
 
 function flakyToggleTop10() {
   _flakyTop10 = !_flakyTop10;
@@ -5535,7 +5602,7 @@ async function flakyLoad() {
   if (!currentProjectId) {
     const loadEl = document.getElementById('flaky-loading');
     if (loadEl) { loadEl.style.display = ''; loadEl.textContent = 'Select a project to analyse flaky tests.'; }
-    ['flaky-summary-bar','flaky-table-wrap','flaky-empty','flaky-filter-tabs','flaky-budget-banner']
+    ['flaky-summary-bar', 'flaky-table-wrap', 'flaky-empty', 'flaky-filter-tabs', 'flaky-budget-banner']
       .forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
     return;
   }
@@ -5548,10 +5615,10 @@ async function flakyLoad() {
   }
 
   const suiteId = document.getElementById('flaky-suite-filter')?.value || '';
-  const sort    = document.getElementById('flaky-sort')?.value || 'flakeScore';
-  const loadEl  = document.getElementById('flaky-loading');
+  const sort = document.getElementById('flaky-sort')?.value || 'flakeScore';
+  const loadEl = document.getElementById('flaky-loading');
   if (loadEl) { loadEl.style.display = ''; loadEl.textContent = 'Analysing runs…'; }
-  ['flaky-summary-bar','flaky-table-wrap','flaky-empty','flaky-filter-tabs','flaky-budget-banner']
+  ['flaky-summary-bar', 'flaky-table-wrap', 'flaky-empty', 'flaky-filter-tabs', 'flaky-budget-banner']
     .forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
 
   let url = `/api/flaky?projectId=${encodeURIComponent(currentProjectId)}&limit=200&sort=${encodeURIComponent(sort)}`;
@@ -5582,14 +5649,14 @@ async function flakyLoad() {
 
 function flakyRender() {
   let tests = [..._flakyAllTests];
-  if (_flakyFilter === 'flagged')      tests = tests.filter(t => t.evaluationState === 'evaluated' && t.shouldQuarantine && !t.isQuarantined);
-  if (_flakyFilter === 'quarantined')  tests = tests.filter(t => t.isQuarantined);
+  if (_flakyFilter === 'flagged') tests = tests.filter(t => t.evaluationState === 'evaluated' && t.shouldQuarantine && !t.isQuarantined);
+  if (_flakyFilter === 'quarantined') tests = tests.filter(t => t.isQuarantined);
   if (_flakyFilter === 'insufficient') tests = tests.filter(t => t.evaluationState === 'insufficient_data');
   if (_flakyTop10) tests = tests.slice(0, 10);
 
-  const total       = _flakyAllTests.length;
+  const total = _flakyAllTests.length;
   const quarantined = _flakyAllTests.filter(t => t.isQuarantined).length;
-  const flagged     = _flakyAllTests.filter(t => t.shouldQuarantine && !t.isQuarantined).length;
+  const flagged = _flakyAllTests.filter(t => t.shouldQuarantine && !t.isQuarantined).length;
 
   const summaryBar = document.getElementById('flaky-summary-bar');
   if (summaryBar) {
@@ -5603,14 +5670,14 @@ function flakyRender() {
   }
 
   const empty = document.getElementById('flaky-empty');
-  const wrap  = document.getElementById('flaky-table-wrap');
+  const wrap = document.getElementById('flaky-table-wrap');
   if (tests.length === 0) {
     if (empty) empty.style.display = '';
-    if (wrap)  wrap.style.display  = 'none';
+    if (wrap) wrap.style.display = 'none';
     return;
   }
   if (empty) empty.style.display = 'none';
-  if (wrap)  wrap.style.display  = '';
+  if (wrap) wrap.style.display = '';
 
   const tbody = document.getElementById('flaky-tbody');
   if (tbody) tbody.innerHTML = tests.map(t => flakyRow(t)).join('');
@@ -5642,14 +5709,14 @@ function flakyRow(t) {
     ? (t.confidence >= 0.7 ? 'High' : t.confidence >= 0.4 ? 'Med' : 'Low') : '—';
 
   const sparkline = (t.recentRunsPreview || []).map(r =>
-    `<span style="color:${r.status==='pass'?'#4ec9b0':'#f48771'};font-size:10px;font-weight:700">${r.status==='pass'?'P':'F'}</span>`
+    `<span style="color:${r.status === 'pass' ? '#4ec9b0' : '#f48771'};font-size:10px;font-weight:700">${r.status === 'pass' ? 'P' : 'F'}</span>`
   ).join('');
 
   const cat = t.classification?.primary ?? '—';
-  const catColor = {network:'#569cd6',timing:'#dcdcaa',locator:'#9cdcfe',assertion:'#f48771',environment:'#ce9178',unknown:'#858585'}[cat]||'#858585';
+  const catColor = { network: '#569cd6', timing: '#dcdcaa', locator: '#9cdcfe', assertion: '#f48771', environment: '#ce9178', unknown: '#858585' }[cat] || '#858585';
   const catCell = cat !== '—' ? `<span style="color:${catColor};font-size:11px">${cat}</span>` : '—';
 
-  const lastRun  = t.lastRunAt     ? _flakyFmtDate(t.lastRunAt)     : '—';
+  const lastRun = t.lastRunAt ? _flakyFmtDate(t.lastRunAt) : '—';
   const lastFail = t.lastFailureAt ? _flakyFmtDate(t.lastFailureAt) : '—';
 
   let actionBtns = '';
@@ -5693,18 +5760,18 @@ function flakyExpandedRow(t) {
   const eligible = t.shouldQuarantine ? '✔ Eligible for auto-quarantine' : `Below threshold (${thr})`;
 
   const history = (t.recentRunsPreview || []).map(r =>
-    `<span style="color:${r.status==='pass'?'#4ec9b0':'#f48771'};font-weight:700">${r.status==='pass'?'P':'F'}</span>`
+    `<span style="color:${r.status === 'pass' ? '#4ec9b0' : '#f48771'};font-weight:700">${r.status === 'pass' ? 'P' : 'F'}</span>`
   ).join(' ');
 
   const sig = t.signals || {};
   const sigLines = [];
-  if (sig.timeout)         sigLines.push('· Timeout detected');
-  if (sig.slowTest)        sigLines.push(`· Avg failure duration: ${((sig.durationMs||0)/1000).toFixed(1)}s (baseline p95: ${((sig.baselineP95||0)/1000).toFixed(1)}s)`);
-  if (sig.networkError)    sigLines.push('· Network error detected (ECONNRESET / fetch failed)');
-  if (sig.locatorError)    sigLines.push('· Locator instability detected');
-  if (sig.assertionError)  sigLines.push('· Assertion failure pattern');
+  if (sig.timeout) sigLines.push('· Timeout detected');
+  if (sig.slowTest) sigLines.push(`· Avg failure duration: ${((sig.durationMs || 0) / 1000).toFixed(1)}s (baseline p95: ${((sig.baselineP95 || 0) / 1000).toFixed(1)}s)`);
+  if (sig.networkError) sigLines.push('· Network error detected (ECONNRESET / fetch failed)');
+  if (sig.locatorError) sigLines.push('· Locator instability detected');
+  if (sig.assertionError) sigLines.push('· Assertion failure pattern');
   if (sig.recentFailSpike) sigLines.push('· ⚠ Consistent recent failures (all recent runs failed)');
-  if (sig.rawErrors?.length) sigLines.push(`· Last error: <code style="font-size:11px">${escHtml(sig.rawErrors[sig.rawErrors.length-1].slice(0,120))}</code>`);
+  if (sig.rawErrors?.length) sigLines.push(`· Last error: <code style="font-size:11px">${escHtml(sig.rawErrors[sig.rawErrors.length - 1].slice(0, 120))}</code>`);
 
   const dominant = t.dominantCategory
     ? `Dominant cause: <strong>${t.dominantCategory}</strong> (${t.dominantCategoryCount}/${t.dominantCategoryTotal} recent failures)`
@@ -5717,8 +5784,8 @@ function flakyExpandedRow(t) {
     qBlock = `
       <div style="margin-top:12px;padding:10px;border:1px solid #f4877155;border-radius:6px">
         <div style="font-size:12px;font-weight:600;color:#f48771;margin-bottom:6px">⛔ Quarantine Status: Active</div>
-        <div style="font-size:12px;color:var(--neutral-400)">Quarantined: ${qDate} (${t.autoQuarantined?'auto':'manual'})</div>
-        <div style="font-size:12px;color:var(--neutral-400)">Reason: ${escHtml(t.quarantineReason||'—')}</div>
+        <div style="font-size:12px;color:var(--neutral-400)">Quarantined: ${qDate} (${t.autoQuarantined ? 'auto' : 'manual'})</div>
+        <div style="font-size:12px;color:var(--neutral-400)">Reason: ${escHtml(t.quarantineReason || '—')}</div>
         <div style="font-size:12px;color:var(--neutral-400)">${promoteElig}</div>
         <button class="btn btn-sm btn-outline" style="margin-top:8px" onclick="flakyRestore('${escHtml(t.suiteId)}','${escHtml(t.testId)}','${escHtml(t.testName)}')">Restore Manually</button>
       </div>`;
@@ -5728,21 +5795,21 @@ function flakyExpandedRow(t) {
     <div style="display:grid;gap:12px">
       <div>
         <div style="font-size:11px;text-transform:uppercase;color:var(--neutral-500);margin-bottom:4px">Decision</div>
-        <div style="font-size:13px">Flake Score: <strong>${(t.flakeScore||0).toFixed(2)}</strong> &nbsp; Threshold: ${thr} &nbsp; ${eligible}</div>
-        <div style="font-size:12px;color:var(--neutral-400)">Confidence: ${t.confidence>=0.7?'High':t.confidence>=0.4?'Med':'Low'} &nbsp;·&nbsp; Last run: ${t.lastRunAt?_flakyFmtDate(t.lastRunAt):'—'} &nbsp;·&nbsp; Last failure: ${t.lastFailureAt?_flakyFmtDate(t.lastFailureAt):'—'}</div>
+        <div style="font-size:13px">Flake Score: <strong>${(t.flakeScore || 0).toFixed(2)}</strong> &nbsp; Threshold: ${thr} &nbsp; ${eligible}</div>
+        <div style="font-size:12px;color:var(--neutral-400)">Confidence: ${t.confidence >= 0.7 ? 'High' : t.confidence >= 0.4 ? 'Med' : 'Low'} &nbsp;·&nbsp; Last run: ${t.lastRunAt ? _flakyFmtDate(t.lastRunAt) : '—'} &nbsp;·&nbsp; Last failure: ${t.lastFailureAt ? _flakyFmtDate(t.lastFailureAt) : '—'}</div>
       </div>
-      ${sigLines.length?`<div><div style="font-size:11px;text-transform:uppercase;color:var(--neutral-500);margin-bottom:4px">Signals</div><div style="font-size:12px;color:var(--neutral-300);line-height:1.8">${sigLines.join('<br>')}</div></div>`:''}
+      ${sigLines.length ? `<div><div style="font-size:11px;text-transform:uppercase;color:var(--neutral-500);margin-bottom:4px">Signals</div><div style="font-size:12px;color:var(--neutral-300);line-height:1.8">${sigLines.join('<br>')}</div></div>` : ''}
       <div>
         <div style="font-size:11px;text-transform:uppercase;color:var(--neutral-500);margin-bottom:4px">History (last 10)</div>
-        <div style="letter-spacing:4px;font-size:13px">${history||'—'}</div>
+        <div style="letter-spacing:4px;font-size:13px">${history || '—'}</div>
       </div>
       <div>
         <div style="font-size:11px;text-transform:uppercase;color:var(--neutral-500);margin-bottom:4px">Classification</div>
-        <div style="font-size:13px">Primary: <strong>${t.classification?.primary||'—'}</strong> (${((t.classification?.primaryConfidence||0)*100).toFixed(0)}%)
-          ${t.classification?.secondary?`&nbsp;·&nbsp; Secondary: ${t.classification.secondary}`:''}
+        <div style="font-size:13px">Primary: <strong>${t.classification?.primary || '—'}</strong> (${((t.classification?.primaryConfidence || 0) * 100).toFixed(0)}%)
+          ${t.classification?.secondary ? `&nbsp;·&nbsp; Secondary: ${t.classification.secondary}` : ''}
         </div>
-        ${dominant?`<div style="font-size:12px;color:var(--neutral-400)">${dominant}</div>`:''}
-        ${t.actionHint?`<div style="font-size:12px;color:#dcdcaa;margin-top:4px">💡 ${escHtml(t.actionHint)}</div>`:''}
+        ${dominant ? `<div style="font-size:12px;color:var(--neutral-400)">${dominant}</div>` : ''}
+        ${t.actionHint ? `<div style="font-size:12px;color:#dcdcaa;margin-top:4px">💡 ${escHtml(t.actionHint)}</div>` : ''}
       </div>
       ${qBlock}
     </div>`;
@@ -5758,9 +5825,9 @@ function _flakyFmtDate(iso) {
     const d = new Date(iso);
     const now = new Date();
     const diff = now - d;
-    if (diff < 60000)   return 'just now';
-    if (diff < 3600000) return Math.floor(diff/60000) + 'm ago';
-    if (diff < 86400000) return Math.floor(diff/3600000) + 'h ago';
+    if (diff < 60000) return 'just now';
+    if (diff < 3600000) return Math.floor(diff / 60000) + 'm ago';
+    if (diff < 86400000) return Math.floor(diff / 3600000) + 'h ago';
     return d.toLocaleDateString();
   } catch { return '—'; }
 }
@@ -5768,7 +5835,7 @@ function _flakyFmtDate(iso) {
 async function flakyQuarantine(suiteId, testId, testName) {
   if (!confirm('This will exclude the test from suite pass/fail. Continue?')) return;
   const res = await fetch('/api/flaky/quarantine', {
-    method: 'POST', headers: {'Content-Type':'application/json'},
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ suiteId, testId, testName, reason: 'manual' })
   });
   if (res.ok) { showToast('Test quarantined.', 'info'); flakyLoad(); }
@@ -5778,7 +5845,7 @@ async function flakyQuarantine(suiteId, testId, testName) {
 async function flakyRestore(suiteId, testId, testName) {
   if (!confirm(`Restore "${testName}" from quarantine? It will affect pipeline results again.`)) return;
   const res = await fetch('/api/flaky/restore', {
-    method: 'POST', headers: {'Content-Type':'application/json'},
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ suiteId, testId })
   });
   if (res.ok) { showToast('Test restored from quarantine.', 'info'); flakyLoad(); }
@@ -5797,12 +5864,12 @@ async function flakyConfigLoad(suiteId, projectId) {
     if (!res.ok) return;
     const { effective, projectDefaults } = await res.json();
     const g = id => document.getElementById(id);
-    if (g('flaky-cfg-threshold')) g('flaky-cfg-threshold').value = Math.round((effective.threshold||0.30)*100);
-    if (g('flaky-cfg-minruns'))   g('flaky-cfg-minruns').value   = effective.minRuns || 5;
-    if (g('flaky-cfg-budget'))    g('flaky-cfg-budget').value    = effective.quarantineBudget ?? 5;
-    if (g('flaky-cfg-passrate'))  g('flaky-cfg-passrate').value  = Math.round((effective.autoPromoteMinPassRate||0.95)*100);
+    if (g('flaky-cfg-threshold')) g('flaky-cfg-threshold').value = Math.round((effective.threshold || 0.30) * 100);
+    if (g('flaky-cfg-minruns')) g('flaky-cfg-minruns').value = effective.minRuns || 5;
+    if (g('flaky-cfg-budget')) g('flaky-cfg-budget').value = effective.quarantineBudget ?? 5;
+    if (g('flaky-cfg-passrate')) g('flaky-cfg-passrate').value = Math.round((effective.autoPromoteMinPassRate || 0.95) * 100);
     const projThr = g('flaky-cfg-proj-threshold');
-    if (projThr) projThr.textContent = `(Project default: ${Math.round((projectDefaults?.threshold||0.30)*100)}%)`;
+    if (projThr) projThr.textContent = `(Project default: ${Math.round((projectDefaults?.threshold || 0.30) * 100)}%)`;
   } catch (e) { console.warn('flakyConfigLoad error', e); }
 }
 
@@ -5817,50 +5884,69 @@ function flakyApplyPreset() {
     if (t) t.value = 20; if (m) m.value = 3; if (b) b.value = 2; if (p) p.value = 98;
   } else if (preset === 'regression') {
     if (t) t.value = 30; if (m) m.value = 5; if (b) b.value = 5; if (p) p.value = 95;
+  } else if (preset === 'e2e') {
+    if (t) t.value = 40; if (m) m.value = 5; if (b) b.value = 5; if (p) p.value = 90;
+  } else {
+    // Custom — populate with project-standard defaults so fields are never blank
+    if (t) t.value = 30; if (m) m.value = 5; if (b) b.value = 5; if (p) p.value = 95;
   }
 }
 
 async function flakyConfigSave() {
-  const suiteId   = window._editingSuiteId || editingSuiteId;
+  const suiteId = window._editingSuiteId || editingSuiteId;
   const projectId = currentProjectId;
   if (!suiteId || !projectId) { showToast('No suite selected.', 'warn'); return; }
 
   const threshold = parseFloat(document.getElementById('flaky-cfg-threshold')?.value || '');
-  const minRuns   = parseInt(document.getElementById('flaky-cfg-minruns')?.value || '');
-  const budget    = parseInt(document.getElementById('flaky-cfg-budget')?.value || '');
-  const passRate  = parseFloat(document.getElementById('flaky-cfg-passrate')?.value || '');
+  const minRuns = parseInt(document.getElementById('flaky-cfg-minruns')?.value || '');
+  const budget = parseInt(document.getElementById('flaky-cfg-budget')?.value || '');
+  const passRate = parseFloat(document.getElementById('flaky-cfg-passrate')?.value || '');
 
   const overrides = {};
   if (!isNaN(threshold)) overrides.threshold = threshold / 100;
-  if (!isNaN(minRuns))   overrides.minRuns   = minRuns;
-  if (!isNaN(budget))    overrides.quarantineBudget = budget;
-  if (!isNaN(passRate))  overrides.autoPromoteMinPassRate = passRate / 100;
+  if (!isNaN(minRuns)) overrides.minRuns = minRuns;
+  if (!isNaN(budget)) overrides.quarantineBudget = budget;
+  if (!isNaN(passRate)) overrides.autoPromoteMinPassRate = passRate / 100;
 
   try {
     const res = await fetch('/api/flaky/config', {
-      method: 'PUT', headers: {'Content-Type':'application/json'},
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ projectId, suiteId, overrides })
     });
     if (res.ok) {
       showToast('Flakiness config saved.', 'info');
     } else {
       const e = await res.json();
-      showToast('Save failed: ' + ((e.errors||[]).join(', ') || 'unknown error'), 'error');
+      showToast('Save failed: ' + ((e.errors || []).join(', ') || 'unknown error'), 'error');
     }
   } catch { showToast('Save failed.', 'error'); }
 }
 
 async function flakyConfigReset() {
-  const suiteId   = window._editingSuiteId || editingSuiteId;
+  const suiteId = window._editingSuiteId || editingSuiteId;
   const projectId = currentProjectId;
-  if (!suiteId || !projectId) return;
+
+  // Scenario 1: New suite — no suiteId yet, just reset fields to Custom defaults
+  if (!suiteId) {
+    const presetEl = document.getElementById('flaky-preset');
+    if (presetEl) presetEl.value = '';
+    flakyApplyPreset();
+    showToast('Reset to default values.', 'info');
+    return;
+  }
+
+  if (!projectId) return;
   if (!confirm('Reset suite flakiness config to project defaults?')) return;
+
   try {
     await fetch('/api/flaky/config', {
-      method: 'PUT', headers: {'Content-Type':'application/json'},
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ projectId, suiteId, overrides: {} })
     });
-    flakyConfigLoad(suiteId, projectId);
+    await flakyConfigLoad(suiteId, projectId);
+    // Scenario 2: Reset preset dropdown to Custom — project defaults don't map to any named preset
+    const presetEl = document.getElementById('flaky-preset');
+    if (presetEl) presetEl.value = '';
     showToast('Reset to project defaults.', 'info');
   } catch { showToast('Reset failed.', 'error'); }
 }
@@ -5877,7 +5963,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 
   // Wrap switchTab AFTER app.js has set its final version (runtime, not hoist-time)
   const _appSwitchTab = switchTab;
-  switchTab = function(tab) {
+  switchTab = function (tab) {
     _appSwitchTab(tab);
     onModuleTabSwitch(tab);
     _guardCheck(tab);   // enforce project selection on every tab switch
@@ -5898,7 +5984,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 // EXECUTION HISTORY MODULE
 // ══════════════════════════════════════════════════════════════════════════════
 
-let _histRuns   = [];
+let _histRuns = [];
 let _histSortCol = 'startedAt';
 let _histSortDir = -1; // -1 = desc, 1 = asc
 
@@ -5925,7 +6011,7 @@ function _histPopulateEnvFilter() {
 }
 
 function histRender() {
-  const tbody   = document.getElementById('hist-tbody');
+  const tbody = document.getElementById('hist-tbody');
   const emptyEl = document.getElementById('hist-empty');
   if (!tbody) return;
 
@@ -5935,10 +6021,10 @@ function histRender() {
     return;
   }
 
-  const dateVal   = (document.getElementById('hist-filter-date')?.value   || '').trim();
-  const search    = (document.getElementById('hist-filter-search')?.value  || '').toLowerCase();
-  const statusVal = (document.getElementById('hist-filter-status')?.value  || '');
-  const envVal    = (document.getElementById('hist-filter-env')?.value     || '');
+  const dateVal = (document.getElementById('hist-filter-date')?.value || '').trim();
+  const search = (document.getElementById('hist-filter-search')?.value || '').toLowerCase();
+  const statusVal = (document.getElementById('hist-filter-status')?.value || '');
+  const envVal = (document.getElementById('hist-filter-env')?.value || '');
 
   let runs = _histRuns.slice();
 
@@ -5953,9 +6039,9 @@ function histRender() {
   }
   if (search) {
     runs = runs.filter(r =>
-      (r.runId        || '').toLowerCase().includes(search) ||
-      (r.suiteName    || '').toLowerCase().includes(search) ||
-      (r.executedBy   || '').toLowerCase().includes(search)
+      (r.runId || '').toLowerCase().includes(search) ||
+      (r.suiteName || '').toLowerCase().includes(search) ||
+      (r.executedBy || '').toLowerCase().includes(search)
     );
   }
 
@@ -5976,14 +6062,14 @@ function histRender() {
 
   tbody.innerHTML = runs.map(r => {
     const statusBadge = _histStatusBadge(r.status);
-    const start   = r.startedAt  ? _histFmtDate(r.startedAt)  : '—';
-    const end     = r.finishedAt ? _histFmtDate(r.finishedAt) : '—';
-    const dur     = (r.startedAt && r.finishedAt) ? _histDuration(r.startedAt, r.finishedAt) : '—';
+    const start = r.startedAt ? _histFmtDate(r.startedAt) : '—';
+    const end = r.finishedAt ? _histFmtDate(r.finishedAt) : '—';
+    const dur = (r.startedAt && r.finishedAt) ? _histDuration(r.startedAt, r.finishedAt) : '—';
     const shortId = (r.runId || '').slice(0, 8);
-    const suite   = escHtml(r.suiteName || r.planId || '—');
-    const env     = escHtml(r.environmentName || '—');
-    const by      = escHtml(r.executedBy || '—');
-    const isDone  = r.status === 'done' || r.status === 'failed';
+    const suite = escHtml(r.suiteName || r.planId || '—');
+    const env = escHtml(r.environmentName || '—');
+    const by = escHtml(r.executedBy || '—');
+    const isDone = r.status === 'done' || r.status === 'failed';
     const reportBtn = isDone
       ? `<button class="btn btn-secondary btn-xs" onclick="histOpenReport('${escHtml(r.runId)}')">&#128196; View Report</button>`
       : `<span style="color:#858585;font-size:11px">In Progress</span>`;
@@ -5996,8 +6082,8 @@ function histRender() {
     if (r.browsers && Array.isArray(r.browsers)) r.browsers.forEach(b => browserSet.add(b));
     function _brBadge(b) {
       if (b === 'firefox') return `<span style="display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:700;background:#E66000;color:#fff">● Firefox</span>`;
-      if (b === 'webkit')  return `<span style="display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:700;background:#006CFF;color:#fff">● Safari</span>`;
-      return                      `<span style="display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:700;background:#4285F4;color:#fff">● Chrome</span>`;
+      if (b === 'webkit') return `<span style="display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:700;background:#006CFF;color:#fff">● Safari</span>`;
+      return `<span style="display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:700;background:#4285F4;color:#fff">● Chrome</span>`;
     }
     const browserLabel = browserSet.size > 0
       ? [...browserSet].map(b => _brBadge(b)).join(' ')
@@ -6010,7 +6096,7 @@ function histRender() {
       <td><code style="font-size:11px">${escHtml(shortId)}</code></td>
       <td>${suite}${healBadge}</td>
       <td>${statusBadge}</td>
-      <td style="text-align:center">${r.total  || 0}</td>
+      <td style="text-align:center">${r.total || 0}</td>
       <td style="text-align:center;color:#4ec9b0">${r.passed || 0}</td>
       <td style="text-align:center;color:${r.failed ? '#f48771' : 'inherit'}">${r.failed || 0}</td>
       <td style="font-size:12px">${start}</td>
@@ -6026,10 +6112,10 @@ function histRender() {
 
 function _histStatusBadge(status) {
   const map = {
-    queued:  '<span class="hist-badge hist-badge-queued">&#9203; Queued</span>',
+    queued: '<span class="hist-badge hist-badge-queued">&#9203; Queued</span>',
     running: '<span class="hist-badge hist-badge-running">&#9679; In Progress</span>',
-    done:    '<span class="hist-badge hist-badge-done">&#10003; Completed</span>',
-    failed:  '<span class="hist-badge hist-badge-failed">&#10007; Failed</span>',
+    done: '<span class="hist-badge hist-badge-done">&#10003; Completed</span>',
+    failed: '<span class="hist-badge hist-badge-failed">&#10007; Failed</span>',
   };
   return map[status] || `<span class="hist-badge">${escHtml(status)}</span>`;
 }
@@ -6054,8 +6140,8 @@ function _histDuration(startIso, endIso) {
 
 async function histViewDetail(runId) {
   const overlay = document.getElementById('hist-detail-overlay');
-  const body    = document.getElementById('hist-detail-body');
-  const title   = document.getElementById('hist-detail-title');
+  const body = document.getElementById('hist-detail-body');
+  const title = document.getElementById('hist-detail-title');
   if (!overlay || !body) return;
 
   body.innerHTML = '<div style="padding:24px;text-align:center;color:#858585">Loading…</div>';
@@ -6079,8 +6165,8 @@ async function histViewDetail(runId) {
       const st = t.status === 'pass'
         ? '<span style="color:#4ec9b0;font-weight:600">&#10003; Passed</span>'
         : t.status === 'fail'
-        ? '<span style="color:#f48771;font-weight:600">&#10007; Failed</span>'
-        : `<span style="color:#858585">${escHtml(t.status)}</span>`;
+          ? '<span style="color:#f48771;font-weight:600">&#10007; Failed</span>'
+          : `<span style="color:#858585">${escHtml(t.status)}</span>`;
       const dur2 = t.durationMs >= 1000
         ? `${(t.durationMs / 1000).toFixed(1)}s`
         : `${t.durationMs}ms`;
@@ -6110,7 +6196,7 @@ async function histViewDetail(runId) {
 
         <h3 style="margin:24px 0 12px;font-size:14px;color:#9cdcfe;text-transform:uppercase;letter-spacing:1px">Test Execution Summary</h3>
         <div class="hist-metrics-row">
-          <div class="hist-metric"><div class="hist-metric-val">${r.total  || 0}</div><div class="hist-metric-lbl">Total</div></div>
+          <div class="hist-metric"><div class="hist-metric-val">${r.total || 0}</div><div class="hist-metric-lbl">Total</div></div>
           <div class="hist-metric hist-metric-pass"><div class="hist-metric-val">${r.passed || 0}</div><div class="hist-metric-lbl">Passed</div></div>
           <div class="hist-metric hist-metric-fail"><div class="hist-metric-val">${r.failed || 0}</div><div class="hist-metric-lbl">Failed</div></div>
           <div class="hist-metric"><div class="hist-metric-val">${passRate}%</div><div class="hist-metric-lbl">Pass Rate</div></div>
@@ -6143,11 +6229,11 @@ function histOpenReport(runId) {
 
 function histCompareSelChanged() {
   const checked = [...document.querySelectorAll('.hist-compare-chk:checked')];
-  const bar     = document.getElementById('hist-compare-bar');
+  const bar = document.getElementById('hist-compare-bar');
   const countEl = document.getElementById('hist-compare-count');
-  const btn     = document.getElementById('hist-compare-btn');
+  const btn = document.getElementById('hist-compare-btn');
   if (!bar) return;
-  bar.style.display  = checked.length > 0 ? 'flex' : 'none';
+  bar.style.display = checked.length > 0 ? 'flex' : 'none';
   countEl.textContent = `${checked.length} run${checked.length !== 1 ? 's' : ''} selected`;
   btn.disabled = checked.length !== 2;
 }
@@ -6169,16 +6255,16 @@ async function histCompare() {
 
 function _histRenderComparison(r1, r2) {
   const overlay = document.getElementById('run-compare-overlay');
-  const body    = document.getElementById('run-compare-body');
+  const body = document.getElementById('run-compare-body');
   if (!overlay || !body) return;
 
   const fmtDate = s => s ? new Date(s).toLocaleString() : '—';
-  const fmtDur  = (a, b) => {
+  const fmtDur = (a, b) => {
     if (!a || !b) return '—';
     const ms = new Date(b).getTime() - new Date(a).getTime();
-    return ms < 60000 ? `${Math.round(ms/1000)}s` : `${Math.floor(ms/60000)}m ${Math.round((ms%60000)/1000)}s`;
+    return ms < 60000 ? `${Math.round(ms / 1000)}s` : `${Math.floor(ms / 60000)}m ${Math.round((ms % 60000) / 1000)}s`;
   };
-  const fmtMs = ms => !ms ? '—' : ms < 1000 ? `${ms}ms` : `${(ms/1000).toFixed(1)}s`;
+  const fmtMs = ms => !ms ? '—' : ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`;
 
   // Build test name → result maps
   const map1 = new Map((r1.tests || []).map(t => [t.name, t]));
@@ -6192,11 +6278,11 @@ function _histRenderComparison(r1, r2) {
     const t2 = map2.get(name);
     if (!t1) { onlyInB.push({ name, t: t2 }); continue; }
     if (!t2) { onlyInA.push({ name, t: t1 }); continue; }
-    if (t1.status === 'pass' && t2.status === 'fail')      newlyFailed.push({ name, t1, t2 });
+    if (t1.status === 'pass' && t2.status === 'fail') newlyFailed.push({ name, t1, t2 });
     else if (t1.status === 'fail' && t2.status === 'pass') newlyPassed.push({ name, t1, t2 });
     else {
       const durDiff = Math.abs((t2.durationMs || 0) - (t1.durationMs || 0));
-      const durPct  = t1.durationMs > 0 ? (durDiff / t1.durationMs) * 100 : 0;
+      const durPct = t1.durationMs > 0 ? (durDiff / t1.durationMs) * 100 : 0;
       if (durPct >= 50 && durDiff > 1000) durationChanged.push({ name, t1, t2, durDiff, durPct });
       else stable.push({ name, t1, t2 });
     }
@@ -6204,8 +6290,8 @@ function _histRenderComparison(r1, r2) {
 
   // ── Section builder ──────────────────────────────────────────────────────
   const tblStyle = 'width:100%;border-collapse:collapse;font-size:12.5px;min-width:560px';
-  const thStyle  = 'padding:9px 14px;text-align:left;background:#0f1318;color:#9ca3af;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #2d3748';
-  const tdStyle  = 'padding:9px 14px;border-bottom:1px solid #1e2a38;vertical-align:top';
+  const thStyle = 'padding:9px 14px;text-align:left;background:#0f1318;color:#9ca3af;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #2d3748';
+  const tdStyle = 'padding:9px 14px;border-bottom:1px solid #1e2a38;vertical-align:top';
 
   const section = (title, icon, accentColor, rows, colDefs) => {
     if (!rows.length) return '';
@@ -6230,24 +6316,24 @@ function _histRenderComparison(r1, r2) {
     ? `<span style="background:#052e16;color:#4ec9b0;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:600">✓ Pass</span>`
     : `<span style="background:#450a0a;color:#f48771;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:600">✗ Fail</span>`;
 
-  const failRows = newlyFailed.map(({name, t1, t2}) => `<tr style="background:#1a1f26">
+  const failRows = newlyFailed.map(({ name, t1, t2 }) => `<tr style="background:#1a1f26">
     <td style="${tdStyle};color:#f1f5f9;font-weight:500">${escHtml(name)}</td>
     <td style="${tdStyle};text-align:center">${statusChip('pass')}</td>
     <td style="${tdStyle};text-align:center">${statusChip('fail')}</td>
     <td style="${tdStyle};color:#f87171;font-size:11px;max-width:240px;word-break:break-word">${escHtml((t2.errorMessage || 'No error captured').slice(0, 140))}</td>
   </tr>`);
 
-  const passRows = newlyPassed.map(({name, t1, t2}) => `<tr style="background:#1a1f26">
+  const passRows = newlyPassed.map(({ name, t1, t2 }) => `<tr style="background:#1a1f26">
     <td style="${tdStyle};color:#f1f5f9;font-weight:500">${escHtml(name)}</td>
     <td style="${tdStyle};text-align:center">${statusChip('fail')}</td>
     <td style="${tdStyle};text-align:center">${statusChip('pass')}</td>
     <td style="${tdStyle};color:#86efac;font-size:11px">Fixed ✓</td>
   </tr>`);
 
-  const durRows = durationChanged.map(({name, t1, t2, durPct}) => {
+  const durRows = durationChanged.map(({ name, t1, t2, durPct }) => {
     const slower = t2.durationMs > t1.durationMs;
-    const arrow  = slower ? '▲' : '▼';
-    const color  = slower ? '#f48771' : '#4ec9b0';
+    const arrow = slower ? '▲' : '▼';
+    const color = slower ? '#f48771' : '#4ec9b0';
     return `<tr style="background:#1a1f26">
       <td style="${tdStyle};color:#f1f5f9;font-weight:500">${escHtml(name)}</td>
       <td style="${tdStyle};text-align:center;color:#9ca3af">${fmtMs(t1.durationMs)}</td>
@@ -6256,7 +6342,7 @@ function _histRenderComparison(r1, r2) {
     </tr>`;
   });
 
-  const stableRows = stable.map(({name, t1, t2}) => `<tr style="background:#1a1f26">
+  const stableRows = stable.map(({ name, t1, t2 }) => `<tr style="background:#1a1f26">
     <td style="${tdStyle};color:#6b7280">${escHtml(name)}</td>
     <td style="${tdStyle};text-align:center">${statusChip(t1.status)}</td>
     <td style="${tdStyle};text-align:center">${statusChip(t2.status)}</td>
@@ -6264,15 +6350,15 @@ function _histRenderComparison(r1, r2) {
   </tr>`);
 
   const passRate = r => r.total > 0 ? Math.round((r.passed / r.total) * 100) : 0;
-  const prColor  = r => passRate(r) >= 90 ? '#4ec9b0' : passRate(r) >= 70 ? '#f6c543' : '#f48771';
+  const prColor = r => passRate(r) >= 90 ? '#4ec9b0' : passRate(r) >= 70 ? '#f6c543' : '#f48771';
 
   body.innerHTML = `
     <!-- Run header cards -->
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">
       ${[r1, r2].map((r, i) => {
-        const accent = i === 0 ? '#3b82f6' : '#8b5cf6';
-        const pr = passRate(r);
-        return `
+    const accent = i === 0 ? '#3b82f6' : '#8b5cf6';
+    const pr = passRate(r);
+    return `
         <div style="background:#0f1318;border-radius:10px;border:2px solid ${accent};padding:20px;position:relative;overflow:hidden">
           <div style="position:absolute;top:0;left:0;right:0;height:3px;background:${accent}"></div>
           <div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:${accent};margin-bottom:10px;text-transform:uppercase">Run ${i + 1}</div>
@@ -6290,7 +6376,7 @@ function _histRenderComparison(r1, r2) {
             <span style="margin-left:auto;font-size:20px;font-weight:800;color:${prColor(r)}">${pr}%</span>
           </div>
         </div>`;
-      }).join('')}
+  }).join('')}
     </div>
 
     <!-- Summary KPI chips -->
@@ -6326,22 +6412,22 @@ function _histRenderComparison(r1, r2) {
     ${section('Duration Changed  (≥50% shift)', '🟡', '#f6c543', durRows, ['Test Name', 'Run 1 Duration', 'Run 2 Duration', 'Change'])}
     ${section('Stable — Same result in both runs', '⚪', '#6b7280', stableRows, ['Test Name', 'Run 1', 'Run 2', 'Duration Trend'])}
     ${onlyInA.length ? section('Only in Run 1 — not executed in Run 2', '📋', '#a5b4fc',
-        onlyInA.map(({name, t}) => `<tr style="background:#1a1f26">
+    onlyInA.map(({ name, t }) => `<tr style="background:#1a1f26">
           <td style="${tdStyle};color:#f1f5f9;font-weight:500">${escHtml(name)}</td>
           <td style="${tdStyle};text-align:center">${statusChip(t.status)}</td>
           <td style="${tdStyle};text-align:center;color:#4b5563;font-size:11px">Not run</td>
           <td style="${tdStyle};text-align:center;color:#6b7280;font-size:11px">${fmtMs(t.durationMs)}</td>
         </tr>`),
-        ['Test Name', 'Run 1 Result', 'Run 2 Result', 'Run 1 Duration']) : ''}
+    ['Test Name', 'Run 1 Result', 'Run 2 Result', 'Run 1 Duration']) : ''}
     ${onlyInB.length ? section('Only in Run 2 — not executed in Run 1', '📋', '#a5b4fc',
-        onlyInB.map(({name, t}) => `<tr style="background:#1a1f26">
+      onlyInB.map(({ name, t }) => `<tr style="background:#1a1f26">
           <td style="${tdStyle};color:#f1f5f9;font-weight:500">${escHtml(name)}</td>
           <td style="${tdStyle};text-align:center;color:#4b5563;font-size:11px">Not run</td>
           <td style="${tdStyle};text-align:center">${statusChip(t.status)}</td>
           <td style="${tdStyle};text-align:center;color:#6b7280;font-size:11px">${fmtMs(t.durationMs)}</td>
         </tr>`),
-        ['Test Name', 'Run 1 Result', 'Run 2 Result', 'Run 2 Duration']) : ''}
-    ${(r1.tests||[]).length === 0 || (r2.tests||[]).length === 0 ? `
+      ['Test Name', 'Run 1 Result', 'Run 2 Result', 'Run 2 Duration']) : ''}
+    ${(r1.tests || []).length === 0 || (r2.tests || []).length === 0 ? `
       <div style="margin-top:8px;padding:16px 20px;background:#1c1917;border:1px solid #713f12;border-radius:10px;color:#fde68a;font-size:13px">
         ⚠️ <strong>One or both runs have no test results.</strong> This usually means the run failed before Playwright could execute any tests (e.g. spec generation error, environment unreachable, or run was aborted).
         Check the run duration — a very short run (under 10s) with 0 tests typically indicates a startup failure.
@@ -6374,14 +6460,14 @@ function histSort(col) {
 // Uses HTTP polling — no WebSocket dependency (works through any proxy/IIS).
 // Polling interval: 800ms while session is active.
 
-let _debugScriptId      = null;
-let _debugSessionId     = null;
-let _debugTotalSteps    = 0;
-let _debugStepMeta      = [];
-let _debugPollTimer     = null;
+let _debugScriptId = null;
+let _debugSessionId = null;
+let _debugTotalSteps = 0;
+let _debugStepMeta = [];
+let _debugPollTimer = null;
 let _debugHeartbeatTimer = null;  // heartbeat polling interval
-let _debugLastStepIdx   = null;  // track which step we last displayed to avoid re-rendering same step
-let _debugSseSource     = null;  // SSE EventSource (primary push channel)
+let _debugLastStepIdx = null;  // track which step we last displayed to avoid re-rendering same step
+let _debugSseSource = null;  // SSE EventSource (primary push channel)
 
 // Step state per order: 'pending' | 'active' | 'done' | 'skipped' | 'error'
 const _debugStepState = {};
@@ -6424,7 +6510,7 @@ function _debugApplyBadges() {
   document.querySelectorAll('.script-tbl-row').forEach(row => {
     const scriptId = row.dataset.id;
     const existing = row.querySelector('.debug-active-badge');
-    const session  = _activeDebugSessions[scriptId];
+    const session = _activeDebugSessions[scriptId];
     if (session && session.sessionId !== _debugSessionId) {
       // Another user (or this user in another tab) is debugging this script
       if (!existing) {
@@ -6481,7 +6567,7 @@ async function debugStart() {
   if (!scriptRes.ok) { alert('Could not load script'); return; }
   const script = await scriptRes.json();
 
-  _debugStepMeta   = (script.steps || []).slice().sort((a, b) => a.order - b.order);
+  _debugStepMeta = (script.steps || []).slice().sort((a, b) => a.order - b.order);
   _debugTotalSteps = _debugStepMeta.length;
   _debugLastStepIdx = null;
 
@@ -6499,7 +6585,7 @@ async function debugStart() {
   _debugSetProgress('Starting…');
 
   const proj = _currentProjectData();
-  const env  = (proj?.environments || []).find(e => e.id === envId);
+  const env = (proj?.environments || []).find(e => e.id === envId);
   document.getElementById('debug-env-label').textContent = env ? `Env: ${env.name}` : '';
 
   _debugRenderSteps();
@@ -6538,7 +6624,7 @@ async function debugStart() {
         await fetch('/api/debug/continue', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ sessionId: err.sessionId, action: 'stop' })
-        }).catch(() => {});
+        }).catch(() => { });
         // Small pause to let the process terminate before spawning a new one
         await new Promise(r => setTimeout(r, 800));
         // Retry start
@@ -6553,7 +6639,7 @@ async function debugStart() {
           return;
         }
         const data2 = await retry.json();
-        _debugSessionId  = data2.sessionId;
+        _debugSessionId = data2.sessionId;
         _debugTotalSteps = data2.totalSteps;
         _debugSetStatus('starting');
         _debugOpenSse(data2.sessionId);
@@ -6588,7 +6674,7 @@ async function debugStart() {
       console.info('[debugger] Parallel debug notice:\n' + names);
     }
   }
-  _debugSessionId  = sessionId;
+  _debugSessionId = sessionId;
   _debugTotalSteps = totalSteps;
   _debugSetStatus('starting');
 
@@ -6607,7 +6693,7 @@ async function debugStart() {
   window.addEventListener('beforeunload', () => {
     if (_debugSessionId) {
       navigator.sendBeacon('/api/debug/stop', JSON.stringify({ sessionId: _debugSessionId, action: 'stop' }));
-      console.log(`[debugger] beforeunload: sent stop beacon for session ${_debugSessionId.slice(0,8)}`);
+      console.log(`[debugger] beforeunload: sent stop beacon for session ${_debugSessionId.slice(0, 8)}`);
     }
   });
 
@@ -6653,7 +6739,7 @@ function _debugOpenSse(sessionId) {
         _debugStopHeartbeat();
         _debugSetStatus(msg.status || 'done');
         _debugCloseSse();
-      } catch {}
+      } catch { }
     });
 
     src.onerror = () => {
@@ -6698,7 +6784,7 @@ function _debugStartHeartbeat() {
   // always gets a fresh signal the moment the user is back
   document.addEventListener('visibilitychange', _debugOnVisibilityChange);
 
-  console.log(`[debugger] Heartbeat polling started for session ${_debugSessionId?.slice(0,8)}`);
+  console.log(`[debugger] Heartbeat polling started for session ${_debugSessionId?.slice(0, 8)}`);
 }
 
 function _debugStopHeartbeat() {
@@ -6788,9 +6874,9 @@ function _debugOnStep({ stepIdx, keyword, locator, value, screenshotPath, screen
   _debugRenderSteps();
   _debugScrollToStep(stepIdx);
 
-  document.getElementById('dbg-kw').textContent  = keyword || '—';
+  document.getElementById('dbg-kw').textContent = keyword || '—';
   document.getElementById('dbg-loc').textContent = locator || '—';
-  document.getElementById('dbg-val').textContent = value   || '—';
+  document.getElementById('dbg-val').textContent = value || '—';
 
   const idx = _debugStepMeta.findIndex(s => s.order === stepIdx);
   _debugSetProgress(`Step ${idx + 1} of ${_debugTotalSteps}`);
@@ -6831,12 +6917,12 @@ function _debugOnError({ stepIdx, keyword, locator, errorMessage, errorType }) {
   _debugScrollToStep(stepIdx);
 
   // Update header info to show the failed step
-  document.getElementById('dbg-kw').textContent  = keyword  || '—';
-  document.getElementById('dbg-loc').textContent = locator  || '—';
+  document.getElementById('dbg-kw').textContent = keyword || '—';
+  document.getElementById('dbg-loc').textContent = locator || '—';
   document.getElementById('dbg-val').textContent = '—';
 
   // Find step number + meta for display
-  const idx     = _debugStepMeta.findIndex(s => s.order === stepIdx || s.order === Math.floor(stepIdx));
+  const idx = _debugStepMeta.findIndex(s => s.order === stepIdx || s.order === Math.floor(stepIdx));
   const stepNum = idx >= 0 ? idx + 1 : stepIdx;
   const stepMeta = idx >= 0 ? _debugStepMeta[idx] : null;
 
@@ -6846,22 +6932,22 @@ function _debugOnError({ stepIdx, keyword, locator, errorMessage, errorType }) {
   // Show error panel
   const panel = document.getElementById('dbg-error-panel');
   const title = document.getElementById('dbg-error-title');
-  const type  = document.getElementById('dbg-error-type');
-  const msg   = document.getElementById('dbg-error-message');
+  const type = document.getElementById('dbg-error-type');
+  const msg = document.getElementById('dbg-error-message');
   if (panel) panel.style.display = 'block';
   if (title) title.textContent = `Step ${stepNum} Failed — ${keyword || ''}`;
-  if (type)  type.textContent  = errorType || 'Error';
-  if (msg)   msg.textContent   = errorMessage || 'Unknown error';
+  if (type) type.textContent = errorType || 'Error';
+  if (msg) msg.textContent = errorMessage || 'Unknown error';
 
   // ── Inline edit panel ────────────────────────────────────────────────────────
   // Remove any existing edit panel first
   const existingEdit = document.getElementById('dbg-inline-edit');
   if (existingEdit) existingEdit.remove();
 
-  const LOCATOR_TYPES = ['css','xpath','id','name','text','testid','role','label','placeholder','nth','last'];
-  const currentLoc    = locator || (stepMeta?.locator || '');
-  const currentLt     = stepMeta?.locatorType || 'css';
-  const currentVal    = stepMeta?.value || '';
+  const LOCATOR_TYPES = ['css', 'xpath', 'id', 'name', 'text', 'testid', 'role', 'label', 'placeholder', 'nth', 'last'];
+  const currentLoc = locator || (stepMeta?.locator || '');
+  const currentLt = stepMeta?.locatorType || 'css';
+  const currentVal = stepMeta?.value || '';
 
   const editPanel = document.createElement('div');
   editPanel.id = 'dbg-inline-edit';
@@ -6871,7 +6957,7 @@ function _debugOnError({ stepIdx, keyword, locator, errorMessage, errorType }) {
     <div style="display:grid;grid-template-columns:130px 1fr;gap:8px;align-items:center;font-size:12px;color:#94a3b8">
       <label>Locator Type</label>
       <select id="dbg-edit-loctype" class="fm-input" style="font-size:12px;padding:3px 6px;background:#0f172a;color:#e2e8f0;border-color:#334155">
-        ${LOCATOR_TYPES.map(t => `<option value="${t}" ${currentLt===t?'selected':''}>${t}</option>`).join('')}
+        ${LOCATOR_TYPES.map(t => `<option value="${t}" ${currentLt === t ? 'selected' : ''}>${t}</option>`).join('')}
       </select>
       <label>Locator</label>
       <input id="dbg-edit-loc" class="fm-input" type="text" value="${escHtml(currentLoc)}"
@@ -6900,15 +6986,15 @@ function _debugOnError({ stepIdx, keyword, locator, errorMessage, errorType }) {
   if (btnStep) btnStep.disabled = true;
   if (btnSkip) btnSkip.disabled = true;
 
-  console.log(`[debugger:error] Step ${stepIdx} (${keyword}) failed: ${errorType}: ${(errorMessage||'').slice(0,120)}`);
+  console.log(`[debugger:error] Step ${stepIdx} (${keyword}) failed: ${errorType}: ${(errorMessage || '').slice(0, 120)}`);
 }
 
 // Apply edits and send retry to the spec
 async function _debugApplyRetry(stepIdx, stepNum) {
-  const locator     = document.getElementById('dbg-edit-loc')?.value?.trim();
+  const locator = document.getElementById('dbg-edit-loc')?.value?.trim();
   const locatorType = document.getElementById('dbg-edit-loctype')?.value;
-  const value       = document.getElementById('dbg-edit-val')?.value;
-  const persist     = document.getElementById('dbg-edit-persist')?.checked !== false;
+  const value = document.getElementById('dbg-edit-val')?.value;
+  const persist = document.getElementById('dbg-edit-persist')?.checked !== false;
 
   if (!locator) { alert('Locator cannot be empty'); return; }
 
@@ -6916,11 +7002,11 @@ async function _debugApplyRetry(stepIdx, stepNum) {
   if (persist && _debugSessionId) {
     try {
       await fetch('/api/debug/patch-step', {
-        method:  'POST',
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({
-          sessionId:   _debugSessionId,
-          stepOrder:   Math.floor(stepIdx),
+        body: JSON.stringify({
+          sessionId: _debugSessionId,
+          stepOrder: Math.floor(stepIdx),
           locator,
           locatorType,
           value,
@@ -6951,16 +7037,16 @@ async function _debugApplyRetry(stepIdx, stepNum) {
 
   // Send retry action with patched values to the spec via gate.json
   await fetch('/api/debug/continue', {
-    method:  'POST',
+    method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify({
-      sessionId:   _debugSessionId,
-      action:      'retry',
+    body: JSON.stringify({
+      sessionId: _debugSessionId,
+      action: 'retry',
       locator,
       locatorType,
       value,
     }),
-  }).catch(() => {});
+  }).catch(() => { });
 }
 
 // Send continue / skip / stop to server
@@ -6994,7 +7080,7 @@ async function debugContinue(action) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ sessionId: _debugSessionId, action })
-  }).catch(() => {});
+  }).catch(() => { });
 }
 
 function debugClose() {
@@ -7002,7 +7088,7 @@ function debugClose() {
   _debugStopHeartbeat();  // Stop heartbeat before stopping session
   if (_debugSessionId) {
     const sessionId = _debugSessionId;
-    console.log(`[debugger] debugClose: Sending stop request for session ${sessionId.slice(0,8)}`);
+    console.log(`[debugger] debugClose: Sending stop request for session ${sessionId.slice(0, 8)}`);
     fetch('/api/debug/continue', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -7015,8 +7101,8 @@ function debugClose() {
   }
   _debugCloseSse();
   if (_debugSessionId && typeof wsUnsubscribe === 'function') wsUnsubscribe(_debugSessionId);
-  _debugSessionId   = null;
-  _debugScriptId    = null;
+  _debugSessionId = null;
+  _debugScriptId = null;
   _debugLastStepIdx = null;
   document.getElementById('debug-overlay').style.display = 'none';
 
@@ -7037,7 +7123,7 @@ function _debugRenderSteps() {
   el.innerHTML = _debugStepMeta.map(s => {
     const state = _debugStepState[s.order] || 'pending';
     const icons = { pending: '○', active: '●', done: '✓', skipped: '⏭', error: '✗', failed: '✗' };
-    const icon  = icons[state] || '○';
+    const icon = icons[state] || '○';
     return `<div class="debug-step-row debug-step-${state}" data-order="${s.order}">
       <span class="debug-step-icon">${icon}</span>
       <div class="debug-step-info">
@@ -7058,8 +7144,8 @@ function _debugSetStatus(status) {
   const el = document.getElementById('debug-status-badge');
   if (!el) return;
   const labels = { starting: 'Starting…', paused: 'Paused', running: 'Executing…', done: 'Done', stopped: 'Stopped', error: 'Error' };
-  el.textContent  = labels[status] || status;
-  el.className    = `debug-status-badge debug-status-${status}`;
+  el.textContent = labels[status] || status;
+  el.className = `debug-status-badge debug-status-${status}`;
 }
 
 function _debugSetProgress(label) {
@@ -7088,10 +7174,10 @@ function _debugSetControls(enabled) {
 //   On any failure (timeout / decode error / missing elements) → show error,
 //   keep button DISABLED. No exceptions.
 async function _debugSetScreenshot(screenshotPath, onReady, screenshotBase64 = null) {
-  const img     = document.getElementById('debug-screenshot-img');
-  const ph      = document.getElementById('debug-screenshot-placeholder');
+  const img = document.getElementById('debug-screenshot-img');
+  const ph = document.getElementById('debug-screenshot-placeholder');
   const loading = document.getElementById('debug-screenshot-loading');
-  const error   = document.getElementById('debug-screenshot-error');
+  const error = document.getElementById('debug-screenshot-error');
 
   if (!img) {
     console.warn('[debugger] debug-screenshot-img element not found — button stays disabled');
@@ -7107,8 +7193,8 @@ async function _debugSetScreenshot(screenshotPath, onReady, screenshotBase64 = n
     [ph, loading, error].forEach(el => { if (el) el.style.display = 'none'; });
     img.style.display = 'none';
     if (panel === 'loading' && loading) loading.style.display = 'flex';
-    if (panel === 'error'   && error)   error.style.display   = 'flex';
-    if (panel === 'image')              img.style.display      = '';
+    if (panel === 'error' && error) error.style.display = 'flex';
+    if (panel === 'image') img.style.display = '';
   };
 
   showPanel('loading');
@@ -7117,7 +7203,7 @@ async function _debugSetScreenshot(screenshotPath, onReady, screenshotBase64 = n
   if (screenshotBase64) {
     console.log('[debugger] Using inline base64 screenshot — skipping HTTP fetch');
     const loadedOk = await new Promise((resolve) => {
-      img.addEventListener('load',  () => resolve(true),  { once: true });
+      img.addEventListener('load', () => resolve(true), { once: true });
       img.addEventListener('error', () => resolve(false), { once: true });
       img.src = `data:image/jpeg;base64,${screenshotBase64}`;
     });
@@ -7135,7 +7221,7 @@ async function _debugSetScreenshot(screenshotPath, onReady, screenshotBase64 = n
 
   // Poll server until file exists (200ms interval, 120s deadline)
   const deadline = Date.now() + 120000;
-  let   fileReady = false;
+  let fileReady = false;
 
   while (Date.now() < deadline) {
     try {
@@ -7153,7 +7239,7 @@ async function _debugSetScreenshot(screenshotPath, onReady, screenshotBase64 = n
 
   // Load image
   const loadedOk = await new Promise((resolve) => {
-    img.addEventListener('load',  () => { console.log('[debugger] Image onload fired'); resolve(true);  }, { once: true });
+    img.addEventListener('load', () => { console.log('[debugger] Image onload fired'); resolve(true); }, { once: true });
     img.addEventListener('error', () => { console.warn('[debugger] Image decode error'); resolve(false); }, { once: true });
     img.src = `${screenshotUrl}?t=${Date.now()}`;
   });
@@ -7201,9 +7287,9 @@ function _currentProjectData() {
 //   3. Steps stream in via SSE → appended live to the script editor
 //   4. User clicks Stop Recording → POST /api/recorder/stop → session ends
 
-let _recorderToken    = null;   // active session token
-let _recorderSse      = null;   // EventSource instance
-let _recorderTab      = null;   // reference to opened AUT tab
+let _recorderToken = null;   // active session token
+let _recorderSse = null;   // EventSource instance
+let _recorderTab = null;   // reference to opened AUT tab
 let _recorderStepBase = 0;      // step order offset (existing steps before recording)
 
 // ── Entry point: toggle recording on/off ────────────────────────────────────
@@ -7245,9 +7331,9 @@ async function recorderStart() {
   let token;
   try {
     const res = await fetch('/api/recorder/start', {
-      method:  'POST',
+      method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ projectId: currentProjectId, autUrl: env.url }),
+      body: JSON.stringify({ projectId: currentProjectId, autUrl: env.url }),
     });
     if (res.status === 409) {
       const d = await res.json();
@@ -7268,9 +7354,9 @@ async function recorderStart() {
   _recorderOpenSse(token);
 
   // Update UI
-  const btn    = document.getElementById('recorder-btn');
+  const btn = document.getElementById('recorder-btn');
   const status = document.getElementById('recorder-status');
-  if (btn)    { btn.textContent = '\u23F9 Stop Recording'; btn.classList.add('recording'); }
+  if (btn) { btn.textContent = '\u23F9 Stop Recording'; btn.classList.add('recording'); }
   if (status) { status.textContent = 'Recording\u2026'; status.style.display = 'inline'; }
 
   // Prompt user to activate extension — session is ready, extension just needs to connect
@@ -7288,9 +7374,9 @@ async function recorderStop() {
   let recordedSteps = [];
   try {
     const stopRes = await fetch('/api/recorder/stop', {
-      method:  'POST',
+      method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ token }),
+      body: JSON.stringify({ token }),
     });
     if (stopRes.ok) {
       const stopData = await stopRes.json();
@@ -7299,9 +7385,9 @@ async function recorderStop() {
   } catch { /* ignore — server will auto-expire */ }
 
   // Reset UI
-  const btn    = document.getElementById('recorder-btn');
+  const btn = document.getElementById('recorder-btn');
   const status = document.getElementById('recorder-status');
-  if (btn)    { btn.textContent = '⬤ Record'; btn.classList.remove('recording'); }
+  if (btn) { btn.textContent = '⬤ Record'; btn.classList.remove('recording'); }
   if (status) { status.style.display = 'none'; }
 
   console.info('[Recorder] Stopped. Steps are in the editor — review and save.');
@@ -7310,9 +7396,9 @@ async function recorderStop() {
   if (recordedSteps.length >= 3 && currentProjectId) {
     try {
       const anaRes = await fetch('/api/recorder/analyse', {
-        method:  'POST',
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ projectId: currentProjectId, steps: recordedSteps }),
+        body: JSON.stringify({ projectId: currentProjectId, steps: recordedSteps }),
       });
       if (anaRes.ok) {
         const { patterns } = await anaRes.json();
@@ -7352,7 +7438,7 @@ function _cr6ShowCard(pattern, recordedStepsTotal, onDone) {
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:10000;display:flex;align-items:center;justify-content:center';
 
   const isDuplicate = !!pattern.duplicateFnId;
-  const stepsList   = pattern.steps.map((s, i) =>
+  const stepsList = pattern.steps.map((s, i) =>
     `<li style="padding:3px 0;color:var(--neutral-300);font-size:12px">
        <span style="color:var(--purple-400);font-weight:600">${escHtml(s.keyword)}</span>
        ${s.locatorName || s.locator ? `<span style="color:var(--neutral-500);margin:0 4px">→</span><span style="font-family:monospace;font-size:11px">${escHtml(s.locatorName || s.locator || '')}</span>` : ''}
@@ -7406,7 +7492,7 @@ function _cr6ShowCard(pattern, recordedStepsTotal, onDone) {
 
   // Auto-derive identifier as user types name
   if (!isDuplicate) {
-    const nameInp  = overlay.querySelector('#cr6-fn-name');
+    const nameInp = overlay.querySelector('#cr6-fn-name');
     const identInp = overlay.querySelector('#cr6-fn-ident');
     nameInp.addEventListener('input', () => {
       identInp.value = _cr6ToIdentifier(nameInp.value);
@@ -7419,10 +7505,10 @@ function _cr6ShowCard(pattern, recordedStepsTotal, onDone) {
   };
 
   overlay.querySelector('#cr6-accept-btn').onclick = async () => {
-    const nameInp  = overlay.querySelector('#cr6-fn-name');
+    const nameInp = overlay.querySelector('#cr6-fn-name');
     const identInp = overlay.querySelector('#cr6-fn-ident');
-    const fnName   = isDuplicate ? pattern.suggestedName : (nameInp?.value.trim() || '');
-    const fnIdent  = isDuplicate ? '' : (identInp?.value.trim() || '');
+    const fnName = isDuplicate ? pattern.suggestedName : (nameInp?.value.trim() || '');
+    const fnIdent = isDuplicate ? '' : (identInp?.value.trim() || '');
 
     if (!isDuplicate && !fnName) { nameInp.style.borderColor = 'red'; nameInp.focus(); return; }
     if (!isDuplicate && !fnIdent) { identInp.style.borderColor = 'red'; identInp.focus(); return; }
@@ -7505,33 +7591,33 @@ async function _cr6AcceptPattern(pattern, recordedStepsTotal, fnName, fnIdent, i
       // ScriptStep uses 'locator' for the value; FunctionStep stores it as 'selector'.
       // Every other field is copied verbatim — no defaults, no coercion.
       const fnSteps = pattern.steps.map((s, i) => ({
-        order:       i + 1,
-        keyword:     s.keyword,
+        order: i + 1,
+        keyword: s.keyword,
         locatorName: s.locatorName ?? null,
         locatorType: s.locatorType ?? 'css',
-        selector:    s.locator    ?? s.selector ?? null,  // script uses 'locator', fn uses 'selector'
+        selector: s.locator ?? s.selector ?? null,  // script uses 'locator', fn uses 'selector'
         description: s.description ?? '',
       }));
 
       const body = {
-        name:        fnName,
-        identifier:  fnIdent,
+        name: fnName,
+        identifier: fnIdent,
         description: `Auto-extracted from recording — ${pattern.matchCount} matching script${pattern.matchCount !== 1 ? 's' : ''}`,
-        steps:       fnSteps,
-        projectId:   currentProjectId || null,
+        steps: fnSteps,
+        projectId: currentProjectId || null,
       };
 
       const res = await fetch('/api/functions', {
-        method:  'POST',
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify(body),
+        body: JSON.stringify(body),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error || `HTTP ${res.status}`);
       }
       const data = await res.json();
-      fnId           = data.id;
+      fnId = data.id;
       fnNameResolved = fnName;
 
       // Refresh the in-memory allFunctions list so CALL FUNCTION picker finds the new fn
@@ -7543,10 +7629,10 @@ async function _cr6AcceptPattern(pattern, recordedStepsTotal, fnName, fnIdent, i
   // The recorded steps were appended to the end of any pre-existing editor rows.
   // So recorded step at index i → DOM row at (totalRows - recordedStepsTotal + i).
   const allRows = [...document.querySelectorAll('#se-steps-container .script-step-row')];
-  const offset  = allRows.length - recordedStepsTotal;
+  const offset = allRows.length - recordedStepsTotal;
 
   const domStart = offset + pattern.startIndex;
-  const domEnd   = offset + pattern.endIndex;
+  const domEnd = offset + pattern.endIndex;
 
   // The row that will follow the replacement (used as insert-before anchor)
   const anchorRow = allRows[domEnd + 1] || null;
@@ -7562,8 +7648,8 @@ async function _cr6AcceptPattern(pattern, recordedStepsTotal, fnName, fnIdent, i
       acc.push({
         fnStepIdx: fi,
         valueMode: s.valueMode || 'static',
-        value:     s.value,
-        testData:  s.testData  || [],
+        value: s.value,
+        testData: s.testData || [],
       });
     }
     return acc;
@@ -7571,16 +7657,16 @@ async function _cr6AcceptPattern(pattern, recordedStepsTotal, fnName, fnIdent, i
 
   // Insert a CALL FUNCTION step at the same position
   const callFnStep = {
-    keyword:      'CALL FUNCTION',
-    value:        fnNameResolved,
-    valueMode:    'static',
+    keyword: 'CALL FUNCTION',
+    value: fnNameResolved,
+    valueMode: 'static',
     fnStepValues,
-    locator:      null,
-    locatorName:  null,
-    locatorType:  'css',
-    description:  `Call: ${fnNameResolved}`,
-    screenshot:   false,
-    testData:     [],
+    locator: null,
+    locatorName: null,
+    locatorType: 'css',
+    description: `Call: ${fnNameResolved}`,
+    screenshot: false,
+    testData: [],
   };
   scriptAddStep(callFnStep, anchorRow);
 
@@ -7610,7 +7696,7 @@ function _recorderPickEnv(environments) {
     document.getElementById('rec-env-cancel').onclick = () => { document.body.removeChild(overlay); resolve(null); };
     document.getElementById('rec-env-ok').onclick = () => {
       const selId = document.getElementById('rec-env-pick').value;
-      const env   = environments.find(e => e.id === selId) || environments[0];
+      const env = environments.find(e => e.id === selId) || environments[0];
       document.body.removeChild(overlay);
       resolve(env);
     };
@@ -7642,23 +7728,23 @@ function _recorderOpenSse(token) {
 }
 
 function _recorderCloseSse() {
-  if (_recorderSse) { try { _recorderSse.close(); } catch {} _recorderSse = null; }
+  if (_recorderSse) { try { _recorderSse.close(); } catch { } _recorderSse = null; }
 }
 
 // ── Append a recorded step to the script editor ───────────────────────────────
 function _recorderAppendStep(step, locatorCreated, locatorName) {
   // Build a step object that scriptAddStep understands
   const stepData = {
-    keyword:     step.keyword,
-    locator:     step.locator     || '',
-    locatorId:   step.locatorId   || null,
+    keyword: step.keyword,
+    locator: step.locator || '',
+    locatorId: step.locatorId || null,
     locatorType: step.locatorType || 'css',
-    locatorName: locatorName      || step.locator || '',
-    value:       step.value       || '',
-    valueMode:   'static',
+    locatorName: locatorName || step.locator || '',
+    value: step.value || '',
+    valueMode: 'static',
     description: step.description || '',
-    screenshot:  false,
-    testData:    [],
+    screenshot: false,
+    testData: [],
   };
 
   scriptAddStep(stepData);
@@ -7690,7 +7776,7 @@ function _recorderAppendStep(step, locatorCreated, locatorName) {
       badge.style.cssText = 'font-size:10px;background:#8b5cf6;color:#fff;border-radius:4px;padding:1px 6px;margin-left:6px;vertical-align:middle';
       const numEl = last.querySelector('.step-num');
       if (numEl) numEl.parentNode.insertBefore(badge, numEl.nextSibling);
-      setTimeout(() => { try { badge.remove(); } catch {} }, 4000);
+      setTimeout(() => { try { badge.remove(); } catch { } }, 4000);
     }
   }
 }
@@ -7701,7 +7787,7 @@ function _recorderInlineEditLocator(rowEl, stepData) {
   const existing = rowEl.querySelector('.rec-inline-edit');
   if (existing) { existing.remove(); return; }
 
-  const LOCATOR_TYPES = ['css','xpath','id','name','text','testid','role','label','placeholder','nth','last'];
+  const LOCATOR_TYPES = ['css', 'xpath', 'id', 'name', 'text', 'testid', 'role', 'label', 'placeholder', 'nth', 'last'];
 
   const editor = document.createElement('div');
   editor.className = 'rec-inline-edit';
@@ -7721,15 +7807,15 @@ function _recorderInlineEditLocator(rowEl, stepData) {
 }
 
 function _recorderApplyLocatorEdit(btn) {
-  const editor    = btn.closest('.rec-inline-edit');
-  const rowEl     = editor.parentElement;
-  const stepData  = editor._stepData;
-  const newType   = editor.querySelector('.rec-loc-type').value;
-  const newLoc    = editor.querySelector('.rec-loc-value').value.trim();
+  const editor = btn.closest('.rec-inline-edit');
+  const rowEl = editor.parentElement;
+  const stepData = editor._stepData;
+  const newType = editor.querySelector('.rec-loc-type').value;
+  const newLoc = editor.querySelector('.rec-loc-value').value.trim();
   if (!newLoc) { alert('Locator cannot be empty'); return; }
 
   // Update stepData in-place (it's a reference from the scriptAddStep call)
-  stepData.locator     = newLoc;
+  stepData.locator = newLoc;
   stepData.locatorType = newType;
   stepData.locatorName = newLoc;
 
@@ -7738,9 +7824,9 @@ function _recorderApplyLocatorEdit(btn) {
   if (locDisplay) locDisplay.textContent = newLoc;
 
   // Update the underlying hidden inputs if scriptAddStep rendered them
-  const locInput     = rowEl.querySelector('input[name="locator"], .se-locator-input');
+  const locInput = rowEl.querySelector('input[name="locator"], .se-locator-input');
   const locTypeInput = rowEl.querySelector('select[name="locatorType"], .se-loctype-select');
-  if (locInput)     locInput.value     = newLoc;
+  if (locInput) locInput.value = newLoc;
   if (locTypeInput) locTypeInput.value = newType;
 
   editor.remove();
@@ -7755,13 +7841,13 @@ function _recorderApplyLocatorEdit(btn) {
 // API KEY MANAGEMENT
 // ══════════════════════════════════════════════════════════════════════════════
 
-let _apikeyRawKey    = null;
-let _akAllSuites     = [];
-let _akAllProjects   = [];
-let _akGeneratedId   = null;  // id returned after generation (for YAML suite/env fallback)
+let _apikeyRawKey = null;
+let _akAllSuites = [];
+let _akAllProjects = [];
+let _akGeneratedId = null;  // id returned after generation (for YAML suite/env fallback)
 
 async function apikeyLoad() {
-  const res  = await fetch('/api/admin/apikeys');
+  const res = await fetch('/api/admin/apikeys');
   const keys = await res.json();
   const tbody = document.getElementById('apikey-tbody');
   if (!tbody) return;
@@ -7769,8 +7855,8 @@ async function apikeyLoad() {
   tbody.innerHTML = keys.length === 0
     ? '<tr><td colspan="6" style="text-align:center;color:var(--text-muted)">No API keys yet.</td></tr>'
     : keys.map(k => {
-        const proj = projects.find(p => p.id === k.projectId);
-        return `<tr>
+      const proj = projects.find(p => p.id === k.projectId);
+      return `<tr>
           <td><strong>${escHtml(k.name)}</strong></td>
           <td><code>${escHtml(k.prefix)}…</code></td>
           <td>${proj ? escHtml(proj.name) : 'All projects'}</td>
@@ -7778,7 +7864,7 @@ async function apikeyLoad() {
           <td>${k.lastUsedAt ? formatDate(k.lastUsedAt) : '—'}</td>
           <td><button class="btn btn-danger btn-sm" onclick="apikeyDelete('${k.id}')">Revoke</button></td>
         </tr>`;
-      }).join('');
+    }).join('');
 }
 
 async function _getProjects() {
@@ -7795,28 +7881,28 @@ async function _getSuites(projectId) {
 }
 
 async function apikeyOpenModal() {
-  _apikeyRawKey  = null;
+  _apikeyRawKey = null;
   _akGeneratedId = null;
 
   // Reset form
-  document.getElementById('ak-name').value    = '';
+  document.getElementById('ak-name').value = '';
   document.getElementById('ak-expires').value = '';
-  document.getElementById('ak-suite').innerHTML  = '<option value="">— select suite —</option>';
-  document.getElementById('ak-env').innerHTML    = '<option value="">— select environment —</option>';
+  document.getElementById('ak-suite').innerHTML = '<option value="">— select suite —</option>';
+  document.getElementById('ak-env').innerHTML = '<option value="">— select environment —</option>';
   document.getElementById('ak-timeout').value = '30';
-  document.getElementById('ak-poll').value    = '5';
+  document.getElementById('ak-poll').value = '5';
   document.getElementById('apikey-modal-alert').innerHTML = '';
   document.getElementById('apikey-result-block').style.display = 'none';
-  document.getElementById('apikey-form-block').style.display   = '';
-  document.getElementById('ak-save-btn').style.display         = '';
-  document.getElementById('ak-modal-title').textContent        = 'Generate API Key';
-  document.getElementById('ak-copy-yaml-btn').disabled         = true;
-  document.getElementById('ak-dl-yaml-btn').disabled           = true;
-  document.getElementById('ak-yaml-preview').textContent       = 'Configure the fields on the left to preview the generated YAML.';
+  document.getElementById('apikey-form-block').style.display = '';
+  document.getElementById('ak-save-btn').style.display = '';
+  document.getElementById('ak-modal-title').textContent = 'Generate API Key';
+  document.getElementById('ak-copy-yaml-btn').disabled = true;
+  document.getElementById('ak-dl-yaml-btn').disabled = true;
+  document.getElementById('ak-yaml-preview').textContent = 'Configure the fields on the left to preview the generated YAML.';
 
   // Load projects first, then suites
   _akAllProjects = await _getProjects();
-  _akAllSuites   = [];
+  _akAllSuites = [];
 
   const projSel = document.getElementById('ak-project');
   projSel.innerHTML = '<option value="">— select project —</option>' +
@@ -7828,7 +7914,7 @@ async function apikeyOpenModal() {
 
 function _akPopulateSuites(projectId) {
   const list = projectId ? _akAllSuites.filter(s => s.projectId === projectId) : _akAllSuites;
-  const sel  = document.getElementById('ak-suite');
+  const sel = document.getElementById('ak-suite');
   sel.innerHTML = '<option value="">— select suite —</option>' +
     list.map(s => `<option value="${s.id}">${escHtml(s.name)}</option>`).join('');
   document.getElementById('ak-env').innerHTML = '<option value="">— select environment —</option>';
@@ -7839,7 +7925,7 @@ async function _akProjectChange() {
 
   // Reset downstream selects
   document.getElementById('ak-suite').innerHTML = '<option value="">— loading… —</option>';
-  document.getElementById('ak-env').innerHTML   = '<option value="">— select environment —</option>';
+  document.getElementById('ak-env').innerHTML = '<option value="">— select environment —</option>';
 
   if (!projectId) {
     document.getElementById('ak-suite').innerHTML = '<option value="">— select suite —</option>';
@@ -7856,8 +7942,8 @@ async function _akProjectChange() {
 
 function _akSuiteChange() {
   const suiteId = document.getElementById('ak-suite').value;
-  const suite   = _akAllSuites.find(s => s.id === suiteId);
-  const envSel  = document.getElementById('ak-env');
+  const suite = _akAllSuites.find(s => s.id === suiteId);
+  const envSel = document.getElementById('ak-env');
   envSel.innerHTML = '<option value="">— select environment —</option>';
 
   if (suite) {
@@ -7878,14 +7964,14 @@ function _akSuiteChange() {
 }
 
 function _akYamlUpdate() {
-  const platform  = window.location.origin;
-  const keyName   = document.getElementById('ak-name').value.trim() || 'ADO Pipeline — QA';
-  const suiteId   = document.getElementById('ak-suite').value;
+  const platform = window.location.origin;
+  const keyName = document.getElementById('ak-name').value.trim() || 'ADO Pipeline — QA';
+  const suiteId = document.getElementById('ak-suite').value;
   const suiteName = suiteId ? ((_akAllSuites.find(s => s.id === suiteId) || {}).name || suiteId) : '<SUITE_ID>';
-  const envId     = document.getElementById('ak-env').value || '<ENV_ID>';
-  const timeout   = document.getElementById('ak-timeout').value || '30';
-  const poll      = document.getElementById('ak-poll').value || '5';
-  const rawKey    = _apikeyRawKey || '$(QA_API_KEY)';
+  const envId = document.getElementById('ak-env').value || '<ENV_ID>';
+  const timeout = document.getElementById('ak-timeout').value || '30';
+  const poll = document.getElementById('ak-poll').value || '5';
+  const rawKey = _apikeyRawKey || '$(QA_API_KEY)';
   const suiteIdVal = suiteId || '<SUITE_ID>';
 
   // bash + curl - Linux ADO agents (ubuntu-latest)
@@ -7896,7 +7982,7 @@ function _akYamlUpdate() {
     '      PLATFORM="${QA_PLATFORM_URL}"',
     "      SUITE_ID='" + suiteIdVal + "'",
     "      SUITE_NAME='" + suiteName.replace(/'/g, '') + "'",
-    "      ENV_ID='"   + envId + "'",
+    "      ENV_ID='" + envId + "'",
     '      TIMEOUT_SECS=$(( ' + timeout + ' * 60 ))',
     '      POLL_SECS=' + poll,
     '',
@@ -7966,110 +8052,110 @@ function _akYamlUpdate() {
 
   // Reusable ADO template content (second download button)
   const templateYaml =
-"# testforge-run-template.yml\n"
-"# Drop in your repo root. Reference from any pipeline via:\n"
-"#   - template: testforge-run-template.yml\n"
-"#     parameters:\n"
-"#       suiteName: My Suite\n"
-"#       suiteId: <id>\n"
-"#       envId: <env>\n"
-"# Variable Group 'qa-platform-config' must have:\n"
-"#   QA_API_KEY      - secret, from TestForge Admin > API Keys\n"
-"#   QA_PLATFORM_URL - TestForge server base URL\n"
-"\n"
-"parameters:\n"
-"  - name: suiteName\n"
-"    type: string\n"
-"  - name: suiteId\n"
-"    type: string\n"
-"  - name: envId\n"
-"    type: string\n"
-"  - name: timeoutMinutes\n"
-"    type: number\n"
-"    default: 30\n"
-"  - name: pollSeconds\n"
-"    type: number\n"
-"    default: 5\n"
-"\n"
-"steps:\n"
-"- task: Bash@3\n"
-"  displayName: 'TestForge \u2014 ${{ parameters.suiteName }}'\n"
-"  env:\n"
-"    QA_API_KEY:      $(QA_API_KEY)\n"
-"    QA_PLATFORM_URL: $(QA_PLATFORM_URL)\n"
-"  inputs:\n"
-"    targetType: inline\n"
-"    script: |\n"
-"      set -euo pipefail\n"
-"      trap 'echo \"ERROR: Script failed at line $LINENO\"' ERR\n"
-"      PLATFORM=\"${QA_PLATFORM_URL}\"\n"
-"      SUITE_ID='${{ parameters.suiteId }}'\n"
-"      ENV_ID='${{ parameters.envId }}'\n"
-"      TIMEOUT_SECS=$(( ${{ parameters.timeoutMinutes }} * 60 ))\n"
-"      POLL_SECS=${{ parameters.pollSeconds }}\n"
-"      if ! command -v jq >/dev/null 2>&1; then\n"
-"        echo \"ERROR: jq is required but not installed on this agent\"\n"
-"        exit 1\n"
-"      fi\n"
-"      AUTH_HEADER=\"Authorization: Bearer ${QA_API_KEY}\"\n"
-"      echo 'Triggering: ${{ parameters.suiteName }}'\n"
-"      RESPONSE=$(curl -sS --fail-with-body --retry 3 --retry-delay 5 -X POST \"${PLATFORM}/api/suites/${SUITE_ID}/run\" \\\n"
-"        -H \"$AUTH_HEADER\" \\\n"
-"        -H 'Content-Type: application/json' \\\n"
-"        -d '{\"environmentId\":\"${{ parameters.envId }}\"}')\n"
-"      RUN_ID=$(echo \"$RESPONSE\" | jq -r '.runId // empty')\n"
-"      [ -z \"$RUN_ID\" ] && { echo \"ERROR: No runId. Response: $RESPONSE\"; exit 1; }\n"
-"      echo \"Run ID: $RUN_ID\"\n"
-"      DEADLINE=$(( $(date +%s) + TIMEOUT_SECS ))\n"
-"      while true; do\n"
-"        if [ \"$(date +%s)\" -gt \"$DEADLINE\" ]; then\n"
-"          echo 'ERROR: Timed out.'; exit 1\n"
-"        fi\n"
-"        sleep \"$POLL_SECS\"\n"
-"        [ \"$POLL_SECS\" -lt 30 ] && POLL_SECS=$(( POLL_SECS + 5 ))\n"
-"        [ \"$POLL_SECS\" -gt 30 ] && POLL_SECS=30\n"
-"        echo \"Polling run status for RUN_ID=${RUN_ID} ...\"\n"
-"        RUN=$(curl -sS --fail-with-body --retry 3 --retry-delay 5 \"${PLATFORM}/api/run/${RUN_ID}\" \\\n"
-"          -H \"$AUTH_HEADER\")\n"
-"        STATUS=$(echo \"$RUN\" | jq -r '.status // \"unknown\"')\n"
-"        PASSED=$(echo \"$RUN\" | jq -r '.passed // 0')\n"
-"        FAILED=$(echo \"$RUN\" | jq -r '.failed // 0')\n"
-"        TOTAL=$( echo \"$RUN\" | jq -r '.total  // 0')\n"
-"        echo \"[$STATUS] passed=${PASSED} | failed=${FAILED} | total=${TOTAL}\"\n"
-"        case \"$STATUS\" in\n"
-"          running)   ;;\n"
-"          passed)    break ;;\n"
-"          failed)    break ;;\n"
-"          cancelled) echo 'Run was cancelled in TestForge.'; exit 1 ;;\n"
-"          *)         echo \"ERROR: Unexpected status: $STATUS\"; exit 1 ;;\n"
-"        esac\n"
-"      done\n"
-"      echo \"Final Status: ${STATUS}\"\n"
-"      if [ \"$STATUS\" = 'failed' ] || [ \"${FAILED}\" -gt 0 ]; then\n"
-"        echo \"ERROR: Suite FAILED (${FAILED} test(s) failed).\"; exit 1\n"
-"      fi\n"
-"      echo 'All tests passed.'\n";
+    "# testforge-run-template.yml\n"
+  "# Drop in your repo root. Reference from any pipeline via:\n"
+  "#   - template: testforge-run-template.yml\n"
+  "#     parameters:\n"
+  "#       suiteName: My Suite\n"
+  "#       suiteId: <id>\n"
+  "#       envId: <env>\n"
+  "# Variable Group 'qa-platform-config' must have:\n"
+  "#   QA_API_KEY      - secret, from TestForge Admin > API Keys\n"
+  "#   QA_PLATFORM_URL - TestForge server base URL\n"
+  "\n"
+  "parameters:\n"
+  "  - name: suiteName\n"
+  "    type: string\n"
+  "  - name: suiteId\n"
+  "    type: string\n"
+  "  - name: envId\n"
+  "    type: string\n"
+  "  - name: timeoutMinutes\n"
+  "    type: number\n"
+  "    default: 30\n"
+  "  - name: pollSeconds\n"
+  "    type: number\n"
+  "    default: 5\n"
+  "\n"
+  "steps:\n"
+  "- task: Bash@3\n"
+  "  displayName: 'TestForge \u2014 ${{ parameters.suiteName }}'\n"
+  "  env:\n"
+  "    QA_API_KEY:      $(QA_API_KEY)\n"
+  "    QA_PLATFORM_URL: $(QA_PLATFORM_URL)\n"
+  "  inputs:\n"
+  "    targetType: inline\n"
+  "    script: |\n"
+  "      set -euo pipefail\n"
+  "      trap 'echo \"ERROR: Script failed at line $LINENO\"' ERR\n"
+  "      PLATFORM=\"${QA_PLATFORM_URL}\"\n"
+  "      SUITE_ID='${{ parameters.suiteId }}'\n"
+  "      ENV_ID='${{ parameters.envId }}'\n"
+  "      TIMEOUT_SECS=$(( ${{ parameters.timeoutMinutes }} * 60 ))\n"
+  "      POLL_SECS=${{ parameters.pollSeconds }}\n"
+  "      if ! command -v jq >/dev/null 2>&1; then\n"
+  "        echo \"ERROR: jq is required but not installed on this agent\"\n"
+  "        exit 1\n"
+  "      fi\n"
+  "      AUTH_HEADER=\"Authorization: Bearer ${QA_API_KEY}\"\n"
+  "      echo 'Triggering: ${{ parameters.suiteName }}'\n"
+  "      RESPONSE=$(curl -sS --fail-with-body --retry 3 --retry-delay 5 -X POST \"${PLATFORM}/api/suites/${SUITE_ID}/run\" \\\n"
+  "        -H \"$AUTH_HEADER\" \\\n"
+  "        -H 'Content-Type: application/json' \\\n"
+  "        -d '{\"environmentId\":\"${{ parameters.envId }}\"}')\n"
+  "      RUN_ID=$(echo \"$RESPONSE\" | jq -r '.runId // empty')\n"
+  "      [ -z \"$RUN_ID\" ] && { echo \"ERROR: No runId. Response: $RESPONSE\"; exit 1; }\n"
+  "      echo \"Run ID: $RUN_ID\"\n"
+  "      DEADLINE=$(( $(date +%s) + TIMEOUT_SECS ))\n"
+  "      while true; do\n"
+  "        if [ \"$(date +%s)\" -gt \"$DEADLINE\" ]; then\n"
+  "          echo 'ERROR: Timed out.'; exit 1\n"
+  "        fi\n"
+  "        sleep \"$POLL_SECS\"\n"
+  "        [ \"$POLL_SECS\" -lt 30 ] && POLL_SECS=$(( POLL_SECS + 5 ))\n"
+  "        [ \"$POLL_SECS\" -gt 30 ] && POLL_SECS=30\n"
+  "        echo \"Polling run status for RUN_ID=${RUN_ID} ...\"\n"
+  "        RUN=$(curl -sS --fail-with-body --retry 3 --retry-delay 5 \"${PLATFORM}/api/run/${RUN_ID}\" \\\n"
+  "          -H \"$AUTH_HEADER\")\n"
+  "        STATUS=$(echo \"$RUN\" | jq -r '.status // \"unknown\"')\n"
+  "        PASSED=$(echo \"$RUN\" | jq -r '.passed // 0')\n"
+  "        FAILED=$(echo \"$RUN\" | jq -r '.failed // 0')\n"
+  "        TOTAL=$( echo \"$RUN\" | jq -r '.total  // 0')\n"
+  "        echo \"[$STATUS] passed=${PASSED} | failed=${FAILED} | total=${TOTAL}\"\n"
+  "        case \"$STATUS\" in\n"
+  "          running)   ;;\n"
+  "          passed)    break ;;\n"
+  "          failed)    break ;;\n"
+  "          cancelled) echo 'Run was cancelled in TestForge.'; exit 1 ;;\n"
+  "          *)         echo \"ERROR: Unexpected status: $STATUS\"; exit 1 ;;\n"
+  "        esac\n"
+  "      done\n"
+  "      echo \"Final Status: ${STATUS}\"\n"
+  "      if [ \"$STATUS\" = 'failed' ] || [ \"${FAILED}\" -gt 0 ]; then\n"
+  "        echo \"ERROR: Suite FAILED (${FAILED} test(s) failed).\"; exit 1\n"
+  "      fi\n"
+  "      echo 'All tests passed.'\n";
 
   const yaml =
-"# Generated by TestForge \u2014 " + new Date().toISOString().slice(0,10) + "\n" +
-"# Inline pipeline step. For reuse across suites, download testforge-run-template.yml.\n" +
-"# Variable Group 'qa-platform-config' must contain:\n" +
-"#   QA_API_KEY:      (secret) API key from TestForge Admin > API Keys\n" +
-"#   QA_PLATFORM_URL: " + platform + "\n" +
-(_apikeyRawKey ? "# QA_API_KEY value: " + rawKey + "\n" : "") +
-"\n" +
-"variables:\n" +
-"  - group: qa-platform-config\n" +
-"\n" +
-"- task: Bash@3\n" +
-"  displayName: 'TestForge Suite \u2014 " + suiteName.replace(/'/g, "''") + "'\n" +
-"  env:\n" +
-"    QA_API_KEY:      $(QA_API_KEY)\n" +
-"    QA_PLATFORM_URL: $(QA_PLATFORM_URL)\n" +
-"  inputs:\n" +
-"    targetType: inline\n" +
-"    script: |\n" +
-sh;
+    "# Generated by TestForge \u2014 " + new Date().toISOString().slice(0, 10) + "\n" +
+    "# Inline pipeline step. For reuse across suites, download testforge-run-template.yml.\n" +
+    "# Variable Group 'qa-platform-config' must contain:\n" +
+    "#   QA_API_KEY:      (secret) API key from TestForge Admin > API Keys\n" +
+    "#   QA_PLATFORM_URL: " + platform + "\n" +
+    (_apikeyRawKey ? "# QA_API_KEY value: " + rawKey + "\n" : "") +
+    "\n" +
+    "variables:\n" +
+    "  - group: qa-platform-config\n" +
+    "\n" +
+    "- task: Bash@3\n" +
+    "  displayName: 'TestForge Suite \u2014 " + suiteName.replace(/'/g, "''") + "'\n" +
+    "  env:\n" +
+    "    QA_API_KEY:      $(QA_API_KEY)\n" +
+    "    QA_PLATFORM_URL: $(QA_PLATFORM_URL)\n" +
+    "  inputs:\n" +
+    "    targetType: inline\n" +
+    "    script: |\n" +
+    sh;
 
 
   document.getElementById('ak-yaml-preview').textContent = yaml;
@@ -8077,7 +8163,7 @@ sh;
   // Enable copy/download if suite is selected
   const canExport = !!suiteId;
   document.getElementById('ak-copy-yaml-btn').disabled = !canExport;
-  document.getElementById('ak-dl-yaml-btn').disabled   = !canExport;
+  document.getElementById('ak-dl-yaml-btn').disabled = !canExport;
 }
 
 function apikeyCloseModal() {
@@ -8087,10 +8173,10 @@ function apikeyCloseModal() {
 
 function apikeyCopyKey() {
   if (!_apikeyRawKey) return;
-  const btn  = document.querySelector('#apikey-result-block .btn');
+  const btn = document.querySelector('#apikey-result-block .btn');
   const orig = btn ? btn.textContent : 'Copy';
   const succeed = () => { if (btn) { btn.textContent = '✓ Copied!'; setTimeout(() => { btn.textContent = orig; }, 1800); } };
-  const fail    = () => { if (btn) { btn.textContent = 'Select + Ctrl+C'; setTimeout(() => { btn.textContent = orig; }, 2500); } };
+  const fail = () => { if (btn) { btn.textContent = 'Select + Ctrl+C'; setTimeout(() => { btn.textContent = orig; }, 2500); } };
   if (navigator.clipboard && window.isSecureContext) {
     navigator.clipboard.writeText(_apikeyRawKey).then(succeed).catch(() => _akCopyFallback(_apikeyRawKey, succeed, fail));
   } else {
@@ -8100,11 +8186,11 @@ function apikeyCopyKey() {
 
 function _akCopyYaml() {
   const yaml = document.getElementById('ak-yaml-preview').textContent;
-  const btn  = document.getElementById('ak-copy-yaml-btn');
+  const btn = document.getElementById('ak-copy-yaml-btn');
   const orig = btn.textContent;
 
   const succeed = () => { btn.textContent = '✓ Copied!'; setTimeout(() => { btn.textContent = orig; }, 1800); };
-  const fail    = () => { btn.textContent = 'Select + Ctrl+C'; setTimeout(() => { btn.textContent = orig; }, 2500); };
+  const fail = () => { btn.textContent = 'Select + Ctrl+C'; setTimeout(() => { btn.textContent = orig; }, 2500); };
 
   // Modern clipboard API (HTTPS / localhost)
   if (navigator.clipboard && window.isSecureContext) {
@@ -8130,13 +8216,13 @@ function _akCopyFallback(text, succeed, fail) {
 }
 
 function _akDownloadYaml() {
-  const yaml     = document.getElementById('ak-yaml-preview').textContent;
+  const yaml = document.getElementById('ak-yaml-preview').textContent;
   const suiteSel = document.getElementById('ak-suite');
   const suiteName = suiteSel.options[suiteSel.selectedIndex]?.text || 'qa-suite';
-  const safeName  = suiteName.replace(/[^a-zA-Z0-9_-]/g, '-').toLowerCase();
+  const safeName = suiteName.replace(/[^a-zA-Z0-9_-]/g, '-').toLowerCase();
   const blob = new Blob([yaml], { type: 'text/yaml' });
-  const a    = document.createElement('a');
-  a.href     = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
   a.download = `testforge-pipeline-${safeName}.yml`;
   a.click();
   URL.revokeObjectURL(a.href);
@@ -8144,17 +8230,17 @@ function _akDownloadYaml() {
 
 function _akDownloadTemplate() {
   const suiteIdVal = (document.getElementById('ak-suite') || {}).value || '';
-  const envId      = (document.getElementById('ak-env')   || {}).value || '';
-  const timeout    = (document.getElementById('ak-timeout')|| {}).value || '30';
-  const poll       = (document.getElementById('ak-poll')  || {}).value || '5';
-  const suiteSel   = document.getElementById('ak-suite');
-  const suiteName  = suiteSel?.options[suiteSel.selectedIndex]?.text || 'My Suite';
+  const envId = (document.getElementById('ak-env') || {}).value || '';
+  const timeout = (document.getElementById('ak-timeout') || {}).value || '30';
+  const poll = (document.getElementById('ak-poll') || {}).value || '5';
+  const suiteSel = document.getElementById('ak-suite');
+  const suiteName = suiteSel?.options[suiteSel.selectedIndex]?.text || 'My Suite';
 
   // Build template — uses ADO ${{ parameters.x }} syntax, not runtime values
   const content = _akBuildTemplateYaml();
   const blob = new Blob([content], { type: 'text/yaml' });
-  const a    = document.createElement('a');
-  a.href     = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
   a.download = 'testforge-run-template.yml';
   a.click();
   URL.revokeObjectURL(a.href);
@@ -8162,105 +8248,105 @@ function _akDownloadTemplate() {
 
 function _akBuildTemplateYaml() {
   const suiteIdVal = (document.getElementById('ak-suite') || {}).value || '<suite-id>';
-  const envId      = (document.getElementById('ak-env')   || {}).value || '<env-id>';
-  const suiteSel   = document.getElementById('ak-suite');
-  const suiteName  = suiteSel?.options[suiteSel.selectedIndex]?.text || 'My Suite';
+  const envId = (document.getElementById('ak-env') || {}).value || '<env-id>';
+  const suiteSel = document.getElementById('ak-suite');
+  const suiteName = suiteSel?.options[suiteSel.selectedIndex]?.text || 'My Suite';
 
   // templateYaml is defined in _akYamlUpdate scope — rebuild inline
   return (
-"# testforge-run-template.yml\n" +
-"# Drop in your repo root. Reference from any pipeline via:\n" +
-"#   - template: testforge-run-template.yml\n" +
-"#     parameters:\n" +
-"#       suiteName: " + suiteName + "\n" +
-"#       suiteId: " + suiteIdVal + "\n" +
-"#       envId: " + envId + "\n" +
-"# Variable Group 'qa-platform-config' must have:\n" +
-"#   QA_API_KEY      - secret, from TestForge Admin > API Keys\n" +
-"#   QA_PLATFORM_URL - " + window.location.origin + "\n" +
-"\n" +
-"parameters:\n" +
-"  - name: suiteName\n" +
-"    type: string\n" +
-"  - name: suiteId\n" +
-"    type: string\n" +
-"  - name: envId\n" +
-"    type: string\n" +
-"  - name: timeoutMinutes\n" +
-"    type: number\n" +
-"    default: 30\n" +
-"  - name: pollSeconds\n" +
-"    type: number\n" +
-"    default: 5\n" +
-"\n" +
-"steps:\n" +
-"- task: Bash@3\n" +
-"  displayName: 'TestForge — ${{ parameters.suiteName }}'\n" +
-"  env:\n" +
-"    QA_API_KEY:      $(QA_API_KEY)\n" +
-"    QA_PLATFORM_URL: $(QA_PLATFORM_URL)\n" +
-"  inputs:\n" +
-"    targetType: inline\n" +
-"    script: |\n" +
-"      set -euo pipefail\n" +
-"      trap 'echo \"ERROR: Script failed at line $LINENO\"' ERR\n" +
-"      PLATFORM=\"${QA_PLATFORM_URL}\"\n" +
-"      SUITE_ID='${{ parameters.suiteId }}'\n" +
-"      ENV_ID='${{ parameters.envId }}'\n" +
-"      TIMEOUT_SECS=$(( ${{ parameters.timeoutMinutes }} * 60 ))\n" +
-"      POLL_SECS=${{ parameters.pollSeconds }}\n" +
-"      if ! command -v jq >/dev/null 2>&1; then\n" +
-"        echo \"ERROR: jq is required but not installed on this agent\"\n" +
-"        exit 1\n" +
-"      fi\n" +
-"      AUTH_HEADER=\"Authorization: Bearer ${QA_API_KEY}\"\n" +
-"      echo 'Triggering: ${{ parameters.suiteName }}'\n" +
-"      RESPONSE=$(curl -sS --fail-with-body --retry 3 --retry-delay 5 -X POST \"${PLATFORM}/api/suites/${SUITE_ID}/run\" \\\n" +
-"        -H \"$AUTH_HEADER\" \\\n" +
-"        -H 'Content-Type: application/json' \\\n" +
-"        -d '{\"environmentId\":\"${{ parameters.envId }}\"}')\n" +
-"      RUN_ID=$(echo \"$RESPONSE\" | jq -r '.runId // empty')\n" +
-"      [ -z \"$RUN_ID\" ] && { echo \"ERROR: No runId. Response: $RESPONSE\"; exit 1; }\n" +
-"      echo \"Run ID: $RUN_ID\"\n" +
-"      DEADLINE=$(( $(date +%s) + TIMEOUT_SECS ))\n" +
-"      while true; do\n" +
-"        if [ \"$(date +%s)\" -gt \"$DEADLINE\" ]; then\n" +
-"          echo 'ERROR: Timed out.'; exit 1\n" +
-"        fi\n" +
-"        sleep \"$POLL_SECS\"\n" +
-"        [ \"$POLL_SECS\" -lt 30 ] && POLL_SECS=$(( POLL_SECS + 5 ))\n" +
-"        [ \"$POLL_SECS\" -gt 30 ] && POLL_SECS=30\n" +
-"        echo \"Polling run status for RUN_ID=${RUN_ID} ...\"\n" +
-"        RUN=$(curl -sS --fail-with-body --retry 3 --retry-delay 5 \"${PLATFORM}/api/run/${RUN_ID}\" \\\n" +
-"          -H \"$AUTH_HEADER\")\n" +
-"        STATUS=$(echo \"$RUN\" | jq -r '.status // \"unknown\"')\n" +
-"        PASSED=$(echo \"$RUN\" | jq -r '.passed // 0')\n" +
-"        FAILED=$(echo \"$RUN\" | jq -r '.failed // 0')\n" +
-"        TOTAL=$( echo \"$RUN\" | jq -r '.total  // 0')\n" +
-"        echo \"[$STATUS] passed=${PASSED} | failed=${FAILED} | total=${TOTAL}\"\n" +
-"        case \"$STATUS\" in\n" +
-"          running)   ;;\n" +
-"          passed)    break ;;\n" +
-"          failed)    break ;;\n" +
-"          cancelled) echo 'Run was cancelled in TestForge.'; exit 1 ;;\n" +
-"          *)         echo \"ERROR: Unexpected status: $STATUS\"; exit 1 ;;\n" +
-"        esac\n" +
-"      done\n" +
-"      echo \"Final Status: ${STATUS}\"\n" +
-"      if [ \"$STATUS\" = 'failed' ] || [ \"${FAILED}\" -gt 0 ]; then\n" +
-"        echo \"ERROR: Suite FAILED (${FAILED} test(s) failed).\"; exit 1\n" +
-"      fi\n" +
-"      echo 'All tests passed.'\n"
+    "# testforge-run-template.yml\n" +
+    "# Drop in your repo root. Reference from any pipeline via:\n" +
+    "#   - template: testforge-run-template.yml\n" +
+    "#     parameters:\n" +
+    "#       suiteName: " + suiteName + "\n" +
+    "#       suiteId: " + suiteIdVal + "\n" +
+    "#       envId: " + envId + "\n" +
+    "# Variable Group 'qa-platform-config' must have:\n" +
+    "#   QA_API_KEY      - secret, from TestForge Admin > API Keys\n" +
+    "#   QA_PLATFORM_URL - " + window.location.origin + "\n" +
+    "\n" +
+    "parameters:\n" +
+    "  - name: suiteName\n" +
+    "    type: string\n" +
+    "  - name: suiteId\n" +
+    "    type: string\n" +
+    "  - name: envId\n" +
+    "    type: string\n" +
+    "  - name: timeoutMinutes\n" +
+    "    type: number\n" +
+    "    default: 30\n" +
+    "  - name: pollSeconds\n" +
+    "    type: number\n" +
+    "    default: 5\n" +
+    "\n" +
+    "steps:\n" +
+    "- task: Bash@3\n" +
+    "  displayName: 'TestForge — ${{ parameters.suiteName }}'\n" +
+    "  env:\n" +
+    "    QA_API_KEY:      $(QA_API_KEY)\n" +
+    "    QA_PLATFORM_URL: $(QA_PLATFORM_URL)\n" +
+    "  inputs:\n" +
+    "    targetType: inline\n" +
+    "    script: |\n" +
+    "      set -euo pipefail\n" +
+    "      trap 'echo \"ERROR: Script failed at line $LINENO\"' ERR\n" +
+    "      PLATFORM=\"${QA_PLATFORM_URL}\"\n" +
+    "      SUITE_ID='${{ parameters.suiteId }}'\n" +
+    "      ENV_ID='${{ parameters.envId }}'\n" +
+    "      TIMEOUT_SECS=$(( ${{ parameters.timeoutMinutes }} * 60 ))\n" +
+    "      POLL_SECS=${{ parameters.pollSeconds }}\n" +
+    "      if ! command -v jq >/dev/null 2>&1; then\n" +
+    "        echo \"ERROR: jq is required but not installed on this agent\"\n" +
+    "        exit 1\n" +
+    "      fi\n" +
+    "      AUTH_HEADER=\"Authorization: Bearer ${QA_API_KEY}\"\n" +
+    "      echo 'Triggering: ${{ parameters.suiteName }}'\n" +
+    "      RESPONSE=$(curl -sS --fail-with-body --retry 3 --retry-delay 5 -X POST \"${PLATFORM}/api/suites/${SUITE_ID}/run\" \\\n" +
+    "        -H \"$AUTH_HEADER\" \\\n" +
+    "        -H 'Content-Type: application/json' \\\n" +
+    "        -d '{\"environmentId\":\"${{ parameters.envId }}\"}')\n" +
+    "      RUN_ID=$(echo \"$RESPONSE\" | jq -r '.runId // empty')\n" +
+    "      [ -z \"$RUN_ID\" ] && { echo \"ERROR: No runId. Response: $RESPONSE\"; exit 1; }\n" +
+    "      echo \"Run ID: $RUN_ID\"\n" +
+    "      DEADLINE=$(( $(date +%s) + TIMEOUT_SECS ))\n" +
+    "      while true; do\n" +
+    "        if [ \"$(date +%s)\" -gt \"$DEADLINE\" ]; then\n" +
+    "          echo 'ERROR: Timed out.'; exit 1\n" +
+    "        fi\n" +
+    "        sleep \"$POLL_SECS\"\n" +
+    "        [ \"$POLL_SECS\" -lt 30 ] && POLL_SECS=$(( POLL_SECS + 5 ))\n" +
+    "        [ \"$POLL_SECS\" -gt 30 ] && POLL_SECS=30\n" +
+    "        echo \"Polling run status for RUN_ID=${RUN_ID} ...\"\n" +
+    "        RUN=$(curl -sS --fail-with-body --retry 3 --retry-delay 5 \"${PLATFORM}/api/run/${RUN_ID}\" \\\n" +
+    "          -H \"$AUTH_HEADER\")\n" +
+    "        STATUS=$(echo \"$RUN\" | jq -r '.status // \"unknown\"')\n" +
+    "        PASSED=$(echo \"$RUN\" | jq -r '.passed // 0')\n" +
+    "        FAILED=$(echo \"$RUN\" | jq -r '.failed // 0')\n" +
+    "        TOTAL=$( echo \"$RUN\" | jq -r '.total  // 0')\n" +
+    "        echo \"[$STATUS] passed=${PASSED} | failed=${FAILED} | total=${TOTAL}\"\n" +
+    "        case \"$STATUS\" in\n" +
+    "          running)   ;;\n" +
+    "          passed)    break ;;\n" +
+    "          failed)    break ;;\n" +
+    "          cancelled) echo 'Run was cancelled in TestForge.'; exit 1 ;;\n" +
+    "          *)         echo \"ERROR: Unexpected status: $STATUS\"; exit 1 ;;\n" +
+    "        esac\n" +
+    "      done\n" +
+    "      echo \"Final Status: ${STATUS}\"\n" +
+    "      if [ \"$STATUS\" = 'failed' ] || [ \"${FAILED}\" -gt 0 ]; then\n" +
+    "        echo \"ERROR: Suite FAILED (${FAILED} test(s) failed).\"; exit 1\n" +
+    "      fi\n" +
+    "      echo 'All tests passed.'\n"
   );
 }
 
 async function apikeySave() {
-  const name      = document.getElementById('ak-name').value.trim();
+  const name = document.getElementById('ak-name').value.trim();
   const projectId = document.getElementById('ak-project').value || null;
   const expiresIn = document.getElementById('ak-expires').value;
-  const alertEl   = document.getElementById('apikey-modal-alert');
+  const alertEl = document.getElementById('apikey-modal-alert');
 
-  if (!name)      { alertEl.innerHTML = '<div class="alert alert-error">Key name is required.</div>'; return; }
+  if (!name) { alertEl.innerHTML = '<div class="alert alert-error">Key name is required.</div>'; return; }
   if (!projectId) { alertEl.innerHTML = '<div class="alert alert-error">Project scope is required.</div>'; return; }
 
   let expiresAt = null;
@@ -8270,20 +8356,20 @@ async function apikeySave() {
     expiresAt = d.toISOString();
   }
 
-  const res  = await fetch('/api/admin/apikeys', {
+  const res = await fetch('/api/admin/apikeys', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name, projectId, expiresAt })
   });
   const data = await res.json();
   if (!res.ok) { alertEl.innerHTML = `<div class="alert alert-error">${escHtml(data.error || 'Error')}</div>`; return; }
 
-  _apikeyRawKey  = data.key;
+  _apikeyRawKey = data.key;
   _akGeneratedId = data.id;
 
-  document.getElementById('apikey-raw-display').textContent    = data.key;
+  document.getElementById('apikey-raw-display').textContent = data.key;
   document.getElementById('apikey-result-block').style.display = '';
-  document.getElementById('ak-save-btn').style.display         = 'none';
-  document.getElementById('ak-modal-title').textContent        = 'Key Generated — Save YAML';
+  document.getElementById('ak-save-btn').style.display = 'none';
+  document.getElementById('ak-modal-title').textContent = 'Key Generated — Save YAML';
 
   // Refresh YAML with real key value embedded
   _akYamlUpdate();
@@ -8307,10 +8393,10 @@ async function licenseLoad() {
       fetch('/api/admin/license/audit'),
       fetch('/api/admin/license/sessions'),
     ]);
-    const data     = licRes.ok       ? await licRes.json()       : { activated: false };
-    const machine  = machineRes.ok   ? await machineRes.json()   : null;
-    const audit    = auditRes.ok     ? await auditRes.json()     : [];
-    const sessData = sessionsRes.ok  ? await sessionsRes.json()  : { sessions: [], seatsUsed: 0 };
+    const data = licRes.ok ? await licRes.json() : { activated: false };
+    const machine = machineRes.ok ? await machineRes.json() : null;
+    const audit = auditRes.ok ? await auditRes.json() : [];
+    const sessData = sessionsRes.ok ? await sessionsRes.json() : { sessions: [], seatsUsed: 0 };
 
     // P3-05: Always populate Machine ID display (needed before activation)
     const machineDisplay = document.getElementById('lic-machineid-display');
@@ -8345,15 +8431,15 @@ async function licenseCopyMachineId() {
 }
 
 function _renderLicensePanel(data, machine, audit, sessions) {
-  const statusBlock   = document.getElementById('lic-status-block');
+  const statusBlock = document.getElementById('lic-status-block');
   const activateBlock = document.getElementById('lic-activate-block');
-  const alertEl       = document.getElementById('license-alert');
+  const alertEl = document.getElementById('license-alert');
   if (!statusBlock || !activateBlock) return;
   alertEl.innerHTML = '';
 
   const preActivateEl = document.getElementById('lic-machineid-preactivate');
   if (!data.activated) {
-    statusBlock.style.display   = 'none';
+    statusBlock.style.display = 'none';
     activateBlock.style.display = '';
     if (preActivateEl) preActivateEl.style.display = '';
     return;
@@ -8361,7 +8447,7 @@ function _renderLicensePanel(data, machine, audit, sessions) {
   if (preActivateEl) preActivateEl.style.display = 'none';
 
   // Show status block
-  statusBlock.style.display   = '';
+  statusBlock.style.display = '';
 
   // Auto-trial: show activate form alongside status so admin can enter key
   activateBlock.style.display = data.isAutoTrial ? '' : 'none';
@@ -8370,10 +8456,10 @@ function _renderLicensePanel(data, machine, audit, sessions) {
   const existingBanner = document.getElementById('lic-trial-banner');
   if (existingBanner) existingBanner.remove();
   if (data.isAutoTrial) {
-    const days   = data.trialDaysLeft ?? 0;
+    const days = data.trialDaysLeft ?? 0;
     const urgent = days <= 3;
     const banner = document.createElement('div');
-    banner.id    = 'lic-trial-banner';
+    banner.id = 'lic-trial-banner';
     banner.style.cssText = `margin-bottom:14px;padding:10px 14px;border-radius:6px;font-size:.82rem;display:flex;align-items:center;gap:10px;background:${urgent ? '#450a0a' : '#431407'};border:1px solid ${urgent ? '#dc2626' : '#ea580c'};color:${urgent ? '#fca5a5' : '#fdba74'}`;
     banner.innerHTML = `<span style="font-size:1.1rem">${urgent ? '🔴' : '🟠'}</span>
       <span><strong>${days} day${days !== 1 ? 's' : ''} left on your free trial.</strong>
@@ -8383,20 +8469,20 @@ function _renderLicensePanel(data, machine, audit, sessions) {
 
   const tierBadge = document.getElementById('lic-tier-badge');
   tierBadge.textContent = data.isAutoTrial ? 'TRIAL (AUTO)' : data.tier.toUpperCase();
-  tierBadge.className   = `lic-badge lic-badge-${data.tier}`;
+  tierBadge.className = `lic-badge lic-badge-${data.tier}`;
 
   document.getElementById('lic-org-name').textContent = data.orgName || data.orgId;
 
   const expiryChip = document.getElementById('lic-expiry-chip');
   if (data.expired) {
     expiryChip.textContent = 'EXPIRED';
-    expiryChip.className   = 'lic-chip lic-chip-red';
+    expiryChip.className = 'lic-chip lic-chip-red';
   } else if (data.daysLeft <= 14) {
     expiryChip.textContent = `Expires in ${data.daysLeft} days`;
-    expiryChip.className   = 'lic-chip lic-chip-amber';
+    expiryChip.className = 'lic-chip lic-chip-amber';
   } else {
     expiryChip.textContent = `Expires ${new Date(data.expiresAt).toLocaleDateString()}`;
-    expiryChip.className   = 'lic-chip lic-chip-green';
+    expiryChip.className = 'lic-chip lic-chip-green';
   }
 
   const seatsChip = document.getElementById('lic-seats-chip');
@@ -8406,10 +8492,12 @@ function _renderLicensePanel(data, machine, audit, sessions) {
   seatsChip.className = 'lic-chip lic-chip-blue';
 
   const featList = document.getElementById('lic-features-list');
-  const f        = data.features || {};
-  const ov       = data.featureOverrides || {};   // P4-01: vendor-signed overrides
-  const labels   = { recorder: 'Recorder', debugger: 'Debugger', scheduler: 'Scheduler',
-    sso: 'SSO', apiAccess: 'API Access', whiteLabel: 'White-label' };
+  const f = data.features || {};
+  const ov = data.featureOverrides || {};   // P4-01: vendor-signed overrides
+  const labels = {
+    recorder: 'Recorder', debugger: 'Debugger', scheduler: 'Scheduler',
+    sso: 'SSO', apiAccess: 'API Access', whiteLabel: 'White-label'
+  };
 
   // Effective value = override (if present) else tier default
   featList.innerHTML = Object.entries(labels).map(([k, label]) => {
@@ -8436,8 +8524,8 @@ function _renderLicensePanel(data, machine, audit, sessions) {
   // P1-EG-06: Machine binding status
   const machineEl = document.getElementById('lic-machine-block');
   if (machineEl && machine) {
-    const bound   = machine.boundMachineId;
-    const match   = machine.match;
+    const bound = machine.boundMachineId;
+    const match = machine.match;
     const matchBadge = match === true
       ? `<span class="lic-chip lic-chip-green" style="font-size:.72rem">Bound ✓</span>`
       : match === false
@@ -8459,11 +8547,11 @@ function _renderLicensePanel(data, machine, audit, sessions) {
   const sessionsEl = document.getElementById('lic-sessions-block');
   if (sessionsEl) {
     const activeSessions = Array.isArray(sessions) ? sessions : [];
-    const seatsUsed  = data.seatsUsed  ?? 0;
+    const seatsUsed = data.seatsUsed ?? 0;
     const seatsTotal = data.seats === -1 ? '∞' : (data.seats ?? '—');
-    const ratio      = data.seatRatio  ?? -1;
-    const barPct     = ratio === -1 ? 0 : Math.min(100, Math.round(ratio * 100));
-    const barColor   = ratio >= 0.9 ? '#ef4444' : ratio >= 0.8 ? '#f59e0b' : '#22c55e';
+    const ratio = data.seatRatio ?? -1;
+    const barPct = ratio === -1 ? 0 : Math.min(100, Math.round(ratio * 100));
+    const barColor = ratio >= 0.9 ? '#ef4444' : ratio >= 0.8 ? '#f59e0b' : '#22c55e';
 
     sessionsEl.innerHTML = `
       <div style="margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,.07)">
@@ -8476,8 +8564,8 @@ function _renderLicensePanel(data, machine, audit, sessions) {
           <div style="height:100%;width:${barPct}%;background:${barColor};border-radius:3px;transition:width .3s"></div>
         </div>` : ''}
         ${activeSessions.length === 0
-          ? `<div style="font-size:.78rem;color:var(--text-muted);padding:8px 0">No active sessions</div>`
-          : `<table style="width:100%;font-size:.74rem;border-collapse:collapse">
+        ? `<div style="font-size:.78rem;color:var(--text-muted);padding:8px 0">No active sessions</div>`
+        : `<table style="width:100%;font-size:.74rem;border-collapse:collapse">
               <thead><tr>
                 <th style="text-align:left;color:var(--text-muted);padding:4px 6px;border-bottom:1px solid rgba(255,255,255,.07)">User</th>
                 <th style="text-align:left;color:var(--text-muted);padding:4px 6px;border-bottom:1px solid rgba(255,255,255,.07)">Role</th>
@@ -8488,13 +8576,13 @@ function _renderLicensePanel(data, machine, audit, sessions) {
               </tr></thead>
               <tbody>
                 ${activeSessions.map(s => `<tr>
-                  <td style="padding:5px 6px;color:var(--text-secondary);font-weight:${s.isCurrent?'600':'400'}">${_escHtml(s.username||'—')}${s.isCurrent?' <span style="font-size:.68rem;color:#60a5fa">(you)</span>':''}</td>
-                  <td style="padding:5px 6px"><span class="badge badge-${s.role||'tester'}">${_escHtml(s.role||'—')}</span></td>
+                  <td style="padding:5px 6px;color:var(--text-secondary);font-weight:${s.isCurrent ? '600' : '400'}">${_escHtml(s.username || '—')}${s.isCurrent ? ' <span style="font-size:.68rem;color:#60a5fa">(you)</span>' : ''}</td>
+                  <td style="padding:5px 6px"><span class="badge badge-${s.role || 'tester'}">${_escHtml(s.role || '—')}</span></td>
                   <td style="padding:5px 6px;color:var(--text-muted)">${s.loginAt ? new Date(s.loginAt).toLocaleTimeString() : '—'}</td>
                   <td style="padding:5px 6px;color:var(--text-muted)">${s.lastActivity ? new Date(s.lastActivity).toLocaleTimeString() : '—'}</td>
-                  <td style="padding:5px 6px;color:var(--text-muted)">${_escHtml(s.ip||'—')}</td>
+                  <td style="padding:5px 6px;color:var(--text-muted)">${_escHtml(s.ip || '—')}</td>
                   <td style="padding:5px 6px">
-                    ${s.isCurrent ? '' : `<button class="tbl-btn del" onclick="licenseRevokeSession('${_escHtml(s.sessionId)}','${_escHtml(s.username||'')}')" title="Force logout">Revoke</button>`}
+                    ${s.isCurrent ? '' : `<button class="tbl-btn del" onclick="licenseRevokeSession('${_escHtml(s.sessionId)}','${_escHtml(s.username || '')}')" title="Force logout">Revoke</button>`}
                   </td>
                 </tr>`).join('')}
               </tbody>
@@ -8507,10 +8595,10 @@ function _renderLicensePanel(data, machine, audit, sessions) {
   const auditEl = document.getElementById('lic-audit-block');
   if (auditEl && Array.isArray(audit) && audit.length > 0) {
     const ACTION_LABELS = {
-      LICENSE_ACTIVATED:   '&#9989; Activated',
+      LICENSE_ACTIVATED: '&#9989; Activated',
       LICENSE_DEACTIVATED: '&#128683; Deactivated',
       LICENSE_TRANSFERRED: '&#128260; Transferred',
-      LICENSE_EXPIRED:     '&#128308; Expired',
+      LICENSE_EXPIRED: '&#128308; Expired',
     };
     auditEl.innerHTML = `
       <details style="margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,.07)">
@@ -8539,13 +8627,13 @@ function _renderLicensePanel(data, machine, audit, sessions) {
 }
 
 async function licenseActivate() {
-  const key   = (document.getElementById('lic-key-input').value || '').trim();
+  const key = (document.getElementById('lic-key-input').value || '').trim();
   const alert = document.getElementById('license-alert');
   if (!key) { alert.innerHTML = '<div class="alert alert-error">Enter a license key</div>'; return; }
   alert.innerHTML = '<div class="alert alert-info">Activating…</div>';
-  const res  = await fetch('/api/admin/license/activate', {
+  const res = await fetch('/api/admin/license/activate', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body:   JSON.stringify({ key }),
+    body: JSON.stringify({ key }),
   });
   const data = await res.json();
   if (!res.ok) {
@@ -8566,7 +8654,7 @@ async function licenseActivateFile() {
   alert.innerHTML = '<div class="alert alert-info">Uploading .lic file…</div>';
   const form = new FormData();
   form.append('licFile', file);
-  const res  = await fetch('/api/admin/license/activate', { method: 'POST', body: form });
+  const res = await fetch('/api/admin/license/activate', { method: 'POST', body: form });
   const data = await res.json();
   fileInput.value = '';
   if (!res.ok) {
@@ -8591,7 +8679,7 @@ async function licenseRevokeSession(sessionId, username) {
 function licenseExportSeatReport() {
   const a = document.createElement('a');
   a.href = '/api/admin/license/seat-report';
-  a.download = `seat-report-${new Date().toISOString().slice(0,10)}.csv`;
+  a.download = `seat-report-${new Date().toISOString().slice(0, 10)}.csv`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -8608,7 +8696,7 @@ async function licenseTransfer() {
   if (!confirm('Transfer this license to the current machine?\n\nThis will re-bind the license to this machine\'s hardware fingerprint. The previous machine will no longer be able to use this license.')) return;
   const alert = document.getElementById('license-alert');
   alert.innerHTML = '<div class="alert alert-info">Transferring license…</div>';
-  const res  = await fetch('/api/admin/license/transfer', { method: 'POST' });
+  const res = await fetch('/api/admin/license/transfer', { method: 'POST' });
   const data = await res.json();
   if (!res.ok) {
     alert.innerHTML = `<div class="alert alert-error">${escHtml(data.error)}</div>`;
@@ -8649,7 +8737,7 @@ async function licenseCheckBanner() {
       banner.style.display = 'flex';
       document.body.classList.add('lic-readonly');  // P1-10
     } else if (data.isAutoTrial) {
-      const days   = data.trialDaysLeft ?? data.daysLeft;
+      const days = data.trialDaysLeft ?? data.daysLeft;
       const urgent = days <= 3;
       banner.innerHTML = `${urgent ? '🔴' : '🟠'} <strong>Free Trial — ${days} day${days !== 1 ? 's' : ''} remaining.</strong> &nbsp;
         <a onclick="switchTab('admin');setTimeout(()=>adminSubTab('license',document.querySelector('.sub-tab:nth-child(4)')),100)" href="#"
@@ -8684,8 +8772,8 @@ async function fetchWithUpgradeCTA(url, opts) {
   if (res.status === 402) {
     const body = await res.json().catch(() => ({}));
     const upgradeTier = (body.upgrade || 'enterprise');
-    const tierLabel   = upgradeTier === 'team' ? 'Team' : 'Enterprise';
-    const feature     = body.feature || 'this feature';
+    const tierLabel = upgradeTier === 'team' ? 'Team' : 'Enterprise';
+    const feature = body.feature || 'this feature';
     showUpgradeCTA(feature, tierLabel);
     return null;  // caller checks null to abort
   }
@@ -8729,7 +8817,7 @@ async function analyticsLoad() {
   document.getElementById('analytics-loading').style.display = 'none';
   const days = document.getElementById('analytics-days')?.value || '30';
   try {
-    const res  = await fetch(`/api/analytics?projectId=${encodeURIComponent(currentProjectId)}&days=${days}`);
+    const res = await fetch(`/api/analytics?projectId=${encodeURIComponent(currentProjectId)}&days=${days}`);
     if (!res.ok) throw new Error(await res.text());
     _analyticsData = await res.json();
     _analyticsRender(_analyticsData);
@@ -8740,13 +8828,13 @@ async function analyticsLoad() {
 }
 
 function _analyticsClear() {
-  ['kpi-runs','kpi-tests','kpi-pass-rate','kpi-passed','kpi-failed'].forEach(id => {
+  ['kpi-runs', 'kpi-tests', 'kpi-pass-rate', 'kpi-passed', 'kpi-failed'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.textContent = id === 'kpi-pass-rate' ? '—%' : '—';
   });
   const prchart = document.getElementById('analytics-passrate-chart');
   if (prchart) prchart.innerHTML = '';
-  ['analytics-fail-tbody','analytics-flaky-tbody','analytics-suite-tbody'].forEach(id => {
+  ['analytics-fail-tbody', 'analytics-flaky-tbody', 'analytics-suite-tbody'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.innerHTML = '';
   });
@@ -8754,8 +8842,8 @@ function _analyticsClear() {
 
 function _analyticsRender(d) {
   // KPIs
-  document.getElementById('kpi-runs').textContent   = d.totalRuns;
-  document.getElementById('kpi-tests').textContent  = d.totalTests;
+  document.getElementById('kpi-runs').textContent = d.totalRuns;
+  document.getElementById('kpi-tests').textContent = d.totalTests;
   document.getElementById('kpi-pass-rate').textContent = d.overallPassRate + '%';
   document.getElementById('kpi-passed').textContent = d.totalPassed;
   document.getElementById('kpi-failed').textContent = d.totalFailed;
@@ -8769,7 +8857,7 @@ function _analyticsRender(d) {
   } else {
     emptyEl.style.display = 'none';
     chartEl.innerHTML = d.passRateTrend.map(row => {
-      const pct  = row.passRate;
+      const pct = row.passRate;
       const color = pct >= 90 ? '#4ec9b0' : pct >= 70 ? '#f6c543' : '#f48771';
       return `<div class="an-chart-row">
         <div class="an-chart-day">${row.day.slice(5)}</div>
@@ -8820,9 +8908,9 @@ function _analyticsRender(d) {
     suiteEmpty.style.display = 'none';
     suiteTbody.innerHTML = d.suiteComparison.map(s => {
       const passRate = s.total > 0 ? Math.round((s.passed / s.total) * 100) : 0;
-      const color    = passRate >= 90 ? '#4ec9b0' : passRate >= 70 ? '#f6c543' : '#f48771';
-      const avgMs    = s.runs > 0 ? Math.round(s.totalMs / s.runs) : 0;
-      const avgDur   = avgMs < 1000 ? `${avgMs}ms` : avgMs < 60000 ? `${(avgMs/1000).toFixed(1)}s` : `${Math.floor(avgMs/60000)}m ${Math.round((avgMs%60000)/1000)}s`;
+      const color = passRate >= 90 ? '#4ec9b0' : passRate >= 70 ? '#f6c543' : '#f48771';
+      const avgMs = s.runs > 0 ? Math.round(s.totalMs / s.runs) : 0;
+      const avgDur = avgMs < 1000 ? `${avgMs}ms` : avgMs < 60000 ? `${(avgMs / 1000).toFixed(1)}s` : `${Math.floor(avgMs / 60000)}m ${Math.round((avgMs % 60000) / 1000)}s`;
       return `<tr>
         <td style="font-weight:600;max-width:200px;word-break:break-word">${escHtml(s.suiteName)}</td>
         <td style="text-align:center">${s.runs}</td>
@@ -8841,8 +8929,8 @@ let _vrBaselines = [];
 
 async function vrLoad() {
   const loading = document.getElementById('vr-loading');
-  const empty   = document.getElementById('vr-empty');
-  const grid    = document.getElementById('vr-grid');
+  const empty = document.getElementById('vr-empty');
+  const grid = document.getElementById('vr-grid');
   const summary = document.getElementById('vr-summary');
   if (!loading || !grid) return;
 
@@ -8850,17 +8938,17 @@ async function vrLoad() {
     loading.style.display = 'block';
     loading.textContent = 'Select a project to view visual baselines.';
     empty.style.display = 'none';
-    grid.style.display  = 'none';
+    grid.style.display = 'none';
     return;
   }
 
   loading.style.display = 'block';
-  loading.textContent   = 'Loading baselines…';
-  empty.style.display   = 'none';
-  grid.style.display    = 'none';
+  loading.textContent = 'Loading baselines…';
+  empty.style.display = 'none';
+  grid.style.display = 'none';
 
   try {
-    const res  = await fetch(`/api/visual-baselines?projectId=${encodeURIComponent(currentProjectId)}`);
+    const res = await fetch(`/api/visual-baselines?projectId=${encodeURIComponent(currentProjectId)}`);
     const data = await res.json();
     _vrBaselines = Array.isArray(data) ? data : (data.baselines || []);
     vrFilter();
@@ -8870,12 +8958,12 @@ async function vrLoad() {
 }
 
 function vrFilter() {
-  const search   = (document.getElementById('vr-search')?.value || '').toLowerCase();
-  const status   = document.getElementById('vr-status-filter')?.value || '';
-  const loading  = document.getElementById('vr-loading');
-  const empty    = document.getElementById('vr-empty');
-  const grid     = document.getElementById('vr-grid');
-  const summary  = document.getElementById('vr-summary');
+  const search = (document.getElementById('vr-search')?.value || '').toLowerCase();
+  const status = document.getElementById('vr-status-filter')?.value || '';
+  const loading = document.getElementById('vr-loading');
+  const empty = document.getElementById('vr-empty');
+  const grid = document.getElementById('vr-grid');
+  const summary = document.getElementById('vr-summary');
 
   const filtered = _vrBaselines.filter(b => {
     const matchText = !search || b.testName?.toLowerCase().includes(search) || b.locatorName?.toLowerCase().includes(search);
@@ -8884,7 +8972,7 @@ function vrFilter() {
   });
 
   const approved = _vrBaselines.filter(b => b.status === 'approved').length;
-  const pending  = _vrBaselines.filter(b => b.status === 'pending-review').length;
+  const pending = _vrBaselines.filter(b => b.status === 'pending-review').length;
   if (summary) {
     summary.innerHTML = `
       <span>Total: <strong>${_vrBaselines.length}</strong></span>
@@ -8896,20 +8984,20 @@ function vrFilter() {
   loading.style.display = 'none';
   if (!filtered.length) {
     empty.style.display = 'block';
-    grid.style.display  = 'none';
+    grid.style.display = 'none';
     return;
   }
   empty.style.display = 'none';
-  grid.style.display  = 'grid';
+  grid.style.display = 'grid';
   grid.innerHTML = filtered.map(b => vrCard(b)).join('');
 }
 
 function vrCard(b) {
   const statusColor = b.status === 'approved' ? '#4ec9b0' : b.status === 'pending-review' ? '#f48771' : '#858585';
   const statusLabel = b.status === 'approved' ? 'Approved' : b.status === 'pending-review' ? 'Pending Review' : 'No Baseline';
-  const diffPct     = b.diffPct != null ? `${b.diffPct}% diff` : '';
-  const lastRun     = b.lastRunAt ? new Date(b.lastRunAt).toLocaleString() : 'Never';
-  const imgBase     = `/api/visual-baselines/${encodeURIComponent(b.id)}/image`;
+  const diffPct = b.diffPct != null ? `${b.diffPct}% diff` : '';
+  const lastRun = b.lastRunAt ? new Date(b.lastRunAt).toLocaleString() : 'Never';
+  const imgBase = `/api/visual-baselines/${encodeURIComponent(b.id)}/image`;
 
   return `
     <div class="card" style="padding:0;overflow:hidden;border:1px solid var(--neutral-300)">
@@ -9019,9 +9107,9 @@ async function locatorHealthLoad() {
 
 function locatorHealthRender(rows) {
   const summary = document.getElementById('locator-health-summary');
-  const empty   = document.getElementById('locator-health-empty');
-  const table   = document.getElementById('locator-health-table');
-  const tbody   = document.getElementById('locator-health-tbody');
+  const empty = document.getElementById('locator-health-empty');
+  const table = document.getElementById('locator-health-table');
+  const tbody = document.getElementById('locator-health-tbody');
 
   empty.style.display = 'none';
   table.style.display = '';
@@ -9032,9 +9120,9 @@ function locatorHealthRender(rows) {
     return;
   }
 
-  const totalHeals  = rows.reduce((s, r) => s + r.healCount, 0);
-  const autoCount   = rows.filter(r => r.lastHealedBy === 'auto').length;
-  const avgConf     = rows.filter(r => r.avgConfidence != null).length
+  const totalHeals = rows.reduce((s, r) => s + r.healCount, 0);
+  const autoCount = rows.filter(r => r.lastHealedBy === 'auto').length;
+  const avgConf = rows.filter(r => r.avgConfidence != null).length
     ? Math.round(rows.filter(r => r.avgConfidence != null).reduce((s, r) => s + r.avgConfidence, 0) / rows.filter(r => r.avgConfidence != null).length)
     : '—';
 
@@ -9047,15 +9135,15 @@ function locatorHealthRender(rows) {
 
   tbody.innerHTML = rows.map(r => {
     const latest = r.recentEvents && r.recentEvents[0];
-    const oldSel  = latest?.oldSelector ? escHtml(latest.oldSelector.slice(0, 40)) + (latest.oldSelector.length > 40 ? '…' : '') : '—';
-    const newSel  = latest?.newSelector ? escHtml(latest.newSelector.slice(0, 40)) + (latest.newSelector.length > 40 ? '…' : '') : '—';
-    const badge   = r.lastHealedBy === 'auto'
+    const oldSel = latest?.oldSelector ? escHtml(latest.oldSelector.slice(0, 40)) + (latest.oldSelector.length > 40 ? '…' : '') : '—';
+    const newSel = latest?.newSelector ? escHtml(latest.newSelector.slice(0, 40)) + (latest.newSelector.length > 40 ? '…' : '') : '—';
+    const badge = r.lastHealedBy === 'auto'
       ? '<span class="badge badge-success">auto</span>'
       : r.lastHealedBy
         ? `<span class="badge badge-info">${escHtml(r.lastHealedBy)}</span>`
         : '—';
-    const conf    = r.avgConfidence != null ? `<span class="${r.avgConfidence >= 75 ? 'text-success' : 'text-warning'}">${r.avgConfidence}%</span>` : '—';
-    const date    = r.lastHealedAt ? new Date(r.lastHealedAt).toLocaleDateString() : '—';
+    const conf = r.avgConfidence != null ? `<span class="${r.avgConfidence >= 75 ? 'text-success' : 'text-warning'}">${r.avgConfidence}%</span>` : '—';
+    const date = r.lastHealedAt ? new Date(r.lastHealedAt).toLocaleDateString() : '—';
     return `<tr>
       <td>${escHtml(r.name)}</td>
       <td><code style="font-size:11px">${escHtml((r.selector || '').slice(0, 50))}</code></td>
@@ -9078,11 +9166,11 @@ async function jiraConfigLoad() {
       document.getElementById('jira-status-badge').textContent = 'Not configured';
       return;
     }
-    document.getElementById('jira-project-key').value       = cfg.projectKey || '';
-    document.getElementById('jira-issue-type').value        = cfg.issueType || 'Defect';
-    document.getElementById('jira-default-priority').value  = cfg.defaultPriority || 'Medium';
-    document.getElementById('jira-close-transition').value  = cfg.closeTransitionName || 'Closed';
-    document.getElementById('jira-max-attach-mb').value     = cfg.maxAttachmentMB || 50;
+    document.getElementById('jira-project-key').value = cfg.projectKey || '';
+    document.getElementById('jira-issue-type').value = cfg.issueType || 'Defect';
+    document.getElementById('jira-default-priority').value = cfg.defaultPriority || 'Medium';
+    document.getElementById('jira-close-transition').value = cfg.closeTransitionName || 'Closed';
+    document.getElementById('jira-max-attach-mb').value = cfg.maxAttachmentMB || 50;
     const baseUrlEl = document.getElementById('jira-base-url');
     if (baseUrlEl) baseUrlEl.value = cfg.baseUrl || '';
     const emailEl = document.getElementById('jira-creds-email');
@@ -9120,23 +9208,23 @@ async function jiraDiscoverFields() {
   if (!r.ok) { msg.style.color = '#dc2626'; msg.textContent = `✗ ${j?.error?.message || 'Discovery failed'}`; return; }
   const fields = (j.fields || []).filter(f => f.custom);
   const opts = fields.map(f => `<option value="${f.id}">${f.name} (${f.id})</option>`).join('');
-  document.getElementById('jira-parent-field').innerHTML    = '<option value="">— pick parent field —</option>' + opts;
-  document.getElementById('jira-refer-ss-field').innerHTML  = '<option value="">— none —</option>' + opts;
+  document.getElementById('jira-parent-field').innerHTML = '<option value="">— pick parent field —</option>' + opts;
+  document.getElementById('jira-refer-ss-field').innerHTML = '<option value="">— none —</option>' + opts;
   msg.style.color = '#16a34a'; msg.textContent = `✓ ${fields.length} custom fields loaded`;
 }
 
 async function jiraConfigSave() {
   const body = {
-    projectKey:           document.getElementById('jira-project-key').value.trim(),
-    issueType:            document.getElementById('jira-issue-type').value.trim(),
-    defaultPriority:      document.getElementById('jira-default-priority').value,
-    parentLinkFieldId:    document.getElementById('jira-parent-field').value,
-    referSSFieldId:       document.getElementById('jira-refer-ss-field').value,
-    closeTransitionName:  document.getElementById('jira-close-transition').value.trim(),
-    maxAttachmentMB:      Number(document.getElementById('jira-max-attach-mb').value) || 50,
-    baseUrl:              (document.getElementById('jira-base-url')?.value || '').trim(),
-    email:                (document.getElementById('jira-creds-email')?.value || '').trim(),
-    apiToken:             (document.getElementById('jira-creds-token')?.value || ''),
+    projectKey: document.getElementById('jira-project-key').value.trim(),
+    issueType: document.getElementById('jira-issue-type').value.trim(),
+    defaultPriority: document.getElementById('jira-default-priority').value,
+    parentLinkFieldId: document.getElementById('jira-parent-field').value,
+    referSSFieldId: document.getElementById('jira-refer-ss-field').value,
+    closeTransitionName: document.getElementById('jira-close-transition').value.trim(),
+    maxAttachmentMB: Number(document.getElementById('jira-max-attach-mb').value) || 50,
+    baseUrl: (document.getElementById('jira-base-url')?.value || '').trim(),
+    email: (document.getElementById('jira-creds-email')?.value || '').trim(),
+    apiToken: (document.getElementById('jira-creds-token')?.value || ''),
   };
   const msg = document.getElementById('jira-config-msg');
   const r = await fetch('/api/jira/config', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });

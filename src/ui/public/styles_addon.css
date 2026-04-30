@@ -386,10 +386,13 @@
   border: 1px solid var(--neutral-200);
   width: 100%; display: flex; flex-direction: column; animation: slideUp .2s ease;
 }
-.modal-wide { max-width: 800px; }
+.modal-wide { max-width: 900px; }
 /* Suite modal needs extra height for the two-zone script picker */
 #modal-suite .modal { max-height: calc(100vh - 32px); }
 #modal-suite .modal-body { max-height: calc(100vh - 180px); }
+/* Scripts tab — expand both zones (overrides inline styles) */
+#modal-suite #sm-script-list   { max-height: 360px !important; }
+#modal-suite #sm-selected-list { max-height: 200px !important; }
 
 .modal-header {
   display: flex; align-items: center; justify-content: space-between;
