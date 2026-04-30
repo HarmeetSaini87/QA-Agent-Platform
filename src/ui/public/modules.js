@@ -18,6 +18,7 @@ async function authBootstrap() {
     const res  = await fetch('/api/auth/me');
     if (!res.ok) { window.location.href = '/login'; return; }
     currentUser = await res.json();
+    document.body.classList.add('auth-checked');
     document.getElementById('sidebar-username').textContent = currentUser.username;
     document.getElementById('sidebar-role').textContent     = currentUser.role;
 
@@ -1964,6 +1965,11 @@ function onModuleTabSwitch(tab) {
   if (tab === 'scripts')    { scriptLoad(); _debugSessionsPollStart(); }
   if (tab === 'suites')     suiteLoad();
   if (tab === 'execution')  execLoad();
+  if (tab === 'history')    histLoad();
+  if (tab === 'flaky')      flakyLoad();
+  if (tab === 'analytics')  analyticsLoad();
+  if (tab === 'visual')     vrLoad();
+  if (tab === 'locator-health') locatorHealthLoad();
   if (tab === 'admin' && !_panelLoaded.has('admin')) adminSubTab('users', document.querySelector('.sub-tab'));
   _panelLoaded.add(tab);
 
@@ -4744,7 +4750,17 @@ async function suiteEditById(id) {
 }
 
 // Legacy alias kept so any other callers still work
-function suiteScriptFilterRender() { smScriptSearch(); }
+// ── Suite Modal Tabs ──────────────────────────────────────────────────────────
+
+function suiteTab(paneId, btn) {
+  const modal = document.getElementById('modal-suite');
+  if (!modal) return;
+  modal.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  modal.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+  btn.classList.add('active');
+  const pane = document.getElementById(`sm-pane-${paneId}`);
+  if (pane) pane.classList.add('active');
+}
 
 async function suiteSave() {
   modClearAlert('suite-modal-alert');
@@ -4753,25 +4769,72 @@ async function suiteSave() {
   if (!currentProjectId) { modAlert('suite-modal-alert', 'error', 'Select a project first'); return; }
   const scriptIds     = [..._smSelectedIds];   // Zone B order is authoritative
   const retries = parseInt(document.getElementById('sm-retries')?.value || '0', 10);
+  const browsers = [];
+  if (document.getElementById('sm-br-chromium').checked) browsers.push('chromium');
+  if (document.getElementById('sm-br-firefox').checked)  browsers.push('firefox');
+  if (document.getElementById('sm-br-webkit').checked)   browsers.push('webkit');
+
   const body = {
     projectId: currentProjectId, name,
     description:   document.getElementById('sm-desc').value.trim(),
     scriptIds,
-    environmentId: null,
+    environmentId: document.getElementById('sm-env-default').value || null,
     retries:       [0,1,2].includes(retries) ? retries : 0,
+    browsers,
     beforeEachSteps: _hookBefore.map((s, i)   => ({ order: i + 1, keyword: s.keyword, locator: s.locator, value: s.value, description: s.description })),
     afterEachSteps:  _hookAfter.map((s, i)    => ({ order: i + 1, keyword: s.keyword, locator: s.locator, value: s.value, description: s.description })),
     fastMode:        !!(document.getElementById('sm-fast-mode')?.checked),
     fastModeSteps:   _hookFastMode.map((s, i) => ({ order: i + 1, keyword: s.keyword, locator: s.locator, value: s.value, description: s.description })),
     overlayHandlers: _overlayHandlers.map(h => ({ type: h.type, action: h.action, text: h.text || '' })),
+    // Unified Save: Include flakiness intelligence
+    flakinessOverrides: {
+      threshold: parseInt(document.getElementById('flaky-cfg-threshold').value) || 30,
+      minRuns:   parseInt(document.getElementById('flaky-cfg-minruns').value)   || 5,
+      quarantineBudget: parseInt(document.getElementById('flaky-cfg-budget').value) || 5,
+      autoPromotePassRate: parseInt(document.getElementById('flaky-cfg-passrate').value) || 95
+    }
   };
   const method = editingSuiteId ? 'PUT'  : 'POST';
   const url    = editingSuiteId ? `/api/suites/${editingSuiteId}` : '/api/suites';
-  const res    = await fetch(url, { method, headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) });
-  const data   = await res.json();
-  if (!res.ok) { modAlert('suite-modal-alert', 'error', data.error || 'Error saving suite'); return; }
-  suiteCloseModal();
-  await suiteLoad();
+  
+  try {
+    const res = await fetch(url, { method, headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Error saving suite');
+
+    // Unified Save: Sync local schedules if in edit mode
+    if (editingSuiteId && typeof smLocalSchedules !== 'undefined' && smLocalSchedules.length > 0) {
+      await _syncLocalSchedules(editingSuiteId);
+    }
+
+    suiteCloseModal();
+    await suiteLoad();
+  } catch (err) {
+    modAlert('suite-modal-alert', 'error', 'Save failed: ' + err.message);
+  }
+}
+
+/** Local schedule management for unified save */
+let smLocalSchedules = [];
+function schedSaveLocal() {
+  const label = document.getElementById('sched-label').value.trim();
+  const envId = document.getElementById('sched-env').value;
+  const cron  = document.getElementById('sched-cron').value.trim() || document.getElementById('sched-preset').value;
+  if (!label || !envId || !cron) return modAlert('suite-modal-alert', 'error', 'All schedule fields required');
+  smLocalSchedules.push({ label, environmentId: envId, cronExpression: cron });
+  _renderLocalSchedules();
+  schedFormHide();
+}
+
+async function _syncLocalSchedules(suiteId) {
+  for (const s of smLocalSchedules) {
+    await fetch('/api/schedules', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...s, suiteId, projectId: currentProjectId, enabled: true })
+    });
+  }
+  smLocalSchedules = [];
 }
 
 async function suiteDelete(id, name) {
@@ -5744,10 +5807,17 @@ async function flakyConfigLoad(suiteId, projectId) {
 }
 
 function flakyApplyPreset() {
-  const preset = document.getElementById('flaky-preset')?.value;
-  if (!preset || !FLAKY_PRESETS[preset]) return;
-  const thr = document.getElementById('flaky-cfg-threshold');
-  if (thr) thr.value = FLAKY_PRESETS[preset];
+  const preset = document.getElementById('flaky-preset').value;
+  const t = document.getElementById('flaky-cfg-threshold');
+  const m = document.getElementById('flaky-cfg-minruns');
+  const b = document.getElementById('flaky-cfg-budget');
+  const p = document.getElementById('flaky-cfg-passrate');
+
+  if (preset === 'smoke') {
+    if (t) t.value = 20; if (m) m.value = 3; if (b) b.value = 2; if (p) p.value = 98;
+  } else if (preset === 'regression') {
+    if (t) t.value = 30; if (m) m.value = 5; if (b) b.value = 5; if (p) p.value = 95;
+  }
 }
 
 async function flakyConfigSave() {

@@ -12,18 +12,18 @@
  *   Server → Client:  run:start | run:output | run:test | run:stats | run:done | pong
  */
 
-import * as http    from 'http';
-import * as path    from 'path';
-import * as fs      from 'fs';
-import * as cp      from 'child_process';
+import * as http from 'http';
+import * as path from 'path';
+import * as fs from 'fs';
+import * as cp from 'child_process';
 import express, { Request, Response, NextFunction } from 'express';
-import multer       from 'multer';
+import multer from 'multer';
 import { WebSocketServer, WebSocket } from 'ws';
 import { v4 as uuidv4 } from 'uuid';
-import * as dotenv  from 'dotenv';
-import session      from 'express-session';
-import SQLiteStore  from 'connect-sqlite3';
-import cron         from 'node-cron';
+import * as dotenv from 'dotenv';
+import session from 'express-session';
+import SQLiteStore from 'connect-sqlite3';
+import cron from 'node-cron';
 
 import { generateCodegenSpec, generateDebugSpec } from '../utils/codegenGenerator';
 import {
@@ -34,20 +34,20 @@ import {
   getMachineId, checkMachineBinding, transferLicense, checkExpiryTick,
   checkStoredLicFile, syncSeatsFromSessions, getSeatUsageRatio,
 } from '../utils/licenseManager';
-import { parseRecorderEvent, RecorderEvent }      from '../utils/recorderParser';
+import { parseRecorderEvent, RecorderEvent } from '../utils/recorderParser';
 import { scoreCandidates, toLocatorAlternative, T3_AUTO_THRESHOLD, DomCandidate } from '../utils/healingEngine';
 import { upsertPageModel, listPageModels } from '../utils/pageModelManager';
-import { config }  from '../framework/config';
-import { logger }  from '../utils/logger';
+import { config } from '../framework/config';
+import { logger } from '../utils/logger';
 
 // ── Auth + Data imports ────────────────────────────────────────────────────────
-import { seedDefaults }            from '../data/seed';
+import { seedDefaults } from '../data/seed';
 import { readAll, upsert, remove, findById, writeAll, USERS, PROJECTS, LOCATORS, FUNCTIONS, AUDIT, SETTINGS, SCRIPTS, SUITES, COMMON_DATA, SCHEDULES, APIKEYS, COMPONENTS } from '../data/store';
 import { User, Project, ProjectEnvironment, Locator, CommonFunction, CommonData, AuditEntry, AppSettings, NotificationSettings, DEFAULT_SETTINGS, DEFAULT_NOTIFICATION_SETTINGS, ProjectCredential, TestScript, ScriptStep, TestSuite, ScheduledRun, HealingProposal, LicensePayload, ApiKey, BrowserName, ComponentDef, Subcomponent, DefectRecord } from '../data/types';
 import { hashPassword, verifyPassword, validatePasswordStrength } from '../auth/crypto';
 import { requireAuth, requireAdmin, requireEditor, requireAuthOrApiKey, sanitizeInput } from '../auth/middleware';
 import rateLimit from 'express-rate-limit';
-import { logAudit }                                                from '../auth/audit';
+import { logAudit } from '../auth/audit';
 import * as crypto from 'crypto';
 import { sendRunNotification, sendTestNotification, formatDuration } from '../utils/notifier';
 import { DEFAULT_FLAKINESS_CONFIG, FlakinessConfig, analyzeFlakiness, CURRENT_ENGINE_VERSION, getActionHint } from '../utils/flakinessEngine';
@@ -70,9 +70,9 @@ const _secretKey = (() => {
 })();
 
 function encryptValue(plain: string): string {
-  const iv     = crypto.randomBytes(16);
+  const iv = crypto.randomBytes(16);
   const cipher = crypto.createCipheriv('aes-256-cbc', _secretKey, iv);
-  const enc    = Buffer.concat([cipher.update(plain, 'utf8'), cipher.final()]);
+  const enc = Buffer.concat([cipher.update(plain, 'utf8'), cipher.final()]);
   return `enc:${iv.toString('hex')}:${enc.toString('hex')}`;
 }
 
@@ -81,8 +81,8 @@ function decryptValue(stored: string): string {
   const parts = stored.split(':');
   if (parts.length < 3) return stored;
   try {
-    const iv      = Buffer.from(parts[1], 'hex');
-    const enc     = Buffer.from(parts.slice(2).join(':'), 'hex');
+    const iv = Buffer.from(parts[1], 'hex');
+    const enc = Buffer.from(parts.slice(2).join(':'), 'hex');
     const decipher = crypto.createDecipheriv('aes-256-cbc', _secretKey, iv);
     return Buffer.concat([decipher.update(enc), decipher.final()]).toString('utf8');
   } catch { return '***'; }
@@ -101,10 +101,10 @@ dotenv.config();
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const PORT       = config.ui.port;
+const PORT = config.ui.port;
 const PUBLIC_DIR = path.resolve(__dirname, 'public');
 const TRACE_VIEWER_DIR = path.join(PUBLIC_DIR, 'trace-viewer');
-const UPLOAD_DIR    = path.resolve(config.paths.requirements, 'uploads');
+const UPLOAD_DIR = path.resolve(config.paths.requirements, 'uploads');
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
 const TEST_FILES_DIR = path.resolve('test-files');
@@ -115,70 +115,70 @@ if (!fs.existsSync(TEST_FILES_DIR)) fs.mkdirSync(TEST_FILES_DIR, { recursive: tr
 type LogLevel = 'info' | 'pass' | 'fail' | 'warn';
 
 interface HealEvent {
-  stepOrder:       number;
-  keyword:         string;
-  locatorId:       string;
-  healed:          string;   // new selector that worked
-  healedType:      string;
-  confidence:      number;
-  tier:            'T2' | 'T3' | 'T4' | 'T4-pending';
-  at:              string;   // ISO timestamp
+  stepOrder: number;
+  keyword: string;
+  locatorId: string;
+  healed: string;   // new selector that worked
+  healedType: string;
+  confidence: number;
+  tier: 'T2' | 'T3' | 'T4' | 'T4-pending';
+  at: string;   // ISO timestamp
   // Enriched at run-complete time (not written by spec)
-  runId?:          string;
-  projectId?:      string;
-  suiteName?:      string;
-  scriptTitle?:    string;
-  tcId?:           string;
-  locatorName?:    string;
-  oldSelector?:    string;
+  runId?: string;
+  projectId?: string;
+  suiteName?: string;
+  scriptTitle?: string;
+  tcId?: string;
+  locatorName?: string;
+  oldSelector?: string;
   oldSelectorType?: string;
 }
 
 interface RunRecord {
-  runId:           string;
-  planPath:        string;
-  planId:          string;
-  startedAt:       string;
-  finishedAt?:     string;
-  status:          'queued' | 'running' | 'done' | 'failed';
-  exitCode:        number | null;
-  output:          string[];
-  tests:           TestEvent[];
-  passed:          number;
-  failed:          number;
-  total:           number;
-  specPath?:       string;   // path to generated spec file — deleted after run
+  runId: string;
+  planPath: string;
+  planId: string;
+  startedAt: string;
+  finishedAt?: string;
+  status: 'queued' | 'running' | 'done' | 'failed';
+  exitCode: number | null;
+  output: string[];
+  tests: TestEvent[];
+  passed: number;
+  failed: number;
+  total: number;
+  specPath?: string;   // path to generated spec file — deleted after run
   // Execution metadata
-  projectId?:      string;
-  projectName?:    string;
-  suiteId?:        string;
-  suiteName?:      string;
-  environmentId?:  string;
+  projectId?: string;
+  projectName?: string;
+  suiteId?: string;
+  suiteName?: string;
+  environmentId?: string;
   environmentName?: string;
-  executedBy?:     string;
-  browsers?:       string[];   // browsers used for this run e.g. ['chromium', 'firefox']
+  executedBy?: string;
+  browsers?: string[];   // browsers used for this run e.g. ['chromium', 'firefox']
   // Self-healing events recorded during this run
-  healEvents?:     HealEvent[];
-  traceMode?:      'on' | 'retain-on-failure' | 'off' | 'on-first-retry';  // populated at run creation
+  healEvents?: HealEvent[];
+  traceMode?: 'on' | 'retain-on-failure' | 'off' | 'on-first-retry';  // populated at run creation
 }
 
 interface TestEvent {
-  name:          string;
-  status:        'running' | 'pass' | 'fail';
-  durationMs:    number;
-  browser?:      string;   // 'chromium' | 'firefox' | 'webkit' — set from list reporter output
+  name: string;
+  status: 'running' | 'pass' | 'fail';
+  durationMs: number;
+  browser?: string;   // 'chromium' | 'firefox' | 'webkit' — set from list reporter output
   errorMessage?: string;
-  errorDetail?:  string;
+  errorDetail?: string;
   screenshotPath?: string;
   screenshotBefore?: string;
-  screenshotAfter?:  string;
-  videoPath?:  string;
-  tracePath?:  string;
+  screenshotAfter?: string;
+  videoPath?: string;
+  tracePath?: string;
   failureScreenshotPath?: string;
   consoleErrors?: string[];
   steps?: { name: string; status: 'pass' | 'fail' | 'skip'; durationMs: number }[];
-  testId?:       string;    // stable hash(suiteId+scriptTitle+name) — set at run time
-  quarantined?:  boolean;   // true = executed but excluded from suite pass/fail gate
+  testId?: string;    // stable hash(suiteId+scriptTitle+name) — set at run time
+  quarantined?: boolean;   // true = executed but excluded from suite pass/fail gate
   // Auto-File Defect feature
   defectKey?: string;
   defectStatus?: 'open' | 'closed';
@@ -187,39 +187,39 @@ interface TestEvent {
 // ── Debug session types ───────────────────────────────────────────────────────
 
 interface DebugSession {
-  sessionId:      string;
-  scriptId:       string;
-  scriptTitle:    string;
-  projectId:      string;
+  sessionId: string;
+  scriptId: string;
+  scriptTitle: string;
+  projectId: string;
   // Ownership — who started this session
-  userId:         string;
-  username:       string;
-  environmentId:  string | null;
+  userId: string;
+  username: string;
+  environmentId: string | null;
   environmentName: string | null;
-  status:         'starting' | 'paused' | 'running' | 'done' | 'stopped' | 'error';
-  currentStep:    number;   // stepOrder currently paused at
-  totalSteps:     number;
-  specPath:       string;
-  proc?:          cp.ChildProcess;
-  startedAt:      string;
-  finishedAt?:    string;
-  lastHeartbeat:  number;   // timestamp of last client heartbeat (ms) — used for orphan cleanup
+  status: 'starting' | 'paused' | 'running' | 'done' | 'stopped' | 'error';
+  currentStep: number;   // stepOrder currently paused at
+  totalSteps: number;
+  specPath: string;
+  proc?: cp.ChildProcess;
+  startedAt: string;
+  finishedAt?: string;
+  lastHeartbeat: number;   // timestamp of last client heartbeat (ms) — used for orphan cleanup
   // Last step info — stored so late-joining WS clients can catch up
   pendingStep?: {
-    stepIdx:        number;
-    keyword:        string;
-    locator:        string;
-    value:          string;
+    stepIdx: number;
+    keyword: string;
+    locator: string;
+    value: string;
     screenshotPath: string;
   };
 }
 
 type WsOut =
-  | { type: 'run:start';  runId: string; planId: string; startedAt: string }
+  | { type: 'run:start'; runId: string; planId: string; startedAt: string }
   | { type: 'run:output'; runId: string; line: string; level: LogLevel }
-  | { type: 'run:test';   runId: string; name: string; status: 'pass'|'fail'|'running'; durationMs?: number; browser?: string }
-  | { type: 'run:stats';  runId: string; passed: number; failed: number; total: number; completed: number }
-  | { type: 'run:done';   runId: string; passed: number; failed: number; total: number; exitCode: number|null }
+  | { type: 'run:test'; runId: string; name: string; status: 'pass' | 'fail' | 'running'; durationMs?: number; browser?: string }
+  | { type: 'run:stats'; runId: string; passed: number; failed: number; total: number; completed: number }
+  | { type: 'run:done'; runId: string; passed: number; failed: number; total: number; exitCode: number | null }
   | { type: 'debug:step'; sessionId: string; stepIdx: number; keyword: string; locator: string; value: string; screenshotPath: string }
   | { type: 'debug:done'; sessionId: string; status: 'done' | 'stopped' | 'error' }
   | { type: 'pong' };
@@ -305,9 +305,9 @@ function emitFlakeNotification(
 
   const msgs: Record<string, string> = {
     test_quarantined: `Auto-quarantined: "${extra.testName}" (score ${Number(extra.flakeScore ?? 0).toFixed(2)}). Excluded from suite result.`,
-    test_restored:    `Restored: "${extra.testName}" from quarantine after clean runs.`,
-    budget_warning:   `Quarantine budget: ${extra.used}/${extra.limit} used this run.`,
-    budget_exceeded:  `Quarantine budget exceeded (${extra.used}/${extra.limit}). Suite marked failed.`,
+    test_restored: `Restored: "${extra.testName}" from quarantine after clean runs.`,
+    budget_warning: `Quarantine budget: ${extra.used}/${extra.limit} used this run.`,
+    budget_exceeded: `Quarantine budget exceeded (${extra.used}/${extra.limit}). Suite marked failed.`,
   };
 
   pendingToasts.push({
@@ -318,14 +318,14 @@ function emitFlakeNotification(
 }
 
 function getEffectiveFlakinessConfig(suiteId: string, projectId: string): FlakinessConfig {
-  const suites   = readAll<TestSuite>(SUITES);
+  const suites = readAll<TestSuite>(SUITES);
   const projects = readAll<Project>(PROJECTS);
-  const suite    = suites.find((s) => s.id === suiteId);
-  const project  = projects.find((p) => p.id === projectId);
+  const suite = suites.find((s) => s.id === suiteId);
+  const project = projects.find((p) => p.id === projectId);
   return {
     ...DEFAULT_FLAKINESS_CONFIG,
-    ...(( project as any)?.flakinessDefaults ?? {}),
-    ...((suite as any)?.flakinessOverrides  ?? {}),
+    ...((project as any)?.flakinessDefaults ?? {}),
+    ...((suite as any)?.flakinessOverrides ?? {}),
   } as FlakinessConfig;
 }
 
@@ -368,7 +368,7 @@ function groupRunsByTestId(
 // File-based IPC: spec writes pending.json, polls for gate.json.
 // Server polls pending.json to update session state for UI to poll.
 const debugSessions = new Map<string, DebugSession>();
-const debugPollers  = new Map<string, NodeJS.Timeout>();  // sessionId → poll interval
+const debugPollers = new Map<string, NodeJS.Timeout>();  // sessionId → poll interval
 
 // ── SSE clients for debug sessions ───────────────────────────────────────────
 // SSE works through ALL HTTP proxies (no WS upgrade needed).
@@ -387,15 +387,15 @@ function sseSessionPush(sessionId: string, event: string, payload: object): void
 // Sessions auto-expire after 30 minutes of inactivity (2h hard cap).
 
 interface RecorderSession {
-  token:       string;
-  projectId:   string;
-  createdBy:   string;
-  active:      boolean;
-  steps:       import('../data/types').ScriptStep[];
-  stepCount:   number;         // running counter for order assignment
+  token: string;
+  projectId: string;
+  createdBy: string;
+  active: boolean;
+  steps: import('../data/types').ScriptStep[];
+  stepCount: number;         // running counter for order assignment
   lastActivity: number;        // ms timestamp — used for inactivity expiry
-  createdAt:   number;
-  sseClients:  Set<import('http').ServerResponse>;
+  createdAt: number;
+  sseClients: Set<import('http').ServerResponse>;
 }
 
 const recorderSessions = new Map<string, RecorderSession>();
@@ -404,19 +404,19 @@ function recorderSsePush(token: string, event: string, payload: object): void {
   const session = recorderSessions.get(token);
   if (!session?.sseClients.size) return;
   const data = `event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`;
-  session.sseClients.forEach(res => { try { res.write(data); } catch {} });
+  session.sseClients.forEach(res => { try { res.write(data); } catch { } });
 }
 
 // Expiry: 30 min inactivity, 2h hard cap
 setInterval(() => {
   const now = Date.now();
   for (const [token, s] of recorderSessions) {
-    const inactive  = now - s.lastActivity > 30 * 60 * 1000;
-    const hardCap   = now - s.createdAt    >  2 * 60 * 60 * 1000;
+    const inactive = now - s.lastActivity > 30 * 60 * 1000;
+    const hardCap = now - s.createdAt > 2 * 60 * 60 * 1000;
     if (inactive || hardCap) {
-      s.sseClients.forEach(res => { try { res.end(); } catch {} });
+      s.sseClients.forEach(res => { try { res.end(); } catch { } });
       recorderSessions.delete(token);
-      logger.info(`[recorder] Session expired (${inactive ? 'inactivity' : 'hard cap'}): ${token.slice(0,8)}`);
+      logger.info(`[recorder] Session expired (${inactive ? 'inactivity' : 'hard cap'}): ${token.slice(0, 8)}`);
     }
   }
 }, 60_000);
@@ -473,11 +473,11 @@ function unsubscribe(runId: string, ws: WebSocket): void {
 // Playwright list reporter uses:  "  ok N [chromium] › file › Suite › Test (Xs)"
 //                             or:  "  ok N [firefox] › ..."  (multi-browser)
 // Unicode symbols (✓/✗) appear in some environments; "ok"/"x" in others.
-const RE_TEST_PASS  = /\bok\s+\d+\s+\[|[✓✔√]|\d+\s+passed/u;
-const RE_TEST_FAIL  = /\bx\s+\d+\s+\[|[✗✘×]/u;
+const RE_TEST_PASS = /\bok\s+\d+\s+\[|[✓✔√]|\d+\s+passed/u;
+const RE_TEST_FAIL = /\bx\s+\d+\s+\[|[✗✘×]/u;
 // Matches any browser name in brackets — chromium, firefox, webkit
-const RE_TEST_LINE  = /(?:ok|x|[✓✔✗✘×√])\s+\d+\s+\[(chromium|firefox|webkit)\][^(]*›\s*([^›(]+?)\s*\((\d+(?:\.\d+)?)(ms|s)\)/u;
-const RE_TOTAL      = /Running (\d+) tests?/;
+const RE_TEST_LINE = /(?:ok|x|[✓✔✗✘×√])\s+\d+\s+\[(chromium|firefox|webkit)\][^(]*›\s*([^›(]+?)\s*\((\d+(?:\.\d+)?)(ms|s)\)/u;
+const RE_TOTAL = /Running (\d+) tests?/;
 const RE_PASS_COUNT = /(\d+) passed/;
 const RE_FAIL_COUNT = /(\d+) failed/;
 // Phase A: console errors emitted by afterEach as structured log line
@@ -488,9 +488,9 @@ const RE_CONSOLE_ERRORS = /\[QA_CONSOLE_ERRORS\]:(\d+):(.+)$/;
 const RE_TEST_ID = /\[QA_TEST_ID\]:(\d+):(TID_[0-9a-f]{8})$/;
 
 function classifyLine(line: string): LogLevel {
-  if (RE_TEST_PASS.test(line))                  return 'pass';
+  if (RE_TEST_PASS.test(line)) return 'pass';
   if (RE_TEST_FAIL.test(line) || /Error/.test(line)) return 'fail';
-  if (/warning|warn/i.test(line))               return 'warn';
+  if (/warning|warn/i.test(line)) return 'warn';
   return 'info';
 }
 
@@ -506,9 +506,9 @@ function parseMs(val: string, unit: string): number {
 // We scan the full output buffer and attach error details to matching TestEvents.
 
 function parseFailureDetails(record: RunRecord): void {
-  const lines     = record.output;
-  const failHdr   = /^\s{2,4}\d+\)\s+\[(chromium|firefox|webkit)\]/;
-  const ANSI      = /\x1b\[[0-9;]*m/g;
+  const lines = record.output;
+  const failHdr = /^\s{2,4}\d+\)\s+\[(chromium|firefox|webkit)\]/;
+  const ANSI = /\x1b\[[0-9;]*m/g;
 
   // Build map: normalized test name → TestEvent
   const nameMap = new Map<string, TestEvent>();
@@ -524,8 +524,8 @@ function parseFailureDetails(record: RunRecord): void {
       // Extract test name from header line — text after last "›"
       const parts = line.split('›');
       const rawName = parts[parts.length - 1].replace(/\(\d.*\)$/, '').trim();
-      const key     = rawName.toLowerCase();
-      const ev      = nameMap.get(key);
+      const key = rawName.toLowerCase();
+      const ev = nameMap.get(key);
 
       // Collect the failure block
       const block: string[] = [];
@@ -540,7 +540,7 @@ function parseFailureDetails(record: RunRecord): void {
         // First non-empty line = error message
         const firstErr = block.find(l => l.trim() && !/^\s*$/.test(l));
         if (firstErr) ev.errorMessage = firstErr.trim();
-        ev.errorDetail  = block.join('\n');
+        ev.errorDetail = block.join('\n');
 
         // Check for screenshot attachment.
         // Playwright list reporter outputs the header and file path on SEPARATE lines:
@@ -576,7 +576,7 @@ function attachFailureScreenshots(record: RunRecord): void {
 
   // New format: FAILED-<idx>-<browser>.png
   // Legacy format: FAILED-<idx>.png (single-browser runs)
-  const failRe       = /^FAILED-(\d+)-(chromium|firefox|webkit)\.png$/;
+  const failRe = /^FAILED-(\d+)-(chromium|firefox|webkit)\.png$/;
   const failReLegacy = /^FAILED-(\d+)\.png$/;
   let files: string[];
   try { files = fs.readdirSync(ssDir); } catch { return; }
@@ -593,7 +593,7 @@ function attachFailureScreenshots(record: RunRecord): void {
     const m = f.match(failRe);
     if (m) {
       const scriptIdx = parseInt(m[1], 10);
-      const browser   = m[2].toLowerCase();
+      const browser = m[2].toLowerCase();
       // scriptIdx = position within this browser's own test sequence
       const ev = browserTests.get(browser)?.[scriptIdx];
       if (ev) ev.failureScreenshotPath = `test-results/${record.runId}/${f}`;
@@ -602,7 +602,7 @@ function attachFailureScreenshots(record: RunRecord): void {
     const ml = f.match(failReLegacy);
     if (ml) {
       const idx = parseInt(ml[1], 10);
-      const ev  = record.tests[idx];
+      const ev = record.tests[idx];
       if (ev) ev.failureScreenshotPath = `test-results/${record.runId}/${f}`;
     }
   }
@@ -615,7 +615,7 @@ function attachFailureScreenshots(record: RunRecord): void {
 function attachStepsFromJson(record: RunRecord, jsonReportPath: string): void {
   try {
     if (!fs.existsSync(jsonReportPath)) return;
-    const raw  = fs.readFileSync(jsonReportPath, 'utf8');
+    const raw = fs.readFileSync(jsonReportPath, 'utf8');
     const report = JSON.parse(raw);
 
     // Flatten all test results from the report (suites → specs → tests)
@@ -640,7 +640,7 @@ function attachStepsFromJson(record: RunRecord, jsonReportPath: string): void {
 
     record.tests.forEach((ev) => {
       const evBrowser = (ev.browser || 'chromium').toLowerCase();
-      const evTitle   = (ev.name || '').toLowerCase();
+      const evTitle = (ev.name || '').toLowerCase();
 
       // Find best match: same browser, title contains (or is contained by) pwTest title
       let bestIdx = -1;
@@ -652,7 +652,7 @@ function attachStepsFromJson(record: RunRecord, jsonReportPath: string): void {
         // Score: exact match > one contains other > partial
         const score = pt === evTitle ? 3
           : evTitle.includes(pt) || pt.includes(evTitle) ? 2
-          : 1;
+            : 1;
         if (score > bestScore) { bestScore = score; bestIdx = i; }
       });
 
@@ -663,8 +663,8 @@ function attachStepsFromJson(record: RunRecord, jsonReportPath: string): void {
       if (!result) return;
 
       const steps = (result.steps || []).map((s: any) => ({
-        name:       s.title || '',
-        status:     s.error ? 'fail' : 'pass',
+        name: s.title || '',
+        status: s.error ? 'fail' : 'pass',
         durationMs: typeof s.duration === 'number' ? s.duration : 0,
       }));
       if (steps.length) ev.steps = steps;
@@ -684,28 +684,28 @@ function attachVisualDiff(record: RunRecord): void {
   // Screenshot filenames: "<scriptIdx>-<browser>-before|after-<stepOrder>.png"
   // scriptIdx = position within a single browser's test sequence (0-based per browser)
   // Legacy (single-browser): "<scriptIdx>-before|after-<stepOrder>.png"
-  const beforeRe       = /^(\d+)-(chromium|firefox|webkit)-before-(\d+)\.png$/;
-  const afterRe        = /^(\d+)-(chromium|firefox|webkit)-after-(\d+)\.png$/;
+  const beforeRe = /^(\d+)-(chromium|firefox|webkit)-before-(\d+)\.png$/;
+  const afterRe = /^(\d+)-(chromium|firefox|webkit)-after-(\d+)\.png$/;
   const beforeReLegacy = /^(\d+)-before-(\d+)\.png$/;
-  const afterReLegacy  = /^(\d+)-after-(\d+)\.png$/;
+  const afterReLegacy = /^(\d+)-after-(\d+)\.png$/;
 
   // Map: "<scriptIdx>-<browser>" → stepOrder → filename
   type StepMap = Map<number, string>;
   const beforeMap = new Map<string, StepMap>();
-  const afterMap  = new Map<string, StepMap>();
+  const afterMap = new Map<string, StepMap>();
 
   for (const f of files) {
     const bm = f.match(beforeRe) || (() => { const m = f.match(beforeReLegacy); return m ? [m[0], m[1], 'chromium', m[2]] : null; })();
     if (bm) {
       const key = `${bm[1]}-${bm[2]}`;
-      const so  = parseInt(bm[3], 10);
+      const so = parseInt(bm[3], 10);
       if (!beforeMap.has(key)) beforeMap.set(key, new Map());
       beforeMap.get(key)!.set(so, f);
     }
     const am = f.match(afterRe) || (() => { const m = f.match(afterReLegacy); return m ? [m[0], m[1], 'chromium', m[2]] : null; })();
     if (am) {
       const key = `${am[1]}-${am[2]}`;
-      const so  = parseInt(am[3], 10);
+      const so = parseInt(am[3], 10);
       if (!afterMap.has(key)) afterMap.set(key, new Map());
       afterMap.get(key)!.set(so, f);
     }
@@ -723,14 +723,14 @@ function attachVisualDiff(record: RunRecord): void {
 
     const key = `${scriptIdx}-${browser}`;
     const beforeSteps = beforeMap.get(key);
-    const afterSteps  = afterMap.get(key);
+    const afterSteps = afterMap.get(key);
 
     if (!beforeSteps && !afterSteps) return;
 
     if (ev.status === 'fail') {
       if (afterSteps && afterSteps.size > 0) {
         const lastFailStep = Math.max(...afterSteps.keys());
-        ev.screenshotAfter  = `test-results/${record.runId}/${afterSteps.get(lastFailStep)}`;
+        ev.screenshotAfter = `test-results/${record.runId}/${afterSteps.get(lastFailStep)}`;
         if (beforeSteps?.has(lastFailStep)) {
           ev.screenshotBefore = `test-results/${record.runId}/${beforeSteps.get(lastFailStep)}`;
         }
@@ -836,9 +836,9 @@ function attachVideoAndTrace(record: RunRecord): void {
  *   - functions[].steps[].selector + locatorType (where step.locatorName matches locator name)
  */
 function backfillScriptsAndFunctions(
-  locatorId:       string,
-  locatorName:     string,
-  newSelector:     string,
+  locatorId: string,
+  locatorName: string,
+  newSelector: string,
   newSelectorType: string,
 ): void {
   try {
@@ -849,7 +849,7 @@ function backfillScriptsAndFunctions(
       let changed = false;
       for (const step of script.steps) {
         if (step.locatorId === locatorId && (step.locator !== newSelector || step.locatorType !== newSelectorType)) {
-          step.locator     = newSelector;
+          step.locator = newSelector;
           step.locatorType = newSelectorType;
           changed = true;
         }
@@ -865,7 +865,7 @@ function backfillScriptsAndFunctions(
       let changed = false;
       for (const step of fn.steps) {
         if (step.locatorName === locatorName && (step.selector !== newSelector || step.locatorType !== newSelectorType)) {
-          step.selector    = newSelector;
+          step.selector = newSelector;
           step.locatorType = newSelectorType;
           changed = true;
         }
@@ -914,14 +914,14 @@ function attachHealEvents(record: RunRecord): void {
     const { tcId, scriptTitle } = resolveTcAndTitle(e.stepOrder);
     const full: HealEvent = {
       ...e,
-      tier:           e.tier ?? 'T2',  // spec writes tier for T3; T2 events have no tier field yet
-      runId:          record.runId,
-      projectId:      record.projectId ?? '',
-      suiteName:      record.suiteName ?? '',
+      tier: e.tier ?? 'T2',  // spec writes tier for T3; T2 events have no tier field yet
+      runId: record.runId,
+      projectId: record.projectId ?? '',
+      suiteName: record.suiteName ?? '',
       scriptTitle,
       tcId,
-      locatorName:    loc?.name ?? e.locatorId,
-      oldSelector:    loc?.selector ?? '',
+      locatorName: loc?.name ?? e.locatorId,
+      oldSelector: loc?.selector ?? '',
       oldSelectorType: loc?.selectorType ?? 'css',
     };
 
@@ -930,20 +930,20 @@ function attachHealEvents(record: RunRecord): void {
     // Promote it to primary on the Locator record, demote the old primary to alts,
     // then backfill every TestScript step and CommonFunction step that used this locator.
     if ((full.tier === 'T2') && loc) {
-      const winnerSelector     = full.healed;
+      const winnerSelector = full.healed;
       const winnerSelectorType = full.healedType ?? 'css';
       const demoted = { selector: loc.selector, selectorType: loc.selectorType, confidence: 50 };
       const existingAlts = (loc.alternatives ?? []).filter(a => a.selector !== winnerSelector && a.selector !== loc.selector);
       const updated = {
         ...loc,
-        selector:     winnerSelector,
+        selector: winnerSelector,
         selectorType: winnerSelectorType as Locator['selectorType'],
         alternatives: [demoted, ...existingAlts].slice(0, 10),
         healingStats: {
-          healCount:       (loc.healingStats?.healCount ?? 0) + 1,
-          lastHealedAt:    full.at,
-          lastHealedFrom:  loc.selector,
-          lastHealedBy:    'auto' as const,
+          healCount: (loc.healingStats?.healCount ?? 0) + 1,
+          lastHealedAt: full.at,
+          lastHealedFrom: loc.selector,
+          lastHealedBy: 'auto' as const,
         },
         updatedAt: new Date().toISOString(),
       };
@@ -956,24 +956,24 @@ function attachHealEvents(record: RunRecord): void {
     // The spec used the T3 candidate (score 50–74) without blocking. Create a
     // proposal so the human can decide permanent vs temporary vs reject.
     if (full.tier === 'T4-pending' && loc) {
-      const proposalId  = uuidv4();
+      const proposalId = uuidv4();
       const proposalsDir = path.resolve('data', 'proposals');
       const proposal: HealingProposal = {
-        id:              proposalId,
-        projectId:       record.projectId ?? loc.projectId ?? '',
-        locatorId:       full.locatorId,
-        locatorName:     loc.name,
-        scriptId:        '',
-        scriptTitle:     full.scriptTitle ?? '',
-        stepOrder:       full.stepOrder,
-        oldSelector:     loc.selector,
+        id: proposalId,
+        projectId: record.projectId ?? loc.projectId ?? '',
+        locatorId: full.locatorId,
+        locatorName: loc.name,
+        scriptId: '',
+        scriptTitle: full.scriptTitle ?? '',
+        stepOrder: full.stepOrder,
+        oldSelector: loc.selector,
         oldSelectorType: loc.selectorType,
-        newSelector:     full.healed,
+        newSelector: full.healed,
         newSelectorType: full.healedType,
-        confidence:      full.confidence,
-        healedAt:        full.at,
-        status:          'pending-review',
-        usedInRun:       true,
+        confidence: full.confidence,
+        healedAt: full.at,
+        status: 'pending-review',
+        usedInRun: true,
       };
       try {
         fs.mkdirSync(proposalsDir, { recursive: true });
@@ -985,10 +985,10 @@ function attachHealEvents(record: RunRecord): void {
       const updated = {
         ...loc,
         healingStats: {
-          healCount:       (loc.healingStats?.healCount ?? 0) + 1,
-          lastHealedAt:    full.at,
-          lastHealedFrom:  loc.selector,
-          lastHealedBy:    'auto' as const,
+          healCount: (loc.healingStats?.healCount ?? 0) + 1,
+          lastHealedAt: full.at,
+          lastHealedFrom: loc.selector,
+          lastHealedBy: 'auto' as const,
         },
         updatedAt: new Date().toISOString(),
       };
@@ -1016,13 +1016,13 @@ function spawnRunWithSpec(record: RunRecord, specPath: string, headed?: boolean,
   const { runId } = record;
 
   broadcast(runId, {
-    type:      'run:start',
+    type: 'run:start',
     runId,
-    planId:    record.planId,
+    planId: record.planId,
     startedAt: record.startedAt,
   });
 
-  const relPath   = path.relative(path.resolve('.'), specPath).replace(/\\/g, '/');
+  const relPath = path.relative(path.resolve('.'), specPath).replace(/\\/g, '/');
   // Use config.paths.testResults so dev and prod write to their own isolated directories
   const outputDir = path.join(config.paths.testResults, runId).replace(/\\/g, '/');
   // Use relative path for --output to avoid Windows shell splitting on spaces in absolute paths.
@@ -1033,7 +1033,7 @@ function spawnRunWithSpec(record: RunRecord, specPath: string, headed?: boolean,
   // Phase B: JSON reporter runs alongside list reporter; output file via env var
   const jsonReportFile = 'pw-report.json'; // relative to cwd; PLAYWRIGHT_JSON_OUTPUT_NAME controls filename
   const jsonReportPath = path.join(path.resolve(outputDir), jsonReportFile);
-  const args      = ['playwright', 'test', '--reporter=list,json', `--output=${relOutputDir}`];
+  const args = ['playwright', 'test', '--reporter=list,json', `--output=${relOutputDir}`];
   if (retries > 0) args.push(`--retries=${retries}`);
   // Add --project flag for each selected browser (defaults to chromium only)
   const selectedBrowsers = (browsers && browsers.length) ? browsers : ['chromium'];
@@ -1047,8 +1047,8 @@ function spawnRunWithSpec(record: RunRecord, specPath: string, headed?: boolean,
   record.status = 'running';
 
   const proc = cp.spawn('npx', args, {
-    cwd:   path.resolve('.'),
-    env:   { ...process.env, CI: '', HEADLESS: runHeadless ? 'true' : 'false', PW_OUTPUT_DIR: relOutputDir, PLAYWRIGHT_JSON_OUTPUT_NAME: jsonReportPath, PLAYWRIGHT_TRACE: traceMode },
+    cwd: path.resolve('.'),
+    env: { ...process.env, CI: '', HEADLESS: runHeadless ? 'true' : 'false', PW_OUTPUT_DIR: relOutputDir, PLAYWRIGHT_JSON_OUTPUT_NAME: jsonReportPath, PLAYWRIGHT_TRACE: traceMode },
     shell: true,
   });
 
@@ -1057,11 +1057,11 @@ function spawnRunWithSpec(record: RunRecord, specPath: string, headed?: boolean,
   const handleData = (data: Buffer): void => {
     const lines = data.toString().split('\n');
     for (const rawLine of lines) {
-      const line      = rawLine.trimEnd();
+      const line = rawLine.trimEnd();
       if (!line) continue;
 
       // Keep original (with ANSI) for display; strip ANSI for regex matching
-      const plain     = line.replace(ANSI_RE, '');
+      const plain = line.replace(ANSI_RE, '');
 
       record.output.push(line);
       if (record.output.length > 500) record.output.shift();
@@ -1084,9 +1084,9 @@ function spawnRunWithSpec(record: RunRecord, specPath: string, headed?: boolean,
       const testMatch = plain.match(RE_TEST_LINE);
       if (testMatch) {
         // Groups: [1]=browser [2]=testName [3]=durationVal [4]=durationUnit
-        const browser    = testMatch[1];
-        const name       = testMatch[2].trim();
-        const status     = RE_TEST_PASS.test(plain) ? 'pass' : 'fail';
+        const browser = testMatch[1];
+        const name = testMatch[2].trim();
+        const status = RE_TEST_PASS.test(plain) ? 'pass' : 'fail';
         const durationMs = parseMs(testMatch[3], testMatch[4]);
         const ev: TestEvent = { name, status, durationMs, browser };
         record.tests.push(ev);
@@ -1096,7 +1096,7 @@ function spawnRunWithSpec(record: RunRecord, specPath: string, headed?: boolean,
           const idx = record.tests.length - 1;
           if (pendingTids[idx]) { ev.testId = pendingTids[idx]; delete pendingTids[idx]; }
         }
-        broadcast(runId, { type: 'run:test',  runId, name, status, durationMs, browser });
+        broadcast(runId, { type: 'run:test', runId, name, status, durationMs, browser });
         broadcast(runId, { type: 'run:stats', runId, passed: record.passed, failed: record.failed, total: record.total, completed: record.tests.length });
       }
 
@@ -1117,7 +1117,7 @@ function spawnRunWithSpec(record: RunRecord, specPath: string, headed?: boolean,
       const tidMatch = plain.match(RE_TEST_ID);
       if (tidMatch) {
         const testIdx = parseInt(tidMatch[1], 10);
-        const testId  = tidMatch[2];
+        const testId = tidMatch[2];
         const ev = record.tests[testIdx];
         if (ev && !ev.testId) ev.testId = testId;
         // If testEvent not yet in array (log line arrived before test result line),
@@ -1134,10 +1134,10 @@ function spawnRunWithSpec(record: RunRecord, specPath: string, headed?: boolean,
   proc.stderr?.on('data', handleData);
 
   proc.on('close', (code) => {
-    record.exitCode    = code;
-    record.status      = code === 0 ? 'done' : 'failed';
-    record.total       = record.total || record.passed + record.failed;
-    record.finishedAt  = new Date().toISOString();
+    record.exitCode = code;
+    record.status = code === 0 ? 'done' : 'failed';
+    record.total = record.total || record.passed + record.failed;
+    record.finishedAt = new Date().toISOString();
 
     // Strip ANSI from saved output before failure parsing (output was stored with ANSI)
     record.output = record.output.map(l => l.replace(/\x1b\[[0-9;]*m/g, ''));
@@ -1173,9 +1173,9 @@ function spawnRunWithSpec(record: RunRecord, specPath: string, headed?: boolean,
     broadcast(runId, {
       type: 'run:done',
       runId,
-      passed:   record.passed,
-      failed:   record.failed,
-      total:    record.total,
+      passed: record.passed,
+      failed: record.failed,
+      total: record.total,
       exitCode: code,
     });
 
@@ -1200,9 +1200,9 @@ function spawnRunWithSpec(record: RunRecord, specPath: string, headed?: boolean,
         const resultsPath = config.paths.results;
         const allRunFiles: RunRecord[] = fs.existsSync(resultsPath)
           ? fs.readdirSync(resultsPath)
-              .filter((f: string) => f.startsWith('run-') && f.endsWith('.json'))
-              .map((f: string) => { try { return JSON.parse(fs.readFileSync(path.join(resultsPath, f), 'utf-8')) as RunRecord; } catch { return null; } })
-              .filter((r: RunRecord | null): r is RunRecord => !!r && r.suiteId === record.suiteId)
+            .filter((f: string) => f.startsWith('run-') && f.endsWith('.json'))
+            .map((f: string) => { try { return JSON.parse(fs.readFileSync(path.join(resultsPath, f), 'utf-8')) as RunRecord; } catch { return null; } })
+            .filter((r: RunRecord | null): r is RunRecord => !!r && r.suiteId === record.suiteId)
           : [];
 
         // Group once — O(N)
@@ -1211,8 +1211,8 @@ function spawnRunWithSpec(record: RunRecord, specPath: string, headed?: boolean,
         const justQuarantinedThisRun = new Set<string>();
 
         for (const [testId, testRuns] of byTestId.entries()) {
-          const qKey   = `${record.suiteId}::${testId}`;
-          const entry  = quarantine[qKey] ?? null;
+          const qKey = `${record.suiteId}::${testId}`;
+          const entry = quarantine[qKey] ?? null;
           const isQuarantined = entry?.status === 'active';
 
           // Cooldown: skip if not enough runs since quarantine
@@ -1236,7 +1236,7 @@ function spawnRunWithSpec(record: RunRecord, specPath: string, headed?: boolean,
           }
 
           if (analysis.shouldAutoPromote && isQuarantined && entry?.autoQuarantined
-              && !justQuarantinedThisRun.has(testId)) {
+            && !justQuarantinedThisRun.has(testId)) {
             restoreQuarantineEntry(record.suiteId, testId, record.runId);
             emitFlakeNotification('test_restored', record.suiteId, testId, record.runId,
               { testName });
@@ -1274,23 +1274,23 @@ function spawnRunWithSpec(record: RunRecord, specPath: string, headed?: boolean,
     // ── Notifications ─────────────────────────────────────────────────────────
     try {
       const settingsRow = readAll<AppSettings & { id: string }>(SETTINGS)[0];
-      const notifCfg    = settingsRow?.notifications ?? DEFAULT_NOTIFICATION_SETTINGS;
-      const durationMs  = record.finishedAt && record.startedAt
+      const notifCfg = settingsRow?.notifications ?? DEFAULT_NOTIFICATION_SETTINGS;
+      const durationMs = record.finishedAt && record.startedAt
         ? new Date(record.finishedAt).getTime() - new Date(record.startedAt).getTime()
         : 0;
       const platformUrl = `http://localhost:${PORT}`;
       const summary = {
         runId,
-        suiteName:       record.suiteName       ?? 'Unknown Suite',
-        projectName:     record.projectName      ?? 'Unknown Project',
-        status:          record.status as 'done' | 'failed',
-        passed:          record.passed,
-        failed:          record.failed,
-        total:           record.total,
-        duration:        formatDuration(durationMs),
-        startedAt:       record.startedAt,
-        executedBy:      record.executedBy       ?? 'scheduler',
-        environmentName: record.environmentName  ?? 'Default',
+        suiteName: record.suiteName ?? 'Unknown Suite',
+        projectName: record.projectName ?? 'Unknown Project',
+        status: record.status as 'done' | 'failed',
+        passed: record.passed,
+        failed: record.failed,
+        total: record.total,
+        duration: formatDuration(durationMs),
+        startedAt: record.startedAt,
+        executedBy: record.executedBy ?? 'scheduler',
+        environmentName: record.environmentName ?? 'Default',
         platformUrl,
       };
       sendRunNotification(notifCfg, summary).then(errs => {
@@ -1318,20 +1318,20 @@ function spawnRunWithSpec(record: RunRecord, specPath: string, headed?: boolean,
 // HTTP 402 = Payment Required — signals client to show upgrade CTA (P3-10)
 const UPGRADE_TIER: Record<string, string> = {
   scheduler: 'team',
-  sso:       'team',
+  sso: 'team',
   apiAccess: 'enterprise',
-  whiteLabel:'enterprise',
+  whiteLabel: 'enterprise',
 };
 
 function requireFeature(feature: keyof LicensePayload['features']) {
   return (_req: Request, res: Response, next: NextFunction): void => {
     if (!isFeatureEnabled(feature)) {
-      const p       = getLicensePayload();
+      const p = getLicensePayload();
       const upgrade = UPGRADE_TIER[feature as string] ?? 'enterprise';
       res.status(402).json({
-        error:   'Feature not available on your license tier',
+        error: 'Feature not available on your license tier',
         feature,
-        tier:    p?.tier ?? 'none',
+        tier: p?.tier ?? 'none',
         upgrade,   // client shows "Upgrade to {upgrade}" CTA
       });
       return;
@@ -1368,7 +1368,7 @@ function jiraDecryptToken(envelope: string): string {
 function getJiraClient(): JiraClient | null {
   const cfg = loadJiraConfig();
   let baseUrl = cfg?.baseUrl || config.jira.baseUrl;
-  let email   = cfg?.email   || config.jira.email;
+  let email = cfg?.email || config.jira.email;
   let apiToken = config.jira.apiToken;
   if (cfg?.apiTokenEnc) {
     try { apiToken = jiraDecryptToken(cfg.apiTokenEnc); }
@@ -1410,9 +1410,11 @@ async function closeDefectAsync(
     d.closedByRunId = runId;
     saveDefectsRegistry(reg);
   }
-  logAudit({ userId: 'system', username: 'system',
+  logAudit({
+    userId: 'system', username: 'system',
     action: 'DEFECT_AUTO_CLOSED', resourceType: 'defect', resourceId: defect.defectKey,
-    details: runId, ip: null });
+    details: runId, ip: null
+  });
   broadcast(runId, { type: 'defect_auto_closed', defectKey: defect.defectKey } as any);
 }
 
@@ -1468,20 +1470,20 @@ const SqliteSessionStore = SQLiteStore(session);
 const SESSION_SECRET = process.env.SESSION_SECRET || 'qa-agent-platform-secret-key-2026';
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const sessionStore = new SqliteSessionStore({
-  db:  'sessions.sqlite',
+  db: 'sessions.sqlite',
   dir: path.resolve('data'),
   table: 'sessions',
 }) as any;
 
 app.use(session({
-  secret:            SESSION_SECRET,
-  resave:            false,
+  secret: SESSION_SECRET,
+  resave: false,
   saveUninitialized: false,
-  store:             sessionStore,
+  store: sessionStore,
   cookie: {
     httpOnly: true,
-    secure:   false,          // set true if serving over HTTPS
-    maxAge:   getSessionTimeoutMs(),
+    secure: false,          // set true if serving over HTTPS
+    maxAge: getSessionTimeoutMs(),
     sameSite: 'lax',
   },
   name: config.ui.cookieName,   // 'qa.sid' prod | 'qa-dev.sid' dev — prevents cookie overlap
@@ -1493,11 +1495,11 @@ app.use(session({
 // Rolling: lastActivity is updated on every request so active users stay logged in.
 app.use((req: Request, res: Response, next: NextFunction) => {
   if (!req.session?.userId) { next(); return; }
-  const now     = Date.now();
-  const last    = (req.session as any).lastActivity as number | undefined;
+  const now = Date.now();
+  const last = (req.session as any).lastActivity as number | undefined;
   const timeout = getSessionTimeoutMs();
   if (last && now - last > timeout) {
-    req.session.destroy(() => {});
+    req.session.destroy(() => { });
     if (req.originalUrl.startsWith('/api/')) {
       res.status(401).json({ error: 'Session expired', code: 'SESSION_EXPIRED' });
     } else {
@@ -1522,25 +1524,32 @@ app.use((_req, res, next) => {
 // ── Login page served without auth ───────────────────────────────────────────
 app.get('/login', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'login.html')));
 app.get('/login.css', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'login.css')));
-app.get('/login.js',  (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'login.js')));
+app.get('/login.js', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'login.js')));
 
 // ── recorder.js — MUST be before express.static so origin injection fires ────
 // express.static would serve the raw file directly, bypassing the origin inject.
 // Access-Control-Allow-Origin: * required so the AUT page (cross-origin) can load
 // this script via a bookmarklet or console injection.
 app.get('/recorder.js', (req: Request, res: Response) => {
-  const origin     = `${req.protocol}://${req.get('host')}`;
+  const origin = `${req.protocol}://${req.get('host')}`;
   const scriptPath = path.join(PUBLIC_DIR, 'recorder.js');
   if (!fs.existsSync(scriptPath)) { res.status(404).send('// recorder.js not found'); return; }
-  const src      = fs.readFileSync(scriptPath, 'utf-8');
+  const src = fs.readFileSync(scriptPath, 'utf-8');
   const injected = `window.__qa_recorder_origin = ${JSON.stringify(origin)};\n${src}`;
   res.setHeader('Content-Type', 'application/javascript');
   res.setHeader('Access-Control-Allow-Origin', '*');   // allow cross-origin load from AUT
   res.send(injected);
 });
 
+// ── Main UI Entry Points (Protected) ──────────────────────────────────────────
+// Protect '/' and '/index.html' specifically to prevent a "flash" of the main UI
+// before the client-side auth check redirects to /login.
+app.get(['/', '/index.html'], requireAuth, (_req, res) => {
+  res.sendFile(path.join(PUBLIC_DIR, 'index.html'));
+});
+
 // Public static (CSS/JS/fonts for main app, served after auth check via SPA redirect)
-app.use(express.static(PUBLIC_DIR));
+app.use(express.static(PUBLIC_DIR, { index: false }));
 app.use('/requirements', express.static(path.resolve('requirements')));
 
 const upload = multer({
@@ -1591,8 +1600,8 @@ app.post('/api/auth/login', loginRateLimiter, async (req: Request, res: Response
   const { username, password } = req.body as { username?: string; password?: string };
   if (!username || !password) { res.status(400).json({ error: 'Username and password are required' }); return; }
 
-  const users  = readAll<User>(USERS);
-  const user   = users.find(u => (u.username === username.trim() || u.email === username.trim()) && u.isActive);
+  const users = readAll<User>(USERS);
+  const user = users.find(u => (u.username === username.trim() || u.email === username.trim()) && u.isActive);
   if (!user) {
     logAudit({ userId: null, username: username, action: 'LOGIN_FAILED', resourceType: null, resourceId: null, details: 'Unknown user', ip: req.ip ?? null });
     res.status(401).json({ error: 'Invalid username or password' }); return;
@@ -1623,10 +1632,10 @@ app.post('/api/auth/login', loginRateLimiter, async (req: Request, res: Response
     return;
   }
 
-  req.session.userId   = user.id;
+  req.session.userId = user.id;
   req.session.username = user.username;
-  req.session.role     = user.role;
-  req.session.loginAt  = new Date().toISOString();
+  req.session.role = user.role;
+  req.session.loginAt = new Date().toISOString();
   (req.session as unknown as Record<string, unknown>).ip = req.ip ?? null;
   recordLogin(user.id);
   res.json({ success: true, role: user.role, username: user.username });
@@ -1642,15 +1651,15 @@ app.post('/api/auth/change-password', async (req: Request, res: Response) => {
   const user = findById<User>(USERS, userId);
   if (!user) { res.status(404).json({ error: 'User not found' }); return; }
 
-  user.passwordHash        = await hashPassword(newPassword);
+  user.passwordHash = await hashPassword(newPassword);
   user.forcePasswordChange = false;
   upsert(USERS, user);
   logAudit({ userId: user.id, username: user.username, action: 'PASSWORD_CHANGED', resourceType: null, resourceId: null, details: null, ip: req.ip ?? null });
 
-  req.session.userId   = user.id;
+  req.session.userId = user.id;
   req.session.username = user.username;
-  req.session.role     = user.role;
-  req.session.loginAt  = new Date().toISOString();
+  req.session.role = user.role;
+  req.session.loginAt = new Date().toISOString();
   res.json({ success: true });
 });
 
@@ -1711,7 +1720,7 @@ app.post('/api/recorder/step', (req: Request, res: Response) => {
 
   session.steps.push(step);
   recorderSsePush(event.token, 'recorder:step', { step, locatorCreated, locatorName, stepNum: session.stepCount });
-  logger.info(`[recorder] Step ${session.stepCount}: ${step.keyword} ${step.locator || step.value || ''} (${event.token.slice(0,8)})`);
+  logger.info(`[recorder] Step ${session.stepCount}: ${step.keyword} ${step.locator || step.value || ''} (${event.token.slice(0, 8)})`);
   res.json({ success: true, stepNum: session.stepCount });
 });
 
@@ -1757,24 +1766,24 @@ app.get('/api/runs', (req: Request, res: Response) => {
   if (filterProjectId) result = result.filter(r => r.projectId === filterProjectId);
   result.sort((a, b) => b.startedAt.localeCompare(a.startedAt));
   res.json(result.slice(0, 100).map(r => ({
-    runId:           r.runId,
-    planId:          r.planId,
-    startedAt:       r.startedAt,
-    finishedAt:      r.finishedAt ?? null,
-    status:          r.status,
-    passed:          r.passed,
-    failed:          r.failed,
-    total:           r.total,
-    projectId:       r.projectId       ?? null,
-    projectName:     r.projectName     ?? null,
-    suiteId:         r.suiteId         ?? null,
-    suiteName:       r.suiteName       ?? null,
-    environmentId:   r.environmentId   ?? null,
+    runId: r.runId,
+    planId: r.planId,
+    startedAt: r.startedAt,
+    finishedAt: r.finishedAt ?? null,
+    status: r.status,
+    passed: r.passed,
+    failed: r.failed,
+    total: r.total,
+    projectId: r.projectId ?? null,
+    projectName: r.projectName ?? null,
+    suiteId: r.suiteId ?? null,
+    suiteName: r.suiteName ?? null,
+    environmentId: r.environmentId ?? null,
     environmentName: r.environmentName ?? null,
-    executedBy:      r.executedBy      ?? null,
-    healCount:       r.healEvents?.length ?? 0,
-    browsers:        r.browsers ?? ['chromium'],
-    tests:           r.tests   ?? [],
+    executedBy: r.executedBy ?? null,
+    healCount: r.healEvents?.length ?? 0,
+    browsers: r.browsers ?? ['chromium'],
+    tests: r.tests ?? [],
   })));
 });
 
@@ -1788,7 +1797,7 @@ app.post('/api/nl-suggest', requireAuth, async (req: Request, res: Response) => 
   if (!description?.trim()) { res.status(400).json({ error: 'description is required' }); return; }
 
   const settings = (readAll<AppSettings & { id: string }>(SETTINGS)[0] ?? DEFAULT_SETTINGS) as any;
-  const provider  = (settings.nlProvider || '').trim();
+  const provider = (settings.nlProvider || '').trim();
 
   if (!provider) {
     res.status(503).json({ error: 'NL Suggestion not configured — go to Admin → Settings → AI Settings to choose a provider.' });
@@ -1796,9 +1805,9 @@ app.post('/api/nl-suggest', requireAuth, async (req: Request, res: Response) => 
   }
 
   // Migrate legacy anthropicApiKey → nlApiKey
-  const apiKey  = (settings.nlApiKey || settings.anthropicApiKey || '').trim();
+  const apiKey = (settings.nlApiKey || settings.anthropicApiKey || '').trim();
   const baseUrl = (settings.nlBaseUrl || '').trim();
-  const model   = (settings.nlModel  || '').trim();
+  const model = (settings.nlModel || '').trim();
 
   // Validate provider needs
   if (provider !== 'ollama' && !apiKey) {
@@ -1810,15 +1819,15 @@ app.post('/api/nl-suggest', requireAuth, async (req: Request, res: Response) => 
   }
 
   // Build keyword + locator context
-  const kwData   = JSON.parse(require('fs').readFileSync(require('path').resolve('src/data/keywords.json'), 'utf-8'));
+  const kwData = JSON.parse(require('fs').readFileSync(require('path').resolve('src/data/keywords.json'), 'utf-8'));
   const kwArray: Array<{ key: string; label: string; helpLabel?: string }> = Array.isArray(kwData)
     ? kwData
     : (kwData.categories || []).flatMap((cat: any) => Array.isArray(cat.keywords) ? cat.keywords : []);
-  const kwList   = kwArray.map(k => `${k.key}: ${k.helpLabel || k.label}`).join('\n');
+  const kwList = kwArray.map(k => `${k.key}: ${k.helpLabel || k.label}`).join('\n');
   const locators = projectId
     ? readAll<import('../data/types').Locator>(LOCATORS).filter(l => !l.projectId || l.projectId === projectId)
     : [];
-  const locList  = locators.map(l => l.name).join(', ') || '(none configured)';
+  const locList = locators.map(l => l.name).join(', ') || '(none configured)';
 
   const cfg: NlProviderConfig = { provider: provider as any, apiKey, model, baseUrl };
 
@@ -1868,7 +1877,7 @@ app.get('/api/analytics', requireAuth, (req: Request, res: Response) => {
     const entry = dayMap.get(day) ?? { passed: 0, failed: 0, total: 0 };
     entry.passed += r.passed ?? 0;
     entry.failed += r.failed ?? 0;
-    entry.total  += r.total  ?? 0;
+    entry.total += r.total ?? 0;
     dayMap.set(day, entry);
   }
   const passRateTrend = [...dayMap.entries()].map(([day, e]) => ({
@@ -1882,7 +1891,7 @@ app.get('/api/analytics', requireAuth, (req: Request, res: Response) => {
   for (const r of pool) {
     if (!r.startedAt || !r.finishedAt) continue;
     const day = r.startedAt.slice(0, 10);
-    const ms  = new Date(r.finishedAt).getTime() - new Date(r.startedAt).getTime();
+    const ms = new Date(r.finishedAt).getTime() - new Date(r.startedAt).getTime();
     if (!durMap.has(day)) durMap.set(day, []);
     durMap.get(day)!.push(ms);
   }
@@ -1923,17 +1932,17 @@ app.get('/api/analytics', requireAuth, (req: Request, res: Response) => {
     entry.runs++;
     entry.passed += r.passed ?? 0;
     entry.failed += r.failed ?? 0;
-    entry.total  += r.total  ?? 0;
+    entry.total += r.total ?? 0;
     if (r.startedAt && r.finishedAt) entry.totalMs += new Date(r.finishedAt).getTime() - new Date(r.startedAt).getTime();
     suiteMap.set(key, entry);
   }
   const suiteComparison = [...suiteMap.values()].sort((a, b) => b.runs - a.runs);
 
   // 6. Summary KPIs
-  const totalRuns   = pool.length;
+  const totalRuns = pool.length;
   const totalPassed = pool.reduce((s, r) => s + (r.passed ?? 0), 0);
   const totalFailed = pool.reduce((s, r) => s + (r.failed ?? 0), 0);
-  const totalTests  = pool.reduce((s, r) => s + (r.total  ?? 0), 0);
+  const totalTests = pool.reduce((s, r) => s + (r.total ?? 0), 0);
   const overallPassRate = totalTests > 0 ? Math.round((totalPassed / totalTests) * 100) : 0;
 
   res.json({
@@ -1955,7 +1964,7 @@ app.get('/api/visual-baselines', requireAuth, (req: Request, res: Response) => {
 app.get('/api/visual-baselines/:id/image', requireAuth, (req: Request, res: Response) => {
   const entry = getBaseline(req.params.id);
   if (!entry) { res.status(404).json({ error: 'Baseline not found' }); return; }
-  const type  = (req.query.type as 'baseline' | 'actual' | 'diff') || 'baseline';
+  const type = (req.query.type as 'baseline' | 'actual' | 'diff') || 'baseline';
   const imgPath = baselineImagePath(entry.projectId, entry.id, type);
   if (!fs.existsSync(imgPath)) { res.status(404).json({ error: 'Image not found' }); return; }
   res.setHeader('Content-Type', 'image/png');
@@ -2079,10 +2088,10 @@ app.get('/api/locator-health', requireAuth, (req: Request, res: Response) => {
 // persists the health report to data/prescan/<runId>.json, also upserts PageModel.
 app.post('/api/prescan', requireAuth, (req: Request, res: Response) => {
   const { projectId, pageKey, candidates, runId } = req.body as {
-    projectId:  string;
-    pageKey:    string;
+    projectId: string;
+    pageKey: string;
     candidates: DomCandidate[];
-    runId:      string;
+    runId: string;
   };
   if (!projectId || !pageKey || !runId) {
     res.status(400).json({ error: 'projectId, pageKey, and runId are required' }); return;
@@ -2091,22 +2100,22 @@ app.post('/api/prescan', requireAuth, (req: Request, res: Response) => {
   // Find all locators for this project+page that have a healingProfile
   const locators = readAll<Locator>(LOCATORS).filter(
     l => l.projectId === projectId &&
-         l.pageKey   === pageKey   &&
-         l.healingProfile != null,
+      l.pageKey === pageKey &&
+      l.healingProfile != null,
   );
 
   const results = locators.map(loc => {
     const scored = (candidates?.length)
       ? scoreCandidates(loc.healingProfile!, candidates)
       : [];
-    const best   = scored[0];
-    const score  = best?.score ?? 0;
+    const best = scored[0];
+    const score = best?.score ?? 0;
     const status: 'healthy' | 'degraded' | 'broken' =
       score >= 80 ? 'healthy' : score >= 50 ? 'degraded' : 'broken';
     return {
-      id:            loc.id,
-      name:          loc.name,
-      selector:      loc.selector,
+      id: loc.id,
+      name: loc.name,
+      selector: loc.selector,
       score,
       status,
       bestCandidate: best?.bestSelector ?? null,
@@ -2118,7 +2127,7 @@ app.post('/api/prescan', requireAuth, (req: Request, res: Response) => {
     try {
       upsertPageModel({
         projectId, pageKey,
-        locatorIds:   locators.map(l => l.id),
+        locatorIds: locators.map(l => l.id),
         capturedFrom: 'prescan',
       });
     } catch (e) { logger.warn(`[prescan] PageModel upsert failed: ${e}`); }
@@ -2162,17 +2171,17 @@ app.post('/api/prescan-trigger', requireAuth, (req: Request, res: Response) => {
   const { projectId, url, pageKey } = req.body as { projectId: string; url: string; pageKey?: string };
   if (!projectId || !url) { res.status(400).json({ error: 'projectId and url required' }); return; }
 
-  const scanId  = uuidv4();
-  const pk      = pageKey || (() => {
+  const scanId = uuidv4();
+  const pk = pageKey || (() => {
     try { const u = new URL(url); return u.pathname.replace(/\/\d+(?=\/|$)/g, '/:id').replace(/\/$/, '') || '/'; }
     catch { return '/'; }
   })();
-  const port    = PORT;
+  const port = PORT;
 
   // Write a minimal prescan spec to tests/codegen/
-  const specDir  = path.resolve('tests', 'codegen');
-  const specPath = path.join(specDir, `prescan-${scanId.slice(0,8)}.spec.ts`);
-  const esc      = (s: string) => s.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  const specDir = path.resolve('tests', 'codegen');
+  const specPath = path.join(specDir, `prescan-${scanId.slice(0, 8)}.spec.ts`);
+  const esc = (s: string) => s.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 
   const specContent = [
     `/** Auto-generated Prescan Spec — QA Agent Platform */`,
@@ -2236,9 +2245,9 @@ app.post('/api/prescan-trigger', requireAuth, (req: Request, res: Response) => {
   const cp = require('child_process');
   const relSpec = path.relative(path.resolve('.'), specPath).replace(/\\/g, '/');
   cp.spawn('npx', ['playwright', 'test', relSpec, '--project=chromium', '--reporter=list'], {
-    cwd:   path.resolve('.'),
+    cwd: path.resolve('.'),
     shell: true,
-    env:   { ...process.env, HEADLESS: 'true', APP_BASE_URL: url },
+    env: { ...process.env, HEADLESS: 'true', APP_BASE_URL: url },
     stdio: 'ignore',
   });
 
@@ -2252,12 +2261,12 @@ app.post('/api/prescan-trigger', requireAuth, (req: Request, res: Response) => {
 // writes a HealingProposal, optionally updates the Locator Repo, and returns the best match.
 app.post('/api/heal', requireAuth, (req: Request, res: Response) => {
   const { locatorId, profile, candidates, stepOrder, keyword, runId } = req.body as {
-    locatorId:  string;
-    profile:    any;
+    locatorId: string;
+    profile: any;
     candidates: DomCandidate[];
-    stepOrder:  number;
-    keyword:    string;
-    runId:      string;
+    stepOrder: number;
+    keyword: string;
+    runId: string;
   };
 
   if (!locatorId || !profile || !candidates?.length) {
@@ -2279,22 +2288,22 @@ app.post('/api/heal', requireAuth, (req: Request, res: Response) => {
 
   // Build HealingProposal record
   const proposalId = uuidv4();
-  const autoApply  = best.score >= T3_AUTO_THRESHOLD;
+  const autoApply = best.score >= T3_AUTO_THRESHOLD;
   const proposal: HealingProposal = {
-    id:              proposalId,
-    projectId:       locEntry?.projectId ?? '',
+    id: proposalId,
+    projectId: locEntry?.projectId ?? '',
     locatorId,
-    locatorName:     locEntry?.name ?? locatorId,
-    scriptId:        '',      // not available at this point — filled by future enhancement
-    scriptTitle:     '',
+    locatorName: locEntry?.name ?? locatorId,
+    scriptId: '',      // not available at this point — filled by future enhancement
+    scriptTitle: '',
     stepOrder,
-    oldSelector:     locEntry?.selector ?? '',
+    oldSelector: locEntry?.selector ?? '',
     oldSelectorType: locEntry?.selectorType ?? 'css',
-    newSelector:     best.bestSelector,
+    newSelector: best.bestSelector,
     newSelectorType: best.bestType,
-    confidence:      best.score,
-    healedAt:        new Date().toISOString(),
-    status:          autoApply ? 'auto-applied' : 'pending-review',
+    confidence: best.score,
+    healedAt: new Date().toISOString(),
+    status: autoApply ? 'auto-applied' : 'pending-review',
   };
 
   // Persist proposal to data/proposals/<id>.json
@@ -2311,18 +2320,18 @@ app.post('/api/heal', requireAuth, (req: Request, res: Response) => {
 
   // T3 auto-apply (score ≥ threshold): promote to primary + backfill scripts/functions
   if (autoApply && locEntry) {
-    const demoted      = { selector: locEntry.selector, selectorType: locEntry.selectorType, confidence: 50 };
+    const demoted = { selector: locEntry.selector, selectorType: locEntry.selectorType, confidence: 50 };
     const existingAlts = (locEntry.alternatives ?? []).filter(a => a.selector !== best.bestSelector && a.selector !== locEntry.selector);
     upsert(LOCATORS, {
       ...locEntry,
-      selector:     best.bestSelector,
+      selector: best.bestSelector,
       selectorType: best.bestType as Locator['selectorType'],
       alternatives: [demoted, ...existingAlts].slice(0, 10),
       healingStats: {
-        healCount:      (locEntry.healingStats?.healCount ?? 0) + 1,
-        lastHealedAt:   new Date().toISOString(),
+        healCount: (locEntry.healingStats?.healCount ?? 0) + 1,
+        lastHealedAt: new Date().toISOString(),
         lastHealedFrom: locEntry.selector,
-        lastHealedBy:   'auto',
+        lastHealedBy: 'auto',
       },
       updatedAt: new Date().toISOString(),
     });
@@ -2332,12 +2341,12 @@ app.post('/api/heal', requireAuth, (req: Request, res: Response) => {
   logger.info(`[heal] T3 locator=${locatorId} score=${best.score} auto=${autoApply} selector=${best.bestSelector}`);
 
   res.json({
-    selector:     best.bestSelector,
+    selector: best.bestSelector,
     selectorType: best.bestType,
-    score:        best.score,
-    autoApplied:  autoApply,
+    score: best.score,
+    autoApplied: autoApply,
     proposalId,
-    breakdown:    best.breakdown,
+    breakdown: best.breakdown,
   });
 });
 
@@ -2355,7 +2364,7 @@ app.get('/api/proposals', requireAuth, (req: Request, res: Response) => {
 
   let result = proposals;
   if (projectId) result = result.filter(p => p.projectId === projectId);
-  if (status)    result = result.filter(p => p.status === status);
+  if (status) result = result.filter(p => p.status === status);
   result.sort((a, b) => b.healedAt.localeCompare(a.healedAt));
   res.json(result);
 });
@@ -2379,7 +2388,7 @@ app.post('/api/proposals/:id/review', requireAuth, (req: Request, res: Response)
 
   try {
     const proposal: HealingProposal = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-    proposal.status     = action;
+    proposal.status = action;
     proposal.reviewedBy = user?.username ?? 'unknown';
     proposal.reviewedAt = new Date().toISOString();
     fs.writeFileSync(filePath, JSON.stringify(proposal, null, 2));
@@ -2389,34 +2398,34 @@ app.post('/api/proposals/:id/review', requireAuth, (req: Request, res: Response)
     if (action === 'approved' && locEntry) {
       // Permanent: promote candidate to primary, demote old primary to alternatives,
       // then backfill every script step and common function step referencing this locator.
-      const demoted      = { selector: locEntry.selector, selectorType: locEntry.selectorType, confidence: 50 };
+      const demoted = { selector: locEntry.selector, selectorType: locEntry.selectorType, confidence: 50 };
       const existingAlts = (locEntry.alternatives ?? []).filter(a => a.selector !== proposal.newSelector && a.selector !== locEntry.selector);
       upsert(LOCATORS, {
         ...locEntry,
-        selector:     proposal.newSelector,
+        selector: proposal.newSelector,
         selectorType: proposal.newSelectorType as Locator['selectorType'],
         alternatives: [demoted, ...existingAlts].slice(0, 10),
         healingStats: {
-          healCount:      (locEntry.healingStats?.healCount ?? 0) + 1,
-          lastHealedAt:   proposal.reviewedAt!,
+          healCount: (locEntry.healingStats?.healCount ?? 0) + 1,
+          lastHealedAt: proposal.reviewedAt!,
           lastHealedFrom: proposal.oldSelector,
-          lastHealedBy:   'approved',
+          lastHealedBy: 'approved',
         },
         updatedAt: new Date().toISOString(),
       });
       backfillScriptsAndFunctions(locEntry.id, locEntry.name, proposal.newSelector, proposal.newSelectorType);
     } else if (action === 'approved-temporary' && locEntry) {
       // Temporary: add candidate to alternatives only — primary and steps unchanged
-      const newAlt       = { selector: proposal.newSelector, selectorType: proposal.newSelectorType, confidence: proposal.confidence };
+      const newAlt = { selector: proposal.newSelector, selectorType: proposal.newSelectorType, confidence: proposal.confidence };
       const existingAlts = (locEntry.alternatives ?? []).filter(a => a.selector !== proposal.newSelector);
       upsert(LOCATORS, {
         ...locEntry,
         alternatives: [newAlt, ...existingAlts].slice(0, 10),
         healingStats: {
-          healCount:      (locEntry.healingStats?.healCount ?? 0) + 1,
-          lastHealedAt:   proposal.reviewedAt!,
+          healCount: (locEntry.healingStats?.healCount ?? 0) + 1,
+          lastHealedAt: proposal.reviewedAt!,
           lastHealedFrom: proposal.oldSelector,
-          lastHealedBy:   'approved',
+          lastHealedBy: 'approved',
         },
         updatedAt: new Date().toISOString(),
       });
@@ -2475,28 +2484,28 @@ app.post('/api/debug/heal-respond', requireAuth, (req: Request, res: Response) =
   // P4-E: On Approve — write HealingProposal + update Locator Repo
   if (action === 'approve' && selector && locatorId) {
     const user = (req.session as any)?.username ?? 'unknown';
-    const now  = new Date().toISOString();
+    const now = new Date().toISOString();
 
     // Create and persist an 'approved' HealingProposal
     const proposalId = uuidv4();
-    const locEntry   = readAll<Locator>(LOCATORS).find(l => l.id === locatorId);
+    const locEntry = readAll<Locator>(LOCATORS).find(l => l.id === locatorId);
     const proposal: HealingProposal = {
-      id:              proposalId,
-      projectId:       projectId ?? locEntry?.projectId ?? '',
+      id: proposalId,
+      projectId: projectId ?? locEntry?.projectId ?? '',
       locatorId,
-      locatorName:     locEntry?.name ?? locatorId,
-      scriptId:        '',          // not known at T4 time
-      scriptTitle:     '',
-      stepOrder:       stepOrder ?? 0,
-      oldSelector:     oldSelector ?? locEntry?.selector ?? '',
+      locatorName: locEntry?.name ?? locatorId,
+      scriptId: '',          // not known at T4 time
+      scriptTitle: '',
+      stepOrder: stepOrder ?? 0,
+      oldSelector: oldSelector ?? locEntry?.selector ?? '',
       oldSelectorType: oldSelectorType ?? locEntry?.selectorType ?? 'css',
-      newSelector:     selector,
+      newSelector: selector,
       newSelectorType: selectorType ?? 'css',
-      confidence:      score ?? 0,
-      healedAt:        now,
-      status:          'approved',
-      reviewedBy:      user,
-      reviewedAt:      now,
+      confidence: score ?? 0,
+      healedAt: now,
+      status: 'approved',
+      reviewedBy: user,
+      reviewedAt: now,
     };
 
     const proposalsDir = path.resolve('data', 'proposals');
@@ -2511,16 +2520,16 @@ app.post('/api/debug/heal-respond', requireAuth, (req: Request, res: Response) =
     if (locEntry) {
       const newAlt = { selector, selectorType: selectorType ?? 'css', confidence: score ?? 0 };
       const existing = locEntry.alternatives ?? [];
-      const deduped  = existing.filter((a: { selector: string }) => a.selector !== selector);
+      const deduped = existing.filter((a: { selector: string }) => a.selector !== selector);
       deduped.unshift(newAlt);
       upsert(LOCATORS, {
         ...locEntry,
         alternatives: deduped.slice(0, 10),
         healingStats: {
-          healCount:      (locEntry.healingStats?.healCount ?? 0) + 1,
-          lastHealedAt:   now,
+          healCount: (locEntry.healingStats?.healCount ?? 0) + 1,
+          lastHealedAt: now,
           lastHealedFrom: oldSelector ?? locEntry.selector,
-          lastHealedBy:   'approved',
+          lastHealedBy: 'approved',
         },
       });
       logger.info(`[heal-respond] T4 approved locator=${locatorId} newSelector=${selector}`);
@@ -2605,7 +2614,7 @@ app.get('/recorder-loader', requireAuth, (req: Request, res: Response) => {
 <body>
 <div class="card">
   <h2>&#9679; QA Recorder — Active</h2>
-  <div class="subtitle">Token: ${escapeHtml(token.slice(0,8))}… &nbsp;|&nbsp; App: ${escapeHtml(autUrl)}</div>
+  <div class="subtitle">Token: ${escapeHtml(token.slice(0, 8))}… &nbsp;|&nbsp; App: ${escapeHtml(autUrl)}</div>
 
   <!-- Step 1 -->
   <div style="font-weight:600;font-size:13px;margin-bottom:10px;color:#94a3b8">STEP 1 &mdash; Open your app and log in</div>
@@ -2694,7 +2703,7 @@ app.get('/recorder-loader', requireAuth, (req: Request, res: Response) => {
 });
 
 function escapeHtml(s: string): string {
-  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 // ── Screenshot file serving ───────────────────────────────────────────────────
@@ -2703,7 +2712,7 @@ app.get('/screenshots/*', requireAuth, (req: Request, res: Response) => {
   const rel = (req.params as any)[0] as string;
   // Restrict to this instance's test-results directory only
   const base = config.paths.testResults;
-  const abs  = path.resolve(base, rel);
+  const abs = path.resolve(base, rel);
   if (!abs.startsWith(path.resolve(base))) { res.status(403).end(); return; }
   if (fs.existsSync(abs)) { res.sendFile(abs); return; }
   res.status(404).end();
@@ -2773,7 +2782,7 @@ function handleTraceRequest(req: Request, res: Response, streamFile: boolean): v
   }
 
   // 5. Path safety guard
-  const baseDir  = path.resolve(config.paths.testResults);
+  const baseDir = path.resolve(config.paths.testResults);
   const resolved = path.resolve(baseDir, ev.tracePath);
   if (!resolved.toLowerCase().startsWith((baseDir + path.sep).toLowerCase())) {
     res.setHeader('X-Error-Code', 'BAD_REQUEST');
@@ -2814,13 +2823,13 @@ function handleTraceRequest(req: Request, res: Response, streamFile: boolean): v
 
   // 9. Audit log (GET only)
   logAudit({
-    userId:       (req as any).session?.userId ?? null,
-    username:     (req as any).session?.username ?? null,
-    action:       'TRACE_VIEWED',
+    userId: (req as any).session?.userId ?? null,
+    username: (req as any).session?.username ?? null,
+    action: 'TRACE_VIEWED',
     resourceType: 'trace',
-    resourceId:   `${runId}::${testId}`,
-    details:      requestId,
-    ip:           req.ip ?? null,
+    resourceId: `${runId}::${testId}`,
+    details: requestId,
+    ip: req.ip ?? null,
   });
 
   // 10. Stream
@@ -2837,7 +2846,7 @@ function handleTraceRequest(req: Request, res: Response, streamFile: boolean): v
   stream.pipe(res);
 }
 
-app.get('/api/trace/:runId/:testId',  requireAuthOrApiKey, (req: Request, res: Response) => handleTraceRequest(req, res, true));
+app.get('/api/trace/:runId/:testId', requireAuthOrApiKey, (req: Request, res: Response) => handleTraceRequest(req, res, true));
 app.head('/api/trace/:runId/:testId', requireAuthOrApiKey, (req: Request, res: Response) => handleTraceRequest(req, res, false));
 
 // ── Test artifact serving (video + trace) ─────────────────────────────────────
@@ -2845,9 +2854,9 @@ app.head('/api/trace/:runId/:testId', requireAuthOrApiKey, (req: Request, res: R
 // Video:  opened in a new browser tab via target="_blank" — browser plays it natively.
 // Trace:  downloaded as a ZIP via the Content-Disposition header.
 app.get('/test-artifacts/*', requireAuth, (req: Request, res: Response) => {
-  const rel  = (req.params as any)[0] as string;
+  const rel = (req.params as any)[0] as string;
   const base = config.paths.testResults;
-  const abs  = path.resolve(base, rel);
+  const abs = path.resolve(base, rel);
   // Path traversal guard — must stay inside test-results
   if (!abs.startsWith(path.resolve(base))) { res.status(403).end(); return; }
   if (!fs.existsSync(abs)) { res.status(404).end(); return; }
@@ -2876,10 +2885,10 @@ app.get('/debug-screenshot/:path(*)', requireAuth, (req: Request, res: Response)
 // ── TC Builder: keyword registry ──────────────────────────────────────────────
 
 const KEYWORD_REGISTRY: Record<string, string[]> = {
-  'Navigation':       ['LOGIN', 'NAVIGATE', 'OPEN FORM', 'BACK'],
+  'Navigation': ['LOGIN', 'NAVIGATE', 'OPEN FORM', 'BACK'],
   'Form Interaction': ['FILL', 'SELECT', 'CHECK', 'UNCHECK', 'CLICK RADIO', 'ADD ROW'],
-  'Flow Control':     ['SAVE', 'SEARCH', 'DELETE', 'CONFIRM DELETE', 'VERIFY DELETED', 'VERIFY'],
-  'Session':          ['LOGOUT', 'SCREENSHOT'],
+  'Flow Control': ['SAVE', 'SEARCH', 'DELETE', 'CONFIRM DELETE', 'VERIFY DELETED', 'VERIFY'],
+  'Session': ['LOGOUT', 'SCREENSHOT'],
 };
 
 const FIELDMAP_DIR = path.resolve('test-plans/fieldmaps');
@@ -2900,9 +2909,9 @@ app.get('/api/tc/list', (_req: Request, res: Response) => {
       try {
         const raw = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf-8'));
         return {
-          planId:    raw.planId,
-          planPath:  path.join(dir, f),
-          fieldMap:  raw.fieldMap ?? [],
+          planId: raw.planId,
+          planPath: path.join(dir, f),
+          fieldMap: raw.fieldMap ?? [],
           testCases: (raw.testCases ?? []).map((tc: any) => ({
             id: tc.id, title: tc.title, module: tc.module, priority: tc.priority,
           })),
@@ -2925,24 +2934,24 @@ app.post('/api/tc/save', (req: Request, res: Response) => {
   if (!tc?.id) { res.status(400).json({ error: 'tc.id is required' }); return; }
 
   const crypto = require('crypto') as typeof import('crypto');
-  const planId  = `plan-${crypto.createHash('md5').update(tc.id + (tc.module ?? '') + Date.now()).digest('hex').slice(0, 8)}`;
+  const planId = `plan-${crypto.createHash('md5').update(tc.id + (tc.module ?? '') + Date.now()).digest('hex').slice(0, 8)}`;
 
   const steps = (tc.steps as any[] ?? []).map((s: any, i: number) => {
-    const kw    = (s.keyword  ?? '').trim();
-    const det   = (s.detail   ?? s.label ?? '').trim();
-    const mod   = (s.modifier ?? '').trim();
-    const desc  = [mod, kw, det ? ': ' + det : ''].filter(Boolean).join(' ').trim();
+    const kw = (s.keyword ?? '').trim();
+    const det = (s.detail ?? s.label ?? '').trim();
+    const mod = (s.modifier ?? '').trim();
+    const desc = [mod, kw, det ? ': ' + det : ''].filter(Boolean).join(' ').trim();
     // Inline field data takes precedence over separate fieldMap lookup
-    const inlineSelector  = (s.selector  ?? '').trim() || null;
+    const inlineSelector = (s.selector ?? '').trim() || null;
     const inlineFieldType = (s.fieldType ?? '').trim() || null;
-    const inlineLabel     = (s.label     ?? '').trim() || null;
-    const fm   = inlineSelector ? null : (fieldMap ?? []).find((f: any) => f.uiLabel === det);
+    const inlineLabel = (s.label ?? '').trim() || null;
+    const fm = inlineSelector ? null : (fieldMap ?? []).find((f: any) => f.uiLabel === det);
     return {
       stepNumber: i + 1, action: kw.toLowerCase().replace(/\s+/g, '_'),
       description: desc,
-      selector:   inlineSelector  ?? fm?.selector  ?? null,
-      fieldType:  inlineFieldType ?? fm?.fieldType ?? null,
-      fieldLabel: inlineLabel     ?? fm?.uiLabel   ?? null,
+      selector: inlineSelector ?? fm?.selector ?? null,
+      fieldType: inlineFieldType ?? fm?.fieldType ?? null,
+      fieldLabel: inlineLabel ?? fm?.uiLabel ?? null,
       value: (s.value ?? '').trim() || null,
       fallbackSelectors: [],
     };
@@ -2988,7 +2997,7 @@ app.delete('/api/tc/:planId', (req: Request, res: Response) => {
 
 app.get('/api/fieldmap/:module', (req: Request, res: Response) => {
   const safe = req.params.module.replace(/[^a-zA-Z0-9\-]/g, '_');
-  const f    = path.join(FIELDMAP_DIR, `${safe}.json`);
+  const f = path.join(FIELDMAP_DIR, `${safe}.json`);
   res.json(fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, 'utf-8')) : []);
 });
 
@@ -3027,9 +3036,9 @@ app.put('/api/admin/users/:id', requireAdmin, async (req: Request, res: Response
   const user = findById<User>(USERS, req.params.id);
   if (!user) { res.status(404).json({ error: 'User not found' }); return; }
   const { email, role, isActive, forcePasswordChange, password } = req.body as any;
-  if (email !== undefined)               user.email               = sanitizeInput(email);
-  if (role !== undefined)                user.role                = role === 'admin' ? 'admin' : 'tester';
-  if (isActive !== undefined)            user.isActive            = !!isActive;
+  if (email !== undefined) user.email = sanitizeInput(email);
+  if (role !== undefined) user.role = role === 'admin' ? 'admin' : 'tester';
+  if (isActive !== undefined) user.isActive = !!isActive;
   if (forcePasswordChange !== undefined) user.forcePasswordChange = !!forcePasswordChange;
   if (password) {
     const err = validatePasswordStrength(password);
@@ -3062,15 +3071,15 @@ app.post('/api/admin/apikeys', requireAdmin, (req: Request, res: Response) => {
   const rawKey = crypto.randomBytes(32).toString('hex');
   const keyHash = crypto.createHash('sha256').update(rawKey).digest('hex');
   const key: ApiKey = {
-    id:         uuidv4(),
-    name:       sanitizeInput(name),
+    id: uuidv4(),
+    name: sanitizeInput(name),
     keyHash,
-    prefix:     rawKey.slice(0, 8),
-    projectId:  projectId ?? null,
-    createdBy:  req.session.username ?? 'admin',
-    createdAt:  new Date().toISOString(),
+    prefix: rawKey.slice(0, 8),
+    projectId: projectId ?? null,
+    createdBy: req.session.username ?? 'admin',
+    createdAt: new Date().toISOString(),
     lastUsedAt: null,
-    expiresAt:  expiresAt ?? null,
+    expiresAt: expiresAt ?? null,
   };
   upsert(APIKEYS, key);
   logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'APIKEY_CREATED', resourceType: 'apikey', resourceId: key.id, details: key.name, ip: req.ip ?? null });
@@ -3122,8 +3131,8 @@ app.get('/api/test-files', (req: Request, res: Response) => {
 // DELETE /api/test-files/:projectId/:filename  — remove a file from server
 app.delete('/api/test-files/:projectId/:filename', (req: Request, res: Response) => {
   const projectId = req.params.projectId.replace(/[^a-zA-Z0-9_-]/g, '');
-  const filename  = req.params.filename.replace(/[^a-zA-Z0-9._-]/g, '_');
-  const filePath  = path.join(TEST_FILES_DIR, projectId, filename);
+  const filename = req.params.filename.replace(/[^a-zA-Z0-9._-]/g, '_');
+  const filePath = path.join(TEST_FILES_DIR, projectId, filename);
   if (!filePath.startsWith(TEST_FILES_DIR)) { res.status(403).json({ error: 'Forbidden' }); return; }
   if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
   res.json({ ok: true });
@@ -3150,7 +3159,7 @@ app.put('/api/admin/settings', requireAdmin, (req: Request, res: Response) => {
   };
   // Preserve secrets — only overwrite if non-empty value sent
   const incomingKey = (req.body.nlApiKey || req.body.anthropicApiKey || '').trim();
-  const nlApiKey    = incomingKey || (current as any).nlApiKey || (current as any).anthropicApiKey || '';
+  const nlApiKey = incomingKey || (current as any).nlApiKey || (current as any).anthropicApiKey || '';
   const { nlApiKey: _d1, anthropicApiKey: _d2, ...restBody } = req.body as any;
   const updated = { ...current, ...restBody, notifications, nlApiKey, id: 'global' };
   writeAll(SETTINGS, [updated]);
@@ -3162,7 +3171,7 @@ app.put('/api/admin/settings', requireAdmin, (req: Request, res: Response) => {
 app.post('/api/admin/settings/test-notification', requireAdmin, async (req: Request, res: Response) => {
   try {
     const settingsRow = readAll<AppSettings & { id: string }>(SETTINGS)[0];
-    const notifCfg   = settingsRow?.notifications ?? DEFAULT_NOTIFICATION_SETTINGS;
+    const notifCfg = settingsRow?.notifications ?? DEFAULT_NOTIFICATION_SETTINGS;
     const platformUrl = `${req.protocol}://${req.get('host')}`;
     const errors = await sendTestNotification(notifCfg, platformUrl);
     const hasError = Object.values(errors).some(Boolean);
@@ -3205,7 +3214,7 @@ app.put('/api/jira/config', requireAdmin, (req: Request, res: Response) => {
     closeTransitionName: String(b.closeTransitionName),
     maxAttachmentMB: Number.isFinite(b.maxAttachmentMB) ? Number(b.maxAttachmentMB) : 50,
     baseUrl: b.baseUrl ? String(b.baseUrl).trim().replace(/\/$/, '') : (existing?.baseUrl || ''),
-    email:   b.email   ? String(b.email).trim()   : (existing?.email   || ''),
+    email: b.email ? String(b.email).trim() : (existing?.email || ''),
     updatedAt: new Date().toISOString(),
     updatedBy: req.session.username || 'unknown',
   };
@@ -3216,9 +3225,11 @@ app.put('/api/jira/config', requireAdmin, (req: Request, res: Response) => {
     cfg.apiTokenEnc = existing.apiTokenEnc;
   }
   saveJiraConfig(cfg);
-  logAudit({ userId: req.session.userId!, username: req.session.username!,
+  logAudit({
+    userId: req.session.userId!, username: req.session.username!,
     action: 'JIRA_CONFIG_SAVE', resourceType: 'jira-config', resourceId: 'global',
-    details: cfg.projectKey, ip: req.ip ?? null });
+    details: cfg.projectKey, ip: req.ip ?? null
+  });
   res.json({ ok: true });
 });
 
@@ -3393,9 +3404,11 @@ app.post('/api/defects/file', requireEditor, async (req: Request, res: Response)
   t.defectKey = created.key;
   t.defectStatus = 'open';
 
-  logAudit({ userId: req.session.userId!, username: req.session.username!,
+  logAudit({
+    userId: req.session.userId!, username: req.session.username!,
     action: 'DEFECT_FILED', resourceType: 'defect', resourceId: created.key,
-    details: `${t.name} (${runId})`, ip: req.ip ?? null });
+    details: `${t.name} (${runId})`, ip: req.ip ?? null
+  });
 
   res.json({ defectKey: created.key, jiraUrl, attachments: attachStatus });
 });
@@ -3438,8 +3451,10 @@ app.post('/api/defects/comment', requireEditor, async (req: Request, res: Respon
       d.comments.push({ runId, addedAt: new Date().toISOString(), addedBy: req.session.username || 'unknown' });
       saveDefectsRegistry(reg);
     }
-    logAudit({ userId: req.session.userId!, username: req.session.username!,
-      action: 'DEFECT_COMMENT', resourceType: 'defect', resourceId: defectKey, details: runId, ip: req.ip ?? null });
+    logAudit({
+      userId: req.session.userId!, username: req.session.username!,
+      action: 'DEFECT_COMMENT', resourceType: 'defect', resourceId: defectKey, details: runId, ip: req.ip ?? null
+    });
     res.json({ commentId: out.id });
   } catch (e: any) {
     res.status(502).json({ error: { code: e?.code || 'JIRA_ERROR', message: e?.message || 'Comment failed' } });
@@ -3463,8 +3478,10 @@ app.post('/api/defects/dismiss', requireEditor, (req: Request, res: Response) =>
     dismissedBy: req.session.username || 'unknown',
     errorMessage: t.errorMessage || '',
   });
-  logAudit({ userId: req.session.userId!, username: req.session.username!,
-    action: 'DEFECT_DISMISSED', resourceType: 'test', resourceId: testId, details: category, ip: req.ip ?? null });
+  logAudit({
+    userId: req.session.userId!, username: req.session.username!,
+    action: 'DEFECT_DISMISSED', resourceType: 'test', resourceId: testId, details: category, ip: req.ip ?? null
+  });
   res.json({ ok: true });
 });
 
@@ -3498,7 +3515,7 @@ app.post('/api/projects', requireAdmin, (req: Request, res: Response) => {
   const project: Project = {
     id: uuidv4(), name: sanitizeInput(name),
     description: sanitizeInput(description ?? ''),
-    tcIdPrefix:  sanitizeInput(tcIdPrefix || 'TC'),
+    tcIdPrefix: sanitizeInput(tcIdPrefix || 'TC'),
     tcIdCounter: 1,
     environments: (environments ?? []) as ProjectEnvironment[],
     isActive: true, createdAt: new Date().toISOString(), createdBy: req.session.username!,
@@ -3512,11 +3529,11 @@ app.put('/api/projects/:id', requireAdmin, (req: Request, res: Response) => {
   const project = findById<Project>(PROJECTS, req.params.id);
   if (!project) { res.status(404).json({ error: 'Not found' }); return; }
   const { name, description, tcIdPrefix, environments, isActive } = req.body as any;
-  if (name)                      project.name         = sanitizeInput(name);
-  if (description !== undefined) project.description  = sanitizeInput(description);
-  if (tcIdPrefix)                project.tcIdPrefix   = sanitizeInput(tcIdPrefix);
-  if (environments)              project.environments = environments;
-  if (isActive !== undefined)    project.isActive     = !!isActive;
+  if (name) project.name = sanitizeInput(name);
+  if (description !== undefined) project.description = sanitizeInput(description);
+  if (tcIdPrefix) project.tcIdPrefix = sanitizeInput(tcIdPrefix);
+  if (environments) project.environments = environments;
+  if (isActive !== undefined) project.isActive = !!isActive;
   upsert(PROJECTS, project);
   logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'PROJECT_UPDATED', resourceType: 'project', resourceId: project.id, details: project.name, ip: req.ip ?? null });
   res.json({ success: true });
@@ -3527,7 +3544,7 @@ app.post('/api/projects/:id/next-tc-id', requireAuth, (req: Request, res: Respon
   const project = findById<Project>(PROJECTS, req.params.id);
   if (!project) { res.status(404).json({ error: 'Not found' }); return; }
   if (!project.tcIdCounter) project.tcIdCounter = 1;
-  const num    = String(project.tcIdCounter).padStart(2, '0');
+  const num = String(project.tcIdCounter).padStart(2, '0');
   const nextId = `${project.tcIdPrefix || 'TC'}-${num}`;
   project.tcIdCounter += 1;
   upsert(PROJECTS, project);
@@ -3567,11 +3584,11 @@ app.put('/api/locators/:id', requireEditor, (req: Request, res: Response) => {
   const loc = findById<Locator>(LOCATORS, req.params.id);
   if (!loc) { res.status(404).json({ error: 'Not found' }); return; }
   const { name, selector, selectorType, pageModule, projectId, description, alternatives } = req.body as any;
-  if (name)        loc.name        = sanitizeInput(name);
-  if (selector)    loc.selector    = sanitizeInput(selector);
+  if (name) loc.name = sanitizeInput(name);
+  if (selector) loc.selector = sanitizeInput(selector);
   if (selectorType) loc.selectorType = selectorType;
   if (pageModule !== undefined) loc.pageModule = sanitizeInput(pageModule);
-  if (projectId !== undefined)  loc.projectId  = projectId;
+  if (projectId !== undefined) loc.projectId = projectId;
   if (description !== undefined) loc.description = sanitizeInput(description);
   // Accept alternatives array update (from UI promote-to-primary or post-heal update)
   if (Array.isArray(alternatives)) loc.alternatives = alternatives;
@@ -3582,7 +3599,7 @@ app.put('/api/locators/:id', requireEditor, (req: Request, res: Response) => {
 
 function cleanupOrphanedLocatorReferences(locatorIds: string[]) {
   if (!locatorIds.length) return;
-  
+
   // 1. Scripts
   const scripts = readAll<TestScript>(SCRIPTS);
   let scriptsChanged = false;
@@ -3603,7 +3620,7 @@ function cleanupOrphanedLocatorReferences(locatorIds: string[]) {
   const allLocs = readAll<Locator>(LOCATORS);
   const locsBeingDeleted = allLocs.filter(l => locatorIds.includes(l.id));
   const deletedNames = new Set(locsBeingDeleted.map(l => l.name.trim().toLowerCase()));
-  
+
   const functions = readAll<CommonFunction>(FUNCTIONS);
   let functionsChanged = false;
   functions.forEach(fn => {
@@ -3630,9 +3647,9 @@ app.delete('/api/locators/:id', requireEditor, (req: Request, res: Response) => 
 app.post('/api/locators/bulk-delete', requireEditor, (req: Request, res: Response) => {
   const { ids } = req.body as { ids?: string[] };
   if (!ids || !Array.isArray(ids)) { res.status(400).json({ error: 'ids array is required' }); return; }
-  
+
   cleanupOrphanedLocatorReferences(ids);
-  
+
   let count = 0;
   ids.forEach(id => {
     if (remove(LOCATORS, id)) count++;
@@ -3704,18 +3721,18 @@ app.delete('/api/projects/:projectId/components/:compId', requireEditor, (req: R
 app.post('/api/recorder/start', requireAuth, requireFeature('recorder'), (req: Request, res: Response) => {
   const { projectId, autUrl } = req.body as { projectId?: string; autUrl?: string };
   if (!projectId) { res.status(400).json({ error: 'projectId is required' }); return; }
-  if (!autUrl)    { res.status(400).json({ error: 'autUrl is required' });    return; }
+  if (!autUrl) { res.status(400).json({ error: 'autUrl is required' }); return; }
 
   // [Gap 2] One active recording per project — prevent concurrent sessions
   for (const [, s] of recorderSessions) {
     if (s.projectId === projectId && s.active) {
       const sinceMin = Math.floor((Date.now() - s.createdAt) / 60000);
       res.status(409).json({
-        error:       'Already recording',
-        recordedBy:  s.createdBy,
-        since:       new Date(s.createdAt).toISOString(),
+        error: 'Already recording',
+        recordedBy: s.createdBy,
+        since: new Date(s.createdAt).toISOString(),
         sinceMin,
-        message:     `${s.createdBy} started a recording ${sinceMin}m ago. Stop that session first.`,
+        message: `${s.createdBy} started a recording ${sinceMin}m ago. Stop that session first.`,
       });
       return;
     }
@@ -3725,13 +3742,13 @@ app.post('/api/recorder/start', requireAuth, requireFeature('recorder'), (req: R
   const session: RecorderSession = {
     token,
     projectId,
-    createdBy:    req.session.username!,
-    active:       true,
-    steps:        [],
-    stepCount:    0,
+    createdBy: req.session.username!,
+    active: true,
+    steps: [],
+    stepCount: 0,
     lastActivity: Date.now(),
-    createdAt:    Date.now(),
-    sseClients:   new Set(),
+    createdAt: Date.now(),
+    sseClients: new Set(),
   };
   recorderSessions.set(token, session);
 
@@ -3739,10 +3756,10 @@ app.post('/api/recorder/start', requireAuth, requireFeature('recorder'), (req: R
   logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'RECORDER_STARTED', resourceType: 'recorder', resourceId: token.slice(0, 8), details: `project=${projectId} url=${autUrl}`, ip: req.ip ?? null });
 
   // Build the AUT URL with recorder token injected
-  const separator   = autUrl.includes('?') ? '&' : '?';
+  const separator = autUrl.includes('?') ? '&' : '?';
   const recorderUrl = `${autUrl}${separator}__qa_recorder=${token}`;
 
-  logger.info(`[recorder] Session started: ${token.slice(0,8)} project=${projectId} by=${req.session.username}`);
+  logger.info(`[recorder] Session started: ${token.slice(0, 8)} project=${projectId} by=${req.session.username}`);
   res.json({ token, recorderUrl });
 });
 
@@ -3753,19 +3770,19 @@ app.get('/api/recorder/stream/:token', requireAuth, (req: Request, res: Response
   if (!session) { res.status(404).json({ error: 'session not found' }); return; }
 
   res.writeHead(200, {
-    'Content-Type':      'text/event-stream',
-    'Cache-Control':     'no-cache',
-    'Connection':        'keep-alive',
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
     'X-Accel-Buffering': 'no',    // disable nginx buffering
   });
-  res.write(`event: recorder:connected\ndata: ${JSON.stringify({ token: token.slice(0,8), stepCount: session.stepCount })}\n\n`);
+  res.write(`event: recorder:connected\ndata: ${JSON.stringify({ token: token.slice(0, 8), stepCount: session.stepCount })}\n\n`);
 
   session.sseClients.add(res);
-  logger.info(`[recorder] SSE client connected (token ${token.slice(0,8)}) — ${session.sseClients.size} client(s)`);
+  logger.info(`[recorder] SSE client connected (token ${token.slice(0, 8)}) — ${session.sseClients.size} client(s)`);
 
   req.on('close', () => {
     session.sseClients.delete(res);
-    logger.info(`[recorder] SSE client disconnected (token ${token.slice(0,8)}) — ${session.sseClients.size} client(s)`);
+    logger.info(`[recorder] SSE client disconnected (token ${token.slice(0, 8)}) — ${session.sseClients.size} client(s)`);
   });
 });
 
@@ -3801,14 +3818,14 @@ app.post('/api/recorder/stop', requireAuth, (req: Request, res: Response) => {
 
   session.active = false;
   recorderSsePush(token, 'recorder:stopped', { stepCount: session.stepCount });
-  session.sseClients.forEach(res => { try { res.end(); } catch {} });
+  session.sseClients.forEach(res => { try { res.end(); } catch { } });
   session.sseClients.clear();
 
   // [Gap 3] Audit: recorder stopped
   const durationSecs = Math.floor((Date.now() - session.createdAt) / 1000);
   logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'RECORDER_STOPPED', resourceType: 'recorder', resourceId: token.slice(0, 8), details: `steps=${session.stepCount} duration=${durationSecs}s project=${session.projectId}`, ip: req.ip ?? null });
 
-  logger.info(`[recorder] Session stopped: ${token.slice(0,8)} — ${session.stepCount} steps captured`);
+  logger.info(`[recorder] Session stopped: ${token.slice(0, 8)} — ${session.stepCount} steps captured`);
 
   // P5-B: Upsert PageModel — group captured locatorIds by pageKey so pre-scan knows which
   // locators belong to each page. Runs asynchronously after response to avoid blocking.
@@ -3817,7 +3834,7 @@ app.post('/api/recorder/stop', requireAuth, (req: Request, res: Response) => {
     for (const step of session.steps) {
       if (!step.locatorId) continue;
       const loc = readAll<Locator>(LOCATORS).find(l => l.id === step.locatorId);
-      const pk  = loc?.pageKey;
+      const pk = loc?.pageKey;
       if (!pk) continue;
       if (!locIdsByPage.has(pk)) locIdsByPage.set(pk, new Set());
       locIdsByPage.get(pk)!.add(step.locatorId);
@@ -3859,7 +3876,7 @@ app.post('/api/recorder/analyse', requireAuth, (req: Request, res: Response) => 
   const MIN_LEN = 2;
 
   // Load existing scripts + functions for this project
-  const allScripts   = readAll<TestScript>(SCRIPTS).filter(s => s.projectId === projectId);
+  const allScripts = readAll<TestScript>(SCRIPTS).filter(s => s.projectId === projectId);
   const allFunctions = readAll<CommonFunction>(FUNCTIONS).filter(f => f.projectId === projectId);
 
   /**
@@ -3891,10 +3908,10 @@ app.post('/api/recorder/analyse', requireAuth, (req: Request, res: Response) => 
   const n = recFps.length;
 
   const patterns: Array<{
-    startIndex:    number;
-    endIndex:      number;
-    steps:         any[];
-    matchCount:    number;
+    startIndex: number;
+    endIndex: number;
+    steps: any[];
+    matchCount: number;
     suggestedName: string;
     duplicateFnId?: string;
   }> = [];
@@ -3961,10 +3978,10 @@ app.post('/api/recorder/analyse', requireAuth, (req: Request, res: Response) => 
 
       // Build a human-readable suggested name from the first step's locatorName / keyword
       const firstStep = candidateSteps[0];
-      const lastStep  = candidateSteps[candidateSteps.length - 1];
+      const lastStep = candidateSteps[candidateSteps.length - 1];
       const firstName = firstStep.locatorName || firstStep.keyword || '';
-      const lastName  = lastStep.locatorName  || lastStep.keyword  || '';
-      const autoName  = firstName === lastName
+      const lastName = lastStep.locatorName || lastStep.keyword || '';
+      const autoName = firstName === lastName
         ? firstName
         : `${firstName} to ${lastName}`;
       const suggestedName = dupFn
@@ -3972,9 +3989,9 @@ app.post('/api/recorder/analyse', requireAuth, (req: Request, res: Response) => 
         : autoName.replace(/[^a-zA-Z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
 
       patterns.push({
-        startIndex:    start,
-        endIndex:      start + len - 1,
-        steps:         candidateSteps,
+        startIndex: start,
+        endIndex: start + len - 1,
+        steps: candidateSteps,
         matchCount,
         suggestedName,
         duplicateFnId: dupFn?.id,
@@ -3999,7 +4016,7 @@ app.get('/api/functions', (req: Request, res: Response) => {
 
 app.post('/api/functions', requireEditor, (req: Request, res: Response) => {
   const { name, identifier, description, steps, projectId } = req.body as any;
-  if (!name)       { res.status(400).json({ error: 'Function name is required' }); return; }
+  if (!name) { res.status(400).json({ error: 'Function name is required' }); return; }
   if (!identifier) { res.status(400).json({ error: 'Identifier is required' }); return; }
   if (!/^[a-zA-Z0-9_]+$/.test(identifier)) { res.status(400).json({ error: 'Identifier must be alphanumeric and underscores only' }); return; }
   if (!steps?.length) { res.status(400).json({ error: 'At least one step is required' }); return; }
@@ -4029,10 +4046,10 @@ app.put('/api/functions/:id', requireEditor, (req: Request, res: Response) => {
     if (conflict) { res.status(409).json({ error: `Identifier "${identifier}" already exists in this project` }); return; }
     fn.identifier = identifier.trim();
   }
-  if (name)                    fn.name        = sanitizeInput(name);
+  if (name) fn.name = sanitizeInput(name);
   if (description !== undefined) fn.description = sanitizeInput(description);
-  if (projectId !== undefined) fn.projectId   = projectId;
-  if (steps)                   fn.steps       = steps;
+  if (projectId !== undefined) fn.projectId = projectId;
+  if (steps) fn.steps = steps;
   fn.updatedAt = new Date().toISOString();
   upsert(FUNCTIONS, fn);
   res.json({ success: true });
@@ -4074,7 +4091,7 @@ app.get('/api/keywords/playwright', (_req, res) => {
 app.get('/api/common-data', requireAuth, (req: Request, res: Response) => {
   const { projectId, environment } = req.query as Record<string, string>;
   let all = readAll<CommonData>(COMMON_DATA);
-  if (projectId)   all = all.filter(d => d.projectId   === projectId);
+  if (projectId) all = all.filter(d => d.projectId === projectId);
   if (environment) all = all.filter(d => d.environment === environment);
   // Mask sensitive values in list response — reveal endpoint used for actual value
   return res.json(all.map(cdForResponse));
@@ -4091,7 +4108,7 @@ app.post('/api/common-data', requireAuth, requireEditor, (req: Request, res: Res
   }
   const isSensitive = sensitive === true;
   const storedValue = isSensitive ? encryptValue(value ?? '') : (value ?? '');
-  const now    = new Date().toISOString();
+  const now = new Date().toISOString();
   const record: CommonData = {
     id: uuidv4(), projectId, dataName: sanitizeInput(dataName),
     value: storedValue, environment, sensitive: isSensitive,
@@ -4106,7 +4123,7 @@ app.put('/api/common-data/:id', requireAuth, requireEditor, (req: Request, res: 
   const record = findById<CommonData>(COMMON_DATA, req.params.id);
   if (!record) { res.status(404).json({ error: 'Not found' }); return; }
   const { dataName, value, environment, sensitive } = req.body as Partial<CommonData> & { sensitive?: boolean };
-  if (dataName)    record.dataName    = sanitizeInput(dataName);
+  if (dataName) record.dataName = sanitizeInput(dataName);
   if (environment) record.environment = environment;
   if (sensitive !== undefined) record.sensitive = sensitive;
   if (value !== undefined) {
@@ -4175,7 +4192,7 @@ app.get('/api/scripts/:id', (req: Request, res: Response) => {
 //   3. If no match → promote this draft to finalized (remove draft flag)
 // Draft locators not referenced by any finalized script get cleaned up here.
 function finaliseDraftLocators(steps: ScriptStep[], projectId: string): ScriptStep[] {
-  const allLocs  = readAll<Locator>(LOCATORS);
+  const allLocs = readAll<Locator>(LOCATORS);
   const finalized = allLocs.filter(l => l.projectId === projectId && !l.draft);
   const norm = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim();
 
@@ -4227,9 +4244,9 @@ app.post('/api/scripts', requireEditor, (req: Request, res: Response) => {
   const script: TestScript = {
     id: uuidv4(), projectId: body.projectId,
     tcId,
-    component:   sanitizeInput(body.component ?? ''),
+    component: sanitizeInput(body.component ?? ''),
     subcomponent: body.subcomponent ? sanitizeInput(body.subcomponent) : undefined,
-    title:       sanitizeInput(body.title),
+    title: sanitizeInput(body.title),
     description: sanitizeInput(body.description ?? ''), tags: body.tags ?? [],
     priority: body.priority ?? 'medium', steps: resolvedSteps,
     createdBy: req.session.username!, createdAt: now,
@@ -4239,7 +4256,7 @@ app.post('/api/scripts', requireEditor, (req: Request, res: Response) => {
   logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'SCRIPT_CREATED', resourceType: 'script', resourceId: script.id, details: `${tcId} ${script.title}`, ip: req.ip ?? null });
   // [Gap 3] If saved from recorder session, log RECORDER_SAVED
   if (body.recorderToken) {
-    logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'RECORDER_SAVED', resourceType: 'script', resourceId: script.id, details: `${tcId} ${script.title} steps=${resolvedSteps.length} token=${String(body.recorderToken).slice(0,8)}`, ip: req.ip ?? null });
+    logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'RECORDER_SAVED', resourceType: 'script', resourceId: script.id, details: `${tcId} ${script.title} steps=${resolvedSteps.length} token=${String(body.recorderToken).slice(0, 8)}`, ip: req.ip ?? null });
   }
   res.json({ success: true, id: script.id, tcId });
 });
@@ -4248,20 +4265,20 @@ app.put('/api/scripts/:id', requireEditor, (req: Request, res: Response) => {
   const script = findById<TestScript>(SCRIPTS, req.params.id);
   if (!script) { res.status(404).json({ error: 'Not found' }); return; }
   const body = req.body as Partial<TestScript> & { recorderToken?: string };
-  if (body.title)                      script.title       = sanitizeInput(body.title);
-  if (body.description !== undefined)  script.description = sanitizeInput(body.description);
-  if (body.component   !== undefined)  script.component   = sanitizeInput(body.component);
-  if (body.subcomponent!== undefined)  script.subcomponent= sanitizeInput(body.subcomponent);
-  if (body.tags)                       script.tags        = body.tags;
-  if (body.priority)                   script.priority    = body.priority;
-  if (body.steps)                      script.steps       = finaliseDraftLocators(body.steps, script.projectId ?? '');
+  if (body.title) script.title = sanitizeInput(body.title);
+  if (body.description !== undefined) script.description = sanitizeInput(body.description);
+  if (body.component !== undefined) script.component = sanitizeInput(body.component);
+  if (body.subcomponent !== undefined) script.subcomponent = sanitizeInput(body.subcomponent);
+  if (body.tags) script.tags = body.tags;
+  if (body.priority) script.priority = body.priority;
+  if (body.steps) script.steps = finaliseDraftLocators(body.steps, script.projectId ?? '');
   script.modifiedBy = req.session.username!;
   script.modifiedAt = new Date().toISOString();
   upsert(SCRIPTS, script);
   logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'SCRIPT_UPDATED', resourceType: 'script', resourceId: script.id, details: script.title, ip: req.ip ?? null });
   // [Gap 3] If saved from recorder session, log RECORDER_SAVED
   if (body.recorderToken) {
-    logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'RECORDER_SAVED', resourceType: 'script', resourceId: script.id, details: `${script.title} steps=${script.steps.length} token=${String(body.recorderToken).slice(0,8)}`, ip: req.ip ?? null });
+    logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'RECORDER_SAVED', resourceType: 'script', resourceId: script.id, details: `${script.title} steps=${script.steps.length} token=${String(body.recorderToken).slice(0, 8)}`, ip: req.ip ?? null });
   }
   res.json({ success: true });
 });
@@ -4298,8 +4315,8 @@ app.patch('/api/scripts/bulk', requireAuth, requireEditor, (req: Request, res: R
   const all = readAll<TestScript>(SCRIPTS);
   for (const script of all) {
     if (!ids.includes(script.id)) continue;
-    if (patch.priority)  script.priority  = patch.priority;
-    if (patch.tags)      script.tags      = patch.tags;
+    if (patch.priority) script.priority = patch.priority;
+    if (patch.tags) script.tags = patch.tags;
     if (patch.component !== undefined) script.component = patch.component;
     script.modifiedBy = req.session.username ?? 'unknown';
     script.modifiedAt = new Date().toISOString();
@@ -4358,13 +4375,17 @@ app.post('/api/suites', requireEditor, (req: Request, res: Response) => {
     id: uuidv4(), projectId: body.projectId, name: sanitizeInput(body.name),
     description: sanitizeInput(body.description ?? ''), scriptIds: body.scriptIds ?? [],
     environmentId: body.environmentId ?? null,
-    retries:  ([0,1,2].includes(body.retries as number) ? body.retries : 0) as 0|1|2,
+    retries: ([0, 1, 2].includes(body.retries as number) ? body.retries : 0) as 0 | 1 | 2,
     browsers: Array.isArray(body.browsers) ? body.browsers.filter((b): b is BrowserName => VALID_BROWSERS.includes(b as BrowserName)) : ['chromium'],
     beforeEachSteps: Array.isArray(body.beforeEachSteps) ? body.beforeEachSteps : [],
-    afterEachSteps:  Array.isArray(body.afterEachSteps)  ? body.afterEachSteps  : [],
-    fastMode:        !!body.fastMode,
-    fastModeSteps:   Array.isArray(body.fastModeSteps)   ? body.fastModeSteps   : [],
+    afterEachSteps: Array.isArray(body.afterEachSteps) ? body.afterEachSteps : [],
+    fastMode: !!body.fastMode,
+    fastModeSteps: Array.isArray(body.fastModeSteps) ? body.fastModeSteps : [],
+    beforeEachSteps: Array.isArray(body.beforeEachSteps) ? body.beforeEachSteps : [],
     overlayHandlers: Array.isArray(body.overlayHandlers) ? body.overlayHandlers : [],
+    browsers: Array.isArray(body.browsers) ? body.browsers : ['chromium'],
+    environmentId: body.environmentId || null,
+    flakinessOverrides: body.flakinessOverrides || {},
     createdBy: req.session.username!, createdAt: now,
     modifiedBy: req.session.username!, modifiedAt: now,
   };
@@ -4376,17 +4397,18 @@ app.put('/api/suites/:id', requireEditor, (req: Request, res: Response) => {
   const suite = findById<TestSuite>(SUITES, req.params.id);
   if (!suite) { res.status(404).json({ error: 'Not found' }); return; }
   const body = req.body as Partial<TestSuite>;
-  if (body.name)                    suite.name          = sanitizeInput(body.name);
+  if (body.name) suite.name = sanitizeInput(body.name);
   if (body.description !== undefined) suite.description = sanitizeInput(body.description);
-  if (body.scriptIds)               suite.scriptIds     = body.scriptIds;
+  if (body.scriptIds) suite.scriptIds = body.scriptIds;
   if (body.environmentId !== undefined) suite.environmentId = body.environmentId;
-  if (body.retries !== undefined) suite.retries = ([0,1,2].includes(body.retries as number) ? body.retries : 0) as 0|1|2;
-  if (Array.isArray(body.browsers)) { const VB: BrowserName[] = ['chromium','firefox','webkit']; suite.browsers = body.browsers.filter((b): b is BrowserName => VB.includes(b as BrowserName)); if (!suite.browsers.length) suite.browsers = ['chromium']; }
+  if (body.retries !== undefined) suite.retries = ([0, 1, 2].includes(body.retries as number) ? body.retries : 0) as 0 | 1 | 2;
+  if (Array.isArray(body.browsers)) { const VB: BrowserName[] = ['chromium', 'firefox', 'webkit']; suite.browsers = body.browsers.filter((b): b is BrowserName => VB.includes(b as BrowserName)); if (!suite.browsers.length) suite.browsers = ['chromium']; }
   if (Array.isArray(body.beforeEachSteps)) suite.beforeEachSteps = body.beforeEachSteps;
-  if (Array.isArray(body.afterEachSteps))  suite.afterEachSteps  = body.afterEachSteps;
-  if (body.fastMode !== undefined)          suite.fastMode        = !!body.fastMode;
-  if (Array.isArray(body.fastModeSteps))    suite.fastModeSteps   = body.fastModeSteps;
+  if (Array.isArray(body.afterEachSteps)) suite.afterEachSteps = body.afterEachSteps;
+  if (body.fastMode !== undefined) suite.fastMode = !!body.fastMode;
+  if (Array.isArray(body.fastModeSteps)) suite.fastModeSteps = body.fastModeSteps;
   if (Array.isArray(body.overlayHandlers)) suite.overlayHandlers = body.overlayHandlers;
+  if (body.flakinessOverrides) suite.flakinessOverrides = body.flakinessOverrides;
   suite.modifiedBy = req.session.username!;
   suite.modifiedAt = new Date().toISOString();
   upsert(SUITES, suite);
@@ -4409,7 +4431,7 @@ app.post('/api/suites/:id/run', requireAuthOrApiKey, requireEditor, async (req: 
 
   // Scripts in suite order
   const allScripts = readAll<TestScript>(SCRIPTS);
-  const scripts    = suite.scriptIds
+  const scripts = suite.scriptIds
     .map(id => allScripts.find(s => s.id === id))
     .filter(Boolean) as TestScript[];
   if (!scripts.length) { res.status(400).json({ error: 'No scripts in suite' }); return; }
@@ -4419,30 +4441,30 @@ app.post('/api/suites/:id/run', requireAuthOrApiKey, requireEditor, async (req: 
     .filter(f => f.projectId === suite.projectId || f.projectId === null);
 
   // Resolve environment — body.environmentId overrides suite default
-  const envId       = req.body.environmentId || suite.environmentId || null;
+  const envId = req.body.environmentId || suite.environmentId || null;
   const environment = envId
     ? (project.environments || []).find(e => e.id === envId) || null
     : (project.environments?.[0] || null);
 
-  const runId     = uuidv4();
+  const runId = uuidv4();
   const startedAt = new Date().toISOString();
 
   // Generate Playwright Codegen-style spec directly from steps
   let specPath: string;
   try {
     specPath = generateCodegenSpec({
-      suiteName:    suite.name,
-      suiteId:      suite.id,
+      suiteName: suite.name,
+      suiteId: suite.id,
       runId,
       scripts,
       project,
       environment,
       allFunctions,
-      port:          PORT,
+      port: PORT,
       beforeEachSteps: suite.beforeEachSteps ?? [],
-      afterEachSteps:  suite.afterEachSteps  ?? [],
-      fastMode:        suite.fastMode        ?? false,
-      fastModeSteps:   suite.fastModeSteps   ?? [],
+      afterEachSteps: suite.afterEachSteps ?? [],
+      fastMode: suite.fastMode ?? false,
+      fastModeSteps: suite.fastModeSteps ?? [],
       overlayHandlers: suite.overlayHandlers ?? [],
     });
     logger.info(`[suite run] Codegen spec → ${specPath}`);
@@ -4453,7 +4475,7 @@ app.post('/api/suites/:id/run', requireAuthOrApiKey, requireEditor, async (req: 
   }
 
   // Dummy plan path (spawnRun still expects one; keep plan infra for report metadata)
-  const planId   = `suite-${suite.id.slice(0, 8)}`;
+  const planId = `suite-${suite.id.slice(0, 8)}`;
   const planFile = path.join(config.paths.testPlans, `${planId}-plan.json`);
   const planMeta = {
     planId, source: 'suite', sourceRef: suite.id,
@@ -4484,17 +4506,17 @@ app.post('/api/suites/:id/run', requireAuthOrApiKey, requireEditor, async (req: 
   const queuePosition = runQueue.length;
   const record: RunRecord = {
     runId, planPath: planFile, planId, startedAt, specPath,
-    status:          queuePosition > 0 ? 'queued' : 'running',
-    exitCode:        null, output: [], tests: [], passed: 0, failed: 0, total: 0,
-    projectId:       project.id,
-    projectName:     project.name,
-    suiteId:         suite.id,
-    suiteName:       suite.name,
-    environmentId:   environment?.id   || '',
+    status: queuePosition > 0 ? 'queued' : 'running',
+    exitCode: null, output: [], tests: [], passed: 0, failed: 0, total: 0,
+    projectId: project.id,
+    projectName: project.name,
+    suiteId: suite.id,
+    suiteName: suite.name,
+    environmentId: environment?.id || '',
     environmentName: environment?.name || '',
-    executedBy:      req.session.username ?? 'unknown',
-    browsers:        runBrowsers,
-    traceMode:       (['on', 'retain-on-failure', 'off'].includes(req.body.traceMode) ? req.body.traceMode : 'on'),
+    executedBy: req.session.username ?? 'unknown',
+    browsers: runBrowsers,
+    traceMode: (['on', 'retain-on-failure', 'off'].includes(req.body.traceMode) ? req.body.traceMode : 'on'),
   };
   runs.set(runId, record);
 
@@ -4524,9 +4546,9 @@ app.post('/api/suites/:id/run', requireAuthOrApiKey, requireEditor, async (req: 
 app.get('/api/debug/stream/:sessionId', requireAuth, (req: Request, res: Response) => {
   const { sessionId } = req.params as { sessionId: string };
   res.writeHead(200, {
-    'Content-Type':      'text/event-stream',
-    'Cache-Control':     'no-cache, no-transform',
-    'Connection':        'keep-alive',
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache, no-transform',
+    'Connection': 'keep-alive',
     'X-Accel-Buffering': 'no',  // disable nginx/IIS response buffering
   });
   res.write(': connected\n\n'); // initial comment to flush headers to browser
@@ -4534,7 +4556,7 @@ app.get('/api/debug/stream/:sessionId', requireAuth, (req: Request, res: Respons
   // Register client
   if (!debugSseClients.has(sessionId)) debugSseClients.set(sessionId, new Set());
   debugSseClients.get(sessionId)!.add(res);
-  logger.info(`[sse] client connected session=${sessionId.slice(0,8)} total=${debugSseClients.get(sessionId)!.size}`);
+  logger.info(`[sse] client connected session=${sessionId.slice(0, 8)} total=${debugSseClients.get(sessionId)!.size}`);
 
   // Reconnect case: push existing pending step immediately
   const existing = debugSessions.get(sessionId);
@@ -4544,14 +4566,14 @@ app.get('/api/debug/stream/:sessionId', requireAuth, (req: Request, res: Respons
     try {
       const ssAbs = path.resolve(d.screenshotPath);
       if (fs.existsSync(ssAbs)) screenshotBase64 = fs.readFileSync(ssAbs).toString('base64');
-    } catch {}
+    } catch { }
     sseSessionPush(sessionId, 'debug:step', { ...d, screenshotBase64 });
   }
 
   req.on('close', () => {
     debugSseClients.get(sessionId)?.delete(res);
     if (debugSseClients.get(sessionId)?.size === 0) debugSseClients.delete(sessionId);
-    logger.info(`[sse] client disconnected session=${sessionId.slice(0,8)}`);
+    logger.info(`[sse] client disconnected session=${sessionId.slice(0, 8)}`);
   });
 });
 
@@ -4574,17 +4596,17 @@ app.post('/api/debug/start', requireAuth, (req: Request, res: Response) => {
   // session for this exact script (prevents duplicate windows from the same account).
   const activeForScript = [...debugSessions.values()].filter(
     s => s.scriptId === scriptId &&
-         !['done', 'stopped', 'error'].includes(s.status)
+      !['done', 'stopped', 'error'].includes(s.status)
   );
 
   // Block: same user already has this script open in another tab/window
   const ownDuplicate = activeForScript.find(s => s.userId === req.session.userId);
   if (ownDuplicate) {
     res.status(409).json({
-      error:     'You already have an active debug session for this script',
-      code:      'DUPLICATE_OWN_SESSION',
+      error: 'You already have an active debug session for this script',
+      code: 'DUPLICATE_OWN_SESSION',
       sessionId: ownDuplicate.sessionId,
-      since:     ownDuplicate.startedAt,
+      since: ownDuplicate.startedAt,
     });
     return;
   }
@@ -4617,19 +4639,19 @@ app.post('/api/debug/start', requireAuth, (req: Request, res: Response) => {
 
   const session: DebugSession = {
     sessionId,
-    scriptId:        script.id,
-    scriptTitle:     script.title,
-    projectId:       project.id,
-    userId:          req.session.userId!,
-    username:        req.session.username!,
-    environmentId:   environment?.id ?? null,
+    scriptId: script.id,
+    scriptTitle: script.title,
+    projectId: project.id,
+    userId: req.session.userId!,
+    username: req.session.username!,
+    environmentId: environment?.id ?? null,
     environmentName: environment?.name ?? null,
-    status:          'starting',
-    currentStep:     0,
-    totalSteps:      script.steps.length,
+    status: 'starting',
+    currentStep: 0,
+    totalSteps: script.steps.length,
     specPath,
-    startedAt:       new Date().toISOString(),
-    lastHeartbeat:   Date.now(),
+    startedAt: new Date().toISOString(),
+    lastHeartbeat: Date.now(),
   };
   debugSessions.set(sessionId, session);
 
@@ -4637,29 +4659,29 @@ app.post('/api/debug/start', requireAuth, (req: Request, res: Response) => {
 
   res.json({
     sessionId,
-    scriptTitle:    script.title,
-    totalSteps:     session.totalSteps,
+    scriptTitle: script.title,
+    totalSteps: session.totalSteps,
     otherDebuggers, // [] when no one else is debugging this script; client shows a notice if non-empty
   });
 
   // Spawn Playwright — spec uses file-based IPC (pending.json / gate.json)
-  const relSpec   = path.relative(path.resolve('.'), specPath).replace(/\\/g, '/');
-  const ssDir     = path.resolve('debug-runs', sessionId);
+  const relSpec = path.relative(path.resolve('.'), specPath).replace(/\\/g, '/');
+  const ssDir = path.resolve('debug-runs', sessionId);
   const pendingFile = path.join(ssDir, 'pending.json');
-  const gateFile    = path.join(ssDir, 'gate.json');
-  const errorFile   = path.join(ssDir, 'error.json');
+  const gateFile = path.join(ssDir, 'gate.json');
+  const errorFile = path.join(ssDir, 'error.json');
 
   const proc = cp.spawn('npx', ['playwright', 'test', '--headed', '--reporter=list', '--project=chromium', relSpec], {
-    cwd:   path.resolve('.'),
-    env:   { ...process.env },
+    cwd: path.resolve('.'),
+    env: { ...process.env },
     shell: true,
   });
 
-  session.proc   = proc;
+  session.proc = proc;
   session.status = 'starting';
 
-  proc.stdout?.on('data', (c: Buffer) => { const l = c.toString().trim(); if (l) logger.info(`[dbg:${sessionId.slice(0,8)}] ${l}`); });
-  proc.stderr?.on('data', (c: Buffer) => { const l = c.toString().trim(); if (l) logger.info(`[dbg:${sessionId.slice(0,8)}] ${l}`); });
+  proc.stdout?.on('data', (c: Buffer) => { const l = c.toString().trim(); if (l) logger.info(`[dbg:${sessionId.slice(0, 8)}] ${l}`); });
+  proc.stderr?.on('data', (c: Buffer) => { const l = c.toString().trim(); if (l) logger.info(`[dbg:${sessionId.slice(0, 8)}] ${l}`); });
 
   // Poll pending.json every 100ms — fast detection, reduces random delay from 0-400ms to 0-100ms
   let _lastStepIdx = -1;
@@ -4678,24 +4700,24 @@ app.post('/api/debug/start', requireAuth, (req: Request, res: Response) => {
       if (!fs.existsSync(pendingFile)) return;
       const data = JSON.parse(fs.readFileSync(pendingFile, 'utf-8'));
       if (data.stepIdx === _lastStepIdx) return;  // same step, already broadcast
-      _lastStepIdx             = data.stepIdx;
-      session.currentStep      = data.stepIdx;
-      session.status           = 'paused';
-      session.pendingStep      = data;
+      _lastStepIdx = data.stepIdx;
+      session.currentStep = data.stepIdx;
+      session.status = 'paused';
+      session.pendingStep = data;
       // Inline screenshot as base64 — UI uses it directly, zero extra HTTP request
       let screenshotBase64: string | null = null;
       try {
         const ssAbs = path.resolve(data.screenshotPath);
         if (fs.existsSync(ssAbs)) screenshotBase64 = fs.readFileSync(ssAbs).toString('base64');
       } catch { /* skip — UI will fall back to HTTP fetch */ }
-      logger.info(`[dbg:poller] Step ${data.stepIdx} detected → pushing to UI (${sessionId.slice(0,8)}) base64=${screenshotBase64 ? Math.round(screenshotBase64.length/1024)+'KB' : 'null'}`);
+      logger.info(`[dbg:poller] Step ${data.stepIdx} detected → pushing to UI (${sessionId.slice(0, 8)}) base64=${screenshotBase64 ? Math.round(screenshotBase64.length / 1024) + 'KB' : 'null'}`);
       // SSE push — primary fast path (works through all HTTP proxies)
       sseSessionPush(sessionId, 'debug:step', { ...data, screenshotBase64 });
       // WS broadcast — secondary (fails silently when WS upgrade is blocked by proxy)
       broadcast(sessionId, { type: 'debug:step', sessionId, ...data, screenshotBase64 });
     } catch (e) {
       /* file may be mid-write — skip this tick */
-      if (_lastStepIdx >= 0) logger.debug(`[dbg:poller] Poll tick skipped for ${sessionId.slice(0,8)}: ${e}`);
+      if (_lastStepIdx >= 0) logger.debug(`[dbg:poller] Poll tick skipped for ${sessionId.slice(0, 8)}: ${e}`);
     }
   }, 100);
   debugPollers.set(sessionId, poller);
@@ -4705,13 +4727,13 @@ app.post('/api/debug/start', requireAuth, (req: Request, res: Response) => {
     debugPollers.delete(sessionId);
     // Clean up any leftover IPC files
     try { fs.unlinkSync(pendingFile); } catch { /* ignore */ }
-    try { fs.unlinkSync(gateFile);    } catch { /* ignore */ }
-    try { fs.unlinkSync(errorFile);   } catch { /* ignore */ }
+    try { fs.unlinkSync(gateFile); } catch { /* ignore */ }
+    try { fs.unlinkSync(errorFile); } catch { /* ignore */ }
 
     const s = debugSessions.get(sessionId);
     if (s) {
-      s.status      = s.status === 'stopped' ? 'stopped' : (code === 0 ? 'done' : 'error');
-      s.finishedAt  = new Date().toISOString();
+      s.status = s.status === 'stopped' ? 'stopped' : (code === 0 ? 'done' : 'error');
+      s.finishedAt = new Date().toISOString();
       s.pendingStep = undefined;
     }
     sseSessionPush(sessionId, 'debug:done', { sessionId, status: s?.status || 'done' });
@@ -4745,20 +4767,20 @@ app.post('/api/debug/continue', requireAuth, (req: Request, res: Response) => {
           // /T flag kills process tree, /F forces kill
           if (process.platform === 'win32') {
             require('child_process').execSync(`taskkill /F /T /PID ${session.proc.pid}`, { stdio: 'pipe' });
-            logger.info(`[debug:stop] Killed process tree for session ${sessionId.slice(0,8)} (PID: ${session.proc.pid})`);
+            logger.info(`[debug:stop] Killed process tree for session ${sessionId.slice(0, 8)} (PID: ${session.proc.pid})`);
           } else {
             process.kill(-session.proc.pid, 'SIGTERM');
-            logger.info(`[debug:stop] Killed process group for session ${sessionId.slice(0,8)} (PID: ${session.proc.pid})`);
+            logger.info(`[debug:stop] Killed process group for session ${sessionId.slice(0, 8)} (PID: ${session.proc.pid})`);
           }
         } catch (e) {
-          logger.error(`[debug:stop] FAILED to kill process for ${sessionId.slice(0,8)}: ${e}`);
+          logger.error(`[debug:stop] FAILED to kill process for ${sessionId.slice(0, 8)}: ${e}`);
         }
       } else {
-        logger.warn(`[debug:stop] No process to kill for session ${sessionId.slice(0,8)} (already dead?)`);
+        logger.warn(`[debug:stop] No process to kill for session ${sessionId.slice(0, 8)} (already dead?)`);
       }
       clearInterval(debugPollers.get(sessionId)!);
       debugPollers.delete(sessionId);
-      logger.info(`[debug:stop] Stopped session ${sessionId.slice(0,8)}`);
+      logger.info(`[debug:stop] Stopped session ${sessionId.slice(0, 8)}`);
     } else {
       session.status = 'running';
     }
@@ -4769,9 +4791,9 @@ app.post('/api/debug/continue', requireAuth, (req: Request, res: Response) => {
   try {
     const gatePayload: Record<string, unknown> = { action };
     if (action === 'retry') {
-      if (locator !== undefined)     gatePayload.locator     = locator;
+      if (locator !== undefined) gatePayload.locator = locator;
       if (locatorType !== undefined) gatePayload.locatorType = locatorType;
-      if (value !== undefined)       gatePayload.value       = value;
+      if (value !== undefined) gatePayload.value = value;
     }
     fs.writeFileSync(gateFile, JSON.stringify(gatePayload));
     logger.info(`[debug:continue] Wrote gate.json for ${sessionId} with action '${action}' → ${gateFile}`);
@@ -4786,11 +4808,11 @@ app.post('/api/debug/continue', requireAuth, (req: Request, res: Response) => {
 // Called by UI after user edits in the failure panel and clicks "Apply & Retry"
 app.post('/api/debug/patch-step', requireAuth, (req: Request, res: Response) => {
   const { sessionId, stepOrder, locator, locatorType, value } = req.body as {
-    sessionId:   string;
-    stepOrder:   number;
-    locator?:    string;
+    sessionId: string;
+    stepOrder: number;
+    locator?: string;
     locatorType?: string;
-    value?:      string;
+    value?: string;
   };
 
   const session = debugSessions.get(sessionId);
@@ -4798,10 +4820,10 @@ app.post('/api/debug/patch-step', requireAuth, (req: Request, res: Response) => 
 
   // Find and update the script
   const script = findById<TestScript>(SCRIPTS, session.scriptId);
-  if (!script)  { res.status(404).json({ error: 'Script not found' }); return; }
+  if (!script) { res.status(404).json({ error: 'Script not found' }); return; }
 
   const step = script.steps.find(s => s.order === stepOrder);
-  if (!step)    { res.status(404).json({ error: 'Step not found' }); return; }
+  if (!step) { res.status(404).json({ error: 'Step not found' }); return; }
 
   let locatorRepoUpdated = false;
 
@@ -4809,7 +4831,7 @@ app.post('/api/debug/patch-step', requireAuth, (req: Request, res: Response) => 
   if (locator !== undefined && step.locatorId) {
     const repoEntry = findById<Locator>(LOCATORS, step.locatorId);
     if (repoEntry) {
-      repoEntry.selector     = locator;
+      repoEntry.selector = locator;
       if (locatorType) repoEntry.selectorType = locatorType as Locator['selectorType'];
       upsert(LOCATORS, repoEntry);
       locatorRepoUpdated = true;
@@ -4818,16 +4840,16 @@ app.post('/api/debug/patch-step', requireAuth, (req: Request, res: Response) => 
   }
 
   // Update the step itself
-  if (locator     !== undefined) step.locator     = locator;
+  if (locator !== undefined) step.locator = locator;
   if (locatorType !== undefined) step.locatorType = locatorType;
-  if (value       !== undefined) step.value       = value;
+  if (value !== undefined) step.value = value;
   script.modifiedBy = req.session.username!;
   script.modifiedAt = new Date().toISOString();
   upsert(SCRIPTS, script);
 
   logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'SCRIPT_UPDATED', resourceType: 'script', resourceId: script.id, details: `debugger patch step ${stepOrder}: ${script.title}`, ip: req.ip ?? null });
 
-  logger.info(`[debug:patch] Patched step ${stepOrder} of script ${script.id} (session ${sessionId.slice(0,8)}) locatorRepoUpdated=${locatorRepoUpdated}`);
+  logger.info(`[debug:patch] Patched step ${stepOrder} of script ${script.id} (session ${sessionId.slice(0, 8)}) locatorRepoUpdated=${locatorRepoUpdated}`);
   res.json({ ok: true, locatorRepoUpdated });
 });
 
@@ -4871,9 +4893,9 @@ app.get('/api/debug/sessions', requireAuth, (req: Request, res: Response) => {
 
 app.get('/api/flaky', requireAuthOrApiKey, (req: Request, res: Response) => {
   const { projectId, suiteId } = req.query as Record<string, string>;
-  const limit  = Math.min(parseInt((req.query.limit  as string) || '50', 10), 200);
-  const offset = Math.max(parseInt((req.query.offset as string) || '0',  10), 0);
-  const sort   = (req.query.sort as string) || 'flakeScore';
+  const limit = Math.min(parseInt((req.query.limit as string) || '50', 10), 200);
+  const offset = Math.max(parseInt((req.query.offset as string) || '0', 10), 0);
+  const sort = (req.query.sort as string) || 'flakeScore';
 
   if (!projectId) { res.status(400).json({ error: 'projectId required' }); return; }
 
@@ -4889,7 +4911,7 @@ app.get('/api/flaky', requireAuthOrApiKey, (req: Request, res: Response) => {
 
   type AggEntry = {
     testId: string; testName: string; suiteId: string; suiteName: string;
-    runs: Array<{ status: 'pass'|'fail'; timestamp: number; durationMs: number; errorMessage?: string }>;
+    runs: Array<{ status: 'pass' | 'fail'; timestamp: number; durationMs: number; errorMessage?: string }>;
   };
   const map = new Map<string, AggEntry>();
 
@@ -4935,7 +4957,7 @@ app.get('/api/flaky', requireAuthOrApiKey, (req: Request, res: Response) => {
       .map(r => ({ status: r.status, timestamp: r.timestamp, durationMs: r.durationMs }))
       .reverse();
 
-    const lastRunAt     = agg.runs.reduce<typeof agg.runs[0] | undefined>((a, b) => !a || b.timestamp > a.timestamp ? b : a, undefined)?.timestamp;
+    const lastRunAt = agg.runs.reduce<typeof agg.runs[0] | undefined>((a, b) => !a || b.timestamp > a.timestamp ? b : a, undefined)?.timestamp;
     const lastFailureAt = agg.runs.filter(r => r.status === 'fail')
       .reduce<typeof agg.runs[0] | undefined>((a, b) => !a || b.timestamp > a.timestamp ? b : a, undefined)?.timestamp;
 
@@ -4945,7 +4967,7 @@ app.get('/api/flaky', requireAuthOrApiKey, (req: Request, res: Response) => {
       return {
         testId: agg.testId, testName: agg.testName, suiteId: sid, suiteName: agg.suiteName,
         evaluationState: 'insufficient_data' as const,
-        isQuarantined, quarantineStatus: (qEntry?.status ?? 'none') as 'active'|'restored'|'none',
+        isQuarantined, quarantineStatus: (qEntry?.status ?? 'none') as 'active' | 'restored' | 'none',
         quarantinedAt: qEntry?.quarantinedAt, autoQuarantined: qEntry?.autoQuarantined,
         needsReevaluation, recentRunsPreview,
         lastRunAt: lastRunAt ? new Date(lastRunAt).toISOString() : undefined,
@@ -4956,38 +4978,38 @@ app.get('/api/flaky', requireAuthOrApiKey, (req: Request, res: Response) => {
     return {
       testId: agg.testId, testName: agg.testName, suiteId: sid, suiteName: agg.suiteName,
       evaluationState: 'evaluated' as const,
-      flakeScore:       analysis.flakeScore,
-      failRate:         analysis.failRate,
+      flakeScore: analysis.flakeScore,
+      failRate: analysis.failRate,
       alternationIndex: analysis.alternationIndex,
-      varianceIndex:    analysis.varianceIndex,
-      confidence:       analysis.confidence,
+      varianceIndex: analysis.varianceIndex,
+      confidence: analysis.confidence,
       isQuarantined,
-      quarantineStatus: (qEntry?.status ?? 'none') as 'active'|'restored'|'none',
-      quarantinedAt:    qEntry?.quarantinedAt,
-      autoQuarantined:  qEntry?.autoQuarantined,
-      shouldQuarantine:  analysis.shouldQuarantine,
+      quarantineStatus: (qEntry?.status ?? 'none') as 'active' | 'restored' | 'none',
+      quarantinedAt: qEntry?.quarantinedAt,
+      autoQuarantined: qEntry?.autoQuarantined,
+      shouldQuarantine: analysis.shouldQuarantine,
       shouldAutoPromote: analysis.shouldAutoPromote,
-      decisionState:     analysis.decisionState,
+      decisionState: analysis.decisionState,
       needsReevaluation,
-      classification:   analysis.classification,
+      classification: analysis.classification,
       dominantCategory: analysis.dominantCategory,
       dominantCategoryCount: analysis.dominantCategoryCount,
       dominantCategoryTotal: analysis.dominantCategoryTotal,
-      actionHint:       getActionHint(analysis.classification.primary),
-      signals:          analysis.signals,
+      actionHint: getActionHint(analysis.classification.primary),
+      signals: analysis.signals,
       recentRunsPreview,
-      lastRunAt:        lastRunAt ? new Date(lastRunAt).toISOString() : undefined,
-      lastFailureAt:    lastFailureAt ? new Date(lastFailureAt).toISOString() : undefined,
-      evaluatedAt:      analysis.evaluatedAt,
-      scoreVersion:     analysis.scoreVersion,
+      lastRunAt: lastRunAt ? new Date(lastRunAt).toISOString() : undefined,
+      lastFailureAt: lastFailureAt ? new Date(lastFailureAt).toISOString() : undefined,
+      evaluatedAt: analysis.evaluatedAt,
+      scoreVersion: analysis.scoreVersion,
     };
   });
 
   const sortFns: Record<string, (a: any, b: any) => number> = {
-    flakeScore:     (a, b) => (b.flakeScore ?? -1) - (a.flakeScore ?? -1),
-    confidence:     (a, b) => (b.confidence ?? -1) - (a.confidence ?? -1),
+    flakeScore: (a, b) => (b.flakeScore ?? -1) - (a.flakeScore ?? -1),
+    confidence: (a, b) => (b.confidence ?? -1) - (a.confidence ?? -1),
     recentFailures: (a, b) => (b.signals?.recentFailCount ?? 0) - (a.signals?.recentFailCount ?? 0),
-    name:           (a, b) => a.testName.localeCompare(b.testName),
+    name: (a, b) => a.testName.localeCompare(b.testName),
   };
   results.sort(sortFns[sort] ?? sortFns.flakeScore);
 
@@ -5018,12 +5040,12 @@ app.get('/api/flaky/config', requireAuth, (req: Request, res: Response) => {
   if (!projectId) { res.status(400).json({ error: 'projectId required' }); return; }
 
   const projects = readAll<Project>(PROJECTS);
-  const suites   = readAll<TestSuite>(SUITES);
-  const project  = projects.find(p => p.id === projectId);
-  const suite    = suiteId ? suites.find(s => s.id === suiteId) : undefined;
+  const suites = readAll<TestSuite>(SUITES);
+  const project = projects.find(p => p.id === projectId);
+  const suite = suiteId ? suites.find(s => s.id === suiteId) : undefined;
 
   const projectDefaults = (project as any)?.flakinessDefaults ?? {};
-  const suiteOverrides  = (suite as any)?.flakinessOverrides  ?? {};
+  const suiteOverrides = (suite as any)?.flakinessOverrides ?? {};
   const effective = { ...DEFAULT_FLAKINESS_CONFIG, ...projectDefaults, ...suiteOverrides };
 
   res.json({
@@ -5045,10 +5067,10 @@ app.put('/api/flaky/config', requireEditor, (req: Request, res: Response) => {
   if (overrides?.minRuns !== undefined && overrides.minRuns < 1)
     errors.push('minRuns must be >= 1');
   if (overrides?.windowDays !== undefined && overrides?.recentWindowDays !== undefined
-      && overrides.windowDays <= overrides.recentWindowDays)
+    && overrides.windowDays <= overrides.recentWindowDays)
     errors.push('windowDays must be > recentWindowDays');
   if (overrides?.autoPromoteMinPassRate !== undefined &&
-      (overrides.autoPromoteMinPassRate <= 0 || overrides.autoPromoteMinPassRate > 1))
+    (overrides.autoPromoteMinPassRate <= 0 || overrides.autoPromoteMinPassRate > 1))
     errors.push('autoPromoteMinPassRate must be in (0, 1]');
   if (overrides?.minRunsSinceQuarantine !== undefined && overrides.minRunsSinceQuarantine < 1)
     errors.push('minRunsSinceQuarantine must be >= 1');
@@ -5110,7 +5132,7 @@ app.post('/api/flaky/restore', requireEditor, (req: Request, res: Response) => {
 const cronJobs = new Map<string, ReturnType<typeof cron.schedule>>();
 
 function triggerScheduledRun(schedule: ScheduledRun): void {
-  const suite   = findById<TestSuite>(SUITES, schedule.suiteId);
+  const suite = findById<TestSuite>(SUITES, schedule.suiteId);
   const project = suite ? findById<Project>(PROJECTS, suite.projectId) : undefined;
   if (!suite || !project) {
     logger.warn(`[scheduler] Suite ${schedule.suiteId} or project not found — skipping`);
@@ -5118,7 +5140,7 @@ function triggerScheduledRun(schedule: ScheduledRun): void {
   }
 
   const environment = (project.environments || []).find(e => e.id === schedule.environmentId) || project.environments?.[0] || null;
-  const scripts     = readAll<TestScript>(SCRIPTS).filter(s => suite.scriptIds.includes(s.id));
+  const scripts = readAll<TestScript>(SCRIPTS).filter(s => suite.scriptIds.includes(s.id));
   const allFunctions = readAll<CommonFunction>(FUNCTIONS).filter(f => f.projectId === project.id || f.projectId === null);
 
   if (scripts.length === 0) {
@@ -5126,7 +5148,7 @@ function triggerScheduledRun(schedule: ScheduledRun): void {
     return;
   }
 
-  const runId     = uuidv4();
+  const runId = uuidv4();
   const startedAt = new Date().toISOString();
 
   let specPath: string;
@@ -5137,7 +5159,7 @@ function triggerScheduledRun(schedule: ScheduledRun): void {
     return;
   }
 
-  const planId   = `suite-${suite.id.slice(0, 8)}`;
+  const planId = `suite-${suite.id.slice(0, 8)}`;
   const planFile = path.join(config.paths.testPlans, `${planId}-plan.json`);
   if (!fs.existsSync(planFile)) {
     const planMeta = { planId, source: 'suite', sourceRef: suite.id, suiteName: suite.name, projectName: project.name, appBaseURL: project.appUrl, createdAt: startedAt, testCases: scripts.map(s => ({ id: s.id, title: s.title, priority: s.priority })) };
@@ -5152,8 +5174,8 @@ function triggerScheduledRun(schedule: ScheduledRun): void {
     suiteId: suite.id, suiteName: suite.name,
     environmentId: environment?.id || '', environmentName: environment?.name || '',
     executedBy: `scheduler:${schedule.label}`,
-    browsers:   suite.browsers ?? ['chromium'],
-    traceMode:  'on-first-retry',
+    browsers: suite.browsers ?? ['chromium'],
+    traceMode: 'on-first-retry',
   };
   runs.set(runId, record);
   enqueueRun(() => spawnRunWithSpec(record, specPath, false, suite.retries ?? 0, suite.browsers ?? ['chromium']));
@@ -5190,7 +5212,7 @@ function unregisterCronJob(scheduleId: string): void {
 app.get('/api/schedules', requireAuth, requireFeature('scheduler'), (req: Request, res: Response) => {
   const { suiteId, projectId } = req.query as Record<string, string>;
   let all = readAll<ScheduledRun>(SCHEDULES);
-  if (suiteId)   all = all.filter(s => s.suiteId   === suiteId);
+  if (suiteId) all = all.filter(s => s.suiteId === suiteId);
   if (projectId) all = all.filter(s => s.projectId === projectId);
   res.json(all);
 });
@@ -5232,10 +5254,10 @@ app.put('/api/schedules/:id', requireAuth, requireEditor, (req: Request, res: Re
 
   const updated: ScheduledRun = {
     ...all[idx],
-    ...(label          !== undefined && { label }),
+    ...(label !== undefined && { label }),
     ...(cronExpression !== undefined && { cronExpression }),
-    ...(enabled        !== undefined && { enabled }),
-    ...(environmentId  !== undefined && { environmentId }),
+    ...(enabled !== undefined && { enabled }),
+    ...(environmentId !== undefined && { environmentId }),
   };
   all[idx] = updated;
   writeAll(SCHEDULES, all);
@@ -5327,21 +5349,21 @@ app.get('/api/admin/license', requireAuth, requireAdmin, (_req: Request, res: Re
   const expires = new Date(p.expiresAt);
   const daysLeft = Math.ceil((expires.getTime() - now.getTime()) / 86400000);
   res.json({
-    activated:        true,
-    tier:             p.tier,
-    orgId:            p.orgId,
-    orgName:          p.orgName,
-    seats:            p.seats,
-    seatsUsed:        getSeatsUsed(),
-    seatRatio:        getSeatUsageRatio(),
-    maxInstances:     p.maxInstances,
-    expiresAt:        p.expiresAt,
+    activated: true,
+    tier: p.tier,
+    orgId: p.orgId,
+    orgName: p.orgName,
+    seats: p.seats,
+    seatsUsed: getSeatsUsed(),
+    seatRatio: getSeatUsageRatio(),
+    maxInstances: p.maxInstances,
+    expiresAt: p.expiresAt,
     daysLeft,
-    expired:          expires < now,
-    features:         p.features,
+    expired: expires < now,
+    features: p.features,
     featureOverrides: p.featureOverrides ?? {},
-    isAutoTrial:      isAutoTrial(),          // true = running on built-in 14-day trial
-    trialDaysLeft:    isAutoTrial() ? trialDaysRemaining() : null,
+    isAutoTrial: isAutoTrial(),          // true = running on built-in 14-day trial
+    trialDaysLeft: isAutoTrial() ? trialDaysRemaining() : null,
   });
 });
 
@@ -5351,7 +5373,7 @@ app.post('/api/admin/license/activate', requireAuth, requireAdmin, licUpload.sin
   // Enterprise .lic file upload (P3-04: persist file path for startup re-verify)
   if (req.file) {
     // Save .lic to data/ for permanent storage and RSA re-verify on every startup
-    const licDir      = require('path').resolve('data');
+    const licDir = require('path').resolve('data');
     const persistPath = require('path').join(licDir, 'license.lic');
     require('fs').mkdirSync(licDir, { recursive: true });
     require('fs').writeFileSync(persistPath, req.file.buffer);
@@ -5380,7 +5402,7 @@ app.post('/api/admin/license/activate', requireAuth, requireAdmin, licUpload.sin
   // P3-06: TEAM/ENT require .lic file — HMAC keys no longer accepted for these tiers
   if (payload.tier === 'team' || payload.tier === 'enterprise') {
     res.status(400).json({
-      error:   'Team and Enterprise licenses require a .lic file from your vendor — HMAC key activation is not supported for these tiers.',
+      error: 'Team and Enterprise licenses require a .lic file from your vendor — HMAC key activation is not supported for these tiers.',
       upgrade: 'lic_required',
     });
     return;
@@ -5411,21 +5433,21 @@ app.post('/api/admin/license/transfer', requireAuth, requireAdmin, (req: Request
   const ok = transferLicense();
   if (!ok) { res.status(500).json({ error: 'Transfer failed — no active license found' }); return; }
   clearLicenseCache();
-  logAudit({ userId: req.session.userId ?? null, username: req.session.username ?? null, action: 'LICENSE_TRANSFERRED', resourceType: 'license', resourceId: null, details: `new machineId=${getMachineId().slice(0,8)}…`, ip: req.ip ?? null });
+  logAudit({ userId: req.session.userId ?? null, username: req.session.username ?? null, action: 'LICENSE_TRANSFERRED', resourceType: 'license', resourceId: null, details: `new machineId=${getMachineId().slice(0, 8)}…`, ip: req.ip ?? null });
   res.json({ success: true, machineId: getMachineId() });
 });
 
 // P1-EG-06: Machine binding status endpoint
 app.get('/api/admin/license/machine', requireAuth, requireAdmin, (_req: Request, res: Response) => {
   const current = getMachineId();
-  const stored  = loadStoredLicense();
-  const bound   = stored?.machineId ?? null;
+  const stored = loadStoredLicense();
+  const bound = stored?.machineId ?? null;
   res.json({
-    currentMachineId:     current,
+    currentMachineId: current,
     currentMachineIdHint: current.slice(0, 8) + '…',
-    boundMachineId:       bound,
-    boundMachineIdHint:   bound ? bound.slice(0, 8) + '…' : null,
-    match:                bound ? bound === current : null,
+    boundMachineId: bound,
+    boundMachineIdHint: bound ? bound.slice(0, 8) + '…' : null,
+    match: bound ? bound === current : null,
   });
 });
 
@@ -5436,7 +5458,7 @@ app.get('/api/admin/license/audit', requireAuth, requireAdmin, (_req: Request, r
     const all: Array<Record<string, unknown>> = require('fs').existsSync(AUDIT_FILE)
       ? JSON.parse(require('fs').readFileSync(AUDIT_FILE, 'utf-8'))
       : [];
-    const LICENSE_ACTIONS = new Set(['LICENSE_ACTIVATED','LICENSE_DEACTIVATED','LICENSE_TRANSFERRED','LICENSE_EXPIRED']);
+    const LICENSE_ACTIONS = new Set(['LICENSE_ACTIVATED', 'LICENSE_DEACTIVATED', 'LICENSE_TRANSFERRED', 'LICENSE_EXPIRED']);
     const events = all.filter(e => LICENSE_ACTIONS.has(e.action as string)).slice(-100).reverse();
     res.json(events);
   } catch { res.json([]); }
@@ -5450,14 +5472,14 @@ app.get('/api/admin/license/sessions', requireAuth, requireAdmin, (req: Request,
     const rows = Object.entries(sessions ?? {}).map(([sid, raw]) => {
       const s = raw as Record<string, unknown>;
       return {
-        sessionId:    sid,
-        userId:       s.userId   ?? null,
-        username:     s.username ?? null,
-        role:         s.role     ?? null,
-        loginAt:      s.loginAt  ?? null,
+        sessionId: sid,
+        userId: s.userId ?? null,
+        username: s.username ?? null,
+        role: s.role ?? null,
+        loginAt: s.loginAt ?? null,
         lastActivity: s.lastActivity ?? null,
-        ip:           s.ip       ?? null,
-        isCurrent:    sid === req.sessionID,
+        ip: s.ip ?? null,
+        isCurrent: sid === req.sessionID,
       };
     }).filter(s => s.userId);   // only authenticated sessions
     res.json({ sessions: rows, seatsUsed: getSeatsUsed(), seatRatio: getSeatUsageRatio() });
@@ -5481,8 +5503,8 @@ app.get('/api/branding', (_req: Request, res: Response) => {
   const p = getLicensePayload();
   if (p?.whiteLabelConfig) {
     res.json({
-      appName:      p.whiteLabelConfig.appName,
-      logoUrl:      p.whiteLabelConfig.logoUrl      ?? null,
+      appName: p.whiteLabelConfig.appName,
+      logoUrl: p.whiteLabelConfig.logoUrl ?? null,
       primaryColor: p.whiteLabelConfig.primaryColor ?? null,
     });
   } else {
@@ -5525,8 +5547,8 @@ app.get('/api/admin/license/seat-report', requireAuth, requireAdmin, (_req: Requ
       ]),
     ];
 
-    const csv = csvRows.map(row => row.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\r\n');
-    const filename = `seat-report-${new Date().toISOString().slice(0,10)}.csv`;
+    const csv = csvRows.map(row => row.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\r\n');
+    const filename = `seat-report-${new Date().toISOString().slice(0, 10)}.csv`;
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(csv);
@@ -5584,14 +5606,14 @@ server.listen(PORT, '0.0.0.0', async () => {
   // real license key before the trial expires — no chicken-and-egg on fresh install.
   if (!getLicensePayload()) {
     const trial = activateAutoTrial();
-    const days  = AUTO_TRIAL_DAYS;
+    const days = AUTO_TRIAL_DAYS;
     logger.info('═══════════════════════════════════════════════════════');
     logger.info(`[license] No license found — auto-trial activated (${days} days).`);
     logger.info(`[license] Trial expires: ${trial.expiresAt.slice(0, 10)}`);
     logger.info('[license] Features: recorder, debugger, scheduler, apiAccess (3 seats, 3 projects)');
     logger.info('[license] Go to Admin → License to activate your license key.');
     logger.info('═══════════════════════════════════════════════════════');
-    logAudit({ userId: null, username: null, action: 'LICENSE_TRIAL_STARTED', resourceType: 'license', resourceId: null, details: `expires=${trial.expiresAt.slice(0,10)}`, ip: null });
+    logAudit({ userId: null, username: null, action: 'LICENSE_TRIAL_STARTED', resourceType: 'license', resourceId: null, details: `expires=${trial.expiresAt.slice(0, 10)}`, ip: null });
   } else if (isAutoTrial()) {
     const days = trialDaysRemaining();
     logger.warn(`[license] Trial license active — ${days} day(s) remaining. Activate a license key via Admin → License.`);
@@ -5635,7 +5657,7 @@ server.listen(PORT, '0.0.0.0', async () => {
       if (session.status !== 'done' && session.status !== 'stopped' && session.status !== 'error') {
         const timeSinceHeartbeat = now - session.lastHeartbeat;
         if (timeSinceHeartbeat > HEARTBEAT_TIMEOUT_MS) {
-          logger.info(`[dbg:heartbeat] No heartbeat for ${timeSinceHeartbeat}ms — killing orphaned session ${sessionId.slice(0,8)} (user: ${session.username})`);
+          logger.info(`[dbg:heartbeat] No heartbeat for ${timeSinceHeartbeat}ms — killing orphaned session ${sessionId.slice(0, 8)} (user: ${session.username})`);
           if (session.proc?.pid) {
             try {
               // Kill entire process tree (Chrome children) — same as stop logic

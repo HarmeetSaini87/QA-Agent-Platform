@@ -102,22 +102,20 @@
         </svg>
         <span>Flaky Tests</span>
       </div>
-
-      <div class="nav-item" data-tab="analytics" id="nav-analytics">
+      <div class="nav-item" data-tab="analytics">
         <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>
         </svg>
         <span>Analytics</span>
       </div>
-
-      <div class="nav-item" data-tab="visual" id="nav-visual">
+      <div class="nav-item" data-tab="vr" style="display:none"></div> <!-- legacy alias -->
+      <div class="nav-item" data-tab="visual">
         <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
+          <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
         </svg>
         <span>Visual Baselines</span>
       </div>
-
-      <div class="nav-item" data-tab="locator-health" id="nav-locator-health">
+      <div class="nav-item" data-tab="locator-health">
         <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
         </svg>
@@ -1867,258 +1865,189 @@
     </div>
     <div class="modal-body">
       <div id="suite-modal-alert" style="margin-bottom:8px"></div>
-      <div class="row-2">
-        <div class="field"><label>Suite Name <span class="req">*</span></label>
-          <input id="sm-name" class="fm-input" placeholder="e.g. Smoke Test Suite" /></div>
+
+      <!-- Suite Tabs Navigation -->
+      <div class="tab-nav">
+        <button class="tab-btn active" onclick="suiteTab('details', this)">Details</button>
+        <button class="tab-btn" onclick="suiteTab('scripts', this)">Scripts</button>
+        <button class="tab-btn" onclick="suiteTab('hooks', this)">Hooks & Handlers</button>
+        <button class="tab-btn" id="sm-tab-sched" onclick="suiteTab('sched', this)" style="display:none">Scheduling</button>
+        <button class="tab-btn" onclick="suiteTab('intelligence', this)">Intelligence</button>
+      </div>
+
+      <!-- Tab 1: Details -->
+      <div id="sm-pane-details" class="tab-pane active">
+        <div class="row-2">
+          <div class="field"><label>Suite Name <span class="req">*</span></label>
+            <input id="sm-name" class="fm-input" placeholder="e.g. Smoke Test Suite" /></div>
+          <div class="field"><label>Default Environment</label>
+            <select id="sm-env-default" class="fm-input"></select></div>
+        </div>
         <div class="field"><label>Description</label>
           <input id="sm-desc" class="fm-input" placeholder="Optional description" /></div>
+        
+        <div class="row-2" style="margin-top:12px;gap:20px">
+          <div class="field">
+            <label style="display:flex;align-items:center;gap:6px">
+              Auto-Retry Failed Tests
+              <span class="info-icon" tabindex="0"
+                data-tooltip="When a test fails, Playwright can automatically re-run it from the start before marking it as failed.">?</span>
+            </label>
+            <select id="sm-retries" class="fm-input">
+              <option value="0">0 — Disabled (fail immediately)</option>
+              <option value="1">1 — Retry once on failure</option>
+              <option value="2">2 — Retry twice on failure</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Run on Browsers</label>
+            <div style="display:flex;gap:12px;margin-top:6px">
+              <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;cursor:pointer">
+                <input type="checkbox" id="sm-br-chromium" value="chromium" checked /> Chromium
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;cursor:pointer">
+                <input type="checkbox" id="sm-br-firefox" value="firefox" /> Firefox
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;cursor:pointer">
+                <input type="checkbox" id="sm-br-webkit" value="webkit" /> Webkit
+              </label>
+            </div>
+          </div>
+        </div>
       </div>
-      <div class="field">
-        <label style="display:flex;align-items:center;gap:6px">
-          Auto-Retry Failed Tests
-          <span class="info-icon" tabindex="0"
-            data-tooltip="When a test fails, Playwright can automatically re-run it from the start before marking it as failed.&#10;&#10;0 — No retry (default). A test fails immediately on first failure.&#10;1 — Retry once. Good for catching occasional flaky failures.&#10;2 — Retry twice. Use for tests that access slow or unstable environments.&#10;&#10;&#9888; Each retry runs the full test from scratch (including login/navigation). Retried tests are marked with a &#39;flaky&#39; flag in the report if they eventually pass.&#10;&#10;Tip: Start with 0. Only increase if you see consistent false failures in a stable environment.">?</span>
-        </label>
-        <select id="sm-retries" class="fm-input" style="max-width:280px">
-          <option value="0">0 — Disabled (fail immediately)</option>
-          <option value="1">1 — Retry once on failure</option>
-          <option value="2">2 — Retry twice on failure</option>
-        </select>
-      </div>
-      <!-- ── Add Scripts section ─────────────────────────────────────── -->
-      <div style="margin-top:14px">
-        <div style="font-size:13px;font-weight:700;color:var(--neutral-700);margin-bottom:8px">Add Scripts</div>
 
-        <!-- Zone A: Available scripts table -->
+      <!-- Tab 2: Scripts (Zone A / Zone B) -->
+      <div id="sm-pane-scripts" class="tab-pane">
+        <div style="font-size:13px;font-weight:700;color:var(--neutral-700);margin-bottom:8px">Add Scripts</div>
         <div style="border:1px solid var(--neutral-200);border-radius:7px;overflow:hidden;margin-bottom:12px">
-          <!-- Column headers (sortable) + select-all checkbox -->
           <div style="display:grid;grid-template-columns:32px 110px 1fr 130px 110px;background:var(--neutral-100);border-bottom:1px solid var(--neutral-200)">
             <div style="padding:6px 8px;display:flex;align-items:center;justify-content:center">
-              <input type="checkbox" id="sm-chk-all" title="Select / deselect all on this page" onchange="smToggleSelectAll()" />
+              <input type="checkbox" id="sm-chk-all" onchange="smToggleSelectAll()" />
             </div>
-            <div style="padding:6px 10px;font-size:11.5px;font-weight:700;color:var(--neutral-600);cursor:pointer;user-select:none;display:flex;align-items:center;gap:4px" onclick="smSort('tcid')">TCID <span id="sm-sort-tcid" style="color:var(--brand-500)">▲</span></div>
-            <div style="padding:6px 10px;font-size:11.5px;font-weight:700;color:var(--neutral-600);cursor:pointer;user-select:none;display:flex;align-items:center;gap:4px" onclick="smSort('title')">Title <span id="sm-sort-title" style="color:var(--brand-500)"></span></div>
-            <div style="padding:6px 10px;font-size:11.5px;font-weight:700;color:var(--neutral-600);cursor:pointer;user-select:none;display:flex;align-items:center;gap:4px" onclick="smSort('component')">Component <span id="sm-sort-component" style="color:var(--brand-500)"></span></div>
+            <div style="padding:6px 10px;font-size:11.5px;font-weight:700;color:var(--neutral-600);cursor:pointer;display:flex;align-items:center;gap:4px" onclick="smSort('tcid')">TCID <span id="sm-sort-tcid" style="color:var(--brand-500)">▲</span></div>
+            <div style="padding:6px 10px;font-size:11.5px;font-weight:700;color:var(--neutral-600);cursor:pointer;display:flex;align-items:center;gap:4px" onclick="smSort('title')">Title <span id="sm-sort-title"></span></div>
+            <div style="padding:6px 10px;font-size:11.5px;font-weight:700;color:var(--neutral-600);cursor:pointer;display:flex;align-items:center;gap:4px" onclick="smSort('component')">Component <span id="sm-sort-component"></span></div>
             <div style="padding:6px 10px;font-size:11.5px;font-weight:700;color:var(--neutral-600)">Tag</div>
           </div>
-          <!-- Per-column filter row -->
           <div style="display:grid;grid-template-columns:32px 110px 1fr 130px 110px;background:var(--neutral-50);border-bottom:1px solid var(--neutral-200)">
             <div style="padding:5px 6px;border-right:1px solid var(--neutral-200);display:flex;align-items:center;justify-content:center">
-              <button class="tbl-btn" onclick="smClearFilters()" title="Clear all filters" style="font-size:11px;padding:2px 5px">✕</button>
+              <button class="tbl-btn" onclick="smClearFilters()" style="font-size:11px;padding:2px 5px">✕</button>
             </div>
-            <div style="padding:5px 6px;border-right:1px solid var(--neutral-200)">
-              <input id="sm-filter-tcid" class="filter-input" style="width:100%;font-size:11.5px;padding:3px 6px"
-                     placeholder="Filter TCID…" oninput="smScriptSearch()" />
-            </div>
-            <div style="padding:5px 6px;border-right:1px solid var(--neutral-200)">
-              <input id="sm-filter-title" class="filter-input" style="width:100%;font-size:11.5px;padding:3px 6px"
-                     placeholder="Filter Title…" oninput="smScriptSearch()" />
-            </div>
-            <div style="padding:5px 6px;border-right:1px solid var(--neutral-200)">
-              <input id="sm-filter-component" class="filter-input" style="width:100%;font-size:11.5px;padding:3px 6px"
-                     placeholder="Filter Component…" oninput="smScriptSearch()" />
-            </div>
-            <div style="padding:5px 6px">
-              <input id="sm-filter-tag" class="filter-input" style="width:100%;font-size:11.5px;padding:3px 6px"
-                     placeholder="Filter Tag…" oninput="smScriptSearch()" />
-            </div>
+            <div style="padding:5px 6px;border-right:1px solid var(--neutral-200)"><input id="sm-filter-tcid" class="filter-input" oninput="smScriptSearch()" /></div>
+            <div style="padding:5px 6px;border-right:1px solid var(--neutral-200)"><input id="sm-filter-title" class="filter-input" oninput="smScriptSearch()" /></div>
+            <div style="padding:5px 6px;border-right:1px solid var(--neutral-200)"><input id="sm-filter-component" class="filter-input" oninput="smScriptSearch()" /></div>
+            <div style="padding:5px 6px"><input id="sm-filter-tag" class="filter-input" oninput="smScriptSearch()" /></div>
           </div>
-          <div id="sm-script-list" style="max-height:200px;overflow-y:auto"></div>
-          <!-- Multi-select action bar (shown when checkboxes are ticked) -->
+          <div id="sm-script-list" style="max-height:180px;overflow-y:auto"></div>
           <div id="sm-bulk-bar" style="display:none;align-items:center;gap:10px;padding:6px 10px;background:var(--brand-light);border-top:1px solid var(--neutral-200)">
-            <span id="sm-bulk-count" style="font-size:12.5px;font-weight:600;color:var(--brand-700)"></span>
-            <button class="btn btn-primary btn-sm" onclick="smAddSelected()" style="padding:4px 14px;font-size:12px">+ Add Selected to Suite</button>
-            <button class="tbl-btn" onclick="smDeselectAll()" style="font-size:12px">Deselect All</button>
-          </div>
-          <!-- Pagination -->
-          <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 10px;background:var(--neutral-50);border-top:1px solid var(--neutral-200)">
-            <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--neutral-600)">
-              Rows:
-              <select id="sm-page-size" class="fm-input" style="padding:2px 6px;font-size:12px;height:26px;width:60px" onchange="smPageSizeChange()">
-                <option value="10" selected>10</option>
-                <option value="25">25</option>
-                <option value="50">50</option>
-              </select>
-            </div>
-            <div style="display:flex;align-items:center;gap:6px;font-size:12px">
-              <button class="tbl-btn" id="sm-prev-btn" onclick="smPagePrev()" disabled>‹ Prev</button>
-              <span id="sm-page-label" style="color:var(--neutral-600)">Page 1 of 1</span>
-              <button class="tbl-btn" id="sm-next-btn" onclick="smPageNext()" disabled>Next ›</button>
-            </div>
+            <span id="sm-bulk-count" style="font-size:12px;font-weight:600;color:var(--brand-700)"></span>
+            <button class="btn btn-primary btn-sm" onclick="smAddSelected()">+ Add to Suite</button>
           </div>
         </div>
 
-        <!-- Zone B: Selected scripts (ordered) -->
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
-          <div style="font-size:12.5px;font-weight:700;color:var(--neutral-600)">
-            Selected Scripts <span id="sm-selected-count" style="font-weight:400;color:var(--neutral-400)"></span>
-          </div>
-          <!-- Zone B bulk action bar — visible only when checkboxes are ticked -->
+          <div style="font-size:12.5px;font-weight:700;color:var(--neutral-600)">Selected Scripts <span id="sm-selected-count"></span></div>
           <div id="smb-bulk-bar" style="display:none;align-items:center;gap:8px">
-            <span id="smb-bulk-count" style="font-size:12px;font-weight:600;color:var(--red-600,#dc2626)"></span>
-            <button class="tbl-btn del" onclick="smbRemoveSelected()" style="font-size:12px;padding:3px 10px">Remove Selected</button>
-            <button class="tbl-btn" onclick="smbDeselectAll()" style="font-size:12px">Deselect All</button>
+            <button class="tbl-btn del" onclick="smbRemoveSelected()" style="font-size:12px">Remove Selected</button>
           </div>
         </div>
-        <div id="sm-selected-list"
-             style="min-height:48px;max-height:220px;overflow-y:auto;border:1px dashed var(--neutral-300);border-radius:6px;padding:4px">
-          <div id="sm-selected-empty" style="padding:12px 10px;color:var(--neutral-400);font-size:12.5px;text-align:center">
-            No scripts selected yet — click + to add
-          </div>
-        </div>
+        <div id="sm-selected-list" style="min-height:48px;max-height:180px;overflow-y:auto;border:1px dashed var(--neutral-300);border-radius:6px;padding:4px"></div>
       </div>
 
-      <!-- ── Fast Mode ────────────────────────────────────────────────── -->
-      <div style="margin-top:18px;border-top:1px solid var(--neutral-200);padding-top:14px">
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
-          <label class="fm-toggle-wrap" style="display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none">
-            <input type="checkbox" id="sm-fast-mode" onchange="fastModeToggle()" style="width:16px;height:16px;cursor:pointer" />
-            <span style="font-size:13px;font-weight:700;color:var(--neutral-700)">&#9889; Fast Mode</span>
-          </label>
-          <span class="info-icon" tabindex="0"
-            data-tooltip="Fast Mode captures login state once before all tests run, then reuses it for every test — no re-login per test.&#10;&#10;How it works:&#10;1. A hidden beforeAll runs your login steps once and saves cookies + local storage.&#10;2. Every test starts already authenticated — skipping the login flow.&#10;&#10;When to use:&#10;• Suites with many scripts that all require login.&#10;• Login is slow (MFA, SSO redirect, CAPTCHA workarounds).&#10;&#10;When NOT to use:&#10;• Tests that validate login/logout flows themselves.&#10;• Tests that need a clean browser state (cookies cleared).&#10;&#10;Tip: Add only the minimal steps needed to reach an authenticated state (Fill username, Fill password, Click login button).">?</span>
+      <!-- Tab 3: Hooks -->
+      <div id="sm-pane-hooks" class="tab-pane">
+        <!-- Fast Mode -->
+        <div style="margin-bottom:18px">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+            <label class="fm-toggle-wrap" style="display:flex;align-items:center;gap:8px;cursor:pointer">
+              <input type="checkbox" id="sm-fast-mode" onchange="fastModeToggle()" style="width:16px;height:16px" />
+              <span style="font-size:13px;font-weight:700;color:var(--neutral-700)">⚡ Fast Mode (Auth Caching)</span>
+            </label>
+          </div>
+          <div id="sm-fast-mode-body" style="display:none;padding-left:24px">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+              <div style="font-size:12.5px;font-weight:600;color:var(--neutral-600)">Login Steps</div>
+              <button class="btn btn-outline btn-sm" onclick="hookAddStep('fastmode')">+ Add Step</button>
+            </div>
+            <div id="hook-fastmode-list" class="hook-step-container"></div>
+          </div>
         </div>
-        <div id="sm-fast-mode-body" style="display:none;margin-top:10px">
-          <div style="font-size:12px;color:var(--neutral-500);margin-bottom:8px">Login steps to run once before all tests (captures auth state):</div>
+
+        <!-- Overlay Handlers -->
+        <div style="margin-top:18px;border-top:1px solid var(--neutral-200);padding-top:14px">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
-            <div style="font-size:12.5px;font-weight:600;color:var(--neutral-600)">&#128274; Login Steps (run once)</div>
-            <button class="btn btn-outline btn-sm" style="font-size:11.5px;padding:3px 10px" onclick="hookAddStep('fastmode')">+ Add Step</button>
+            <span style="font-size:13px;font-weight:700;color:var(--neutral-700)">🗨️ Overlay Handlers</span>
+            <button class="btn btn-outline btn-sm" onclick="overlayAddHandler()">+ Add Handler</button>
           </div>
-          <div id="hook-fastmode-list" style="display:flex;flex-direction:column;gap:4px;min-height:32px;border:1px dashed var(--neutral-300);border-radius:6px;padding:6px">
-            <div id="hook-fastmode-empty" style="color:var(--neutral-400);font-size:12px;text-align:center;padding:6px 0">No login steps — click + Add Step to define the login flow</div>
+          <div id="overlay-handler-list" class="hook-step-container"></div>
+        </div>
+
+        <!-- Suite Hooks -->
+        <div style="margin-top:18px;border-top:1px solid var(--neutral-200);padding-top:14px">
+          <div style="font-size:13px;font-weight:700;color:var(--neutral-700);margin-bottom:12px">⚓ Suite Hooks</div>
+          <div class="row-2">
+            <div>
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+                <div style="font-size:12.5px;font-weight:600;color:var(--neutral-600)">beforeEach</div>
+                <button class="btn btn-outline btn-sm" onclick="hookAddStep('before')">+</button>
+              </div>
+              <div id="hook-before-list" class="hook-step-container"></div>
+            </div>
+            <div>
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+                <div style="font-size:12.5px;font-weight:600;color:var(--neutral-600)">afterEach</div>
+                <button class="btn btn-outline btn-sm" onclick="hookAddStep('after')">+</button>
+              </div>
+              <div id="hook-after-list" class="hook-step-container"></div>
+            </div>
           </div>
         </div>
       </div>
 
-      <!-- ── Overlay Handlers ─────────────────────────────────────────── -->
-      <div style="margin-top:18px;border-top:1px solid var(--neutral-200);padding-top:14px">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
-          <span style="font-size:13px;font-weight:700;color:var(--neutral-700)">&#128366; Overlay Handlers</span>
-          <span class="info-icon" tabindex="0"
-            data-tooltip="Overlay Handlers automatically dismiss unexpected browser dialogs (alert, confirm, prompt) that appear during any test in this suite.&#10;&#10;Without a handler: if an unexpected dialog appears, the test will hang until it times out.&#10;&#10;With a handler: the dialog is auto-accepted or dismissed the moment it appears — keeping tests flowing.&#10;&#10;Types:&#10;• alert — alert() dialogs (OK only)&#10;• confirm — confirm() dialogs (OK / Cancel)&#10;• prompt — prompt() dialogs (text input + OK / Cancel)&#10;• any — catch all dialog types&#10;&#10;Tip: Add an 'any → accept' rule as a catch-all, then add specific rules above it for cases that need custom text or dismiss.">?</span>
-          <button class="btn btn-outline btn-sm" style="font-size:11.5px;padding:3px 10px;margin-left:auto" onclick="overlayAddHandler()">+ Add Handler</button>
-        </div>
-        <div style="font-size:12px;color:var(--neutral-500);margin-bottom:10px">Auto-dismiss unexpected dialogs so tests don't hang.</div>
-        <div id="overlay-handler-list" style="display:flex;flex-direction:column;gap:4px;min-height:32px;border:1px dashed var(--neutral-300);border-radius:6px;padding:6px">
-          <div id="overlay-handler-empty" style="color:var(--neutral-400);font-size:12px;text-align:center;padding:6px 0">No handlers — unexpected dialogs will cause tests to hang</div>
-        </div>
-      </div>
-
-      <!-- ── Suite Hooks ──────────────────────────────────────────────── -->
-      <div style="margin-top:18px;border-top:1px solid var(--neutral-200);padding-top:14px">
-        <div style="font-size:13px;font-weight:700;color:var(--neutral-700);margin-bottom:4px">
-          &#9875; Suite Hooks
-          <span class="info-icon" tabindex="0"
-            data-tooltip="Suite Hooks run keyword steps automatically before or after every test in this suite.&#10;&#10;beforeEach — runs before each test (e.g. Login, clear cookies, set state).&#10;afterEach — runs after each test (e.g. Logout, reset data).&#10;&#10;Hook steps use the same keywords as test scripts but run in a shared context — no variable scope, no screenshots.&#10;&#10;Tip: Use beforeEach for login steps instead of repeating them in every script.">?</span>
-        </div>
-        <div style="font-size:12px;color:var(--neutral-500);margin-bottom:12px">Steps that run before / after every test in this suite automatically.</div>
-
-        <!-- beforeEach hook steps -->
-        <div style="margin-bottom:12px">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
-            <div style="font-size:12.5px;font-weight:600;color:var(--neutral-600)">&#9654; beforeEach Steps</div>
-            <button class="btn btn-outline btn-sm" style="font-size:11.5px;padding:3px 10px" onclick="hookAddStep('before')">+ Add Step</button>
-          </div>
-          <div id="hook-before-list" style="display:flex;flex-direction:column;gap:4px;min-height:32px;border:1px dashed var(--neutral-300);border-radius:6px;padding:6px">
-            <div id="hook-before-empty" style="color:var(--neutral-400);font-size:12px;text-align:center;padding:6px 0">No beforeEach steps — click + Add Step</div>
-          </div>
-        </div>
-
-        <!-- afterEach hook steps -->
-        <div>
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
-            <div style="font-size:12.5px;font-weight:600;color:var(--neutral-600)">&#9654; afterEach Steps</div>
-            <button class="btn btn-outline btn-sm" style="font-size:11.5px;padding:3px 10px" onclick="hookAddStep('after')">+ Add Step</button>
-          </div>
-          <div id="hook-after-list" style="display:flex;flex-direction:column;gap:4px;min-height:32px;border:1px dashed var(--neutral-300);border-radius:6px;padding:6px">
-            <div id="hook-after-empty" style="color:var(--neutral-400);font-size:12px;text-align:center;padding:6px 0">No afterEach steps — click + Add Step</div>
-          </div>
-        </div>
-      </div>
-
-      <!-- ── Scheduled Runs (Edit mode only) ──────────────────────────── -->
-      <div id="sm-sched-wrap" style="display:none;margin-top:18px;border-top:1px solid var(--neutral-200);padding-top:14px">
+      <!-- Tab 4: Scheduling -->
+      <div id="sm-pane-sched" class="tab-pane">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
           <div style="font-size:13px;font-weight:700;color:var(--neutral-700)">🕐 Scheduled Runs</div>
-          <button class="btn btn-outline btn-sm" style="font-size:12px" onclick="schedAddShow()">+ Add Schedule</button>
+          <button class="btn btn-outline btn-sm" onclick="schedAddShow()">+ Add Schedule</button>
         </div>
-
-        <!-- Add/Edit form (hidden by default) -->
-        <div id="sched-form" style="display:none;background:var(--surface-1);border:1px solid var(--border);border-radius:6px;padding:14px;margin-bottom:12px">
+        <div id="sched-form" style="display:none;background:var(--neutral-100);border:1px solid var(--neutral-200);border-radius:6px;padding:14px;margin-bottom:12px">
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
-            <div>
-              <label class="fm-label">Label</label>
-              <input id="sched-label" class="fm-input" placeholder="e.g. Nightly Regression" />
-            </div>
-            <div>
-              <label class="fm-label">Environment</label>
-              <select id="sched-env" class="fm-input">
-                <option value="">— Select —</option>
-              </select>
-            </div>
-            <div>
-              <label class="fm-label">Frequency</label>
-              <select id="sched-preset" class="fm-input" onchange="schedPresetChange()">
-                <option value="0 9 * * *">Daily at 9am</option>
-                <option value="0 0 * * *">Nightly at midnight</option>
-                <option value="0 9 * * 1-5">Weekdays at 9am</option>
-                <option value="0 */4 * * *">Every 4 hours</option>
-                <option value="0 * * * *">Every hour</option>
-                <option value="custom">Custom cron expression</option>
-              </select>
-            </div>
-            <div id="sched-custom-wrap" style="display:none">
-              <label class="fm-label">Cron Expression <span style="font-size:10px;color:var(--neutral-400)">(UTC, 5-field)</span></label>
-              <input id="sched-cron" class="fm-input" placeholder="0 9 * * 1-5" />
-            </div>
+            <div><label class="fm-label">Label</label><input id="sched-label" class="fm-input" /></div>
+            <div><label class="fm-label">Env</label><select id="sched-env" class="fm-input"></select></div>
+            <div><label class="fm-label">Frequency</label><select id="sched-preset" class="fm-input" onchange="schedPresetChange()"><option value="0 9 * * *">Daily 9am</option><option value="custom">Custom Cron</option></select></div>
+            <div id="sched-custom-wrap" style="display:none"><label class="fm-label">Cron</label><input id="sched-cron" class="fm-input" /></div>
           </div>
           <div style="display:flex;gap:8px">
-            <button class="btn btn-primary btn-sm" onclick="schedSave()">Save Schedule</button>
+            <button class="btn btn-primary btn-sm" onclick="schedSaveLocal()">Add to Suite</button>
             <button class="btn btn-outline btn-sm" onclick="schedFormHide()">Cancel</button>
           </div>
-          <input type="hidden" id="sched-edit-id" value="" />
         </div>
-
-        <!-- Schedules list -->
         <div id="sched-list"></div>
       </div>
-    </div>
 
-    <!-- Flakiness Intelligence Config -->
-    <div style="margin-top:18px;border-top:1px solid var(--border);padding-top:14px">
-      <div style="font-size:13px;font-weight:600;color:var(--neutral-300);margin-bottom:10px;display:flex;align-items:center;gap:8px">
-        Flakiness Intelligence
-        <button type="button" class="btn btn-xs btn-outline" onclick="flakyConfigReset()" title="Reset to project defaults">Reset to Default</button>
+      <!-- Tab 5: Intelligence -->
+      <div id="sm-pane-intelligence" class="tab-pane">
+        <div style="font-size:13px;font-weight:700;color:var(--neutral-700);margin-bottom:10px;display:flex;align-items:center;justify-content:space-between">
+          Flakiness Intelligence
+          <button type="button" class="btn btn-xs btn-outline" onclick="flakyConfigReset()">Reset to Defaults</button>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
+          <label style="font-size:12px;width:160px">Suite Type Preset:</label>
+          <select id="flaky-preset" class="fm-input" style="width:140px;height:28px" onchange="flakyApplyPreset()">
+            <option value="">Custom</option>
+            <option value="smoke">Smoke (20%)</option>
+            <option value="regression">Regression (30%)</option>
+          </select>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+          <div class="field"><label>Quarantine Threshold (%)</label><input id="flaky-cfg-threshold" type="number" class="fm-input"></div>
+          <div class="field"><label>Min Runs before Scoring</label><input id="flaky-cfg-minruns" type="number" class="fm-input"></div>
+          <div class="field"><label>Quarantine Budget</label><input id="flaky-cfg-budget" type="number" class="fm-input"></div>
+          <div class="field"><label>Auto-Promote Rate (%)</label><input id="flaky-cfg-passrate" type="number" class="fm-input"></div>
+        </div>
+        <p style="font-size:11px;color:var(--neutral-500);font-style:italic">Configuring intelligence here applies specifically to this suite's automated evaluation logic.</p>
       </div>
-      <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
-        <label style="font-size:12px;width:160px">Suite Type Preset:</label>
-        <select id="flaky-preset" class="fm-input" style="width:140px;font-size:12px;height:28px" onchange="flakyApplyPreset()">
-          <option value="">Custom</option>
-          <option value="smoke">Smoke (20%)</option>
-          <option value="regression">Regression (30%)</option>
-          <option value="e2e">E2E (40%)</option>
-        </select>
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-        <div>
-          <label style="font-size:12px;display:block;margin-bottom:2px">Auto-quarantine threshold (%)</label>
-          <input id="flaky-cfg-threshold" type="number" min="1" max="100" class="fm-input" style="width:80px;font-size:12px;height:28px" placeholder="30">
-          <span id="flaky-cfg-proj-threshold" style="font-size:11px;color:var(--neutral-500);margin-left:4px"></span>
-        </div>
-        <div>
-          <label style="font-size:12px;display:block;margin-bottom:2px">Minimum runs before scoring</label>
-          <input id="flaky-cfg-minruns" type="number" min="1" class="fm-input" style="width:80px;font-size:12px;height:28px" placeholder="5">
-        </div>
-        <div>
-          <label style="font-size:12px;display:block;margin-bottom:2px">Quarantine budget per run</label>
-          <input id="flaky-cfg-budget" type="number" min="0" class="fm-input" style="width:80px;font-size:12px;height:28px" placeholder="5">
-        </div>
-        <div>
-          <label style="font-size:12px;display:block;margin-bottom:2px">Auto-promote: min pass rate (%)</label>
-          <input id="flaky-cfg-passrate" type="number" min="1" max="100" class="fm-input" style="width:80px;font-size:12px;height:28px" placeholder="95">
-        </div>
-      </div>
-      <button type="button" class="btn btn-sm btn-outline" style="margin-top:10px" onclick="flakyConfigSave()">Save Flakiness Config</button>
+
     </div>
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="suiteCloseModal()">Cancel</button>
