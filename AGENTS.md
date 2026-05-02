@@ -22,9 +22,10 @@ Node.js / TypeScript · Express.js · Playwright · Vanilla JS frontend · JSON 
 2. **Never modify passing test scripts** in `tests/codegen/`.
 3. **Never touch prod** (`e:/AI Agent/qa-agent-platform`) during normal dev work.
 4. **Always run `npm run build`** after any `src/` TypeScript change before restarting.
-5. **Never pre-load large files** — use graph tools first, read files only when needed.
-6. **`keywords.json`** is the source of truth for keyword definitions — extend there, not in generator.
-7. **`ui-reference-lookup.json`** is the selector reference for the target application.
+5. **Always run `npm run build:js`** after editing any file in `src/ui/public/js/`.
+6. **Never pre-load large files** — use graph tools first, read files only when needed.
+7. **`keywords.json`** is the source of truth for keyword definitions — extend there, not in generator.
+8. **`ui-reference-lookup.json`** is the selector reference for the target application.
 
 ## Key Entry Points
 
@@ -32,7 +33,7 @@ Node.js / TypeScript · Express.js · Playwright · Vanilla JS frontend · JSON 
 |---|---|
 | Express server + all API routes | `src/ui/server.ts` |
 | Spec generation engine | `src/utils/codegenGenerator.ts` |
-| All frontend module logic | `src/ui/public/modules.js` |
+| All frontend module logic | `src/ui/public/js/*.js` (concatenated → `modules.js`) |
 | Bootstrap + tab switching | `src/ui/public/app.js` |
 | Auth middleware | `src/auth/middleware.ts` |
 | License feature gates | `src/utils/licenseManager.ts` |
@@ -49,9 +50,44 @@ All runtime data in `data/*.json` (git-ignored). Run results in `results/run-<uu
 
 ```bash
 npm run build        # compile TypeScript
+npm run build:js     # concatenate frontend modules (js/ → modules.js)
 npm run ui           # start server (port 3003)
 npm run build && npm run ui   # standard restart sequence
 ```
+
+### Frontend Module Concatenation
+
+`src/ui/public/modules.js` is **built from source files** in `src/ui/public/js/`.
+After editing any file in `js/`, run `npm run build:js` to regenerate `modules.js`.
+
+| Source File | Content | ~Lines |
+|---|---|---|
+| `00-header.js` | File header + strict mode + _escHtml | 11 |
+| `01-auth.js` | Auth bootstrap + logout | 58 |
+| `02-shared-helpers.js` | modAlert, openModal, formatDate, adminSubTab | 41 |
+| `03-admin-users.js` | User management + audit log | 119 |
+| `04-admin-settings.js` | Settings + notifications + NL provider | 226 |
+| `05-projects.js` | Projects + components + common data | 534 |
+| `06-locators.js` | Locator repository + proposals + heal log + picker | 683 |
+| `07-functions.js` | Common functions CRUD + step editor | 279 |
+| `08-tab-switch.js` | Tab switching + project dropdown + scoped-tabs guard | 155 |
+| `09-scripts.js` | Script editor (largest module) | 1994 |
+| `10-suites.js` | Suite CRUD + modal + hooks + schedules | 817 |
+| `11-execution.js` | Execution module (run suite, toast) | 650 |
+| `12-flaky.js` | Flaky tests tab + config panel | 386 |
+| `13-bootstrap.js` | DOMContentLoaded bootstrap | 28 |
+| `14-run-history.js` | Run history + comparison | 477 |
+| `15-debugger.js` | Debug UI (SSE, heartbeat, step rendering) | 822 |
+| `16-recorder.js` | Recorder UI (start/stop/SSE/CR6) | 559 |
+| `17-apikeys.js` | API key management | 544 |
+| `18-license.js` | License panel + CTA | 420 |
+| `19-analytics.js` | Analytics dashboard | 122 |
+| `20-visual-regression.js` | Visual regression tab | 165 |
+| `21-locator-health.js` | Locator health tab | 68 |
+| `22-jira.js` | Jira config + defect lifecycle | 80 |
+
+See `scripts/concat-modules.js` for the build script.
+To re-extract from a changed `modules.js.backup`, run: `node scripts/concat-modules.js extract`
 
 ## Graph Tools
 

@@ -161,6 +161,7 @@ export function analyzeFlakiness(
   const passRate = lastN.length > 0
     ? lastN.filter(r => r.status === 'pass').length / lastN.length
     : 0;
+  // Statistical signal only — caller must also check currentlyQuarantined before acting on this
   const shouldAutoPromote =
     lastN.length >= config.autoPromoteWindowRuns &&
     lastK.every(r => r.status === 'pass') &&
@@ -211,7 +212,8 @@ function extractSignals(windowed: TestRun[], recentRuns: TestRun[]): FlakeSignal
   return {
     timeout:         rawErrors.some(e => /timeout|timed out|exceeded.*ms/i.test(e)),
     slowTest:        baselineP95 !== undefined
-                       ? failures.some(r => r.durationMs > baselineP95 * 1.5)
+                       ? rawErrors.some(e => /timeout|timed out|exceeded.*ms/i.test(e))
+                         && failures.some(r => r.durationMs >= baselineP95 * 1.5)
                        : false,
     locatorError:    rawErrors.some(e => /locator|element not found|selector|nth\(|getBy/i.test(e)),
     networkError:    rawErrors.some(e => /ECONNRESET|ECONNREFUSED|fetch failed|net::|5\d\d /i.test(e)),

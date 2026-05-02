@@ -61,6 +61,9 @@ All code changes, experiments, and new features are developed here FIRST.
 > **📋 See [docs/superpowers/plans/2026-04-27-auto-file-defect.md](docs/superpowers/plans/2026-04-27-auto-file-defect.md) — Auto-File Defect 9-task plan. ALL TASKS COMPLETE (2026-04-28). Manual E2E testing pending against Jira sandbox.**
 > **📋 See [docs/AUTO_FILE_DEFECT_USER_GUIDE.md](docs/AUTO_FILE_DEFECT_USER_GUIDE.md) — User-facing guide for Editors / Admins / SDETs.**
 > **📋 See [docs/AUTO_FILE_DEFECT_TEST_GUIDE.md](docs/AUTO_FILE_DEFECT_TEST_GUIDE.md) — 65-test E2E checklist against Jira sandbox.**
+> **📋 See [docs/superpowers/specs/2026-04-30-nl-keyword-suggestion-design.md](docs/superpowers/specs/2026-04-30-nl-keyword-suggestion-design.md) — NL → Keyword Suggestion design spec. FEATURE IS COMPLETE (2026-05-01).**
+> **📋 See [docs/NL_KEYWORD_SUGGESTION_USER_GUIDE.md](docs/NL_KEYWORD_SUGGESTION_USER_GUIDE.md) — User-facing guide for SDETs and Admins: inline suggest, bulk panel, provider config, alias map.**
+> **📋 See [docs/NL_KEYWORD_SUGGESTION_TEST_GUIDE.md](docs/NL_KEYWORD_SUGGESTION_TEST_GUIDE.md) — 47 test cases covering rule engine, AI provider, cache, rate limit, alias map, UI, edge cases, security.**
 
 ---
 
@@ -99,75 +102,11 @@ Utils layer:  codegenGenerator.ts · healingEngine.ts · licenseManager.ts
 
 ## FOLDER STRUCTURE
 
-```
-qa-agent-platform-dev/
-├── CLAUDE.md                          ← This file (auto-loaded every session)
-├── AGENTS.md                          ← Instructions for non-Claude AI agents
-├── src/
-│   ├── ui/
-│   │   ├── server.ts                  ← Express server (REST API + static serving)
-│   │   └── public/
-│   │       ├── index.html             ← Single-page app shell + all module panels
-│   │       ├── modules.js             ← All module logic (most-edited file)
-│   │       ├── app.js                 ← Bootstrap, tab switching, project selector
-│   │       ├── recorder.js            ← Recorder panel — receives live extension events
-│   │       ├── login.html / login.js  ← Login page + session logic
-│   │       ├── execution-report.html  ← Standalone report page (opens in new tab)
-│   │       ├── styles.css             ← Base styles
-│   │       └── styles_addon.css       ← Module-specific overrides + tooltip popup
-│   ├── auth/
-│   │   ├── middleware.ts              ← requireAuth / requireEditor / requireAdmin / requireAuthOrApiKey
-│   │   ├── audit.ts                   ← logAudit → store.ts
-│   │   └── crypto.ts                  ← hashPassword / verifyPassword / validatePasswordStrength
-│   ├── data/
-│   │   ├── types.ts                   ← All TypeScript interfaces
-│   │   ├── store.ts                   ← JSON read/write helpers
-│   │   ├── keywords.json              ← Keyword definitions with tooltip metadata
-│   │   └── seed.ts                    ← Initial seed data
-│   └── utils/
-│       ├── codegenGenerator.ts        ← ACTIVE spec generator (suite run + debug run)
-│       ├── specGenerator.ts           ← DEAD CODE — DO NOT TOUCH OR IMPORT
-│       ├── healingEngine.ts           ← AI self-healing locator scoring
-│       ├── licenseManager.ts          ← License parse / validate / feature gates / seats
-│       ├── recorderParser.ts          ← Chrome recorder event → platform step
-│       ├── pageModelManager.ts        ← Page model CRUD (backing self-healing)
-│       ├── visualRegression.ts        ← Visual comparison utilities
-│       ├── nlProvider.ts              ← NL-to-step AI provider abstraction
-│       ├── notifier.ts                ← Email/webhook notification dispatch
-│       └── logger.ts                  ← Winston structured logger
-├── data/                              ← Runtime JSON files (git-ignored)
-│   ├── projects.json
-│   ├── scripts.json
-│   ├── suites.json
-│   ├── locators.json
-│   ├── functions.json
-│   ├── common_data.json
-│   ├── users.json
-│   └── audit.json
-├── results/                           ← Persisted RunRecord JSON files (run-*.json)
-├── tests/
-│   └── codegen/                       ← Auto-generated .spec.ts files (from suite runs)
-├── test-results/                      ← Playwright output (screenshots, traces, videos)
-├── recorder-extension/                ← Chrome extension source + INSTALL.md
-├── UI_Page_Analysis/                  ← DOM snapshots + ui-reference-lookup.json
-│   ├── ui-reference-lookup.json       ← Selector reference for target app pages
-│   └── *.md                           ← Per-page UI analysis docs
-├── docs/
-│   ├── HOW_TO_USE.md
-│   ├── SDET_GUIDE.md
-│   ├── ADO_SETUP.md
-│   ├── DEBUGGER_QUICK_REFERENCE.md
-│   ├── LICENSING_PLAN.md
-│   ├── PRODUCT_BACKLOG.md
-│   ├── DEPLOYMENT_CICD.md
-│   ├── INSTALLATION_GUIDE.md
-│   ├── LICENSING_USERFLOW.md
-│   └── CUSTOMER_LICENSE_GUIDE.md
-└── prompts/
-    ├── planner.prompt.md
-    ├── generator.prompt.md
-    └── healer.prompt.md
-```
+> See `AGENTS.md` for the full folder structure and entry point table. Key paths below:
+
+- **Edit frontend:** `src/ui/public/js/*.js` → `npm run build:js` → `modules.js`
+- **Edit backend:** `src/ui/server.ts` + `src/utils/*.ts` → `npm run build` → restart server
+- **Data models:** `src/data/types.ts` | **Store helpers:** `src/data/store.ts` | **Keywords:** `src/data/keywords.json`
 
 ---
 
@@ -177,35 +116,40 @@ qa-agent-platform-dev/
 # Build TypeScript (ALWAYS run before restarting server after any src/ change)
 npm run build
 
+# Build frontend modules (ALWAYS run after editing any file in src/ui/public/js/)
+npm run build:js
+
 # Build and restart UI server
 npm run build && npm run ui
 
-# Find PID holding port 3003 (DEV)
+# Find PID holding port 3003 (DEV) — report to user, do NOT kill
 netstat -ano | findstr :3003
 
-# Kill old server process then restart
-taskkill //F //PID <pid> && npm run ui
+# ⚠️ Agent must NOT kill or restart the server — Admin-managed process
+# User restarts via: Admin → Settings → Reset Server button
+# or: force-kill the PID manually, then use Reset button
 
-# Verify server is up
+# Verify server is up (read-only check — safe for agent to run)
 curl -s http://localhost:3003 -o /dev/null -w "%{http_code}"
-# → should return 200
+# → should return 200 or 302 (redirect to login)
 
 # Run a generated spec manually (for debugging)
 npx playwright test tests/codegen/<spec-file>.spec.ts --headed
 ```
 
 ### UI Server Restart Procedure
-Always follow in order:
-1. `netstat -ano | findstr :3003` — note the PID
-2. `taskkill //F //PID <pid>`
-3. `cd "e:/AI Agent/qa-agent-platform-dev" && npm run ui >> server.log 2>&1 &`
-4. `sleep 4 && curl -s http://localhost:3003 -o /dev/null -w "%{http_code}"` — must return 200
-5. `tail -3 server.log` — verify timestamp is TODAY. If old date, restart failed silently.
 
-**CRITICAL:** Never use `> /dev/null 2>&1` when backgrounding — hides startup failures.
-Always redirect to `server.log` so timestamp can be verified.
+> ⚠️ **AGENT CANNOT RESTART THE SERVER.**
+> The server runs under `setup-persistent-monitors.ps1` with **Admin privileges**.
+> Agent-level `taskkill` and `npm run ui` commands will fail silently or be blocked.
 
-**When to restart:** After any `src/` change (build first). Static files (`*.html`, `*.js`, `*.css` in `public/`) served directly — no restart needed.
+**When a restart is needed after a backend `src/` change:**
+1. Tell the user: *"Server restart needed — please use Admin → Settings → Reset Server button in the UI, or force-kill PID `<pid>` shown by `netstat -ano | findstr :3003` and restart via the Reset button."*
+2. Agent responsibility ends at `npm run build` (compile only).
+3. Never attempt `taskkill`, `npm run ui`, or any process-launch command for port 3003.
+4. Wait for user to confirm server is back up before verifying changes.
+
+**When to restart:** After any `src/` change (always build first). Static files (`*.html`, `*.js`, `*.css` in `public/`) served directly — no restart needed, changes are live immediately.
 
 ---
 
@@ -216,7 +160,7 @@ Refer to `src/data/types.ts` for up-to-date TypeScript interfaces.
 - Auto URL navigation: `waitUntil: 'domcontentloaded'` handles SSO.
 - Test Data parameterisation generates N `test()` blocks per script row.
 - Polling for runs: HTTP polling (not WebSocket) via `/api/run/:runId`.
-- Read UI rules directly from `src/ui/public/modules.js` and `server.ts` when modifying UI.
+- Read UI rules directly from the source files in `src/ui/public/js/` (concatenated into `modules.js`) and `server.ts` when modifying UI.
 
 ## CRITICAL RULES
 1. **`specGenerator.ts` is DEAD CODE** — never import, call, or edit it.
@@ -230,8 +174,9 @@ Refer to `src/data/types.ts` for up-to-date TypeScript interfaces.
 9. **READ BEFORE EDIT**: Before editing any file, read it first. Before modifying a function, grep for all callers. Research before you edit.
 10. **BE PRECISE**: Point to exact line ranges when searching files, avoid redundant full-file reads.
 11. **IGNORE BUILD FOLDERS**: Do not read or search files under these directories unless explicitly asked: dist, node_modules, .git, __pycache__, test-results.
-12. **Locator Health tab is a LIVE FEATURE** — `panel-locator-health` tab exists in index.html, `locatorHealthLoad()` + `locatorHealthRender()` in modules.js, `GET /api/locator-health?projectId=` in server.ts. Never remove or break these. Data source: `data/healing-log.ndjson` + `Locator.healingStats`. Tab is project-scoped (PROJECT_SCOPED_TABS includes `'locator-health'`).
-13. **Flakiness Intelligence is a LIVE FEATURE** — `flakinessEngine.ts` is the pure scoring engine (NEVER add DB/HTTP calls to it). `data/quarantine.json` is the quarantine state store. `testId` on TestEvent is a stable SHA-256 hash — never key on display name. See rules below.
+12. **Frontend module source** — edit files in `src/ui/public/js/`, then run `npm run build:js` to regenerate `modules.js`. Never edit `modules.js` directly.
+13. **Locator Health tab is a LIVE FEATURE** — `panel-locator-health` tab exists in index.html, `locatorHealthLoad()` + `locatorHealthRender()` in modules.js, `GET /api/locator-health?projectId=` in server.ts. Never remove or break these. Data source: `data/healing-log.ndjson` + `Locator.healingStats`. Tab is project-scoped (PROJECT_SCOPED_TABS includes `'locator-health'`).
+14. **Flakiness Intelligence is a LIVE FEATURE** — `flakinessEngine.ts` is the pure scoring engine (NEVER add DB/HTTP calls to it). `data/quarantine.json` is the quarantine state store. `testId` on TestEvent is a stable SHA-256 hash — never key on display name. See rules below.
 
 
 ## MCP Tools: code-review-graph
@@ -254,105 +199,23 @@ Graph at `.code-review-graph/graph.db` — 11 communities, auto-updates on file 
 
 ---
 
-## FLAKINESS INTELLIGENCE — Architecture Notes (2026-04-26)
+## Shipped Features (architecture notes archived)
 
-**Spec:** `docs/superpowers/specs/2026-04-26-flakiness-intelligence-design.md`  
-**Plan:** `docs/superpowers/plans/2026-04-26-flakiness-intelligence.md`  
-**Test Guide:** `docs/FLAKINESS_INTELLIGENCE_TEST_GUIDE.md` (88 test items: functional + business scenarios + E2E)  
-**User Guide:** `docs/FLAKINESS_INTELLIGENCE_USER_GUIDE.md`
+> Full architecture notes for shipped features are in `docs/ARCHIVED_FEATURE_NOTES.md`.  
+> Only the critical invariants remain here.
 
-### Key files
-| File | Role |
-|---|---|
-| `src/utils/flakinessEngine.ts` | **Pure stateless engine** — scoring, classification, quarantine decisions. No DB, no HTTP, no side effects. |
-| `data/quarantine.json` | Runtime quarantine state — keyed by `suiteId::testId` |
-| `src/ui/server.ts` | Quarantine store helpers, auto-quarantine hook post-run, `/api/flaky/*` endpoints |
-| `src/utils/codegenGenerator.ts` | Assigns `testId` per TestEvent via `[QA_TEST_ID]` log line + SHA-256 hash |
-
-### Engine invariants — never break these
-- `CURRENT_ENGINE_VERSION = 'v1.0'` — bump if scoring formula changes
-- Score formula: `0.7*failRate + 0.2*alternationIndex + 0.1*varianceIndex`
-- **Only `failRate` gates quarantine** — alternation/variance are insight signals only
-- Hysteresis: `Math.max(config.threshold - 0.05, 0)` when already quarantined
+### Flakiness Intelligence (shipped 2026-04-26)
+- Engine: `src/utils/flakinessEngine.ts` — pure, stateless. **Never add DB/HTTP calls.**
 - `testId = 'TID_' + sha256(suiteId + '::' + testName).slice(0,8)` — stable, never rename-sensitive
-- `autoQuarantined: false` on manual entries → auto-promote never fires for them
-- Budget: `quarantinedFailCount > budget` (strictly greater) → fail pipeline
+- Only `failRate` gates quarantine; alternation/variance are insight signals only
 
-### API endpoints added
-| Endpoint | Auth | Purpose |
-|---|---|---|
-| `GET /api/flaky` | requireAuthOrApiKey | Enriched flake scores, quarantine state, pagination |
-| `GET /api/flaky/summary` | requireAuthOrApiKey | Quick quarantine count + budget |
-| `GET /api/flaky/config` | requireAuth | Effective config (project defaults + suite overrides) |
-| `PUT /api/flaky/config` | requireEditor | Save project or suite flakiness overrides |
-| `POST /api/flaky/quarantine` | requireEditor | Manual quarantine |
-| `POST /api/flaky/restore` | requireEditor | Manual restore |
+### Trace Viewer (shipped 2026-04-27)
+- Self-hosted at `public/trace-viewer/` — `npm run setup:trace-viewer`
+- Secure: `GET /api/trace/:runId/:testId` — never exposes raw paths
 
-### Config inheritance
-`DEFAULT_FLAKINESS_CONFIG` → `project.flakinessDefaults` → `suite.flakinessOverrides`  
-Merged at runtime in `getEffectiveFlakinessConfig()` — never persist merged result.
-
-### UI functions (modules.js)
-- `flakyLoad()` — fetches and renders the Flaky Tests tab
-- `flakyRender()` — client-side filter/top10/summary bar render
-- `flakyRow(t)` / `flakyExpandedRow(t)` — per-row HTML
-- `flakyQuarantine()` / `flakyRestore()` — action handlers
-- `flakyConfigLoad()` / `flakyConfigSave()` / `flakyApplyPreset()` / `flakyConfigReset()` — suite settings panel
-
----
-
-## TRACE VIEWER — COMPLETE (2026-04-27)
-
-**Priority:** #3 USP — Embed Playwright Trace Viewer in execution reports  
-**Status:** COMPLETE — shipped 2026-04-27  
-**Spec:** `docs/superpowers/specs/2026-04-27-trace-viewer-design.md`  
-**Plan:** `docs/superpowers/plans/2026-04-27-trace-viewer.md` (8 tasks, all complete)
-
-**Key design decisions:**
-- Modal overlay UX — full-screen iframe, existing report untouched
-- Self-hosted viewer — files copied to `public/trace-viewer/` via `npm run setup:trace-viewer`
-- Secure route: `GET /HEAD /api/trace/:runId/:testId` — never raw paths
-- `trace: 'on-first-retry'` in playwright.config.ts — storage control
-- HEAD preflight reads `X-Error-Code` header — UI shows correct message before iframe loads
-- `window.location.origin` for dynamic base URL — works local + remote + behind proxy
-- Path traversal guard: `resolved.startsWith(baseDir + path.sep)` + `.toLowerCase()` for Windows
-- Stream abort: `req.on('close', () => stream.destroy())` — no fd leaks
-- Export clone: trace buttons disabled in saved HTML (`btn.disabled=true`, onclick removed)
-- `TRACE_VIEWER_DIR = path.join(PUBLIC_DIR, 'trace-viewer')` defined at init block in server.ts
-
----
-
-## AUTO-FILE JIRA DEFECT — COMPLETE (2026-04-28)
-
-**Status:** Shipped 2026-04-28 (manual E2E testing against Jira sandbox pending)
-**Spec:** `docs/superpowers/specs/2026-04-27-auto-file-defect-design.md`
-**Plan:** `docs/superpowers/plans/2026-04-27-auto-file-defect.md` (9 tasks complete)
-
-**Key files:**
-- `src/utils/jiraClient.ts` — pure REST wrapper for Jira API v3 (typed errors)
-- `src/utils/adfBuilder.ts` — Atlassian Document Format builders (description / comments)
-- `src/utils/defectsStore.ts` — `data/jira-config.json` + `data/defects.json` + `data/dismissed-defects.ndjson`
-- `src/ui/server.ts` — `/api/jira/*` config routes, `/api/defects/*` lifecycle routes, `autoCloseHookOnRunComplete()` + `attachDefectInfo()`
-- `src/ui/public/index.html` — Admin Jira Integration panel (in Notification Settings)
-- `src/ui/public/modules.js` — `jiraConfigLoad/Save/Test/DiscoverFields` handlers
-- `src/ui/public/execution-report.html` — `[🐞 File Defect]` button, defect modal, Open/Closed badge
-
-**Invariants:**
-- Editor role required for filing/commenting/dismissing; Admin for config
-- Credentials in `.env` (`JIRA_BASE_URL`, `JIRA_EMAIL`, `JIRA_API_TOKEN`); mapping in UI
-- Dedup uses live JQL `text ~ testId` plus local registry on `(testId, suiteId, status=open)`
-- Auto-close scoped to `(testId, suiteId, environmentId)`; failure tolerated, retried next run
-- All errors use envelope `{ error: { code, message, details? } }`
-- "Not a Bug" categories: script-issue / locator-issue / flaky / data-issue / env-issue → fed to NDJSON for Flakiness Engine + Locator Health
-- Description rendered as ADF (Atlassian Document Format) with 5 headings: Description / Precondition / Steps / Actual Result / Expected Result
-- testId embedded literally in description body for JQL search-based dedup
-- Attachment soft-skip when > maxAttachmentMB (default 50); ticket still created
-- `referSSFieldId` config captured but unused in v1 (uses standard `/attachments` endpoint)
-
-**Out of v1 (in spec, NOT implemented):**
-- AI pre-classification, bulk filing, multi-Jira, per-project templates
-- Re-open auto-closed defects (creates fresh ticket via dedup)
-- Webhooks, defect filing from Execution History / Flaky Tests / Analytics tabs
+### Auto-File Jira Defect (shipped 2026-04-28)
+- `src/utils/jiraClient.ts` + `adfBuilder.ts` + `defectsStore.ts`
+- Editor role for filing; Admin for config; dedup uses JQL + local registry
 
 ---
 

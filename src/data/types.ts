@@ -476,3 +476,47 @@ export interface DismissEntry {
   dismissedBy: string;
   errorMessage: string;
 }
+
+// ── NL Keyword Suggestion ─────────────────────────────────────────────────────
+
+export interface ConfidenceBreakdown {
+  verb:    number;   // 0–1
+  locator: number;   // 0–1
+  value:   number;   // 0–1
+}
+
+export interface SuggestedStep {
+  keyword:             string | null;
+  locatorName:         string | null;
+  value:               string | null;
+  confidence:          number;
+  confidenceBreakdown: ConfidenceBreakdown;
+  matched:             boolean;
+  source:              'rule' | 'ai';
+  originalSentence:    string;
+}
+
+export interface NlSuggestResponse {
+  version: 'v1';
+  steps:   SuggestedStep[];
+  meta: {
+    provider?:   string;
+    durationMs:  number;
+    cached:      boolean;
+    aiTimedOut?: boolean;
+  };
+}
+
+export interface NlConfig {
+  enabled:             boolean;
+  provider:            string;   // NlProviderType from nlProvider.ts
+  model:               string;
+  baseUrl:             string;
+  apiKeyEncrypted:     string;   // AES-GCM via encryptToken() in server.ts
+  confidenceThreshold: number;   // default 0.5
+  timeoutMs:           number;   // default 3000
+}
+
+export interface NlAliasMap {
+  [locatorName: string]: string[];   // up to 10 aliases per locator
+}

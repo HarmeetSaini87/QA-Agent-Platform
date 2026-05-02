@@ -452,7 +452,7 @@
             <div class="log-box" id="run-log"></div>
             <div class="btn-group" id="run-done-actions" style="display:none">
               <a class="btn btn-primary btn-sm" id="btn-view-report" href="#" target="_blank">View Report</a>
-              <button class="btn btn-outline btn-sm" onclick="loadHistory()">View in History</button>
+              <button class="btn btn-outline btn-sm" onclick="histLoad()">View in History</button>
             </div>
           </div>
         </div>
@@ -1213,9 +1213,51 @@
                 </div>
 
                 <div id="set-nl-status" style="font-size:12px;margin-top:8px"></div>
+
+                <!-- NL Alias Map -->
+                <div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--border)">
+                  <div style="font-size:13px;font-weight:700;color:var(--neutral-700);margin-bottom:6px">&#128506;&#65039; Locator Alias Map
+                    <span class="info-icon" tabindex="0"
+                      data-tooltip="What is this?&#10;Your locators have technical names like &quot;btn-login&quot; or &quot;GatewayType Menu&quot;. When an SDET types plain English like &quot;click the gateway config link&quot;, the engine needs to know that &quot;gateway config link&quot; means &quot;GatewayType Menu&quot;.&#10;&#10;That is what this map does — you teach it once, every SDET benefits.&#10;&#10;How to use:&#10;• Left column — the exact Locator Name from your Locator Repo page&#10;• Right column — plain-English phrases your team might use to refer to it&#10;• Max 10 aliases per locator&#10;&#10;Example:&#10;Locator Name: Save button&#10;Aliases: save, submit, confirm, save changes&#10;&#10;Now &quot;click save&quot; or &quot;hit the submit button&quot; both resolve correctly.&#10;&#10;Save Alias Map — saves all your aliases. Changes take effect immediately on the next NL suggestion.">?</span>
+                  </div>
+                  <div style="font-size:12px;color:var(--neutral-500);margin-bottom:8px">
+                    Teach the engine your locator nicknames. Type a phrase → engine finds the right element.
+                  </div>
+                  <!-- search + count -->
+                  <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+                    <input id="nl-alias-search" class="fm-input" style="max-width:260px;font-size:12px"
+                      placeholder="&#128269; Search locator name or alias&hellip;"
+                      oninput="nlAliasSearch(this.value)" />
+                    <span id="nl-alias-info" style="font-size:11px;color:var(--neutral-500)"></span>
+                  </div>
+                  <!-- column headers -->
+                  <div style="display:grid;grid-template-columns:1fr 2fr auto;gap:6px;margin-bottom:4px;font-size:11px;color:var(--neutral-500);font-weight:600;padding:0 2px">
+                    <span>Locator Name <span style="font-weight:400;opacity:.7">(from Locator Repo)</span></span>
+                    <span>Aliases <span style="font-weight:400;opacity:.7">(comma-separated, max 10)</span></span>
+                    <span></span>
+                  </div>
+                  <!-- rows -->
+                  <div id="nl-alias-list" style="margin-bottom:6px"></div>
+                  <!-- pagination -->
+                  <div id="nl-alias-pagination" style="display:flex;gap:8px;align-items:center;margin-bottom:10px"></div>
+                  <!-- add new row -->
+                  <div style="display:grid;grid-template-columns:1fr 2fr auto;gap:6px;align-items:center;margin-bottom:10px;padding:8px 10px;background:var(--surface-2,#1a1a2e);border-radius:6px;border:1px dashed var(--border)">
+                    <input id="nl-alias-new-loc" class="fm-input" style="font-size:12px" placeholder="Locator Name e.g. Save button" />
+                    <input id="nl-alias-new-phrases" class="fm-input" style="font-size:12px" placeholder="save, submit, confirm, save changes" />
+                    <button class="btn btn-outline btn-sm" onclick="nlAliasAddRow()" style="white-space:nowrap">+ Add Row</button>
+                  </div>
+                  <!-- test -->
+                  <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px">
+                    <input id="nl-alias-test-input" class="fm-input" style="max-width:240px" placeholder="Type a phrase to test&hellip;" />
+                    <button class="btn btn-outline btn-sm" onclick="nlAliasTest()">Test Alias</button>
+                    <span id="nl-alias-test-result" style="font-size:12px;color:var(--neutral-400)"></span>
+                  </div>
+                  <button class="btn btn-primary btn-sm" onclick="nlAliasSave()">Save Alias Map</button>
+                </div>
               </div>
 
               <button class="btn btn-primary" style="margin-top:16px" onclick="settingsSave()">Save Settings</button>
+              <button class="btn btn-outline" style="margin-top:16px;margin-left:8px;color:#f48771;border-color:#f48771" onclick="adminRestartServer()" id="btn-restart-server">&#9654; Restart Server</button>
             </div>
 
             <!-- ── Notification Settings ───────────────────────────────── -->
@@ -2094,6 +2136,28 @@
               title="Record browser interactions and auto-populate steps">&#9679; Record</button>
             <span id="recorder-status" style="display:none"></span>
           </div>
+          <!-- NL Suggest Panel -->
+          <div id="nl-suggest-panel" style="margin-bottom:12px;background:var(--surface-2,#1a1b1e);border:1px solid var(--border,#2a2b2e);border-radius:8px;padding:12px">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+              <span style="font-size:13px;font-weight:700;color:var(--neutral-300)">🧠 Describe what this test should do</span>
+              <span id="nl-ai-badge" style="display:none;font-size:10px;font-weight:700;padding:2px 7px;border-radius:8px;background:#7c3aed;color:#fff">AI</span>
+              <span id="nl-rule-badge" style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:8px;background:#374151;color:#9ca3af">Rule-based</span>
+            </div>
+            <textarea id="nl-input" class="fm-input" rows="3" style="width:100%;resize:vertical;font-size:13px"
+              placeholder="e.g. Login as admin, go to the Patients tab, search for John Smith and verify his status is Active"></textarea>
+            <div style="display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap">
+              <button class="btn btn-primary btn-sm" onclick="nlSuggestSteps()" id="nl-suggest-btn">&#9654; Suggest Steps</button>
+              <button class="btn btn-success btn-sm" onclick="nlApplyAll()" id="nl-apply-all-btn" style="display:none">Apply All</button>
+              <button class="btn btn-outline btn-sm" onclick="nlApplyMatched()" id="nl-apply-matched-btn" style="display:none">Apply Matched Only</button>
+              <button class="btn btn-ghost btn-sm" onclick="nlClearSuggestions()" id="nl-clear" style="display:none">&#10005; Clear</button>
+              <span id="nl-status" style="font-size:12px;color:var(--neutral-400);margin-left:auto"></span>
+            </div>
+            <div id="nl-results" style="margin-top:10px"></div>
+            <div id="nl-no-ai-hint" style="display:none;font-size:11px;color:var(--neutral-500);margin-top:6px">
+              &#8505;&#65039; Configure an AI provider in <strong>Admin &rarr; Settings &rarr; AI Settings</strong> for better suggestions.
+            </div>
+          </div>
+
           <div id="se-steps-container"></div>
           <div id="se-steps-hint" class="builder-hint" style="display:none">No steps yet. Click <strong>+ Add
               Step</strong> above.</div>

@@ -7,6 +7,11 @@ node_modules/
 # Build output
 dist/
 
+# Frontend concat build backup
+*.backup
+*.helpers-backup
+*.routes-backup
+
 # Playwright
 test-results/
 playwright-report/
@@ -45,6 +50,12 @@ results/*.xml
 .opencode.json
 .superpowers/
 docs/superpowers/
+
+# Docs folder — internal only, not for repo
+docs/
+
+# Temp files
+tmp_*.json
 
 # Temp folders
 New folder/

@@ -254,6 +254,7 @@ async function settingsLoad() {
 
   notifLoad(data.notifications ?? {});
   if (typeof jiraConfigLoad === 'function') jiraConfigLoad();
+  if (typeof nlAliasLoad === 'function') nlAliasLoad();
 }
 
 async function settingsSave() {
@@ -453,6 +454,198 @@ async function notifTest() {
 // Common Data
 // ══════════════════════════════════════════════════════════════════════════════
 
+
+// ── NL Alias Map ──────────────────────────────────────────────────────────
+
+let _nlAliasData = {};
+let _nlAliasPage = 0;
+const _NL_ALIAS_PAGE_SIZE = 20;
+let _nlAliasSearch = '';
+
+function _nlAliasFilteredEntries() {
+  const q = _nlAliasSearch.toLowerCase().trim();
+  const all = Object.entries(_nlAliasData);
+  if (!q) return all;
+  return all.filter(([loc, phrases]) =>
+    loc.toLowerCase().includes(q) ||
+    (Array.isArray(phrases) && phrases.some(p => p.toLowerCase().includes(q)))
+  );
+}
+
+function _nlAliasRender() {
+  const listEl = document.getElementById('nl-alias-list');
+  const infoEl = document.getElementById('nl-alias-info');
+  if (!listEl) return;
+
+  const filtered = _nlAliasFilteredEntries();
+  const total    = filtered.length;
+  const pages    = Math.ceil(total / _NL_ALIAS_PAGE_SIZE) || 1;
+  _nlAliasPage   = Math.min(_nlAliasPage, pages - 1);
+  const slice    = filtered.slice(_nlAliasPage * _NL_ALIAS_PAGE_SIZE, (_nlAliasPage + 1) * _NL_ALIAS_PAGE_SIZE);
+
+  if (infoEl) {
+    const start = total ? _nlAliasPage * _NL_ALIAS_PAGE_SIZE + 1 : 0;
+    const end   = Math.min((_nlAliasPage + 1) * _NL_ALIAS_PAGE_SIZE, total);
+    infoEl.textContent = total ? `Showing ${start}–${end} of ${total}` : 'No matches.';
+  }
+
+  if (!total) {
+    listEl.innerHTML = '<span style="font-size:12px;color:var(--neutral-500)">No aliases yet. Add a row below.</span>';
+    _nlAliasPagRender(0, 0);
+    return;
+  }
+
+  // find original key index for rename/update (search may reorder)
+  listEl.innerHTML = slice.map(([loc, phrases]) => {
+    const escapedLoc     = _escHtml(loc);
+    const escapedPhrases = _escHtml(Array.isArray(phrases) ? phrases.join(', ') : '');
+    return `
+      <div style="display:grid;grid-template-columns:1fr 2fr auto;gap:6px;align-items:center;margin-bottom:5px">
+        <input class="fm-input" style="font-size:12px" value="${escapedLoc}"
+          placeholder="Locator Name (exact)"
+          data-orig="${escapedLoc}"
+          onchange="nlAliasRenameKey(this.dataset.orig, this.value); this.dataset.orig=this.value" />
+        <input class="fm-input" style="font-size:12px" value="${escapedPhrases}"
+          placeholder="alias one, alias two, alias three"
+          onchange="nlAliasUpdatePhrases('${escapedLoc}', this.value)" />
+        <button class="btn btn-outline btn-sm" style="color:#f48771;border-color:#f48771;padding:2px 8px;min-width:28px"
+          onclick="nlAliasDeleteRow('${escapedLoc}')">✕</button>
+      </div>`;
+  }).join('');
+
+  _nlAliasPagRender(pages, _nlAliasPage);
+}
+
+function _nlAliasPagRender(pages, current) {
+  const pagEl = document.getElementById('nl-alias-pagination');
+  if (!pagEl) return;
+  if (pages <= 1) { pagEl.innerHTML = ''; return; }
+  pagEl.innerHTML = `
+    <button class="btn btn-outline btn-sm" ${current === 0 ? 'disabled' : ''}
+      onclick="_nlAliasPage=${current-1};_nlAliasRender()">&#8592; Prev</button>
+    <span style="font-size:12px;color:var(--neutral-400)">Page ${current+1} / ${pages}</span>
+    <button class="btn btn-outline btn-sm" ${current >= pages-1 ? 'disabled' : ''}
+      onclick="_nlAliasPage=${current+1};_nlAliasRender()">Next &#8594;</button>`;
+}
+
+async function nlAliasLoad() {
+  try {
+    const res = await fetch('/api/nl/aliases');
+    if (!res.ok) return;
+    _nlAliasData = await res.json();
+    _nlAliasPage = 0;
+    _nlAliasRender();
+  } catch { /* silently ignore */ }
+}
+
+function nlAliasSearch(q) {
+  _nlAliasSearch = q;
+  _nlAliasPage   = 0;
+  _nlAliasRender();
+}
+
+function nlAliasRenameKey(oldKey, newKey) {
+  newKey = newKey.trim();
+  if (!newKey || newKey === oldKey || !Object.prototype.hasOwnProperty.call(_nlAliasData, oldKey)) return;
+  const rebuilt = {};
+  for (const [k, v] of Object.entries(_nlAliasData)) rebuilt[k === oldKey ? newKey : k] = v;
+  _nlAliasData = rebuilt;
+}
+
+function nlAliasUpdatePhrases(key, raw) {
+  if (!Object.prototype.hasOwnProperty.call(_nlAliasData, key)) return;
+  _nlAliasData[key] = raw.split(',').map(s => s.trim()).filter(Boolean).slice(0, 10);
+}
+
+function nlAliasDeleteRow(key) {
+  delete _nlAliasData[key];
+  _nlAliasRender();
+}
+
+function nlAliasAddRow() {
+  const locEl = document.getElementById('nl-alias-new-loc');
+  const phEl  = document.getElementById('nl-alias-new-phrases');
+  if (!locEl || !phEl) return;
+  const loc     = locEl.value.trim();
+  const phrases = phEl.value.split(',').map(s => s.trim()).filter(Boolean).slice(0, 10);
+  if (!loc) { locEl.focus(); return; }
+  _nlAliasData[loc] = phrases;
+  locEl.value       = '';
+  phEl.value        = '';
+  _nlAliasSearch    = '';
+  _nlAliasPage      = 0;
+  const searchEl = document.getElementById('nl-alias-search');
+  if (searchEl) searchEl.value = '';
+  _nlAliasRender();
+}
+
+async function nlAliasSave() {
+  try {
+    const res = await fetch('/api/nl/aliases', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(_nlAliasData),
+    });
+    const data = await res.json();
+    const resultEl = document.getElementById('nl-alias-test-result');
+    if (resultEl) {
+      resultEl.textContent = res.ok ? '✓ Saved' : ('✗ ' + (data.error || 'Error'));
+      resultEl.style.color = res.ok ? '#4ec9b0' : '#f48771';
+      setTimeout(() => { resultEl.textContent = ''; resultEl.style.color = ''; }, 2000);
+    }
+  } catch {
+    const resultEl = document.getElementById('nl-alias-test-result');
+    if (resultEl) { resultEl.textContent = '✗ Network error'; resultEl.style.color = '#f48771'; }
+  }
+}
+
+function nlAliasTest() {
+  const input = document.getElementById('nl-alias-test-input');
+  const resultEl = document.getElementById('nl-alias-test-result');
+  if (!input || !input.value.trim() || !resultEl) return;
+  const phrase = input.value.trim().toLowerCase().replace(/\b(the|a|an)\b/g, '').replace(/\s+/g, ' ').trim();
+  // direct alias map lookup — check if phrase matches any alias for any locator
+  let matched = null;
+  for (const [loc, aliases] of Object.entries(_nlAliasData)) {
+    if (!Array.isArray(aliases)) continue;
+    for (const alias of aliases) {
+      const normAlias = alias.toLowerCase().replace(/\b(the|a|an)\b/g, '').replace(/\s+/g, ' ').trim();
+      if (normAlias === phrase) { matched = loc; break; }
+    }
+    if (matched) break;
+  }
+  try {
+    if (matched) {
+      resultEl.textContent = `→ ${matched}`;
+      resultEl.style.color = '#4ec9b0';
+    } else {
+      resultEl.textContent = 'No match';
+      resultEl.style.color = 'var(--neutral-500)';
+    }
+  } catch {
+    resultEl.textContent = '✗ Network error';
+    resultEl.style.color = '#f48771';
+  }
+}
+
+// ── Server Restart (dev convenience — monitor auto-restores within 30s) ──────
+
+async function adminRestartServer() {
+  const btn = document.getElementById('btn-restart-server');
+  if (!confirm('Restart the server? It will be unavailable for ~30 seconds while the monitor restores it.')) return;
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Restarting…'; }
+  try {
+    await fetch('/api/admin/restart-server', { method: 'POST' });
+  } catch { /* expected — server dies mid-response */ }
+  if (btn) btn.textContent = '✓ Restarting — page will reload';
+  // Poll until server is back, then reload
+  const poll = setInterval(async () => {
+    try {
+      const r = await fetch('/api/health');
+      if (r.ok) { clearInterval(poll); window.location.reload(); }
+    } catch { /* still down */ }
+  }, 2000);
+}
 let editingCdId = null;
 let allCommonData = [];
 let _cdPage = 0;
@@ -2994,10 +3187,10 @@ function nlStepDebounce(input) {
 async function nlStepSuggest(input, row, statusEl) {
   if (statusEl) { statusEl.textContent = '⏳'; statusEl.style.color = 'var(--neutral-400)'; }
   try {
-    const res = await fetch('/api/nl-suggest', {
+    const res = await fetch('/api/nl/suggest', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ description: input.value.trim(), projectId: currentProjectId || '' }),
+      body: JSON.stringify({ text: input.value.trim(), projectId: currentProjectId || '' }),
     });
     const data = await res.json();
 
@@ -3006,11 +3199,13 @@ async function nlStepSuggest(input, row, statusEl) {
       return;
     }
 
+    const step = Array.isArray(data.steps) ? data.steps[0] : data;
+
     // Auto-fill keyword
-    if (data.keyword) {
+    if (step.keyword) {
       const kwSel = row.querySelector('.se-step-kw-select');
       if (kwSel) {
-        const match = [...kwSel.options].find(o => o.value.toUpperCase() === data.keyword.toUpperCase());
+        const match = [...kwSel.options].find(o => o.value.toUpperCase() === step.keyword.toUpperCase());
         if (match) {
           kwSel.value = match.value;
           scriptStepKwChange(kwSel);
@@ -3018,23 +3213,23 @@ async function nlStepSuggest(input, row, statusEl) {
       }
     }
 
-    // Auto-fill locator name
-    if (data.locatorName) {
+    // Auto-fill locator name (always update — user changed NL text intentionally)
+    if (step.locatorName) {
       const locInput = row.querySelector('.se-step-loc-name');
-      if (locInput && !locInput.value) {
-        locInput.value = data.locatorName;
+      if (locInput) {
+        locInput.value = step.locatorName;
         // Try to resolve from locator repo
-        _seResolveLocName(row, data.locatorName);
+        _seResolveLocName(row, step.locatorName);
       }
     }
 
-    // Auto-fill static value
-    if (data.value) {
+    // Auto-fill static value (always update when NL provides one)
+    if (step.value !== undefined && step.value !== null) {
       const staticInput = row.querySelector('.se-step-val-static');
-      if (staticInput && !staticInput.value) staticInput.value = data.value;
+      if (staticInput) staticInput.value = step.value;
     }
 
-    const pct = Math.round((data.confidence ?? 1) * 100);
+    const pct = Math.round((step.confidence ?? data.confidence ?? 1) * 100);
     if (statusEl) {
       statusEl.textContent = `✓ ${pct}%`;
       statusEl.style.color = pct >= 80 ? '#4ec9b0' : pct >= 50 ? '#e9b96e' : '#f48771';
@@ -4098,6 +4293,124 @@ async function scriptDelete(id, title) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+
+// ── NL Bulk Suggest Panel ──────────────────────────────────────────────────
+
+let _nlBulkResults = [];
+
+async function nlSuggestSteps() {
+  const input = document.getElementById('nl-input');
+  const statusEl = document.getElementById('nl-status');
+  const resultsEl = document.getElementById('nl-results');
+  const noAiHint = document.getElementById('nl-no-ai-hint');
+  const aiBadge = document.getElementById('nl-ai-badge');
+  const ruleBadge = document.getElementById('nl-rule-badge');
+
+  if (!input || !input.value.trim()) return;
+
+  statusEl.textContent = '⏳ Thinking…';
+  document.getElementById('nl-suggest-btn').disabled = true;
+  resultsEl.innerHTML = '';
+  _nlBulkResults = [];
+  ['nl-apply-all-btn', 'nl-apply-matched-btn', 'nl-clear'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  });
+
+  try {
+    const res = await fetch('/api/nl/suggest', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: input.value.trim(), projectId: currentProjectId || '' }),
+    });
+    const data = await res.json();
+
+    if (!res.ok || data.error) {
+      statusEl.textContent = '✗ ' + (data.error || 'Error');
+      statusEl.style.color = '#f48771';
+      return;
+    }
+
+    _nlBulkResults = data.steps || [];
+    const hasAi = _nlBulkResults.some(s => s.source === 'ai');
+    const hasMatched = _nlBulkResults.some(s => s.matched);
+
+    if (aiBadge) aiBadge.style.display = hasAi ? '' : 'none';
+    if (ruleBadge) ruleBadge.style.display = hasAi ? 'none' : '';
+    if (noAiHint) noAiHint.style.display = (!hasAi && data.meta && !data.meta.provider) ? '' : 'none';
+
+    statusEl.textContent = `${_nlBulkResults.length} step${_nlBulkResults.length !== 1 ? 's' : ''} suggested`;
+    statusEl.style.color = '';
+
+    resultsEl.innerHTML = _nlBulkResults.map((s, i) => `
+      <div class="nl-result-row" style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid var(--border,#2a2b2e)">
+        <input type="checkbox" id="nl-check-${i}" checked style="flex-shrink:0" />
+        <span style="flex:1;font-size:12px;color:var(--text,#e0e0e0)">${_escHtml(s.originalSentence || '')}</span>
+        <span style="font-size:11px;color:var(--neutral-500);white-space:nowrap">${_escHtml(s.keyword || '—')}</span>
+        <span style="font-size:11px;color:${s.matched ? '#4ec9b0' : 'var(--neutral-500)'};white-space:nowrap">${s.matched ? '✓' : '?'}</span>
+      </div>
+    `).join('');
+
+    ['nl-apply-all-btn', 'nl-clear'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.style.display = '';
+    });
+    if (hasMatched) {
+      const mb = document.getElementById('nl-apply-matched-btn');
+      if (mb) mb.style.display = '';
+    }
+  } catch (e) {
+    statusEl.textContent = '✗ Network error';
+    statusEl.style.color = '#f48771';
+  } finally {
+    document.getElementById('nl-suggest-btn').disabled = false;
+  }
+}
+
+function nlApplyAll() {
+  if (!_nlBulkResults.length) return;
+  const container = document.getElementById('se-steps-container');
+  _nlBulkResults.forEach(s => {
+    scriptAddStep({ keyword: s.keyword || '', locatorName: s.locatorName || '', value: s.value || '' });
+    if (s.locatorName) {
+      const row = container.querySelector('.script-step-row:last-child');
+      if (row) _seResolveLocName(row, s.locatorName);
+    }
+  });
+  nlClearSuggestions();
+}
+
+function nlApplyMatched() {
+  if (!_nlBulkResults.length) return;
+  const container = document.getElementById('se-steps-container');
+  _nlBulkResults
+    .filter((s, i) => {
+      const cb = document.getElementById('nl-check-' + i);
+      return s.matched && (!cb || cb.checked);
+    })
+    .forEach(s => {
+      scriptAddStep({ keyword: s.keyword || '', locatorName: s.locatorName || '', value: s.value || '' });
+      if (s.locatorName) {
+        const row = container.querySelector('.script-step-row:last-child');
+        if (row) _seResolveLocName(row, s.locatorName);
+      }
+    });
+  nlClearSuggestions();
+}
+
+function nlClearSuggestions() {
+  _nlBulkResults = [];
+  const resultsEl = document.getElementById('nl-results');
+  if (resultsEl) resultsEl.innerHTML = '';
+  const statusEl = document.getElementById('nl-status');
+  if (statusEl) { statusEl.textContent = ''; statusEl.style.color = ''; }
+  ['nl-apply-all-btn', 'nl-apply-matched-btn', 'nl-clear'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  });
+  const noAiHint = document.getElementById('nl-no-ai-hint');
+  if (noAiHint) noAiHint.style.display = 'none';
+}
 // TEST SUITE MODULE
 // ══════════════════════════════════════════════════════════════════════════════
 

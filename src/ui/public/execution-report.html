@@ -1056,9 +1056,9 @@ function buildTestRow(t, i, r) {
 
   // ── Trace button — shown only when trace exists (no disabled clutter) ─────
   const traceCell = (t.tracePath && t.testId)
-    ? `<button class="tc-btn tc-btn-tr"
-              onclick="event.stopPropagation();openTraceViewer(${esc(JSON.stringify(r.runId))},${esc(JSON.stringify(t.testId))},${esc(JSON.stringify(t.name))})"
-              title="View trace in embedded viewer">&#128249; Trace</button>`
+    ? `<a class="tc-btn tc-btn-tr" href="${artifactSrc(t.tracePath)}" target="_blank"
+          onclick="event.stopPropagation()" download
+          title="Download trace ZIP">&#128249; Trace</a>`
     : '';
 
   // ── Defect button — only on failed rows; badge if already filed ─────
