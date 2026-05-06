@@ -1,0 +1,16 @@
+{
+  "runId": "r-prescan-001",
+  "projectId": "test-proj",
+  "pageKey": "/dashboard",
+  "scannedAt": "2026-05-04T06:25:04.400Z",
+  "locators": [
+    {
+      "id": "loc-ps-001",
+      "name": "Prescan Input",
+      "selector": "input.search",
+      "score": 55,
+      "status": "degraded",
+      "bestCandidate": "searchbox:search"
+    }
+  ]
+}

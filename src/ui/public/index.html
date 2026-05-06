@@ -135,6 +135,26 @@
           <span>Locator Health</span>
         </div>
 
+        <div class="nav-section-label">API Testing</div>
+        <div class="nav-item" data-tab="api-envs">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3"/><path d="M19.07 4.93A10 10 0 0 0 4.93 19.07M19.07 4.93l-2.83 2.83M4.93 19.07l2.83-2.83"/>
+          </svg>
+          <span>API Environments</span>
+        </div>
+        <div class="nav-item" data-tab="api-collections">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M4 6h16M4 10h16M4 14h10M4 18h6"/>
+          </svg>
+          <span>API Collections</span>
+        </div>
+        <div class="nav-item" data-tab="api-runs">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="5 3 19 12 5 21 5 3"/>
+          </svg>
+          <span>API Runs</span>
+        </div>
+
         <div class="nav-section-label admin-only" id="admin-section-label">Admin</div>
         <div class="nav-item admin-only" data-tab="projects" id="nav-projects">
           <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -647,6 +667,12 @@
             <div class="card-title">
               Common Data
               <div style="display:flex;gap:8px;align-items:center;margin-left:auto">
+                <select id="cd-module-filter" class="fm-input" style="width:140px;font-size:13px"
+                  onchange="_cdPage=0;cdLoad()">
+                  <option value="">All Modules</option>
+                  <option value="ui">UI / Web</option>
+                  <option value="shared">Shared</option>
+                </select>
                 <select id="cd-env-filter" class="fm-input" style="width:160px;font-size:13px"
                   onchange="_cdPage=0;cdLoad();_cdShowEnvUrl('cd-env-filter','cd-env-filter-url')">
                   <option value="">All Environments</option>
@@ -668,6 +694,7 @@
                     <tr>
                       <th style="min-width:180px">Data Name</th>
                       <th style="min-width:200px">Value</th>
+                      <th style="min-width:100px">Module</th>
                       <th style="min-width:120px">Environment</th>
                       <th style="min-width:110px">Created By</th>
                       <th style="min-width:110px">Created Date</th>
@@ -1054,6 +1081,54 @@
             </table>
           </div>
         </div><!-- /panel-locator-health -->
+
+        <!-- ── Tab: API Environments ─────────────────────────────────────── -->
+        <div class="panel" id="panel-api-envs">
+          <div class="card">
+            <div class="card-title">
+              API Environments
+              <button class="btn btn-primary btn-sm" id="btn-new-api-env" style="margin-left:auto" onclick="apiEnvOpenModal()">+ New Environment</button>
+            </div>
+            <div id="api-env-list-alert"></div>
+            <table class="data-table">
+              <thead><tr><th>Name</th><th>Base URL</th><th>Variables</th><th>Auth</th><th>Actions</th></tr></thead>
+              <tbody id="api-env-tbody"></tbody>
+            </table>
+          </div>
+        </div><!-- /panel-api-envs -->
+
+        <!-- ── Tab: API Collections ───────────────────────────────────────── -->
+        <div class="panel" id="panel-api-collections">
+          <div class="card">
+            <div class="card-title">
+              API Collections
+              <div style="display:flex;gap:8px;margin-left:auto">
+                <button class="btn btn-secondary btn-sm" onclick="apiColImportOpenApiModal()">Import OpenAPI</button>
+                <button class="btn btn-secondary btn-sm" onclick="apiColImportSwaggerUrlModal()">Import Swagger URL</button>
+                <button class="btn btn-secondary btn-sm" onclick="apiColImportPostmanModal()">Import Postman</button>
+                <button class="btn btn-secondary btn-sm" onclick="apiColImportCurlModal()">Import cURL</button>
+                <button class="btn btn-primary btn-sm" id="btn-new-api-col" onclick="apiColOpenNew()">+ New Collection</button>
+              </div>
+            </div>
+            <div id="api-col-list-alert"></div>
+            <table class="data-table">
+              <thead><tr><th>Name</th><th>Environment</th><th>Steps</th><th>Execution Mode</th><th>Actions</th></tr></thead>
+              <tbody id="api-col-tbody"></tbody>
+            </table>
+          </div>
+        </div><!-- /panel-api-collections -->
+
+        <!-- ── Tab: API Runs ───────────────────────────────────────────────── -->
+        <div class="panel" id="panel-api-runs">
+          <div class="card">
+            <div class="card-title">API Run Results</div>
+            <div id="api-runs-list-alert"></div>
+            <table class="data-table">
+              <thead><tr><th>Status</th><th>Started</th><th>Duration</th><th>Steps</th><th>Pass/Fail/Skip</th><th></th></tr></thead>
+              <tbody id="api-runs-tbody"></tbody>
+            </table>
+          </div>
+        </div><!-- /panel-api-runs -->
 
         <!-- ── Tab: Projects ──────────────────────────────────────────────── -->
         <div class="panel admin-only" id="panel-projects">
@@ -1866,6 +1941,13 @@
           </div>
         </div>
         <div class="field">
+          <label>Module</label>
+          <select id="cd-module" class="fm-input">
+            <option value="shared">Shared (available to all modules)</option>
+            <option value="ui">UI / Web Automation</option>
+          </select>
+        </div>
+        <div class="field">
           <label>Value <span class="req">*</span></label>
           <input id="cd-value" class="fm-input" placeholder="e.g. test_user01" />
         </div>
@@ -2556,6 +2638,291 @@
         </button>
       </div>
 
+    </div>
+  </div>
+
+  <!-- ── Modal: API Environment ──────────────────────────────────────────── -->
+  <div class="modal-backdrop" id="modal-api-env" style="display:none">
+    <div class="modal" style="max-width:620px">
+      <div class="modal-header">
+        <span id="api-env-modal-title">New Environment</span>
+        <button class="modal-close" onclick="apiEnvCloseModal()">✕</button>
+      </div>
+      <div class="modal-body">
+        <div id="api-env-modal-alert"></div>
+        <div class="fm-row">
+          <label class="fm-label">Name *</label>
+          <input class="fm-input" id="api-env-name" placeholder="e.g. Staging" />
+        </div>
+        <div class="fm-row">
+          <label class="fm-label">Base URL *</label>
+          <input class="fm-input" id="api-env-baseurl" placeholder="https://api.example.com" />
+        </div>
+        <div class="fm-row">
+          <label class="fm-label">Auth Type</label>
+          <select class="fm-input" id="api-env-auth-type" onchange="apiEnvAuthTypeChange(this)">
+            <option value="none">None</option>
+            <option value="bearer">Bearer Token</option>
+            <option value="apiKey">API Key</option>
+            <option value="basic">Basic Auth</option>
+            <option value="oauth2CC">OAuth2 Client Credentials</option>
+          </select>
+        </div>
+        <div id="api-env-auth-bearer" style="display:none">
+          <div class="fm-row"><label class="fm-label">Token</label><input class="fm-input" id="api-env-bearer-token" type="password"/></div>
+        </div>
+        <div id="api-env-auth-apikey" style="display:none">
+          <div class="fm-row"><label class="fm-label">Header Name</label><input class="fm-input" id="api-env-apikey-header" placeholder="X-API-Key"/></div>
+          <div class="fm-row"><label class="fm-label">Header Value</label><input class="fm-input" id="api-env-apikey-value" type="password"/></div>
+        </div>
+        <div id="api-env-auth-basic" style="display:none">
+          <div class="fm-row"><label class="fm-label">Username</label><input class="fm-input" id="api-env-basic-user"/></div>
+          <div class="fm-row"><label class="fm-label">Password</label><input class="fm-input" id="api-env-basic-pass" type="password"/></div>
+        </div>
+        <div id="api-env-auth-oauth2cc" style="display:none">
+          <div class="fm-row"><label class="fm-label">Token URL</label><input class="fm-input" id="api-env-oauth-tokenurl"/></div>
+          <div class="fm-row"><label class="fm-label">Client ID</label><input class="fm-input" id="api-env-oauth-clientid"/></div>
+          <div class="fm-row"><label class="fm-label">Client Secret</label><input class="fm-input" id="api-env-oauth-secret" type="password"/></div>
+          <div class="fm-row"><label class="fm-label">Scope</label><input class="fm-input" id="api-env-oauth-scope"/></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+          <strong>Variables</strong>
+          <button class="btn btn-secondary btn-sm" onclick="apiEnvVarAdd()">+ Add</button>
+        </div>
+        <table class="data-table" style="margin-bottom:8px">
+          <thead><tr><th>Name</th><th>Value</th><th title="Sensitive">🔒</th><th></th></tr></thead>
+          <tbody id="api-env-vars-tbody"></tbody>
+        </table>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="apiEnvCloseModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="apiEnvSave()">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Modal: API Collection ─────────────────────────────────────────────── -->
+  <div class="modal-backdrop" id="modal-api-col" style="display:none">
+    <div class="modal" style="max-width:700px">
+      <div class="modal-header">
+        <span id="api-col-modal-title">New Collection</span>
+        <button class="modal-close" onclick="apiColCloseModal()">✕</button>
+      </div>
+      <div class="modal-body">
+        <div id="api-col-modal-alert"></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <div class="fm-row">
+            <label class="fm-label">Name *</label>
+            <input class="fm-input" id="api-col-name" placeholder="My Collection"/>
+          </div>
+          <div class="fm-row">
+            <label class="fm-label">Environment</label>
+            <select class="fm-input" id="api-col-env"></select>
+          </div>
+          <div class="fm-row">
+            <label class="fm-label">Execution Mode</label>
+            <select class="fm-input" id="api-col-mode" onchange="_apiColModeChanged(this.value)">
+              <option value="auto">Auto (DAG — recommended)</option>
+              <option value="sequential">Sequential (strict order, no concurrency)</option>
+              <option value="parallel">Parallel (all at once, no chaining)</option>
+            </select>
+            <div id="api-col-mode-warning" style="display:none;margin-top:6px;padding:6px 10px;background:#422006;border:1px solid #b45309;border-radius:6px;font-size:11px;color:#fbbf24">
+              ⚠ <strong>Parallel mode disables chaining.</strong> Variable extractions (e.g. <code>{{authToken}}</code>, <code>{{bookingId}}</code>) will NOT be passed between steps — all steps fire simultaneously with no shared context. Use <strong>Auto</strong> mode for chaining, or <strong>Sequential</strong> for ordered execution without concurrency.
+            </div>
+          </div>
+          <div class="fm-row">
+            <label class="fm-label">On Failure</label>
+            <select class="fm-input" id="api-col-onfail">
+              <option value="continue">Continue</option>
+              <option value="stop">Stop</option>
+              <option value="skipDependents">Skip Dependents</option>
+            </select>
+          </div>
+          <div class="fm-row">
+            <label class="fm-label">Max Concurrency</label>
+            <input class="fm-input" id="api-col-concurrency" type="number" min="1" max="20" value="5"/>
+          </div>
+          <div class="fm-row">
+            <label class="fm-label">Rate Limit (req/s)</label>
+            <input class="fm-input" id="api-col-ratelimit" type="number" min="1" max="100" value="10"/>
+          </div>
+          <div class="fm-row" style="align-items:center;display:flex;gap:8px;padding-top:18px">
+            <input type="checkbox" id="api-col-autodefects"/>
+            <label for="api-col-autodefects">Auto-file Jira defects</label>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;margin:8px 0 4px">
+          <strong>Collection Variables</strong>
+          <button class="btn btn-secondary btn-sm" onclick="apiColVarAdd()">+ Add</button>
+        </div>
+        <table class="data-table" style="margin-bottom:8px">
+          <thead><tr><th>Key</th><th>Value</th><th></th></tr></thead>
+          <tbody id="api-col-vars-tbody"></tbody>
+        </table>
+        <div style="display:flex;align-items:center;gap:8px;margin:8px 0 4px">
+          <strong>Steps</strong>
+          <button class="btn btn-primary btn-sm" onclick="apiColAddStep()">+ Add Step</button>
+        </div>
+        <div id="api-col-steps-list"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="apiColCloseModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="apiColSave()">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Modal: Import OpenAPI ─────────────────────────────────────────────── -->
+  <div class="modal-backdrop" id="modal-api-import-openapi" style="display:none">
+    <div class="modal" style="max-width:560px">
+      <div class="modal-header">
+        <span>Import OpenAPI / Swagger</span>
+        <button class="modal-close" onclick="closeModal('modal-api-import-openapi')">✕</button>
+      </div>
+      <div class="modal-body">
+        <div id="api-import-openapi-alert"></div>
+        <div class="fm-row">
+          <label class="fm-label">Environment</label>
+          <select class="fm-input" id="api-import-openapi-env"></select>
+        </div>
+        <div class="fm-row">
+          <label class="fm-label">Filter by Tag (optional)</label>
+          <input class="fm-input" id="api-import-openapi-tag" placeholder="e.g. Users"/>
+        </div>
+        <div class="fm-row">
+          <label class="fm-label">Spec (JSON or YAML) *</label>
+          <textarea class="fm-input" id="api-import-openapi-spec" rows="8" placeholder="Paste OpenAPI/Swagger spec here..."></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal('modal-api-import-openapi')">Cancel</button>
+        <button class="btn btn-primary" onclick="apiColImportOpenApi()">Import</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Modal: Import Swagger URL ────────────────────────────────────────── -->
+  <div class="modal-backdrop" id="modal-api-import-swagger-url" style="display:none">
+    <div class="modal" style="max-width:480px">
+      <div class="modal-header">
+        <span>Import from Swagger / OpenAPI URL</span>
+        <button class="modal-close" onclick="closeModal('modal-api-import-swagger-url')">✕</button>
+      </div>
+      <div class="modal-body">
+        <div id="api-import-swagger-url-alert"></div>
+        <div class="fm-grid">
+          <label>Environment</label>
+          <select class="fm-input" id="api-import-swagger-url-env"></select>
+          <label>Tag filter <span style="color:var(--text-muted)">(optional)</span></label>
+          <input class="fm-input" id="api-import-swagger-url-tag" placeholder="e.g. Users"/>
+          <label>Swagger / OpenAPI URL</label>
+          <input class="fm-input" id="api-import-swagger-url-input" placeholder="https://petstore.swagger.io/v2/swagger.json"/>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal('modal-api-import-swagger-url')">Cancel</button>
+        <button class="btn btn-primary" id="api-import-swagger-url-btn" onclick="apiColImportSwaggerUrlConfirm()">Fetch &amp; Import</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Modal: Import Postman ─────────────────────────────────────────────── -->
+  <div class="modal-backdrop" id="modal-api-import-postman" style="display:none">
+    <div class="modal" style="max-width:560px">
+      <div class="modal-header">
+        <span>Import Postman Collection</span>
+        <button class="modal-close" onclick="closeModal('modal-api-import-postman')">✕</button>
+      </div>
+      <div class="modal-body">
+        <div id="api-import-postman-alert"></div>
+        <div class="fm-row">
+          <label class="fm-label">Environment</label>
+          <select class="fm-input" id="api-import-postman-env"></select>
+        </div>
+        <div class="fm-row">
+          <label class="fm-label">Postman Collection JSON *</label>
+          <textarea class="fm-input" id="api-import-postman-json" rows="8" placeholder="Paste Postman v2.1 collection JSON..."></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal('modal-api-import-postman')">Cancel</button>
+        <button class="btn btn-primary" onclick="apiColImportPostman()">Import</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Modal: Import cURL ────────────────────────────────────────────────── -->
+  <div class="modal-backdrop" id="modal-api-import-curl" style="display:none">
+    <div class="modal" style="max-width:560px">
+      <div class="modal-header">
+        <span>Import from cURL</span>
+        <button class="modal-close" onclick="closeModal('modal-api-import-curl')">✕</button>
+      </div>
+      <div class="modal-body">
+        <div id="api-import-curl-alert"></div>
+        <div class="fm-row">
+          <label class="fm-label">Environment</label>
+          <select class="fm-input" id="api-import-curl-env"></select>
+        </div>
+        <div class="fm-row">
+          <label class="fm-label">cURL Command *</label>
+          <textarea class="fm-input" id="api-import-curl-cmd" rows="6" placeholder="curl -X POST https://... -H 'Content-Type: application/json' -d '{}'"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal('modal-api-import-curl')">Cancel</button>
+        <button class="btn btn-primary" onclick="apiColImportCurl()">Import</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Modal: Pre-scan Results ───────────────────────────────────────────── -->
+  <div class="modal-backdrop" id="modal-api-prescan" style="display:none">
+    <div class="modal" style="max-width:600px">
+      <div class="modal-header">
+        <span>Pre-scan Results</span>
+        <button class="modal-close" onclick="closeModal('modal-api-prescan')">✕</button>
+      </div>
+      <div class="modal-body">
+        <div id="api-prescan-content"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal('modal-api-prescan')">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Modal: API Run Detail ─────────────────────────────────────────────── -->
+  <div class="modal-backdrop" id="modal-api-run-detail" style="display:none">
+    <div class="modal" style="max-width:900px">
+      <div class="modal-header">
+        <span>API Run Detail</span>
+        <button class="modal-close" onclick="apiRunsCloseDetail()">✕</button>
+      </div>
+      <div class="modal-body">
+        <div id="api-run-detail-alert"></div>
+        <div id="api-run-detail-summary"></div>
+        <div id="api-run-clusters"></div>
+        <div class="sub-tabs" style="margin-bottom:8px">
+          <button class="api-run-tab-btn sub-tab active" data-tab="steps" onclick="apiRunsTabSwitch('steps')">Steps</button>
+          <button class="api-run-tab-btn sub-tab" data-tab="har" onclick="apiRunsTabSwitch('har')">HAR / Network</button>
+        </div>
+        <div class="api-run-tab-panel" data-tab="steps">
+          <table class="data-table">
+            <thead><tr><th>Step</th><th>Status</th><th>Duration</th><th>Assertions</th><th></th></tr></thead>
+            <tbody id="api-run-steps-tbody"></tbody>
+          </table>
+        </div>
+        <div class="api-run-tab-panel" data-tab="har" style="display:none">
+          <table class="data-table">
+            <thead><tr><th>Step</th><th>Method</th><th>URL</th><th>Status</th><th>Duration</th></tr></thead>
+            <tbody id="api-run-har-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="apiRunsCloseDetail()">Close</button>
+      </div>
     </div>
   </div>
 

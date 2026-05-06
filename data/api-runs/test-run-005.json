@@ -1,0 +1,629 @@
+{
+  "id": "test-run-005",
+  "collectionId": "col-booker-demo",
+  "projectId": "3a39c8a2-06ea-4a83-9aca-e3a316ea940a",
+  "startedAt": "2026-05-03T17:41:05.870Z",
+  "completedAt": "2026-05-03T17:41:06.099Z",
+  "status": "failed",
+  "stepResults": [
+    {
+      "stepId": "step-uc1-health",
+      "stepName": "UC1 · Health Check — GET /ping returns 201",
+      "status": "passed",
+      "request": {
+        "method": "GET",
+        "url": "https://restful-booker.herokuapp.com/ping",
+        "headers": [],
+        "params": [],
+        "bodyType": "none",
+        "body": null
+      },
+      "response": {
+        "status": 201,
+        "headers": {
+          "content-length": "7",
+          "content-type": "text/plain; charset=utf-8",
+          "date": "Sun, 03 May 2026 17:41:05 GMT",
+          "etag": "W/\"7-rM9AyJuqT6iOan/xHh+AW+7K/T8\"",
+          "nel": "{\"report_to\":\"heroku-nel\",\"response_headers\":[\"Via\"],\"max_age\":3600,\"success_fraction\":0.01,\"failure_fraction\":0.1}",
+          "report-to": "{\"group\":\"heroku-nel\",\"endpoints\":[{\"url\":\"https://nel.heroku.com/reports?s=%2BinVMDHT6Yf2irLOY%2FUlCDkZEuh%2BQSU%2FV8cVGDPtcRM%3D\\u0026sid=c46efe9b-d3d2-4a0c-8c76-bfafa16c5add\\u0026ts=1777830065\"}],\"max_age\":3600}",
+          "reporting-endpoints": "heroku-nel=\"https://nel.heroku.com/reports?s=%2BinVMDHT6Yf2irLOY%2FUlCDkZEuh%2BQSU%2FV8cVGDPtcRM%3D&sid=c46efe9b-d3d2-4a0c-8c76-bfafa16c5add&ts=1777830065\"",
+          "server": "Heroku",
+          "via": "1.1 heroku-router",
+          "x-powered-by": "Express"
+        },
+        "body": "Created",
+        "bodyTruncated": false,
+        "durationMs": 75
+      },
+      "assertionResults": [
+        {
+          "assertionIndex": 0,
+          "field": "status",
+          "operator": "equals",
+          "passed": true,
+          "actual": 201,
+          "expected": "201",
+          "confidenceScore": 100
+        }
+      ],
+      "extractedVariables": {},
+      "durationMs": 75
+    },
+    {
+      "stepId": "step-uc2-auth",
+      "stepName": "UC2 · Authenticate — POST /auth → Extract authToken (Chaining Source)",
+      "status": "failed",
+      "request": {
+        "method": "POST",
+        "url": "https://restful-booker.herokuapp.com/auth",
+        "headers": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "enabled": true
+          }
+        ],
+        "params": [],
+        "bodyType": "json",
+        "body": "{\"username\":\"admin\",\"password\":\"password123\"}"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-length": "27",
+          "content-type": "application/json; charset=utf-8",
+          "date": "Sun, 03 May 2026 17:41:05 GMT",
+          "etag": "W/\"1b-8xmO7VhjvYZcDbhBvRHjLPow93U\"",
+          "nel": "{\"report_to\":\"heroku-nel\",\"response_headers\":[\"Via\"],\"max_age\":3600,\"success_fraction\":0.01,\"failure_fraction\":0.1}",
+          "report-to": "{\"group\":\"heroku-nel\",\"endpoints\":[{\"url\":\"https://nel.heroku.com/reports?s=%2BinVMDHT6Yf2irLOY%2FUlCDkZEuh%2BQSU%2FV8cVGDPtcRM%3D\\u0026sid=c46efe9b-d3d2-4a0c-8c76-bfafa16c5add\\u0026ts=1777830065\"}],\"max_age\":3600}",
+          "reporting-endpoints": "heroku-nel=\"https://nel.heroku.com/reports?s=%2BinVMDHT6Yf2irLOY%2FUlCDkZEuh%2BQSU%2FV8cVGDPtcRM%3D&sid=c46efe9b-d3d2-4a0c-8c76-bfafa16c5add&ts=1777830065\"",
+          "server": "Heroku",
+          "via": "1.1 heroku-router",
+          "x-powered-by": "Express"
+        },
+        "body": {
+          "token": "76ef3fb9f13853d"
+        },
+        "bodyTruncated": false,
+        "durationMs": 19
+      },
+      "assertionResults": [
+        {
+          "assertionIndex": 0,
+          "field": "status",
+          "operator": "equals",
+          "passed": true,
+          "actual": 200,
+          "expected": "200",
+          "confidenceScore": 100
+        },
+        {
+          "assertionIndex": 1,
+          "field": "$.token",
+          "operator": "exists",
+          "passed": true,
+          "actual": "76ef3fb9f13853d",
+          "expected": "",
+          "confidenceScore": 100
+        },
+        {
+          "assertionIndex": 2,
+          "field": "$.token",
+          "operator": "isNotEmpty",
+          "passed": false,
+          "actual": "76ef3fb9f13853d",
+          "expected": "",
+          "confidenceScore": 0
+        }
+      ],
+      "extractedVariables": {
+        "authToken": "76ef3fb9f13853d"
+      },
+      "durationMs": 19
+    },
+    {
+      "stepId": "step-uc3-create-booking",
+      "stepName": "UC3 · Create Booking — POST /booking with Dynamic Data → Extract bookingId",
+      "status": "failed",
+      "request": {
+        "method": "POST",
+        "url": "https://restful-booker.herokuapp.com/booking",
+        "headers": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "enabled": true
+          },
+          {
+            "key": "Accept",
+            "value": "application/json",
+            "enabled": true
+          }
+        ],
+        "params": [],
+        "bodyType": "json",
+        "body": "{\"firstname\":\"{{$dynamic:faker_name}}\",\"lastname\":\"Demo\",\"totalprice\":{{$dynamic:random_int:100:999}},\"depositpaid\":true,\"bookingdates\":{\"checkin\":\"2026-06-01\",\"checkout\":\"2026-06-10\"},\"additionalneeds\":\"Breakfast\"}"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-length": "202",
+          "content-type": "application/json; charset=utf-8",
+          "date": "Sun, 03 May 2026 17:41:06 GMT",
+          "etag": "W/\"ca-IqpoyTAhIoYvoeo73URhOUQIvyc\"",
+          "nel": "{\"report_to\":\"heroku-nel\",\"response_headers\":[\"Via\"],\"max_age\":3600,\"success_fraction\":0.01,\"failure_fraction\":0.1}",
+          "report-to": "{\"group\":\"heroku-nel\",\"endpoints\":[{\"url\":\"https://nel.heroku.com/reports?s=N8I1mE62lY6%2FXPJUyJ%2Fw626LPlteSKXIvRppqOa1r%2Bo%3D\\u0026sid=c46efe9b-d3d2-4a0c-8c76-bfafa16c5add\\u0026ts=1777830066\"}],\"max_age\":3600}",
+          "reporting-endpoints": "heroku-nel=\"https://nel.heroku.com/reports?s=N8I1mE62lY6%2FXPJUyJ%2Fw626LPlteSKXIvRppqOa1r%2Bo%3D&sid=c46efe9b-d3d2-4a0c-8c76-bfafa16c5add&ts=1777830066\"",
+          "server": "Heroku",
+          "via": "1.1 heroku-router",
+          "x-powered-by": "Express"
+        },
+        "body": {
+          "bookingid": 19,
+          "booking": {
+            "firstname": "Carol Quinn",
+            "lastname": "Demo",
+            "totalprice": 901,
+            "depositpaid": true,
+            "bookingdates": {
+              "checkin": "2026-06-01",
+              "checkout": "2026-06-10"
+            },
+            "additionalneeds": "Breakfast"
+          }
+        },
+        "bodyTruncated": false,
+        "durationMs": 53
+      },
+      "assertionResults": [
+        {
+          "assertionIndex": 0,
+          "field": "status",
+          "operator": "equals",
+          "passed": true,
+          "actual": 200,
+          "expected": "200",
+          "confidenceScore": 100
+        },
+        {
+          "assertionIndex": 1,
+          "field": "$.bookingid",
+          "operator": "exists",
+          "passed": true,
+          "actual": 19,
+          "expected": "",
+          "confidenceScore": 100
+        },
+        {
+          "assertionIndex": 2,
+          "field": "$.booking.lastname",
+          "operator": "equals",
+          "passed": true,
+          "actual": "Demo",
+          "expected": "Demo",
+          "confidenceScore": 100
+        },
+        {
+          "assertionIndex": 3,
+          "field": "$.booking.depositpaid",
+          "operator": "equals",
+          "passed": false,
+          "actual": true,
+          "expected": "true",
+          "confidenceScore": 0
+        }
+      ],
+      "extractedVariables": {
+        "bookingId": "19",
+        "createdFirstname": "Carol Quinn"
+      },
+      "durationMs": 53
+    },
+    {
+      "stepId": "step-uc5-perf-list",
+      "stepName": "UC5 · Performance Gate — GET /booking list <3s soft warn <10s hard fail",
+      "status": "passed",
+      "request": {
+        "method": "GET",
+        "url": "https://restful-booker.herokuapp.com/booking",
+        "headers": [
+          {
+            "key": "Accept",
+            "value": "application/json",
+            "enabled": true
+          }
+        ],
+        "params": [],
+        "bodyType": "none",
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-length": "298",
+          "content-type": "application/json; charset=utf-8",
+          "date": "Sun, 03 May 2026 17:41:06 GMT",
+          "etag": "W/\"12a-0o4CTzEV2j0/Pako2lZ7ZeJ77Tc\"",
+          "nel": "{\"report_to\":\"heroku-nel\",\"response_headers\":[\"Via\"],\"max_age\":3600,\"success_fraction\":0.01,\"failure_fraction\":0.1}",
+          "report-to": "{\"group\":\"heroku-nel\",\"endpoints\":[{\"url\":\"https://nel.heroku.com/reports?s=N8I1mE62lY6%2FXPJUyJ%2Fw626LPlteSKXIvRppqOa1r%2Bo%3D\\u0026sid=c46efe9b-d3d2-4a0c-8c76-bfafa16c5add\\u0026ts=1777830066\"}],\"max_age\":3600}",
+          "reporting-endpoints": "heroku-nel=\"https://nel.heroku.com/reports?s=N8I1mE62lY6%2FXPJUyJ%2Fw626LPlteSKXIvRppqOa1r%2Bo%3D&sid=c46efe9b-d3d2-4a0c-8c76-bfafa16c5add&ts=1777830066\"",
+          "server": "Heroku",
+          "via": "1.1 heroku-router",
+          "x-powered-by": "Express"
+        },
+        "body": [
+          {
+            "bookingid": 1
+          },
+          {
+            "bookingid": 2
+          },
+          {
+            "bookingid": 3
+          },
+          {
+            "bookingid": 4
+          },
+          {
+            "bookingid": 5
+          },
+          {
+            "bookingid": 6
+          },
+          {
+            "bookingid": 7
+          },
+          {
+            "bookingid": 8
+          },
+          {
+            "bookingid": 9
+          },
+          {
+            "bookingid": 10
+          },
+          {
+            "bookingid": 11
+          },
+          {
+            "bookingid": 12
+          },
+          {
+            "bookingid": 13
+          },
+          {
+            "bookingid": 14
+          },
+          {
+            "bookingid": 15
+          },
+          {
+            "bookingid": 16
+          },
+          {
+            "bookingid": 17
+          },
+          {
+            "bookingid": 18
+          }
+        ],
+        "bodyTruncated": false,
+        "durationMs": 47
+      },
+      "assertionResults": [
+        {
+          "assertionIndex": 0,
+          "field": "status",
+          "operator": "equals",
+          "passed": true,
+          "actual": 200,
+          "expected": "200",
+          "confidenceScore": 100
+        },
+        {
+          "assertionIndex": 1,
+          "field": "responseTime",
+          "operator": "lessThan",
+          "passed": true,
+          "actual": 47,
+          "expected": "3000",
+          "confidenceScore": 100
+        },
+        {
+          "assertionIndex": 2,
+          "field": "responseTime",
+          "operator": "lessThan",
+          "passed": true,
+          "actual": 47,
+          "expected": "10000",
+          "confidenceScore": 100
+        }
+      ],
+      "extractedVariables": {},
+      "durationMs": 47
+    },
+    {
+      "stepId": "step-uc7-retry-delete",
+      "stepName": "UC7 · Retry Policy Demo — GET /booking/999999 (not found) → retries=2 → fail",
+      "status": "failed",
+      "request": {
+        "method": "GET",
+        "url": "https://restful-booker.herokuapp.com/booking/999999",
+        "headers": [
+          {
+            "key": "Accept",
+            "value": "application/json",
+            "enabled": true
+          }
+        ],
+        "params": [],
+        "bodyType": "none",
+        "body": null
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "content-length": "9",
+          "content-type": "text/plain; charset=utf-8",
+          "date": "Sun, 03 May 2026 17:41:06 GMT",
+          "etag": "W/\"9-0gXL1ngzMqISxa6S1zx3F4wtLyg\"",
+          "nel": "{\"report_to\":\"heroku-nel\",\"response_headers\":[\"Via\"],\"max_age\":3600,\"success_fraction\":0.01,\"failure_fraction\":0.1}",
+          "report-to": "{\"group\":\"heroku-nel\",\"endpoints\":[{\"url\":\"https://nel.heroku.com/reports?s=N8I1mE62lY6%2FXPJUyJ%2Fw626LPlteSKXIvRppqOa1r%2Bo%3D\\u0026sid=c46efe9b-d3d2-4a0c-8c76-bfafa16c5add\\u0026ts=1777830066\"}],\"max_age\":3600}",
+          "reporting-endpoints": "heroku-nel=\"https://nel.heroku.com/reports?s=N8I1mE62lY6%2FXPJUyJ%2Fw626LPlteSKXIvRppqOa1r%2Bo%3D&sid=c46efe9b-d3d2-4a0c-8c76-bfafa16c5add&ts=1777830066\"",
+          "server": "Heroku",
+          "via": "1.1 heroku-router",
+          "x-powered-by": "Express"
+        },
+        "body": "Not Found",
+        "bodyTruncated": false,
+        "durationMs": 47
+      },
+      "assertionResults": [
+        {
+          "assertionIndex": 0,
+          "field": "status",
+          "operator": "equals",
+          "passed": false,
+          "actual": 404,
+          "expected": "200",
+          "confidenceScore": 0
+        }
+      ],
+      "extractedVariables": {},
+      "durationMs": 47
+    },
+    {
+      "stepId": "step-uc4-get-booking",
+      "stepName": "UC4 · Get Booking — GET /booking/{{bookingId}} → Verify Chaining + Capture Baseline",
+      "status": "failed",
+      "request": {
+        "method": "GET",
+        "url": "https://restful-booker.herokuapp.com/booking/{{bookingId}}",
+        "headers": [
+          {
+            "key": "Accept",
+            "value": "application/json",
+            "enabled": true
+          }
+        ],
+        "params": [],
+        "bodyType": "none",
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-length": "175",
+          "content-type": "application/json; charset=utf-8",
+          "date": "Sun, 03 May 2026 17:41:06 GMT",
+          "etag": "W/\"af-uG6zxsBg+A0m8hGnV6vlcqxdfas\"",
+          "nel": "{\"report_to\":\"heroku-nel\",\"response_headers\":[\"Via\"],\"max_age\":3600,\"success_fraction\":0.01,\"failure_fraction\":0.1}",
+          "report-to": "{\"group\":\"heroku-nel\",\"endpoints\":[{\"url\":\"https://nel.heroku.com/reports?s=N8I1mE62lY6%2FXPJUyJ%2Fw626LPlteSKXIvRppqOa1r%2Bo%3D\\u0026sid=c46efe9b-d3d2-4a0c-8c76-bfafa16c5add\\u0026ts=1777830066\"}],\"max_age\":3600}",
+          "reporting-endpoints": "heroku-nel=\"https://nel.heroku.com/reports?s=N8I1mE62lY6%2FXPJUyJ%2Fw626LPlteSKXIvRppqOa1r%2Bo%3D&sid=c46efe9b-d3d2-4a0c-8c76-bfafa16c5add&ts=1777830066\"",
+          "server": "Heroku",
+          "via": "1.1 heroku-router",
+          "x-powered-by": "Express"
+        },
+        "body": {
+          "firstname": "Carol Quinn",
+          "lastname": "Demo",
+          "totalprice": 901,
+          "depositpaid": true,
+          "bookingdates": {
+            "checkin": "2026-06-01",
+            "checkout": "2026-06-10"
+          },
+          "additionalneeds": "Breakfast"
+        },
+        "bodyTruncated": false,
+        "durationMs": 17
+      },
+      "assertionResults": [
+        {
+          "assertionIndex": 0,
+          "field": "status",
+          "operator": "equals",
+          "passed": true,
+          "actual": 200,
+          "expected": "200",
+          "confidenceScore": 100
+        },
+        {
+          "assertionIndex": 1,
+          "field": "$.lastname",
+          "operator": "equals",
+          "passed": true,
+          "actual": "Demo",
+          "expected": "Demo",
+          "confidenceScore": 100
+        },
+        {
+          "assertionIndex": 2,
+          "field": "$.firstname",
+          "operator": "isNotEmpty",
+          "passed": false,
+          "actual": "Carol Quinn",
+          "expected": "",
+          "confidenceScore": 0
+        },
+        {
+          "assertionIndex": 3,
+          "field": "$.bookingdates.checkin",
+          "operator": "equals",
+          "passed": true,
+          "actual": "2026-06-01",
+          "expected": "2026-06-01",
+          "confidenceScore": 100
+        }
+      ],
+      "extractedVariables": {},
+      "durationMs": 17
+    },
+    {
+      "stepId": "step-uc6-update-booking",
+      "stepName": "UC6 · Update Booking — PUT /booking/{{bookingId}} using {{authToken}} Cookie",
+      "status": "passed",
+      "request": {
+        "method": "PUT",
+        "url": "https://restful-booker.herokuapp.com/booking/{{bookingId}}",
+        "headers": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "enabled": true
+          },
+          {
+            "key": "Accept",
+            "value": "application/json",
+            "enabled": true
+          },
+          {
+            "key": "Cookie",
+            "value": "token={{authToken}}",
+            "enabled": true
+          }
+        ],
+        "params": [],
+        "bodyType": "json",
+        "body": "{\"firstname\":\"{{createdFirstname}}\",\"lastname\":\"Updated\",\"totalprice\":999,\"depositpaid\":true,\"bookingdates\":{\"checkin\":\"2026-06-01\",\"checkout\":\"2026-06-15\"},\"additionalneeds\":\"Lunch\"}"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-length": "174",
+          "content-type": "application/json; charset=utf-8",
+          "date": "Sun, 03 May 2026 17:41:06 GMT",
+          "etag": "W/\"ae-vzQYoykyg/y+9dUAqSdj8ZQC83c\"",
+          "nel": "{\"report_to\":\"heroku-nel\",\"response_headers\":[\"Via\"],\"max_age\":3600,\"success_fraction\":0.01,\"failure_fraction\":0.1}",
+          "report-to": "{\"group\":\"heroku-nel\",\"endpoints\":[{\"url\":\"https://nel.heroku.com/reports?s=N8I1mE62lY6%2FXPJUyJ%2Fw626LPlteSKXIvRppqOa1r%2Bo%3D\\u0026sid=c46efe9b-d3d2-4a0c-8c76-bfafa16c5add\\u0026ts=1777830066\"}],\"max_age\":3600}",
+          "reporting-endpoints": "heroku-nel=\"https://nel.heroku.com/reports?s=N8I1mE62lY6%2FXPJUyJ%2Fw626LPlteSKXIvRppqOa1r%2Bo%3D&sid=c46efe9b-d3d2-4a0c-8c76-bfafa16c5add&ts=1777830066\"",
+          "server": "Heroku",
+          "via": "1.1 heroku-router",
+          "x-powered-by": "Express"
+        },
+        "body": {
+          "firstname": "Carol Quinn",
+          "lastname": "Updated",
+          "totalprice": 999,
+          "depositpaid": true,
+          "bookingdates": {
+            "checkin": "2026-06-01",
+            "checkout": "2026-06-15"
+          },
+          "additionalneeds": "Lunch"
+        },
+        "bodyTruncated": false,
+        "durationMs": 15
+      },
+      "assertionResults": [
+        {
+          "assertionIndex": 0,
+          "field": "status",
+          "operator": "equals",
+          "passed": true,
+          "actual": 200,
+          "expected": "200",
+          "confidenceScore": 100
+        },
+        {
+          "assertionIndex": 1,
+          "field": "$.lastname",
+          "operator": "equals",
+          "passed": true,
+          "actual": "Updated",
+          "expected": "Updated",
+          "confidenceScore": 100
+        },
+        {
+          "assertionIndex": 2,
+          "field": "$.totalprice",
+          "operator": "equals",
+          "passed": true,
+          "actual": 999,
+          "expected": "999",
+          "confidenceScore": 100
+        }
+      ],
+      "extractedVariables": {},
+      "durationMs": 15
+    },
+    {
+      "stepId": "step-uc8-delete-booking",
+      "stepName": "UC8 · Delete Booking (Teardown) — DELETE /booking/{{bookingId}} → Cleanup after all steps",
+      "status": "passed",
+      "request": {
+        "method": "DELETE",
+        "url": "https://restful-booker.herokuapp.com/booking/{{bookingId}}",
+        "headers": [
+          {
+            "key": "Cookie",
+            "value": "token={{authToken}}",
+            "enabled": true
+          }
+        ],
+        "params": [],
+        "bodyType": "none",
+        "body": null
+      },
+      "response": {
+        "status": 201,
+        "headers": {
+          "content-length": "7",
+          "content-type": "text/plain; charset=utf-8",
+          "date": "Sun, 03 May 2026 17:41:06 GMT",
+          "etag": "W/\"7-rM9AyJuqT6iOan/xHh+AW+7K/T8\"",
+          "nel": "{\"report_to\":\"heroku-nel\",\"response_headers\":[\"Via\"],\"max_age\":3600,\"success_fraction\":0.01,\"failure_fraction\":0.1}",
+          "report-to": "{\"group\":\"heroku-nel\",\"endpoints\":[{\"url\":\"https://nel.heroku.com/reports?s=N8I1mE62lY6%2FXPJUyJ%2Fw626LPlteSKXIvRppqOa1r%2Bo%3D\\u0026sid=c46efe9b-d3d2-4a0c-8c76-bfafa16c5add\\u0026ts=1777830066\"}],\"max_age\":3600}",
+          "reporting-endpoints": "heroku-nel=\"https://nel.heroku.com/reports?s=N8I1mE62lY6%2FXPJUyJ%2Fw626LPlteSKXIvRppqOa1r%2Bo%3D&sid=c46efe9b-d3d2-4a0c-8c76-bfafa16c5add&ts=1777830066\"",
+          "server": "Heroku",
+          "via": "1.1 heroku-router",
+          "x-powered-by": "Express"
+        },
+        "body": "Created",
+        "bodyTruncated": false,
+        "durationMs": 17
+      },
+      "assertionResults": [
+        {
+          "assertionIndex": 0,
+          "field": "status",
+          "operator": "equals",
+          "passed": true,
+          "actual": 201,
+          "expected": "201",
+          "confidenceScore": 100
+        }
+      ],
+      "extractedVariables": {},
+      "durationMs": 17
+    }
+  ],
+  "variableContext": {
+    "adminUser": "admin",
+    "adminPass": "password123",
+    "authToken": "76ef3fb9f13853d",
+    "bookingId": "19",
+    "createdFirstname": "Carol Quinn"
+  }
+}

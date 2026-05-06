@@ -1,0 +1,49 @@
+{
+  "id": "84b85317-47ce-4766-a159-f7ab0f367851",
+  "collectionId": "2730d1f3-948f-4dce-8545-441c2efa7dcc",
+  "projectId": "proj-1",
+  "startedAt": "2026-05-04T06:43:21.932Z",
+  "completedAt": "2026-05-04T06:43:22.315Z",
+  "status": "passed",
+  "stepResults": [
+    {
+      "stepId": "s1",
+      "stepName": "GET /get",
+      "status": "passed",
+      "request": {
+        "method": "GET",
+        "url": "https://httpbin.org/get"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "date": "Mon, 04 May 2026 06:43:22 GMT",
+          "content-type": "application/json",
+          "content-length": "332",
+          "connection": "keep-alive",
+          "server": "gunicorn/19.9.0",
+          "access-control-allow-origin": "*",
+          "access-control-allow-credentials": "true"
+        },
+        "body": {
+          "args": {},
+          "headers": {
+            "Accept": "*/*",
+            "Accept-Encoding": "gzip,deflate,br",
+            "Host": "httpbin.org",
+            "User-Agent": "Playwright/1.58.2 (x64; windows 10.0) node/24.14",
+            "X-Amzn-Trace-Id": "Root=1-69f8400a-16a6a28965cc7d756c86fbf9"
+          },
+          "origin": "38.71.0.42",
+          "url": "https://httpbin.org/get"
+        },
+        "bodyTruncated": false,
+        "durationMs": 336
+      },
+      "assertionResults": [],
+      "extractedVariables": {},
+      "durationMs": 336
+    }
+  ],
+  "variableContext": {}
+}

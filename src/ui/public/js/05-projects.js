@@ -35,12 +35,13 @@ async function cdLoad() {
   if (!tbody) return;
   if (!currentProjectId) {
     allCommonData = [];
-    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--neutral-400);padding:20px">Select a project first.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--neutral-400);padding:20px">Select a project first.</td></tr>';
     document.getElementById('cd-pagination').innerHTML = '';
     return;
   }
   const env = document.getElementById('cd-env-filter')?.value || '';
-  const qs = `?projectId=${encodeURIComponent(currentProjectId)}${env ? '&environment=' + encodeURIComponent(env) : ''}`;
+  const mod = document.getElementById('cd-module-filter')?.value || '';
+  const qs = `?projectId=${encodeURIComponent(currentProjectId)}${env ? '&environment=' + encodeURIComponent(env) : ''}${mod ? '&moduleType=' + encodeURIComponent(mod) : ''}`;
   const res = await fetch(`/api/common-data${qs}`);
   allCommonData = await res.json();
   _cdPage = 0;
@@ -53,7 +54,7 @@ function cdRender() {
   if (!tbody) return;
   const list = allCommonData;
   if (!list.length) {
-    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--neutral-400);padding:24px">No data entries yet. Click <strong>+ Add Common Data</strong> to create one.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--neutral-400);padding:24px">No data entries yet. Click <strong>+ Add Common Data</strong> to create one.</td></tr>';
     if (pgEl) pgEl.innerHTML = '';
     return;
   }
@@ -71,6 +72,7 @@ function cdRender() {
              </span>`
       : `<span title="${escHtml(d.value)}">${escHtml(d.value)}</span>`}
       </td>
+      <td><span class="badge badge-${(d.moduleType||'shared') === 'api' ? 'active' : (d.moduleType||'shared') === 'ui' ? 'medium' : 'neutral'}">${(d.moduleType||'shared') === 'api' ? 'API' : (d.moduleType||'shared') === 'ui' ? 'UI / Web' : 'Shared'}</span></td>
       <td><span class="badge badge-${d.environment === 'PROD' ? 'fail' : d.environment === 'UAT' ? 'medium' : 'active'}">${escHtml(d.environment)}</span></td>
       <td>${escHtml(d.createdBy || '—')}</td>
       <td>${formatDate(d.createdAt)}</td>
@@ -100,6 +102,8 @@ function cdOpenModal(id = null) {
     document.getElementById('cd-value').value = '';
     document.getElementById('cd-env').value = '';
     const mu = document.getElementById('cd-env-url'); if (mu) mu.textContent = '';
+    const modEl = document.getElementById('cd-module');
+    if (modEl) modEl.value = 'shared';
     const sensEl = document.getElementById('cd-sensitive');
     if (sensEl) sensEl.checked = false;
   }
@@ -121,6 +125,8 @@ async function cdEdit(id) {
   document.getElementById('cd-value').placeholder = d.sensitive ? 'Leave blank to keep existing value' : '';
   document.getElementById('cd-env').value = d.environment;
   _cdShowEnvUrl('cd-env', 'cd-env-url');
+  const modEl = document.getElementById('cd-module');
+  if (modEl) modEl.value = d.moduleType || 'shared';
   const sensEl = document.getElementById('cd-sensitive');
   if (sensEl) sensEl.checked = !!d.sensitive;
   modClearAlert('cd-modal-alert');
@@ -133,12 +139,13 @@ async function cdSave() {
   const value = document.getElementById('cd-value').value.trim();
   const environment = document.getElementById('cd-env').value;
   const sensitive = !!(document.getElementById('cd-sensitive')?.checked);
+  const moduleType = document.getElementById('cd-module')?.value || 'shared';
   if (!dataName) { modAlert('cd-modal-alert', 'error', 'Data Name is required'); return; }
   if (!environment) { modAlert('cd-modal-alert', 'error', 'Environment is required'); return; }
   if (!currentProjectId) { modAlert('cd-modal-alert', 'error', 'Select a project first'); return; }
   // On edit of sensitive entry: if value blank, omit it — server keeps existing encrypted value
   const body = {
-    projectId: currentProjectId, dataName, environment, sensitive,
+    projectId: currentProjectId, dataName, environment, sensitive, moduleType,
     ...(value || !editingCdId ? { value } : {})
   };
   const method = editingCdId ? 'PUT' : 'POST';

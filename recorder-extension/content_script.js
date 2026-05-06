@@ -32,6 +32,10 @@
   let _lastClick      = { sel: '', ts: 0, stateHash: '' };
   const CLICK_DEBOUNCE_MS = 800;   // raised from 300ms — covers accidental double-clicks
   const FILL_MERGE_MS     = 600;   // inactivity window before FILL is emitted
+  // Tracks the last SELECT change event target — suppresses the post-selection
+  // browser-synthesised click that fires on the same <select> after value chosen
+  let _lastSelectChange = { el: null, ts: 0 };
+  const SELECT_CLICK_SUPPRESS_MS = 600;
 
   // ── CR2: Central dedup state ──────────────────────────────────────────────────
   let _lastEmitted = { eventType: '', selector: '', value: '', ts: 0 };
@@ -800,13 +804,14 @@
 
       candidates.forEach(el => {
         if (_seenToastNodes.has(el)) return;
-        _seenToastNodes.add(el);
+        // OLD: _seenToastNodes.add(el) before visibility check — permanently blocked re-show detection
         if (!_isToastVisible(el)) return;
         if (_isRecorderOwnToast(el)) return;
 
         const text = _getVisibleText(el);
         if (!text || text.length < 2) return;
 
+        _seenToastNodes.add(el); // only mark seen after confirmed visible + has text
         const loc = bestSelector(el);
         _emitToastAssert(text, loc.sel, loc.type);
       });
@@ -819,12 +824,13 @@
       }
       valCandidates.forEach(el => {
         if (_seenToastNodes.has(el)) return;
-        _seenToastNodes.add(el);
+        // OLD: _seenToastNodes.add(el) before visibility check — permanently blocked re-show detection
         if (!_isToastVisible(el)) return;
 
         const text = _getVisibleText(el);
         if (!text || text.length < 2) return;
 
+        _seenToastNodes.add(el); // only mark seen after confirmed visible + has text
         const loc = bestSelector(el);
         _emitValidationAssert(text, loc.sel, loc.type);
       });
@@ -835,6 +841,7 @@
     clearTimeout(_toastScanTimer);
     _toastScanTimer = setTimeout(() => {
       if (!_active) return;
+      // Scan toasts
       document.querySelectorAll(TOAST_SEL).forEach(el => {
         if (_seenToastNodes.has(el)) return;
         if (!_isToastVisible(el)) return;
@@ -844,6 +851,16 @@
         _seenToastNodes.add(el);
         const loc = bestSelector(el);
         _emitToastAssert(text, loc.sel, loc.type);
+      });
+      // Scan validation errors — same toggle-visibility pattern as toasts
+      document.querySelectorAll(VALIDATION_SEL).forEach(el => {
+        if (_seenToastNodes.has(el)) return;
+        if (!_isToastVisible(el)) return;
+        const text = _getVisibleText(el);
+        if (!text || text.length < 2) return;
+        _seenToastNodes.add(el);
+        const loc = bestSelector(el);
+        _emitValidationAssert(text, loc.sel, loc.type);
       });
     }, 300);
   }
@@ -950,6 +967,11 @@
     // CR2: flush any pending fill on a DIFFERENT element before recording click
     if (_pendingFill && _pendingFill.loc.sel !== loc.sel) flushPendingFill();
 
+    // Suppress post-selection click on <select> — browser fires a click on the
+    // same SELECT element after the user picks a value; that click is junk (Step 3 duplicate).
+    // The real selection is already captured by the change/SELECT event (Step 2).
+    if (el.tagName === 'SELECT' && _lastSelectChange.el === el && now - _lastSelectChange.ts < SELECT_CLICK_SUPPRESS_MS) return;
+
     // CR2: state-aware click dedup — allow re-recording if element state changed
     // (e.g. accordion toggle, checkbox, tab — same element but new state)
     if (loc.sel === _lastClick.sel && stateHash === _lastClick.stateHash && now - _lastClick.ts < CLICK_DEBOUNCE_MS) return;
@@ -1052,6 +1074,8 @@
     }
     if (el.tagName === 'SELECT') {
       const val = el.options[el.selectedIndex]?.text || el.value;
+      // Mark this SELECT so handleClick suppresses the post-selection browser click
+      _lastSelectChange = { el, ts: Date.now() };
       postStep({
         eventType:    'SELECT',
         selector:     loc.sel,
@@ -1152,18 +1176,28 @@
     const _allAddedNodes = [];
     _domObserver = new MutationObserver(muts => {
       _allAddedNodes.length = 0;
-      muts.forEach(m => m.addedNodes.forEach(n => {
-        if (!n || n.nodeType !== 1) return;
-        _allAddedNodes.push(n);
-        if (n.shadowRoot) injectIntoShadowRoot(n.shadowRoot);
-        if (n.tagName === 'IFRAME') injectIntoIframe(n);
-        if (n.querySelectorAll) {
-          n.querySelectorAll('*').forEach(c => { if (c.shadowRoot) injectIntoShadowRoot(c.shadowRoot); });
-          n.querySelectorAll('iframe').forEach(injectIntoIframe);
+      let hasAttrMutation = false;
+      muts.forEach(m => {
+        if (m.type === 'childList') {
+          m.addedNodes.forEach(n => {
+            if (!n || n.nodeType !== 1) return;
+            _allAddedNodes.push(n);
+            if (n.shadowRoot) injectIntoShadowRoot(n.shadowRoot);
+            if (n.tagName === 'IFRAME') injectIntoIframe(n);
+            if (n.querySelectorAll) {
+              n.querySelectorAll('*').forEach(c => { if (c.shadowRoot) injectIntoShadowRoot(c.shadowRoot); });
+              n.querySelectorAll('iframe').forEach(injectIntoIframe);
+            }
+          });
+        } else if (m.type === 'attributes') {
+          // style/class/hidden changed on existing node — may be a toggle-visible toast
+          // (e.g. div#MessageAlert toggling display:none → display:block)
+          if (m.target && m.target.nodeType === 1) hasAttrMutation = true;
         }
-      }));
-      // Toast/validation detection piggybacked on same observer
+      });
+      // Toast/validation detection: run on new nodes OR attribute-triggered visibility changes
       if (_allAddedNodes.length > 0) _scanForToastsAndValidation(_allAddedNodes);
+      else if (hasAttrMutation) _scanForToastsAndValidation([]);
     });
     _domObserver.observe(document.documentElement, { childList: true, subtree: true, attributeFilter: ['class', 'style', 'hidden', 'aria-hidden'] });
 
@@ -1182,7 +1216,8 @@
         _lastAssertedUrl = newUrl;
         // Emit a partial-path assert — strip origin, keep path+query for portability
         let partial = newUrl;
-        try { partial = new URL(newUrl).pathname + (new URL(newUrl).search || ''); } catch {}
+        // OLD: only captured pathname+search — hash-based routing (e.g. /#HomeMenu#Home) always gave "/"
+        try { const u = new URL(newUrl); partial = u.pathname + (u.search || '') + (u.hash || ''); } catch {}
         if (!shouldEmit('ASSERT_URL', partial, partial)) return;
         recordEmit('ASSERT_URL', partial, partial);
         postStep({

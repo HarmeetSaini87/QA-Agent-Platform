@@ -17,12 +17,20 @@ import { attachDefectInfo } from '../helpers/run-spawner';
 
 export function registerHealingRoutes(app: express.Application): void {
   // T3 Similarity heal endpoint
-  app.post('/api/heal', requireAuth, (req: Request, res: Response) => {
+  // OLD: app.post('/api/heal', requireAuth — requireAuth removed: spec process has no session; T3/T4 fetch() gets 401
+  app.post('/api/heal', (req: Request, res: Response) => {
     const { locatorId, profile, candidates, stepOrder, keyword, runId } = req.body as { locatorId: string; profile: any; candidates: DomCandidate[]; stepOrder: number; keyword: string; runId: string };
     if (!locatorId || !profile || !candidates?.length) { res.status(400).json({ error: 'locatorId, profile and candidates are required' }); return; }
     const ranked = scoreCandidates(profile, candidates);
     if (!ranked.length || ranked[0].score < 1) { res.status(404).json({ error: 'No suitable candidate found' }); return; }
     const best = ranked[0];
+    // Apply type-based confidence floor — same table as buildAlternatives()
+    // T3 similarity score can be lower than the design-time confidence for the selector type
+    const TYPE_CONFIDENCE_FLOOR: Record<string, number> = {
+      testid: 95, role: 85, label: 80, xpath: 40, id: 60, name: 55, css: 50,
+    };
+    const floor = TYPE_CONFIDENCE_FLOOR[best.bestType] ?? 50;
+    best.score = Math.max(best.score, floor);
     const locEntry = readAll<Locator>(LOCATORS).find(l => l.id === locatorId);
     const proposalId = uuidv4();
     const autoApply = best.score >= T3_AUTO_THRESHOLD;

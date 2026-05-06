@@ -1,0 +1,16 @@
+{
+  "id": "733ad63a-7128-422b-9fa3-1dc75729613e",
+  "projectId": "test-proj",
+  "locatorId": "loc-test-002",
+  "locatorName": "Login Input",
+  "scriptId": "",
+  "scriptTitle": "",
+  "stepOrder": 2,
+  "oldSelector": "input.login",
+  "oldSelectorType": "css",
+  "newSelector": "Enter username",
+  "newSelectorType": "placeholder",
+  "confidence": 22,
+  "healedAt": "2026-05-02T18:26:55.931Z",
+  "status": "pending-review"
+}

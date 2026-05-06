@@ -1,0 +1,11 @@
+{
+  "id": "c3081c2d-7f99-44e6-94e6-a0e3515e2be4",
+  "projectId": "test-proj",
+  "pageKey": "/health-test",
+  "pageName": "/health-test",
+  "locatorIds": [
+    "loc-ps-health-001"
+  ],
+  "capturedAt": "2026-05-04T06:25:05.304Z",
+  "capturedFrom": "prescan"
+}

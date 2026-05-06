@@ -38,7 +38,7 @@ export function registerProjectsRoutes(app: express.Application): void {
   });
 
   // Locators
-  app.get('/api/locators', (req: Request, res: Response) => { const { projectId } = req.query as { projectId?: string }; if (!projectId) { res.json([]); return; } res.json(readAll<Locator>(LOCATORS).filter(l => !l.draft && l.projectId === projectId)); });
+  app.get('/api/locators', (req: Request, res: Response) => { const { projectId, includeDraft } = req.query as { projectId?: string; includeDraft?: string }; if (!projectId) { res.json([]); return; } const all = readAll<Locator>(LOCATORS).filter(l => l.projectId === projectId); res.json(includeDraft === 'true' ? all : all.filter(l => !l.draft)); });
   app.post('/api/locators', requireEditor, (req: Request, res: Response) => {
     const { name, selector, selectorType, pageModule, projectId, description } = req.body as any;
     if (!name || !selector) { res.status(400).json({ error: 'name and selector are required' }); return; }
@@ -47,8 +47,8 @@ export function registerProjectsRoutes(app: express.Application): void {
   });
   app.put('/api/locators/:id', requireEditor, (req: Request, res: Response) => {
     const loc = findById<Locator>(LOCATORS, req.params.id); if (!loc) { res.status(404).json({ error: 'Not found' }); return; }
-    const { name, selector, selectorType, pageModule, projectId, description, alternatives } = req.body as any;
-    if (name) loc.name = sanitizeInput(name); if (selector) loc.selector = sanitizeInput(selector); if (selectorType) loc.selectorType = selectorType; if (pageModule !== undefined) loc.pageModule = sanitizeInput(pageModule); if (projectId !== undefined) loc.projectId = projectId; if (description !== undefined) loc.description = sanitizeInput(description); if (Array.isArray(alternatives)) loc.alternatives = alternatives;
+    const { name, selector, selectorType, pageModule, projectId, description, alternatives, draft } = req.body as any;
+    if (name) loc.name = sanitizeInput(name); if (selector) loc.selector = sanitizeInput(selector); if (selectorType) loc.selectorType = selectorType; if (pageModule !== undefined) loc.pageModule = sanitizeInput(pageModule); if (projectId !== undefined) loc.projectId = projectId; if (description !== undefined) loc.description = sanitizeInput(description); if (Array.isArray(alternatives)) loc.alternatives = alternatives; if (draft === false) loc.draft = false;
     loc.updatedAt = new Date().toISOString(); upsert(LOCATORS, loc); res.json({ success: true });
   });
   function cleanupOrphanedLocatorReferences(locatorIds: string[]) {

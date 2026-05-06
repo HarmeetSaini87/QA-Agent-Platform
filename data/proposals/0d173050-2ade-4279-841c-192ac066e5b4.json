@@ -1,0 +1,16 @@
+{
+  "id": "0d173050-2ade-4279-841c-192ac066e5b4",
+  "projectId": "test-proj",
+  "locatorId": "loc-prop-001",
+  "locatorName": "Submit Button",
+  "scriptId": "",
+  "scriptTitle": "",
+  "stepOrder": 1,
+  "oldSelector": "button.submit",
+  "oldSelectorType": "css",
+  "newSelector": "button:submit-btn",
+  "newSelectorType": "role",
+  "confidence": 71,
+  "healedAt": "2026-05-02T18:31:50.935Z",
+  "status": "pending-review"
+}

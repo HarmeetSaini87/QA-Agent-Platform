@@ -1,0 +1,16 @@
+{
+  "id": "12b2860c-7b29-484e-8bd1-203e5528a6a3",
+  "projectId": "3a39c8a2-06ea-4a83-9aca-e3a316ea940a",
+  "locatorId": "aeb8831a-bae4-4503-a4db-9ae07f370eb2",
+  "locatorName": "Click User Name",
+  "scriptId": "",
+  "scriptTitle": "",
+  "stepOrder": 1,
+  "oldSelector": "UsernameTXT",
+  "oldSelectorType": "id",
+  "newSelector": "#Username",
+  "newSelectorType": "css",
+  "confidence": 31,
+  "healedAt": "2026-05-06T12:18:32.950Z",
+  "status": "pending-review"
+}

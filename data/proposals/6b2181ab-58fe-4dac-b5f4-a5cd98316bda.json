@@ -1,0 +1,18 @@
+{
+  "id": "6b2181ab-58fe-4dac-b5f4-a5cd98316bda",
+  "projectId": "test-proj",
+  "locatorId": "loc-review-002",
+  "locatorName": "Temp Button",
+  "scriptId": "",
+  "scriptTitle": "",
+  "stepOrder": 1,
+  "oldSelector": "button.temp",
+  "oldSelectorType": "css",
+  "newSelector": "div > button",
+  "newSelectorType": "css",
+  "confidence": 29,
+  "healedAt": "2026-05-02T18:31:51.078Z",
+  "status": "approved-temporary",
+  "reviewedBy": "admin",
+  "reviewedAt": "2026-05-02T18:31:51.111Z"
+}

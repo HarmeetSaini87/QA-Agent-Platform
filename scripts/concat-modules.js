@@ -31,6 +31,9 @@ const MANIFEST = [
   '20-visual-regression.js',
   '21-locator-health.js',
   '22-jira.js',
+  '23-api-envs.js',
+  '24-api-collections.js',
+  '25-api-runs.js',
 ];
 
 function build() {

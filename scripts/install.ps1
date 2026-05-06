@@ -281,16 +281,21 @@ if ($LASTEXITCODE -ne 0) { Fail "Build failed. Contact the vendor with the conte
 Ok "Build succeeded."
 
 ##############################################################################
-# [7] Playwright browser
+# [7] Playwright browsers — installed to machine-wide ProgramData path
+#     so the Windows Service (LOCAL SYSTEM) can find them regardless of
+#     which user account runs the service.
 ##############################################################################
-Step 7 "Installing Playwright Chromium browser..."
-$pwOut = npx playwright install chromium 2>&1
+Step 7 "Installing Playwright browsers (chromium, firefox, webkit)..."
+# Install into project folder — self-contained, works for any service account or user
+$PW_BROWSERS_PATH = Join-Path $INSTALL_DIR ".playwright-browsers"
+$env:PLAYWRIGHT_BROWSERS_PATH = $PW_BROWSERS_PATH
+$pwOut = npx playwright install chromium firefox webkit 2>&1
 $pwOut | Add-Content $LOG_FILE -Encoding UTF8
 if ($LASTEXITCODE -ne 0) {
-    Warn "Playwright install had warnings. Suite runs may fail if browser missing."
-    Warn "Run manually: npx playwright install chromium"
+    Warn "Playwright browser install had warnings — check $LOG_FILE"
+    Warn "To retry: cd '$INSTALL_DIR'; `$env:PLAYWRIGHT_BROWSERS_PATH='$PW_BROWSERS_PATH'; npx playwright install chromium firefox webkit"
 } else {
-    Ok "Playwright Chromium installed."
+    Ok "Playwright browsers installed to $PW_BROWSERS_PATH"
 }
 
 ##############################################################################

@@ -261,7 +261,7 @@ async function fnSave() {
   await fnLoad();
 
   // Background locator sync — surfaces failures as banner
-  _syncLocatorsToRepo(stepsForSync).then(failed => {
+  _syncLocatorsToRepo(stepsForSync).then(({ failed }) => {
     if (failed.length) {
       _syncFailedLocators = new Set(failed);
       _showSyncFailBanner(failed, 'function');

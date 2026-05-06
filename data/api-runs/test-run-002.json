@@ -1,0 +1,13 @@
+{
+  "id": "test-run-002",
+  "collectionId": "col-booker-demo",
+  "projectId": "3a39c8a2-06ea-4a83-9aca-e3a316ea940a",
+  "startedAt": "2026-05-03T17:39:08.466Z",
+  "completedAt": "2026-05-03T17:39:08.469Z",
+  "status": "running",
+  "stepResults": [],
+  "variableContext": {
+    "adminUser": "admin",
+    "adminPass": "password123"
+  }
+}

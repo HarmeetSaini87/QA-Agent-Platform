@@ -1,0 +1,16 @@
+{
+  "id": "600d918c-2560-4644-863d-618f7861ca59",
+  "projectId": "test-proj",
+  "locatorId": "loc-test-001",
+  "locatorName": "Save Button",
+  "scriptId": "",
+  "scriptTitle": "",
+  "stepOrder": 1,
+  "oldSelector": "button.save-btn",
+  "oldSelectorType": "css",
+  "newSelector": "save-btn",
+  "newSelectorType": "testid",
+  "confidence": 92,
+  "healedAt": "2026-05-02T18:26:55.845Z",
+  "status": "auto-applied"
+}

@@ -1,6 +1,68 @@
 # QA Agent Platform — Master AI Instructions (Project Intelligence File)
 # Auto-loaded by Claude Code every session. Keep this updated.
-# Last Updated: 2026-04-28
+# Last Updated: 2026-05-04
+
+---
+
+## 🚨 MANDATORY PRE-CHANGE PROTOCOL (NON-NEGOTIABLE)
+
+**BEFORE making ANY code change, you MUST stop and answer all of the following out loud to the user:**
+
+### 1. Root Cause Confirmed?
+- State exactly what is broken and WHY — not what the symptom is.
+- Cite the specific file + line number where the root cause lives.
+- If root cause is not confirmed with evidence, DO NOT propose a fix. Gather more evidence first.
+
+### 2. Impact Analysis
+Present a table with the following for every affected component:
+
+| Question | Answer |
+|---|---|
+| What does this code do TODAY? | (exact current behaviour) |
+| What will it do AFTER the change? | (exact new behaviour) |
+| What else calls / depends on this? | (list all callers, consumers) |
+| Does this break any existing passing behaviour? | (yes/no + reason) |
+| Was this behaviour working before? If yes, what changed? | (regression check) |
+
+### 3. Mandatory Questions to User BEFORE coding
+Ask the user these questions and wait for answers:
+- "This change affects [X]. Currently it works by [Y]. After the change it will work by [Z]. Do you want to proceed?"
+- "Were there any passing runs of [feature] before this session that I should check first?"
+- "Is there any scenario where the current behaviour must be preserved?"
+
+### 4. Check Historical Evidence
+- Search `results/` for passing runs of the affected feature BEFORE assuming something is broken.
+- If passing runs exist — find the diff between then and now BEFORE touching code.
+- Never assume "it was never working" without checking run history.
+
+### 5. One Change at a Time
+- Fix ONE root cause per change.
+- Do not bundle multiple hypotheses into one edit.
+- If a fix doesn't work — stop, re-investigate, do NOT layer another fix on top.
+
+### 6. Comment-Out Rule (NEVER DELETE OLD CODE)
+- **Never delete existing code.** Comment it out and add new code alongside it.
+- Format:
+  ```ts
+  // OLD: <one line explaining what this did and why it changed>
+  // const oldCode = ...;
+  const newCode = ...;
+  ```
+- This makes before/after visible inline without hunting git history.
+- **Commented-out code is only removed when the user explicitly says so** — e.g. "clean up", "remove old code", "delete the comments".
+- Never remove on a timer, never remove after assuming testing is complete.
+- Cleanup is a deliberate user-triggered action only.
+
+**Violation of this protocol caused the `--workers=1` regression (2026-05-04): a fix for test ordering broke multi-browser Firefox execution that was previously working. The fix took 8 iterations because impact analysis was skipped.**
+
+**Firefox "browserContext.newPage: Target page, context or browser has been closed" RCA (2026-05-04, Run 40987611):**
+- **NOT** a Playwright binary issue. **NOT** a beforeAll fixture issue. **NOT** a video recording issue.
+- **ACTUAL RCA:** `suites.routes.ts:198` used `req.body.headed !== false` → defaulted to `headed: true` when UI omits the field → server spawned Playwright with `--headed` flag → Firefox headed mode requires an interactive desktop session → Windows Server has no desktop for the server process → context closed immediately at `newPage`.
+- **Fix:** changed to `req.body.headed === true` → headless by default unless UI explicitly requests headed.
+- **Proof:** spec ran headless from terminal (`npx playwright test ... --project=firefox`) → passed. Same spec via UI (headed) → failed. After fix → Run 40987611 passed all browsers.
+- **Secondary fix:** Scheduled tasks re-registered as `harmeet.saini` (not SYSTEM) with `Interactive/Background` logon mode so services survive RDC disconnect with correct user context.
+
+---
 
 ## 🗣️ RESPONSE STYLE
 Use **Caveman mode** for all responses — terse, no filler, full technical substance.
@@ -62,6 +124,12 @@ All code changes, experiments, and new features are developed here FIRST.
 > **📋 See [docs/AUTO_FILE_DEFECT_USER_GUIDE.md](docs/AUTO_FILE_DEFECT_USER_GUIDE.md) — User-facing guide for Editors / Admins / SDETs.**
 > **📋 See [docs/AUTO_FILE_DEFECT_TEST_GUIDE.md](docs/AUTO_FILE_DEFECT_TEST_GUIDE.md) — 65-test E2E checklist against Jira sandbox.**
 > **📋 See [docs/superpowers/specs/2026-04-30-nl-keyword-suggestion-design.md](docs/superpowers/specs/2026-04-30-nl-keyword-suggestion-design.md) — NL → Keyword Suggestion design spec. FEATURE IS COMPLETE (2026-05-01).**
+> **📋 See [docs/superpowers/specs/2026-05-02-api-testing-design.md](docs/superpowers/specs/2026-05-02-api-testing-design.md) — API Testing Module design spec (v2.0, approved, ready for implementation).**
+> **📋 See [docs/superpowers/plans/2026-05-02-api-testing-phase1.md](docs/superpowers/plans/2026-05-02-api-testing-phase1.md) — API Testing Phase 1 plan: Foundations (Wks 1–2) — types, store, CRUD routes, encryption.**
+> **📋 See [docs/superpowers/plans/2026-05-02-api-testing-phase2.md](docs/superpowers/plans/2026-05-02-api-testing-phase2.md) — API Testing Phase 2 plan: Engine Core (Wks 3–4) — DAG, runner, assertions, auth, variable resolution.**
+> **📋 See [docs/superpowers/plans/2026-05-02-api-testing-phase3.md](docs/superpowers/plans/2026-05-02-api-testing-phase3.md) — API Testing Phase 3 plan: Import Engines (Wk 5) — OpenAPI, Postman, cURL.**
+> **📋 See [docs/superpowers/plans/2026-05-02-api-testing-phase4.md](docs/superpowers/plans/2026-05-02-api-testing-phase4.md) — API Testing Phase 4 plan: Frontend + Integration (Wks 6–8) — 3 UI modules, flakiness, Jira, self-healing, suite runner, HAR viewer.**
+> **📋 See [docs/superpowers/plans/2026-05-02-api-testing-phase5.md](docs/superpowers/plans/2026-05-02-api-testing-phase5.md) — API Testing Phase 5 plan: Advanced (Wks 9–11) — baselines, contract drift, Faker data, pre/post scripts.**
 > **📋 See [docs/NL_KEYWORD_SUGGESTION_USER_GUIDE.md](docs/NL_KEYWORD_SUGGESTION_USER_GUIDE.md) — User-facing guide for SDETs and Admins: inline suggest, bulk panel, provider config, alias map.**
 > **📋 See [docs/NL_KEYWORD_SUGGESTION_TEST_GUIDE.md](docs/NL_KEYWORD_SUGGESTION_TEST_GUIDE.md) — 47 test cases covering rule engine, AI provider, cache, rate limit, alias map, UI, edge cases, security.**
 
@@ -177,6 +245,7 @@ Refer to `src/data/types.ts` for up-to-date TypeScript interfaces.
 12. **Frontend module source** — edit files in `src/ui/public/js/`, then run `npm run build:js` to regenerate `modules.js`. Never edit `modules.js` directly.
 13. **Locator Health tab is a LIVE FEATURE** — `panel-locator-health` tab exists in index.html, `locatorHealthLoad()` + `locatorHealthRender()` in modules.js, `GET /api/locator-health?projectId=` in server.ts. Never remove or break these. Data source: `data/healing-log.ndjson` + `Locator.healingStats`. Tab is project-scoped (PROJECT_SCOPED_TABS includes `'locator-health'`).
 14. **Flakiness Intelligence is a LIVE FEATURE** — `flakinessEngine.ts` is the pure scoring engine (NEVER add DB/HTTP calls to it). `data/quarantine.json` is the quarantine state store. `testId` on TestEvent is a stable SHA-256 hash — never key on display name. See rules below.
+15. **Token efficiency** — follow rules in `AGENTS.md` § Token Efficiency Rules.
 
 
 ## MCP Tools: code-review-graph

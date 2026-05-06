@@ -1,0 +1,13 @@
+{
+  "id": "3d8e9cc7-19d0-4277-8b9c-b72548341da9",
+  "projectId": "proj-1",
+  "pageKey": "/patients",
+  "pageName": "/patients",
+  "locatorIds": [
+    "loc-1",
+    "loc-2",
+    "loc-3"
+  ],
+  "capturedAt": "2026-05-02T18:12:39.836Z",
+  "capturedFrom": "prescan"
+}

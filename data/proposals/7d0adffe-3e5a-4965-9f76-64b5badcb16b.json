@@ -1,0 +1,18 @@
+{
+  "id": "7d0adffe-3e5a-4965-9f76-64b5badcb16b",
+  "projectId": "test-proj",
+  "locatorId": "loc-review-001",
+  "locatorName": "Review Button",
+  "scriptId": "",
+  "scriptTitle": "",
+  "stepOrder": 1,
+  "oldSelector": "button.old",
+  "oldSelectorType": "css",
+  "newSelector": "button:review-btn",
+  "newSelectorType": "role",
+  "confidence": 71,
+  "healedAt": "2026-05-02T18:31:51.014Z",
+  "status": "approved",
+  "reviewedBy": "admin",
+  "reviewedAt": "2026-05-02T18:31:51.044Z"
+}

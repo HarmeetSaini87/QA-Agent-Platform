@@ -59,9 +59,15 @@ function parseFailureDetails(record: RunRecord): void {
     const line = lines[i].replace(ANSI, '');
     if (failHdr.test(line)) {
       const parts = line.split('›');
+      // OLD: parts[parts.length - 1] captured the step name (e.g. "Step 7: CLICK"), not the test name
+      // Failure header format: "  1) [browser] › spec.ts:line › SuiteName › TestName › StepName"
+      // Test name is the last segment that matches a known test in nameMap
+      let ev: TestEvent | undefined;
+      for (let pi = parts.length - 1; pi >= 0; pi--) {
+        const candidate = parts[pi].replace(/\(\d.*\)$/, '').trim().toLowerCase();
+        if (nameMap.has(candidate)) { ev = nameMap.get(candidate); break; }
+      }
       const rawName = parts[parts.length - 1].replace(/\(\d.*\)$/, '').trim();
-      const key = rawName.toLowerCase();
-      const ev = nameMap.get(key);
       const block: string[] = [];
       i++;
       while (i < lines.length && !failHdr.test(lines[i].replace(ANSI, ''))) {
@@ -200,31 +206,87 @@ function attachVisualDiff(record: RunRecord): void {
   });
 }
 
+// Reorder record.tests[] to match the suite scriptIds order using the JSON report.
+// With parallel workers tests complete out of order — JSON report has the authoritative
+// Playwright execution order (all chromium tests in spec order, then firefox, then webkit).
+function reorderTestsByJsonReport(record: RunRecord, jsonReportPath: string): void {
+  try {
+    if (!fs.existsSync(jsonReportPath)) return;
+    const report = JSON.parse(fs.readFileSync(jsonReportPath, 'utf8'));
+    // Collect ordered [browser, title] pairs from JSON report (spec order preserved)
+    const ordered: Array<{ browser: string; title: string }> = [];
+    function collect(suites: any[]): void {
+      for (const suite of suites || []) {
+        for (const spec of suite.specs || []) {
+          for (const test of spec.tests || []) {
+            ordered.push({ browser: (test.projectName || 'chromium').toLowerCase(), title: spec.title });
+          }
+        }
+        collect(suite.suites || []);
+      }
+    }
+    collect(report.suites || []);
+    // Strip prescan noop — chromium-only internal test, never shown in report
+    const filteredOrdered = ordered.filter(e => e.title !== '__prescan_noop__');
+    if (!filteredOrdered.length) return;
+    // Also strip prescan noop from record.tests (may have been parsed from stdout)
+    record.tests = record.tests.filter(ev => ev.name !== '__prescan_noop__');
+    // Match each ordered entry to a record.tests[] entry by browser+title
+    const unmatched = [...record.tests];
+    const sorted: typeof record.tests = [];
+    for (const { browser, title } of filteredOrdered) {
+      const idx = unmatched.findIndex(ev =>
+        (ev.browser || 'chromium').toLowerCase() === browser &&
+        (ev.name || '').toLowerCase() === title.toLowerCase()
+      );
+      if (idx >= 0) { sorted.push(unmatched[idx]); unmatched.splice(idx, 1); }
+    }
+    // Append any unmatched (retried/extra tests) at the end
+    record.tests = [...sorted, ...unmatched];
+  } catch { /* never block artifact attachment */ }
+}
+
 function attachVideoAndTrace(record: RunRecord): void {
   const runDir = path.join(config.paths.testResults, record.runId);
   if (!fs.existsSync(runDir)) return;
   let entries: fs.Dirent[];
   try { entries = fs.readdirSync(runDir, { withFileTypes: true }); } catch { return; }
-  const testDirs = entries
+
+  // Group dirs by browser, sorted by creation time (record.tests[] reordered by reorderTestsByJsonReport before this runs)
+  const browserDirs = new Map<string, string[]>();
+  entries
     .filter(e => e.isDirectory() && /(chromium|firefox|webkit)/i.test(e.name))
-    .map(e => ({ name: e.name, created: fs.statSync(path.join(runDir, e.name)).ctimeMs }));
-  testDirs.sort((a, b) => a.created - b.created);
+    .map(e => ({ name: e.name, created: fs.statSync(path.join(runDir, e.name)).ctimeMs }))
+    .sort((a, b) => a.created - b.created)
+    .forEach(({ name }) => {
+      const m = name.toLowerCase().match(/(chromium|firefox|webkit)/);
+      if (!m) return;
+      const b = m[1];
+      if (!browserDirs.has(b)) browserDirs.set(b, []);
+      browserDirs.get(b)!.push(name);
+    });
+
+  // Assign by positional index within each browser — mirrors attachVisualDiff() pattern
+  const browserCounter = new Map<string, number>();
   record.tests.forEach((ev) => {
     const browser = (ev.browser || 'chromium').toLowerCase();
-    const nameWords = (ev.name || '').replace(/[()[\]]/g, '').split(/[\s‑–—>/]+/).filter(w => w.length >= 4).map(w => w.toLowerCase());
-    const matching = testDirs.filter(d => {
-      const dirLower = d.name.toLowerCase();
-      return dirLower.includes(browser) && nameWords.every(w => dirLower.includes(w));
-    });
-    const matchDir = matching.length >= 1;
-    if (!matchDir) return;
-    const dirPath = path.join(runDir, matching[0].name);
+    const idx = browserCounter.get(browser) ?? 0;
+    browserCounter.set(browser, idx + 1);
+    const dirs = browserDirs.get(browser);
+    if (!dirs || idx >= dirs.length) return;
+    const dirName = dirs[idx];
+    const dirPath = path.join(runDir, dirName);
     try {
       const dirFiles = fs.readdirSync(dirPath);
       const videoFile = dirFiles.find(f => f.endsWith('.webm'));
-      if (videoFile) ev.videoPath = `${record.runId}/${matching[0].name}/${videoFile}`;
+      if (videoFile) ev.videoPath = `${record.runId}/${dirName}/${videoFile}`;
+      // Fast Mode: video saved to root run dir as <brIdx>-<browser>.webm (predictable name)
+      if (!videoFile) {
+        const fastVideo = `${idx}-${browser}.webm`;
+        if (fs.existsSync(path.join(runDir, fastVideo))) ev.videoPath = `${record.runId}/${fastVideo}`;
+      }
       const traceFile = dirFiles.find(f => f === 'trace.zip' || f.endsWith('-trace.zip'));
-      if (traceFile) ev.tracePath = `${record.runId}/${matching[0].name}/${traceFile}`;
+      if (traceFile) ev.tracePath = `${record.runId}/${dirName}/${traceFile}`;
     } catch { /* skip */ }
   });
 }
@@ -280,10 +342,24 @@ function attachHealEvents(record: RunRecord): void {
   const allLocs = readAll(LOCATORS);
   const locById = new Map(allLocs.map((l: any) => [l.id, l]));
   const tcPattern = /^\[([A-Z]{1,8}[-_]\d+)\]\s*/;
-  function resolveTcAndTitle(stepOrder: number): { tcId: string; scriptTitle: string } { return { tcId: '', scriptTitle: record.suiteName ?? '' }; }
+  // Build locatorId → { tcId, scriptTitle } map by scanning scripts in this run
+  const locatorToScript = new Map<string, { tcId: string; scriptTitle: string }>();
+  if (record.scriptIds?.length) {
+    const allScripts = readAll<any>(SCRIPTS);
+    for (const sc of allScripts) {
+      if (!record.scriptIds.includes(sc.id)) continue;
+      const tcId = sc.tcId ?? '';
+      for (const step of (sc.steps ?? [])) {
+        if (step.locatorId) locatorToScript.set(step.locatorId, { tcId, scriptTitle: sc.title });
+      }
+    }
+  }
+  function resolveTcAndTitle(locatorId: string): { tcId: string; scriptTitle: string } {
+    return locatorToScript.get(locatorId) ?? { tcId: '', scriptTitle: record.suiteName ?? '' };
+  }
   const enriched: HealEvent[] = rawEvents.map(e => {
     const loc = locById.get(e.locatorId);
-    const { tcId, scriptTitle } = resolveTcAndTitle(e.stepOrder);
+    const { tcId, scriptTitle } = resolveTcAndTitle(e.locatorId);
     const full: HealEvent = { ...e, tier: e.tier ?? 'T2', runId: record.runId, projectId: record.projectId ?? '', suiteName: record.suiteName ?? '', scriptTitle, tcId, locatorName: loc?.name ?? e.locatorId, oldSelector: loc?.selector ?? '', oldSelectorType: loc?.selectorType ?? 'css' };
     if ((full.tier === 'T2') && loc) {
       const winnerSelector = full.healed;
@@ -365,7 +441,25 @@ export function spawnRunWithSpec(record: RunRecord, specPath: string, headed?: b
   record.status = 'running';
   const proc = cp.spawn('npx', args, {
     cwd: path.resolve('.'),
-    env: { ...process.env, CI: '', HEADLESS: runHeadless ? 'true' : 'false', PW_OUTPUT_DIR: relOutputDir, PLAYWRIGHT_JSON_OUTPUT_NAME: jsonReportPath, PLAYWRIGHT_TRACE: traceMode },
+    env: {
+      ...process.env,
+      CI: '',
+      HEADLESS: runHeadless ? 'true' : 'false',
+      PW_OUTPUT_DIR: relOutputDir,
+      PLAYWRIGHT_JSON_OUTPUT_NAME: jsonReportPath,
+      PLAYWRIGHT_TRACE: traceMode,
+      // Resolve browser path in priority order — disk check avoids relying on env vars
+      // which may be stripped when server runs under a service/admin monitor process.
+      // 1. Explicit env var (set by admin or .env)
+      // 2. Project-local .playwright-browsers (installed via `npx playwright install` in project dir)
+      // 3. Machine-wide ProgramData install (installer fallback for service accounts)
+      PLAYWRIGHT_BROWSERS_PATH: (
+        process.env.PLAYWRIGHT_BROWSERS_PATH ||
+        (fs.existsSync(path.resolve('.playwright-browsers')) ? path.resolve('.playwright-browsers') : undefined) ||
+        (fs.existsSync('C:\\ProgramData\\ms-playwright') ? 'C:\\ProgramData\\ms-playwright' : undefined) ||
+        undefined
+      ),
+    },
     shell: true,
   });
   const ANSI_RE = /\x1b\[[0-9;]*m/g;
@@ -412,6 +506,7 @@ export function spawnRunWithSpec(record: RunRecord, specPath: string, headed?: b
     parseFailureDetails(record);
     const pending = (record as any).__pendingConsoleErrors as Record<number, string[]> | undefined;
     if (pending) { for (const [idxStr, errors] of Object.entries(pending)) { const ev = record.tests[parseInt(idxStr, 10)]; if (ev && errors.length) ev.consoleErrors = errors; } delete (record as any).__pendingConsoleErrors; }
+    reorderTestsByJsonReport(record, jsonReportPath);  // sort before artifact attachment
     attachFailureScreenshots(record);
     attachVisualDiff(record);
     attachVideoAndTrace(record);

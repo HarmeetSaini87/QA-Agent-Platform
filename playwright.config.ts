@@ -22,6 +22,7 @@ export default defineConfig({
 
   use: {
     baseURL: process.env.APP_BASE_URL,
+    ignoreHTTPSErrors: true,
     headless: isCI ? true : process.env.HEADLESS === 'true',
     screenshot: (process.env.SCREENSHOT_MODE as 'on' | 'only-on-failure' | 'off') || 'on',
     video: 'on',

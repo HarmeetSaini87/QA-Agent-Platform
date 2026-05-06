@@ -52,6 +52,7 @@ import { registerDebuggerRoutes } from './routes/debugger.routes';
 import { registerFlakyRoutes } from './routes/flaky.routes';
 import { registerSchedulesRoutes } from './routes/schedules.routes';
 import { registerLicenseRoutes } from './routes/license.routes';
+import { registerApiTestingRoutes } from './routes/api-testing.routes';
 
 dotenv.config();
 
@@ -177,7 +178,12 @@ registerTraceRoutes(app);
 
 // ── All routes below require authentication ──────────────────────────────────
 app.use('/api', (_req: Request, res: Response, next: NextFunction) => { res.setHeader('Cache-Control', 'no-store'); next(); });
-app.use('/api', requireAuth);
+// OLD: app.use('/api', requireAuth) — blanket auth on all /api routes
+// /api/heal exempted: Playwright spec process has no session cookie; T3/T4 would always 401
+app.use('/api', (req: Request, res: Response, next: NextFunction) => {
+  if (req.path === '/heal' && req.method === 'POST') { next(); return; }
+  requireAuth(req, res, next);
+});
 
 // ── Register all route groups ────────────────────────────────────────────────
 registerRunsRoutes(app);
@@ -199,6 +205,7 @@ registerDebuggerRoutes(app);
 registerFlakyRoutes(app);
 registerSchedulesRoutes(app);
 registerLicenseRoutes(app, sessionStore);
+registerApiTestingRoutes(app);
 
 // ── SPA fallback (requires auth) — MUST be after all API routes ──────────────
 app.get('*', requireAuth, (_req: Request, res: Response) => {

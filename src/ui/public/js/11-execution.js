@@ -315,6 +315,50 @@ async function execRun() {
   // Guard: re-validate browser constraint before executing (defence-in-depth)
   if (!_execCheckBrowserConstraint()) return;
 
+  // ── Fast Mode: detect login steps in selected scripts and warn ────────────
+  const _fmSuite = allSuites.find(s => s.id === suiteId);
+  if (_fmSuite?.fastMode && (_fmSuite.fastModeSteps || []).length > 0) {
+    const _fmScriptMap = Object.fromEntries(allScripts.map(s => [s.id, s]));
+    const _LOGIN_LOCATOR_RE = /user|email|login|username|password|pass|pwd|credential/i;
+    const _LOGIN_KW = new Set(['FILL', 'TYPE', 'CLICK', 'CLICK BUTTON', 'SUBMIT']);
+    const _SUBMIT_KW = new Set(['CLICK', 'CLICK BUTTON', 'SUBMIT']);
+    const _warnings = [];
+    for (const sid of (_fmSuite.scriptIds || [])) {
+      const sc = _fmScriptMap[sid];
+      if (!sc) continue;
+      const steps = (sc.steps || []).slice().sort((a, b) => a.order - b.order);
+      // Detect pattern: FILL on username/password locator OR CLICK on submit-like locator near a fill
+      let hasFillCred = false;
+      let hasSubmit = false;
+      for (const st of steps) {
+        const kw = (st.keyword || '').toUpperCase().trim();
+        const loc = (st.locator || st.locatorName || st.description || '').toLowerCase();
+        if ((kw === 'FILL' || kw === 'TYPE') && _LOGIN_LOCATOR_RE.test(loc)) hasFillCred = true;
+        if (_SUBMIT_KW.has(kw) && hasFillCred) hasSubmit = true;
+      }
+      if (hasFillCred && hasSubmit) {
+        const tcId = sc.name || sc.id;
+        _warnings.push(`• ${tcId}`);
+      }
+    }
+    if (_warnings.length > 0) {
+      const msg = [
+        '⚠️ Fast Mode Warning — Login Steps Detected',
+        '',
+        'The following scripts contain login steps (fill credentials + submit):',
+        ..._warnings,
+        '',
+        'Fast Mode already logs in once via beforeAll and reuses the auth state.',
+        'Running login steps inside each test will re-authenticate and may break auth state reuse.',
+        '',
+        'Recommended: Remove login steps from these scripts when using Fast Mode.',
+        '',
+        'Click OK to run anyway, or Cancel to review the scripts first.',
+      ].join('\n');
+      if (!confirm(msg)) return;
+    }
+  }
+
   // Stop any previous poll
   _execPollStopped = true;
   clearTimeout(_execPollTimer);

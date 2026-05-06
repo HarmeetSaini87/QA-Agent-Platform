@@ -1,0 +1,16 @@
+{
+  "id": "a73fa222-5ffb-4249-87a7-37ecfa340d46",
+  "projectId": "test-proj",
+  "locatorId": "loc-test-004",
+  "locatorName": "Search Input",
+  "scriptId": "",
+  "scriptTitle": "",
+  "stepOrder": 5,
+  "oldSelector": "#search",
+  "oldSelectorType": "css",
+  "newSelector": "searchbox:search-input",
+  "newSelectorType": "role",
+  "confidence": 55,
+  "healedAt": "2026-05-04T06:24:59.888Z",
+  "status": "pending-review"
+}

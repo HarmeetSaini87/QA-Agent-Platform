@@ -1,0 +1,10 @@
+{
+  "id": "run-petstore-002",
+  "collectionId": "col-petstore3-swagger-import",
+  "projectId": "3a39c8a2-06ea-4a83-9aca-e3a316ea940a",
+  "startedAt": "2026-05-03T17:47:54.914Z",
+  "completedAt": "2026-05-03T17:47:54.917Z",
+  "status": "running",
+  "stepResults": [],
+  "variableContext": {}
+}

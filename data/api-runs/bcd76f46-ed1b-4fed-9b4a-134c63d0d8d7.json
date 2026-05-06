@@ -1,0 +1,24 @@
+{
+  "id": "bcd76f46-ed1b-4fed-9b4a-134c63d0d8d7",
+  "collectionId": "ba1720e3-b781-4d7f-ae24-d9d645392c33",
+  "startedAt": "2026-05-03T11:18:41.263Z",
+  "completedAt": "2026-05-03T11:18:41.277Z",
+  "status": "failed",
+  "stepResults": [
+    {
+      "stepId": "step-1777806936047",
+      "stepName": "New Step",
+      "status": "error",
+      "request": {
+        "method": "GET",
+        "url": "",
+        "bodyType": "json"
+      },
+      "assertionResults": [],
+      "extractedVariables": {},
+      "durationMs": 8,
+      "error": "apiRequestContext.fetch: Invalid URL"
+    }
+  ],
+  "variableContext": {}
+}

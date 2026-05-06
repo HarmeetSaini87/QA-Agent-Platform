@@ -123,3 +123,53 @@ export function buildFailureCommentADF(input: FailureCommentInput): ADFNode {
   if (input.errorDetailFirst5) content.push(codeBlock(input.errorDetailFirst5));
   return { type: 'doc', version: 1, content };
 }
+
+import type { ApiStepResult, ApiCollection, ApiEnvironment } from '../data/types';
+
+export function buildApiDefectAdf(
+  step: ApiStepResult,
+  collection: ApiCollection,
+  environment: ApiEnvironment
+): ADFNode {
+  const failedAssertions = step.assertionResults.filter(a => !a.passed);
+  const summary = failedAssertions.length > 0
+    ? `expected ${failedAssertions[0].field} ${failedAssertions[0].operator} ${JSON.stringify(failedAssertions[0].expected)}, got ${JSON.stringify(failedAssertions[0].actual)}`
+    : (step.error ?? 'step failed');
+
+  const content: ADFNode[] = [];
+  content.push(heading(2, 'Collection'));
+  content.push(paragraphText(`${collection.name} — Environment: ${environment.name} (${environment.baseUrl})`));
+
+  content.push(heading(2, 'Failed Step'));
+  content.push(paragraphText(`${step.stepName} — ${step.request.method} ${step.request.url}`));
+  content.push(paragraphText(`Status: ${step.response?.status ?? 'N/A'} | Duration: ${step.durationMs}ms`));
+
+  if (failedAssertions.length > 0) {
+    content.push(heading(2, 'Failed Assertions'));
+    content.push(orderedList(
+      failedAssertions.map(a =>
+        `${a.field} ${a.operator} ${JSON.stringify(a.expected)} — got ${JSON.stringify(a.actual)}`
+      )
+    ));
+  }
+
+  content.push(heading(2, 'Request Sent'));
+  const redactedHeaders = { ...step.request.headers };
+  if (redactedHeaders['Authorization']) redactedHeaders['Authorization'] = '[REDACTED]';
+  if (redactedHeaders['authorization']) redactedHeaders['authorization'] = '[REDACTED]';
+  content.push(codeBlock(
+    `${step.request.method} ${step.request.url}\n` +
+    Object.entries(redactedHeaders).map(([k, v]) => `${k}: ${v}`).join('\n') +
+    (step.request.body ? `\n\n${JSON.stringify(step.request.body, null, 2)}` : '')
+  ));
+
+  if (step.response) {
+    content.push(heading(2, 'Response Received'));
+    const bodyStr = typeof step.response.body === 'string'
+      ? step.response.body.slice(0, 500)
+      : JSON.stringify(step.response.body).slice(0, 500);
+    content.push(codeBlock(`Status: ${step.response.status}\n${bodyStr}${step.response.bodyTruncated ? '\n[truncated]' : ''}`));
+  }
+
+  return { type: 'doc', version: 1, content };
+}

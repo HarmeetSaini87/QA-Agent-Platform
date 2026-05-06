@@ -71,8 +71,8 @@ function buildLocatorExpr(locatorType: string | null | undefined, locator: strin
     }
     case 'xpath':   return `page.locator("xpath=${dq(locator)}")`;
     case 'id':      return `page.locator("#${dq(locator.replace(/^#/, ''))}")`;
-    case 'name':    return `page.locator("[name=\\"${dq(locator)}\\"]")`;
-    case 'label':   return `page.getByLabel("${dq(locator)}")`;
+    case 'name':    return locator.includes('[name=') ? `page.locator("${dq(locator)}")` : `page.locator("[name=\\"${dq(locator)}\\"]")`;
+    case 'label':   return `page.getByLabel("${dq(locator.replace(/^label:/i, ''))}")`;
     case 'placeholder': return `page.getByPlaceholder("${dq(locator)}")`;
     case 'nth': {
       // format: "css-selector:N"  e.g.  ".row:2"  (0-based index)
@@ -268,6 +268,20 @@ function generateNavBlock(
 // ── Single step → Playwright code line(s) ─────────────────────────────────────
 
 function generateStepCode(
+  step: ScriptStep,
+  project: Project,
+  environment: ProjectEnvironment | null | undefined,
+  allFunctions: CommonFunction[],
+  dataMap: Record<string, string>,
+  indent: string,
+  runIdx: number = 0,
+  pageVarName: string = 'page',
+): string {
+  const _raw = _generateStepCode(step, project, environment, allFunctions, dataMap, indent, runIdx);
+  return pageVarName === 'page' ? _raw : _raw.replace(/\bpage\./g, `${pageVarName}.`);
+}
+
+function _generateStepCode(
   step: ScriptStep,
   project: Project,
   environment: ProjectEnvironment | null | undefined,
@@ -851,11 +865,13 @@ ${indent}}`
 
     case 'ASSERT TOAST':
     case 'ASSERTTOAST': {
-      // Wait for any toast to appear and assert it contains the expected text (case-insensitive partial)
+      // Use the recorder-captured locator when available (e.g. #MessageAlert, #MessageSuccess)
+      // Fall back to generic toast selector only when no specific locator was captured
       const toastSel2 = `[role="alert"], [role="status"], [class*="toast"], [class*="snackbar"], [class*="flash"], [class*="notification"]`;
+      const toastExpr = locExpr || `page.locator(${JSON.stringify(toastSel2)}).first()`;
       return val
-        ? line(`await page.locator(${JSON.stringify(toastSel2)}).first().waitFor({ state: 'visible', timeout: 8000 });\n${indent}await expect(page.locator(${JSON.stringify(toastSel2)}).first()).toContainText(${val}, { ignoreCase: true });`)
-        : line(`await page.locator(${JSON.stringify(toastSel2)}).first().waitFor({ state: 'visible', timeout: 8000 });`);
+        ? line(`await ${toastExpr}.waitFor({ state: 'visible', timeout: 8000 });\n${indent}await expect(${toastExpr}).toContainText(${val}, { ignoreCase: true });`)
+        : line(`await ${toastExpr}.waitFor({ state: 'visible', timeout: 8000 });`);
     }
 
     // ── Wait ──────────────────────────────────────────────────────────────────
@@ -1094,6 +1110,10 @@ ${indent}}`
       return [header, ...fnLines].join('\n');
     }
 
+    case '':
+      // Empty keyword — step has no action defined; emit nothing so test body stays valid
+      return comment ? comment : '';
+
     default:
       return comment
         ? `${comment}\n${indent}// ⚠ Unknown keyword: ${kw}`
@@ -1179,8 +1199,14 @@ export function generateCodegenSpec(input: CodegenInput): string {
   lines.push(`// Global Variable Store — shared across all scripts in this suite run`);
   lines.push(`const __globalVars: Record<string, string> = {};`);
   lines.push(``);
-  lines.push(`// Test index counter — used by afterEach to produce FAILED-<idx>.png (workers:1 guaranteed)`);
+  lines.push(`// Test index counter — used for QA_TEST_ID logging (global across all browsers)`);
   lines.push(`let __testIdx = -1;`);
+  if (fastMode && fastModeSteps.length > 0) {
+    lines.push(`// Fast Mode: page+context registry so afterEach can screenshot and close`);
+    lines.push(`const __fastPages = new Map<string, { page: import('@playwright/test').Page, ctx: import('@playwright/test').BrowserContext }>();`);
+  }
+  lines.push(`// Per-browser counters — used for FAILED-<idx>-<browser>.png to match attachFailureScreenshots()`);
+  lines.push(`const __browserIdx: Record<string, number> = { chromium: -1, firefox: -1, webkit: -1 };`);
   lines.push(``);
   lines.push(`// ── Self-Healing T2: Alternatives fallback ───────────────────────────────────`);
   lines.push(`const __HEAL_LOG = \`\${__SS_DIR}/healed.ndjson\`;`);
@@ -1191,12 +1217,12 @@ export function generateCodegenSpec(input: CodegenInput): string {
   lines.push(`      const [r, ...np] = selector.split(':'); const n = np.join(':').trim();`);
   lines.push(`      return n ? page.getByRole(r.trim() as any, { name: n }) : page.getByRole(r.trim() as any);`);
   lines.push(`    }`);
-  lines.push(`    case 'label':        return page.getByLabel(selector);`);
+  lines.push(`    case 'label':        return page.getByLabel(selector.replace(/^label:/i, ''));`);
   lines.push(`    case 'placeholder':  return page.getByPlaceholder(selector);`);
   lines.push(`    case 'text':         return page.getByText(selector, { exact: false });`);
   lines.push(`    case 'xpath':        return page.locator('xpath=' + selector);`);
   lines.push(`    case 'id':           return page.locator('#' + selector.replace(/^#/, ''));`);
-  lines.push(`    case 'name':         return page.locator('[name="' + selector.replace(/"/g, '\\\\"') + '"]');`);
+  lines.push(`    case 'name':         return selector.includes('[name=') ? page.locator(selector) : page.locator('[name="' + selector.replace(/"/g, '\\\\"') + '"]');`);
   lines.push(`    case 'nth': {`);
   lines.push(`      const [__sel, ...__idxParts] = selector.split(':');`);
   lines.push(`      const __idx = parseInt(__idxParts.join(':').trim(), 10) || 0;`);
@@ -1347,7 +1373,9 @@ export function generateCodegenSpec(input: CodegenInput): string {
     lines.push(`  const __AUTH_STATE = \`\${__SS_DIR}/auth-state.json\`;`);
     lines.push(``);
     // Single beforeAll: auth first, then prescan on the authenticated page
-    lines.push(`  test.beforeAll(async ({ browser }) => {`);
+    // OLD: test.beforeAll(async ({ browser }) => { — Firefox worker closes context → Playwright 1.58 tears down shared browser
+    lines.push(`  test.beforeAll(async ({ browser }, testInfo) => {`);
+    lines.push(`    if (!testInfo.project.name.toLowerCase().includes('chromium')) return;`);
     lines.push(`    // Step 1: authenticate and persist storage state`);
     lines.push(`    const __authCtx  = await browser.newContext({ ignoreHTTPSErrors: true });`);
     lines.push(`    const __authPage = await __authCtx.newPage();`);
@@ -1355,9 +1383,13 @@ export function generateCodegenSpec(input: CodegenInput): string {
     lines.push(`    await __authPage.waitForLoadState('domcontentloaded');`);
     for (let hi = 0; hi < fastModeSteps.length; hi++) {
       const ps   = hookPseudoStep(fastModeSteps[hi], hi);
-      const code = generateStepCode(ps, project, environment, allFunctions, dataMap, '    ');
+      const code = generateStepCode(ps, project, environment, allFunctions, dataMap, '    ', 0, '__authPage');
       if (code) lines.push(code);
     }
+    // OLD: storageState saved immediately after login click — captured mid-OIDC handshake cookies only
+    // OLD: waitForLoadState('networkidle') also failed — resolves on departed page, not final redirect target
+    // NEW: wait until page URL returns to app domain (handles SSO/OIDC/OAuth/direct — no hardcoding)
+    lines.push(`    await __authPage.waitForURL('${escUrl}**', { timeout: 30000, waitUntil: 'domcontentloaded' }).catch(() => {});`);
     lines.push(`    await __authCtx.storageState({ path: __AUTH_STATE });`);
     lines.push(`    // Step 2: prescan DOM on the authenticated page (reuse same context)`);
     const prescanUrlFM  = environment?.url || project.appUrl || '';
@@ -1378,16 +1410,37 @@ export function generateCodegenSpec(input: CodegenInput): string {
   }
 
   // ── afterEach: screenshot on failure + console error report ──────────────────
-  lines.push(`  test.afterEach(async ({ page, browserName }, testInfo) => {`);
-  lines.push(`    const __curIdx = __testIdx; // captured at afterEach time`);
+  lines.push(`  test.afterEach(async ({ page: __fixturePage, browserName }, testInfo) => {`);
+  lines.push(`    const __curIdx = __testIdx; // captured at afterEach time (global, used for QA_TEST_ID)`);
+  lines.push(`    const __brIdx  = __browserIdx[browserName] ?? __curIdx; // per-browser index for FAILED filename`);
+  if (fastMode && fastModeSteps.length > 0) {
+    // Fast Mode: fixture page is blank — use the real app page registered by the test body
+    lines.push(`    // Fast Mode: resolve real page from registry (fixture page is blank)`);
+    lines.push(`    const __fastEntry = __fastPages.get(browserName + ':' + __brIdx);`);
+    lines.push(`    const __ssPage = __fastEntry?.page ?? __fixturePage;`);
+  } else {
+    lines.push(`    const __ssPage = __fixturePage;`);
+  }
   lines.push(`    if (testInfo.status !== testInfo.expectedStatus) {`);
-  lines.push(`      // Capture failure screenshot — browser-qualified to avoid multi-browser collisions`);
-  lines.push(`      const __failPath = \`\${__SS_DIR}/FAILED-\${__curIdx}-\${browserName}.png\`;`);
-  lines.push(`      await page.screenshot({ path: __failPath, fullPage: true }).catch(() => {});`);
+  lines.push(`      // Use per-browser index — matches attachFailureScreenshots() grouping in run-spawner`);
+  lines.push(`      const __failPath = \`\${__SS_DIR}/FAILED-\${__brIdx}-\${browserName}.png\`;`);
+  lines.push(`      await __ssPage.screenshot({ path: __failPath, fullPage: true }).catch(() => {});`);
   lines.push(`      await testInfo.attach('failure-screenshot', { path: __failPath, contentType: 'image/png' }).catch(() => {});`);
   lines.push(`    }`);
+  if (fastMode && fastModeSteps.length > 0) {
+    // Close Fast Mode context here — after screenshot, before next test
+    lines.push(`    // Fast Mode: close context after screenshot (not in test body)`);
+    lines.push(`    if (__fastEntry) {`);
+    lines.push(`      // Save video to predictable path before closing context`);
+    lines.push(`      const __vid = __fastEntry.page.video();`);
+    lines.push(`      await __fastEntry.ctx.close().catch(() => {});`);
+    lines.push(`      if (__vid) { await __vid.saveAs(\`\${__SS_DIR}/\${__brIdx}-\${browserName}.webm\`).catch(() => {}); }`);
+    lines.push(`      __fastPages.delete(browserName + ':' + __brIdx);`);
+    lines.push(`    }`);
+  }
   lines.push(`    // Attach captured console errors to Playwright HTML report`);
-  lines.push(`    const __errs = (page as any).__qaConsoleErrors as string[] | undefined;`);
+  // OLD: used fixture `page` — in Fast Mode this is blank, not the real app page
+  lines.push(`    const __errs = (__ssPage as any).__qaConsoleErrors as string[] | undefined;`);
   lines.push(`    if (__errs && __errs.length) {`);
   lines.push(`      await testInfo.attach('console-errors', {`);
   lines.push(`        body: __errs.join('\\n'),`);
@@ -1429,14 +1482,27 @@ export function generateCodegenSpec(input: CodegenInput): string {
     const prescanUrl     = environment?.url || project.appUrl || '';
     const prescanPageKey = normalizePageKey(prescanUrl);
     const esc            = (s: string) => s.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-    lines.push(`  // P5: Pre-scan — DOM health check before any test begins`);
-    lines.push(`  test.beforeAll(async ({ browser }) => {`);
-    lines.push(`    const __psCtx  = await browser.newContext({ ignoreHTTPSErrors: true });`);
-    lines.push(`    const __psPage = await __psCtx.newPage();`);
+    // TRACE EVIDENCE (run d3768256): beforeAll({ browser }) shares the project's browser instance.
+    // Firefox worker: beforeAll opens __psCtx, closes it → Playwright 1.58 tears down the shared
+    // Firefox browser → test's page fixture fails "browserContext.newPage: browser has been closed".
+    // FIX: beforeAll with NO fixtures. Use require('playwright').chromium directly — this is a raw
+    // Node.js require, completely outside Playwright's fixture system. No fixture lifecycle interaction.
+    // Only runs prescan on chromium worker (testInfo.project.name check). Firefox/WebKit workers
+    // hit the early return immediately with zero browser activity.
+    lines.push(`  // P5: Pre-scan — chromium only, raw browser outside fixture system (no fixture lifecycle conflict)`);
+    lines.push(`  test.beforeAll(async ({}, testInfo) => {`);
+    lines.push(`    if (!testInfo.project.name.toLowerCase().includes('chromium')) return;`);
     lines.push(`    try {`);
+    lines.push(`      // eslint-disable-next-line @typescript-eslint/no-var-requires`);
+    lines.push(`      const { chromium } = require('playwright') as typeof import('playwright');`);
+    lines.push(`      const __psBrowser = await chromium.launch({ headless: true });`);
+    lines.push(`      const __psCtx     = await __psBrowser.newContext({ ignoreHTTPSErrors: true });`);
+    lines.push(`      const __psPage    = await __psCtx.newPage();`);
     lines.push(`      await __psPage.goto('${esc(prescanUrl)}', { waitUntil: 'domcontentloaded', timeout: 20000 });`);
-    lines.push(`      await __psPage.waitForTimeout(1500); // brief SPA settle`);
+    lines.push(`      await __psPage.waitForTimeout(1500);`);
     lines.push(`      const __psCandidates = await __psPage.evaluate(__DOM_SCAN).catch(() => []);`);
+    lines.push(`      await __psCtx.close().catch(() => {});`);
+    lines.push(`      await __psBrowser.close().catch(() => {});`);
     lines.push(`      await fetch(__PLATFORM_URL + '/api/prescan', {`);
     lines.push(`        method: 'POST',`);
     lines.push(`        headers: { 'Content-Type': 'application/json' },`);
@@ -1448,7 +1514,6 @@ export function generateCodegenSpec(input: CodegenInput): string {
     lines.push(`        }),`);
     lines.push(`      }).catch(() => {});`);
     lines.push(`    } catch { /* prescan failure never blocks tests */ }`);
-    lines.push(`    await __psCtx.close().catch(() => {});`);
     lines.push(`  });`);
     lines.push(``);
   }
@@ -1492,15 +1557,22 @@ export function generateCodegenSpec(input: CodegenInput): string {
       if (isFastMode) {
         lines.push(`  test('${testName}${runLabel.replace(/'/g, "\\'")}', async ({ browser, browserName }) => {`);
         lines.push(`    __testIdx++;`);
+        lines.push(`    __browserIdx[browserName] = (__browserIdx[browserName] ?? -1) + 1;`);
         lines.push(`    console.log(\`[QA_TEST_ID]:\${__testIdx}:${testId}\`);`);
         lines.push(`    const __browser = browserName;`);
         lines.push(`    const __sessionVars: Record<string, string> = {};`);
         lines.push(`    // Fast Mode: open context with saved auth state — beforeAll wrote this file`);
-        lines.push(`    const __fastCtx  = await browser.newContext({ storageState: __AUTH_STATE, ignoreHTTPSErrors: true });`);
+        lines.push(`    const __fastCtx  = await browser.newContext({ storageState: __AUTH_STATE, ignoreHTTPSErrors: true, recordVideo: { dir: __SS_DIR } });`);
         lines.push(`    const page       = await __fastCtx.newPage();`);
+        lines.push(`    __fastPages.set(browserName + ':' + (__browserIdx[browserName] ?? 0), { page, ctx: __fastCtx });`);
+        // OLD: no navigation after newPage — page stayed at about:blank, scripts failed at step 2
+        const __fastAppUrl = environment?.url || project.appUrl || '';
+        const __fastEscUrl = __fastAppUrl.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        lines.push(`    await page.goto('${__fastEscUrl}', { waitUntil: 'domcontentloaded' });`);
       } else {
         lines.push(`  test('${testName}${runLabel.replace(/'/g, "\\'")}', async ({ page, browserName }) => {`);
-        lines.push(`    __testIdx++; // increment module-level counter — used by afterEach for FAILED-<idx>.png`);
+        lines.push(`    __testIdx++;`);
+        lines.push(`    __browserIdx[browserName] = (__browserIdx[browserName] ?? -1) + 1;`);
         lines.push(`    console.log(\`[QA_TEST_ID]:\${__testIdx}:${testId}\`);`);
         lines.push(`    const __browser = browserName;`);
         lines.push(`    const __sessionVars: Record<string, string> = {};`);
@@ -1655,7 +1727,8 @@ export function generateCodegenSpec(input: CodegenInput): string {
       }
 
       if (isFastMode) {
-        lines.push(`    await __fastCtx.close().catch(() => {});`);
+        // OLD: closed __fastCtx here — caused afterEach fixture page to be blank + status mismatch for passing tests
+        // context is now closed in afterEach after screenshot is taken
       }
       lines.push(`  });`);
       lines.push(``);
@@ -1772,12 +1845,12 @@ export function generateDebugSpec(input: DebugCodegenInput): string {
   lines.push(`  switch ((lt || 'css').toLowerCase()) {`);
   lines.push(`    case 'text':        return page.getByText(loc);`);
   lines.push(`    case 'testid':      return page.getByTestId(loc);`);
-  lines.push(`    case 'label':       return page.getByLabel(loc);`);
+  lines.push(`    case 'label':       return page.getByLabel(loc.replace(/^label:/i, ''));`);
   lines.push(`    case 'placeholder': return page.getByPlaceholder(loc);`);
   lines.push(`    case 'title':       return page.getByTitle(loc);`);
   lines.push(`    case 'xpath':       return page.locator('xpath=' + loc);`);
   lines.push(`    case 'id':          return page.locator('#' + loc.replace(/^#/, ''));`);
-  lines.push(`    case 'name':        return page.locator('[name="' + loc + '"]');`);
+  lines.push(`    case 'name':        return loc.includes('[name=') ? page.locator(loc) : page.locator('[name="' + loc + '"]');`);
   lines.push(`    case 'role': {`);
   lines.push(`      const ci = loc.lastIndexOf(':');`);
   lines.push(`      if (ci > -1) return page.getByRole(loc.slice(0, ci) as any, { name: loc.slice(ci + 1) });`);
@@ -1888,11 +1961,11 @@ export function generateDebugSpec(input: DebugCodegenInput): string {
   lines.push(`    switch (locType) {`);
   lines.push(`      case 'text':        loc = page.getByText(locVal, { exact: false }); break;`);
   lines.push(`      case 'testid':      loc = page.getByTestId(locVal); break;`);
-  lines.push(`      case 'label':       loc = page.getByLabel(locVal); break;`);
+  lines.push(`      case 'label':       loc = page.getByLabel(locVal.replace(/^label:/i, '')); break;`);
   lines.push(`      case 'placeholder': loc = page.getByPlaceholder(locVal); break;`);
   lines.push(`      case 'xpath':       loc = page.locator('xpath=' + locVal); break;`);
   lines.push(`      case 'id':          loc = page.locator('#' + locVal.replace(/^#/, '')); break;`);
-  lines.push(`      case 'name':        loc = page.locator('[name="' + locVal.replace(/"/g, '\\\\"') + '"]'); break;`);
+  lines.push(`      case 'name':        loc = locVal.includes('[name=') ? page.locator(locVal) : page.locator('[name="' + locVal.replace(/"/g, '\\\\"') + '"]'); break;`);
   lines.push(`      case 'role': {`);
   lines.push(`        const [r, ...np] = locVal.split(':'); const n = np.join(':').trim();`);
   lines.push(`        loc = n ? page.getByRole(r.trim() as any, { name: n }) : page.getByRole(r.trim() as any); break;`);

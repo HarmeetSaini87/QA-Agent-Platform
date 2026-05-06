@@ -79,3 +79,4 @@ logs/
 test-files/
 # Added by code-review-graph
 .code-review-graph/
+.playwright-browsers/

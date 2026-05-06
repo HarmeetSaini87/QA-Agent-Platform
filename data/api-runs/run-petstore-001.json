@@ -1,0 +1,306 @@
+{
+  "id": "run-petstore-001",
+  "collectionId": "col-petstore3-swagger-import",
+  "projectId": "3a39c8a2-06ea-4a83-9aca-e3a316ea940a",
+  "startedAt": "2026-05-03T17:46:35.764Z",
+  "completedAt": "2026-05-03T17:46:37.606Z",
+  "status": "failed",
+  "stepResults": [
+    {
+      "stepId": "6b8154a8-9011-40ea-8579-0a08223fb2ef",
+      "stepName": "addPet",
+      "status": "error",
+      "request": {
+        "method": "POST",
+        "url": "/api/v3/pet",
+        "body": {},
+        "bodyType": "json"
+      },
+      "assertionResults": [],
+      "extractedVariables": {},
+      "durationMs": 11,
+      "error": "apiRequestContext.fetch: Invalid URL"
+    },
+    {
+      "stepId": "ad1add1b-ee75-49e0-8a98-b2dd72a15c6f",
+      "stepName": "updatePet",
+      "status": "error",
+      "request": {
+        "method": "PUT",
+        "url": "/api/v3/pet",
+        "body": {},
+        "bodyType": "json"
+      },
+      "assertionResults": [],
+      "extractedVariables": {},
+      "durationMs": 2,
+      "error": "apiRequestContext.fetch: Invalid URL"
+    },
+    {
+      "stepId": "f0dc3080-05a1-472b-aacd-815855bd33ff",
+      "stepName": "findPetsByStatus",
+      "status": "error",
+      "request": {
+        "method": "GET",
+        "url": "/api/v3/pet/findByStatus",
+        "queryParams": {
+          "status": "{{status}}"
+        },
+        "bodyType": "none"
+      },
+      "assertionResults": [],
+      "extractedVariables": {},
+      "durationMs": 2,
+      "error": "apiRequestContext.fetch: Invalid URL"
+    },
+    {
+      "stepId": "84a6509f-df4a-4719-9cb1-025b85c171d0",
+      "stepName": "findPetsByTags",
+      "status": "error",
+      "request": {
+        "method": "GET",
+        "url": "/api/v3/pet/findByTags",
+        "queryParams": {
+          "tags": "{{tags}}"
+        },
+        "bodyType": "none"
+      },
+      "assertionResults": [],
+      "extractedVariables": {},
+      "durationMs": 4,
+      "error": "apiRequestContext.fetch: Invalid URL"
+    },
+    {
+      "stepId": "8bc2c3b7-0fde-46ff-bc1e-899c7530aff7",
+      "stepName": "getPetById",
+      "status": "error",
+      "request": {
+        "method": "GET",
+        "url": "/api/v3/pet/{{petId}}",
+        "bodyType": "none"
+      },
+      "assertionResults": [],
+      "extractedVariables": {},
+      "durationMs": 2,
+      "error": "apiRequestContext.fetch: Invalid URL"
+    },
+    {
+      "stepId": "35728460-9ee0-4b81-b461-c3f2d529fe5b",
+      "stepName": "updatePetWithForm",
+      "status": "error",
+      "request": {
+        "method": "POST",
+        "url": "/api/v3/pet/{{petId}}",
+        "queryParams": {
+          "name": "{{name}}",
+          "status": "{{status}}"
+        },
+        "bodyType": "none"
+      },
+      "assertionResults": [],
+      "extractedVariables": {},
+      "durationMs": 2,
+      "error": "apiRequestContext.fetch: Invalid URL"
+    },
+    {
+      "stepId": "65b574de-73a2-4b9c-b214-7904b69d7a52",
+      "stepName": "deletePet",
+      "status": "error",
+      "request": {
+        "method": "DELETE",
+        "url": "/api/v3/pet/{{petId}}",
+        "headers": {
+          "api_key": "{{api_key}}"
+        },
+        "bodyType": "none"
+      },
+      "assertionResults": [],
+      "extractedVariables": {},
+      "durationMs": 2,
+      "error": "apiRequestContext.fetch: Invalid URL"
+    },
+    {
+      "stepId": "c1afd129-5568-4b74-bac6-41ca904e87fc",
+      "stepName": "uploadFile",
+      "status": "error",
+      "request": {
+        "method": "POST",
+        "url": "/api/v3/pet/{{petId}}/uploadImage",
+        "queryParams": {
+          "additionalMetadata": "{{additionalMetadata}}"
+        },
+        "bodyType": "none"
+      },
+      "assertionResults": [],
+      "extractedVariables": {},
+      "durationMs": 2,
+      "error": "apiRequestContext.fetch: Invalid URL"
+    },
+    {
+      "stepId": "2b7fbfd3-600b-4c17-9d00-5a0ef957a235",
+      "stepName": "getInventory",
+      "status": "error",
+      "request": {
+        "method": "GET",
+        "url": "/api/v3/store/inventory",
+        "bodyType": "none"
+      },
+      "assertionResults": [],
+      "extractedVariables": {},
+      "durationMs": 2,
+      "error": "apiRequestContext.fetch: Invalid URL"
+    },
+    {
+      "stepId": "0e590aae-33b6-409b-94f1-ad7aa0b26087",
+      "stepName": "placeOrder",
+      "status": "error",
+      "request": {
+        "method": "POST",
+        "url": "/api/v3/store/order",
+        "body": {},
+        "bodyType": "json"
+      },
+      "assertionResults": [],
+      "extractedVariables": {},
+      "durationMs": 1,
+      "error": "apiRequestContext.fetch: Invalid URL"
+    },
+    {
+      "stepId": "546375c3-47b7-402b-a48f-efaa96c33c17",
+      "stepName": "getOrderById",
+      "status": "error",
+      "request": {
+        "method": "GET",
+        "url": "/api/v3/store/order/{{orderId}}",
+        "bodyType": "none"
+      },
+      "assertionResults": [],
+      "extractedVariables": {},
+      "durationMs": 3,
+      "error": "apiRequestContext.fetch: Invalid URL"
+    },
+    {
+      "stepId": "b475f878-3222-48b0-bd16-0f4ca14fa464",
+      "stepName": "deleteOrder",
+      "status": "error",
+      "request": {
+        "method": "DELETE",
+        "url": "/api/v3/store/order/{{orderId}}",
+        "bodyType": "none"
+      },
+      "assertionResults": [],
+      "extractedVariables": {},
+      "durationMs": 1,
+      "error": "apiRequestContext.fetch: Invalid URL"
+    },
+    {
+      "stepId": "952913b5-65db-42f0-a92e-e185171b19e3",
+      "stepName": "createUser",
+      "status": "error",
+      "request": {
+        "method": "POST",
+        "url": "/api/v3/user",
+        "body": {},
+        "bodyType": "json"
+      },
+      "assertionResults": [],
+      "extractedVariables": {},
+      "durationMs": 3,
+      "error": "apiRequestContext.fetch: Invalid URL"
+    },
+    {
+      "stepId": "84fd6512-4229-4cfd-ad18-527dbd5c5d2f",
+      "stepName": "createUsersWithListInput",
+      "status": "error",
+      "request": {
+        "method": "POST",
+        "url": "/api/v3/user/createWithList",
+        "body": {},
+        "bodyType": "json"
+      },
+      "assertionResults": [],
+      "extractedVariables": {},
+      "durationMs": 1,
+      "error": "apiRequestContext.fetch: Invalid URL"
+    },
+    {
+      "stepId": "f1a0f6a5-6bb7-42c4-a578-84480a748713",
+      "stepName": "loginUser",
+      "status": "error",
+      "request": {
+        "method": "GET",
+        "url": "/api/v3/user/login",
+        "queryParams": {
+          "username": "{{username}}",
+          "password": "{{password}}"
+        },
+        "bodyType": "none"
+      },
+      "assertionResults": [],
+      "extractedVariables": {},
+      "durationMs": 2,
+      "error": "apiRequestContext.fetch: Invalid URL"
+    },
+    {
+      "stepId": "3aff4f74-8f87-453b-bcdb-450d72eb11e8",
+      "stepName": "logoutUser",
+      "status": "error",
+      "request": {
+        "method": "GET",
+        "url": "/api/v3/user/logout",
+        "bodyType": "none"
+      },
+      "assertionResults": [],
+      "extractedVariables": {},
+      "durationMs": 2,
+      "error": "apiRequestContext.fetch: Invalid URL"
+    },
+    {
+      "stepId": "b7f4b626-1f97-45aa-ac68-f2c05e7676e6",
+      "stepName": "getUserByName",
+      "status": "error",
+      "request": {
+        "method": "GET",
+        "url": "/api/v3/user/{{username}}",
+        "bodyType": "none"
+      },
+      "assertionResults": [],
+      "extractedVariables": {},
+      "durationMs": 2,
+      "error": "apiRequestContext.fetch: Invalid URL"
+    },
+    {
+      "stepId": "f0ac362d-986a-4449-8760-ba3cdc3f132f",
+      "stepName": "updateUser",
+      "status": "error",
+      "request": {
+        "method": "PUT",
+        "url": "/api/v3/user/{{username}}",
+        "body": {},
+        "bodyType": "json"
+      },
+      "assertionResults": [],
+      "extractedVariables": {},
+      "durationMs": 3,
+      "error": "apiRequestContext.fetch: Invalid URL"
+    },
+    {
+      "stepId": "fe0dc784-31f9-4cca-a12e-3f32acb52cb4",
+      "stepName": "deleteUser",
+      "status": "error",
+      "request": {
+        "method": "DELETE",
+        "url": "/api/v3/user/{{username}}",
+        "bodyType": "none"
+      },
+      "assertionResults": [],
+      "extractedVariables": {},
+      "durationMs": 2,
+      "error": "apiRequestContext.fetch: Invalid URL"
+    }
+  ],
+  "variableContext": {
+    "adminUser": "admin",
+    "adminPass": "password123"
+  }
+}

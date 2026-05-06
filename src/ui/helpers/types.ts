@@ -66,6 +66,7 @@ export interface RunRecord {
   environmentName?: string;
   executedBy?: string;
   browsers?: string[];
+  scriptIds?: string[];
   healEvents?: HealEvent[];
   traceMode?: 'on' | 'retain-on-failure' | 'off' | 'on-first-retry';
 }

@@ -21,6 +21,9 @@ function onModuleTabSwitch(tab) {
   if (tab === 'analytics') analyticsLoad();
   if (tab === 'visual') vrLoad();
   if (tab === 'locator-health') locatorHealthLoad();
+  if (tab === 'api-envs') apiEnvLoad();
+  if (tab === 'api-collections') apiColLoad();
+  if (tab === 'api-runs') apiRunsLoad();
   if (tab === 'admin' && !_panelLoaded.has('admin')) adminSubTab('users', document.querySelector('.sub-tab'));
   _panelLoaded.add(tab);
 
@@ -82,7 +85,7 @@ async function projDropdownLoad() {
 }
 
 // Panels that require a project to be selected before any interaction
-const PROJECT_SCOPED_TABS = new Set(['scripts', 'suites', 'locators', 'functions', 'commondata', 'history', 'flaky', 'analytics', 'visual', 'locator-health']);
+const PROJECT_SCOPED_TABS = new Set(['scripts', 'suites', 'locators', 'functions', 'commondata', 'history', 'flaky', 'analytics', 'visual', 'locator-health', 'api-envs', 'api-collections', 'api-runs']);
 
 const _PROJ_BANNER_ID = 'proj-required-banner';
 
@@ -134,10 +137,13 @@ function onProjectChange() {
   vrLoad();
   locatorHealthLoad();
   execLoad();
+  apiEnvLoad();
+  apiColLoad();
+  apiRunsLoad();
 }
 
 function _toggleModuleAddButtons(enabled) {
-  ['btn-new-script', 'btn-new-suite', 'btn-add-locator', 'btn-new-function', 'btn-add-cd'].forEach(id => {
+  ['btn-new-script', 'btn-new-suite', 'btn-add-locator', 'btn-new-function', 'btn-add-cd', 'btn-new-api-env', 'btn-new-api-col'].forEach(id => {
     const btn = document.getElementById(id);
     if (btn) btn.disabled = !enabled;
   });

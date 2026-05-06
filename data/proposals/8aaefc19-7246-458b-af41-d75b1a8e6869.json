@@ -1,0 +1,16 @@
+{
+  "id": "8aaefc19-7246-458b-af41-d75b1a8e6869",
+  "projectId": "test-proj",
+  "locatorId": "loc-test-002",
+  "locatorName": "Login Input",
+  "scriptId": "",
+  "scriptTitle": "",
+  "stepOrder": 2,
+  "oldSelector": "input.login",
+  "oldSelectorType": "css",
+  "newSelector": "textbox:login-input",
+  "newSelectorType": "role",
+  "confidence": 55,
+  "healedAt": "2026-05-02T18:31:50.660Z",
+  "status": "pending-review"
+}

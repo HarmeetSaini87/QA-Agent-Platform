@@ -225,6 +225,7 @@ export interface CommonData {
   dataName:    string;   // unique per project+environment
   value:       string;   // stored as enc:<base64> when sensitive=true
   environment: string;   // e.g. "QA", "UAT", "DEV", "PROD"
+  moduleType:  'ui' | 'api' | 'shared';  // which module owns this record
   sensitive:   boolean;  // if true: value shown masked in UI, stored encrypted
   createdBy:   string;
   createdAt:   string;
@@ -282,6 +283,8 @@ export interface TestSuite {
   modifiedBy:    string;
   modifiedAt:    string;
   flakinessOverrides?: Partial<import('../utils/flakinessEngine').FlakinessConfig>;
+  beforeAllApiCollectionId?: string;
+  blockOnApiFailure?: boolean;
 }
 
 // ── Scheduled Run ─────────────────────────────────────────────────────────────
@@ -519,4 +522,163 @@ export interface NlConfig {
 
 export interface NlAliasMap {
   [locatorName: string]: string[];   // up to 10 aliases per locator
+}
+
+// ── API Testing Module ─────────────────────────────────────────────────────────
+
+export interface ApiVariable {
+  key: string;
+  value: string;
+  sensitive?: boolean;
+}
+
+export interface ApiDynamicValue {
+  type: 'uuid' | 'timestamp' | 'env' | 'random_int' | 'random_string' | 'faker_name' | 'faker_email' | 'faker_uuid';
+  format?: string;
+}
+
+export interface ApiAuthConfig {
+  type: 'none' | 'bearer' | 'apiKey' | 'basic' | 'oauth2CC';
+  bearer?: { token: string };
+  apiKey?: { header: string; value: string };
+  basic?: { username: string; password: string };
+  oauth2CC?: { tokenUrl: string; clientId: string; clientSecret: string; scope?: string };
+}
+
+export interface ApiEnvironment {
+  id: string;
+  projectId?: string;
+  name: string;
+  baseUrl: string;
+  variables: ApiVariable[];
+  authConfig?: ApiAuthConfig;
+}
+
+export interface ApiRequest {
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS';
+  url: string;
+  headers?: Record<string, string>;
+  queryParams?: Record<string, string>;
+  body?: unknown;
+  bodyType?: 'json' | 'form' | 'raw' | 'none';
+  openapiSpecId?: string;
+}
+
+export interface ApiAssertion {
+  field: string;
+  operator: 'eq' | 'neq' | 'equals' | 'notEquals' | 'contains' | 'notContains' | 'startsWith' | 'endsWith' | 'gt' | 'lt' | 'greaterThan' | 'lessThan' | 'greaterThanOrEqual' | 'lessThanOrEqual' | 'exists' | 'notExists' | 'matches' | 'isEmpty' | 'isType' | 'jsonSchemaValid';
+  expected?: unknown;
+  weight?: number;
+  severity?: 'critical' | 'high' | 'medium' | 'low' | 'soft';
+  message?: string;
+}
+
+export interface ApiVariableExtraction {
+  name: string;
+  source: 'responseBody' | 'responseHeader' | 'statusCode';
+  path: string;
+  scope: 'step' | 'collection' | 'global';
+}
+
+export interface ApiStepExecution {
+  retryPolicy?: { maxRetries: number; delayMs: number; retryOn?: number[] };
+  idempotent?: boolean;
+  timeoutMs?: number;
+  preScript?: string;
+  postScript?: string;
+  variableWritePolicy?: 'merge' | 'replace';
+  onFailure?: 'stop' | 'continue' | 'skipDependents';
+  teardown?: boolean;
+  logLevel?: 'minimal' | 'standard' | 'verbose';
+  delayAfterMs?: number;
+  condition?: string;
+}
+
+export interface ApiTestStep {
+  id: string;
+  name: string;
+  request: ApiRequest;
+  assertions: ApiAssertion[];
+  extractVariables: ApiVariableExtraction[];
+  execution: ApiStepExecution;
+  dependsOn: string[];
+  group?: string;
+  order?: number;
+  captureBaseline?: boolean;
+  baselineRunId?: string;
+}
+
+export interface ApiCollection {
+  id: string;
+  projectId?: string;
+  name: string;
+  environmentId: string;
+  steps: ApiTestStep[];
+  variables: ApiVariable[];
+  onFailure: 'stop' | 'continue' | 'skipDependents';
+  executionMode: 'sequential' | 'parallel' | 'dag';
+  maxConcurrency?: number;
+  logLevel?: 'minimal' | 'standard' | 'verbose';
+  rateLimit?: { requestsPerSecond: number };
+  tags?: string[];
+  autoFileDefects?: boolean;
+}
+
+export interface ApiAssertionResult {
+  assertionIndex: number;
+  field: string;
+  operator: string;
+  passed: boolean;
+  actual: unknown;
+  expected: unknown;
+  message?: string;
+  confidenceScore?: number;
+}
+
+export interface JsonDiff {
+  path: string;
+  expected: unknown;
+  actual: unknown;
+}
+
+export interface BaselineDiff {
+  statusChanged: boolean;
+  headersAdded: string[];
+  headersRemoved: string[];
+  bodyDiff: JsonDiff[];
+}
+
+export interface ApiResponseSnapshot {
+  status: number;
+  headers: Record<string, string>;
+  body: unknown;
+  baselineDiff?: BaselineDiff;
+  bodyTruncated: boolean;
+  durationMs: number;
+  har?: unknown;
+}
+
+export interface ApiStepResult {
+  stepId: string;
+  stepName: string;
+  status: 'passed' | 'failed' | 'skipped' | 'error' | 'degraded';
+  request: ApiRequest;
+  response?: ApiResponseSnapshot;
+  assertionResults: ApiAssertionResult[];
+  extractedVariables: Record<string, string>;
+  durationMs: number;
+  contractViolations?: string[];
+  error?: string;
+  healingProposal?: string;
+}
+
+export interface ApiCollectionRunResult {
+  id: string;
+  collectionId: string;
+  projectId?: string;
+  startedAt: string;
+  completedAt: string;
+  status: 'passed' | 'failed' | 'error' | 'running';
+  stepResults: ApiStepResult[];
+  variableContext: Record<string, string>;
 }

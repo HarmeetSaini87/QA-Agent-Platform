@@ -1,0 +1,11 @@
+{
+  "id": "f081d8d1-bbcb-4375-b8a1-144495130c86",
+  "projectId": "test-proj",
+  "pageKey": "/dashboard",
+  "pageName": "/dashboard",
+  "locatorIds": [
+    "loc-ps-001"
+  ],
+  "capturedAt": "2026-05-04T06:25:04.371Z",
+  "capturedFrom": "prescan"
+}

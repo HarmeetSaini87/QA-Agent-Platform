@@ -1,0 +1,18 @@
+{
+  "id": "c97d47c5-835a-4e2b-a773-157863296db1",
+  "projectId": "3a39c8a2-06ea-4a83-9aca-e3a316ea940a",
+  "locatorId": "aeb8831a-bae4-4503-a4db-9ae07f370eb2",
+  "locatorName": "Click User Name",
+  "scriptId": "",
+  "scriptTitle": "",
+  "stepOrder": 1,
+  "oldSelector": "UsernameTXT",
+  "oldSelectorType": "id",
+  "newSelector": "#Username",
+  "newSelectorType": "css",
+  "confidence": 50,
+  "healedAt": "2026-05-06T12:31:28.098Z",
+  "status": "approved",
+  "reviewedBy": "admin",
+  "reviewedAt": "2026-05-06T12:35:57.681Z"
+}

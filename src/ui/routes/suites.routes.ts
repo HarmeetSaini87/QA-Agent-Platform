@@ -13,6 +13,9 @@ import { generateCodegenSpec } from '../../utils/codegenGenerator';
 import { runs } from '../helpers/state';
 import { enqueueRun, MAX_CONCURRENT_RUNS, activeRunCount, runQueue } from '../helpers/run-queue';
 import { spawnRunWithSpec, attachDefectInfo } from '../helpers/run-spawner';
+import { runCollection } from '../../utils/apiRunner';
+import { findById as findStoreById, API_COLLECTIONS, API_ENVS } from '../../data/store';
+import type { ApiCollection, ApiEnvironment } from '../../data/types';
 
 export function registerSuitesRoutes(app: express.Application): void {
   app.get('/api/suites/all', requireAuth, (_req: Request, res: Response) => {
@@ -162,13 +165,38 @@ export function registerSuitesRoutes(app: express.Application): void {
       environmentId: environment?.id || '', environmentName: environment?.name || '',
       executedBy: req.session.username ?? 'unknown',
       browsers: runBrowsers,
+      scriptIds: scripts.map(s => s.id),
       traceMode: traceArg,
     };
     runs.set(runId, record);
 
+    // Task 4.7: API pre-check before spawning Playwright tests
+    if (suite.beforeAllApiCollectionId) {
+      const apiCol = findStoreById<ApiCollection>(API_COLLECTIONS, suite.beforeAllApiCollectionId);
+      const defaultEnvId = apiCol?.environmentId;
+      const apiEnv = defaultEnvId ? findStoreById<ApiEnvironment>(API_ENVS, defaultEnvId) : null;
+      if (apiCol && apiEnv) {
+        try {
+          const apiRunId = uuidv4();
+          const apiResult = await runCollection(apiCol, apiEnv, apiRunId);
+          if (suite.blockOnApiFailure !== false && apiResult.status === 'failed') {
+            record.status = 'failed';
+            record.output = [`[WARN] API pre-check failed (collection: ${apiCol.name})`];
+            runs.set(runId, record);
+            logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'SUITE_RUN_BLOCKED_BY_API', resourceType: 'suite', resourceId: suite.id, details: suite.name, ip: req.ip ?? null });
+            res.json({ runId, startedAt, queued: false, queuePosition: 0, blocked: true, reason: 'API pre-check failed' });
+            return;
+          }
+        } catch (err) {
+          logger.warn(`[suite run] API pre-check error (non-blocking): ${(err as Error).message}`);
+        }
+      }
+    }
+
     const queuePos = activeRunCount >= MAX_CONCURRENT_RUNS ? runQueue.length + 1 : 0;
 
-    enqueueRun(() => spawnRunWithSpec(record, specPath, req.body.headed !== false, suite.retries ?? 0, runBrowsers, traceArg));
+    // OLD: req.body.headed !== false — defaulted to headed:true when UI omits field → Firefox crashes (no desktop on server)
+    enqueueRun(() => spawnRunWithSpec(record, specPath, req.body.headed === true, suite.retries ?? 0, runBrowsers, traceArg));
 
     logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'SUITE_RUN', resourceType: 'suite', resourceId: suite.id, details: suite.name, ip: req.ip ?? null });
     res.json({ runId, startedAt, queued: queuePos > 0, queuePosition: queuePos });

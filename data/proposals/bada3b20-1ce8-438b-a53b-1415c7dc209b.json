@@ -1,0 +1,18 @@
+{
+  "id": "bada3b20-1ce8-438b-a53b-1415c7dc209b",
+  "projectId": "test-proj",
+  "locatorId": "loc-reject-001",
+  "locatorName": "Reject Button",
+  "scriptId": "",
+  "scriptTitle": "",
+  "stepOrder": 1,
+  "oldSelector": "button.reject",
+  "oldSelectorType": "css",
+  "newSelector": "div > button",
+  "newSelectorType": "css",
+  "confidence": 29,
+  "healedAt": "2026-05-04T06:25:00.705Z",
+  "status": "rejected",
+  "reviewedBy": "admin",
+  "reviewedAt": "2026-05-04T06:25:00.839Z"
+}

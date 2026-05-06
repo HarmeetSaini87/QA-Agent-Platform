@@ -10,13 +10,18 @@ import * as path from 'path';
 
 // DATA_DIR is configurable via .env so dev and prod instances use separate storage.
 // Default: ./data (preserves existing production behaviour when no .env var is set).
-const DATA_DIR = path.resolve(process.env.DATA_DIR || 'data');
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+// MUST be resolved dynamically — a module-level const freezes on first import and
+// ignores later env changes (e.g. tests that set DATA_DIR before each test case).
+function getDataDir(): string {
+  const dir = path.resolve(process.env.DATA_DIR || 'data');
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
 
 // ── Generic helpers ────────────────────────────────────────────────────────────
 
 function filePath(collection: string): string {
-  return path.join(DATA_DIR, `${collection}.json`);
+  return path.join(getDataDir(), `${collection}.json`);
 }
 
 export function readAll<T>(collection: string): T[] {
@@ -64,3 +69,6 @@ export const COMMON_DATA = 'common_data';
 export const SCHEDULES   = 'schedules';
 export const APIKEYS     = 'apikeys';
 export const COMPONENTS  = 'components';
+
+export const API_ENVS        = 'api-envs';
+export const API_COLLECTIONS = 'api-collections';

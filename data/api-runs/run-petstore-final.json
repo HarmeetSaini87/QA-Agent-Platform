@@ -1,0 +1,1655 @@
+{
+  "id": "run-petstore-final",
+  "collectionId": "col-petstore3-swagger-import",
+  "projectId": "3a39c8a2-06ea-4a83-9aca-e3a316ea940a",
+  "startedAt": "2026-05-03T17:55:27.871Z",
+  "completedAt": "2026-05-03T17:55:29.711Z",
+  "status": "failed",
+  "stepResults": [
+    {
+      "stepId": "a8a2e6dc-0b95-4a7a-82f7-ed7166a8e0f1",
+      "stepName": "addPet",
+      "status": "failed",
+      "request": {
+        "method": "POST",
+        "url": "/api/v3/pet",
+        "body": {},
+        "bodyType": "json"
+      },
+      "response": {
+        "status": 500,
+        "headers": {
+          "date": "Sun, 03 May 2026 17:55:27 GMT",
+          "content-type": "application/json",
+          "content-length": "110",
+          "connection": "keep-alive",
+          "access-control-allow-origin": "*",
+          "access-control-allow-methods": "GET, POST, DELETE, PUT",
+          "access-control-allow-headers": "Content-Type, api_key, Authorization",
+          "access-control-expose-headers": "Content-Disposition",
+          "server": "Jetty(9.4.53.v20231009)"
+        },
+        "body": {
+          "code": 500,
+          "message": "There was an error processing your request. It has been logged (ID: 639feb358155e18c)"
+        },
+        "bodyTruncated": false,
+        "durationMs": 81
+      },
+      "assertionResults": [
+        {
+          "assertionIndex": 0,
+          "field": "status",
+          "operator": "greaterThanOrEqual",
+          "passed": true,
+          "actual": 500,
+          "expected": 200,
+          "confidenceScore": 100
+        },
+        {
+          "assertionIndex": 1,
+          "field": "status",
+          "operator": "lessThan",
+          "passed": false,
+          "actual": 500,
+          "expected": 300,
+          "confidenceScore": 0
+        },
+        {
+          "assertionIndex": 2,
+          "field": "$..",
+          "operator": "jsonSchemaValid",
+          "passed": false,
+          "actual": {
+            "code": 500,
+            "message": "There was an error processing your request. It has been logged (ID: 639feb358155e18c)"
+          },
+          "expected": {
+            "required": [
+              "name",
+              "photoUrls"
+            ],
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer",
+                "format": "int64",
+                "example": 10
+              },
+              "name": {
+                "type": "string",
+                "example": "doggie"
+              },
+              "category": {
+                "$ref": "#/components/schemas/Category"
+              },
+              "photoUrls": {
+                "type": "array",
+                "xml": {
+                  "wrapped": true
+                },
+                "items": {
+                  "type": "string",
+                  "xml": {
+                    "name": "photoUrl"
+                  }
+                }
+              },
+              "tags": {
+                "type": "array",
+                "xml": {
+                  "wrapped": true
+                },
+                "items": {
+                  "$ref": "#/components/schemas/Tag"
+                }
+              },
+              "status": {
+                "type": "string",
+                "description": "pet status in the store",
+                "enum": [
+                  "available",
+                  "pending",
+                  "sold"
+                ]
+              }
+            },
+            "xml": {
+              "name": "pet"
+            }
+          },
+          "message": "Response body matches expected schema",
+          "confidenceScore": 0
+        }
+      ],
+      "extractedVariables": {},
+      "durationMs": 81
+    },
+    {
+      "stepId": "306dd39c-f735-42f4-909c-869294dcc0b0",
+      "stepName": "updatePet",
+      "status": "failed",
+      "request": {
+        "method": "PUT",
+        "url": "/api/v3/pet",
+        "body": {},
+        "bodyType": "json"
+      },
+      "response": {
+        "status": 500,
+        "headers": {
+          "date": "Sun, 03 May 2026 17:55:27 GMT",
+          "content-type": "application/json",
+          "content-length": "110",
+          "connection": "keep-alive",
+          "access-control-allow-origin": "*",
+          "access-control-allow-methods": "GET, POST, DELETE, PUT",
+          "access-control-allow-headers": "Content-Type, api_key, Authorization",
+          "access-control-expose-headers": "Content-Disposition",
+          "server": "Jetty(9.4.53.v20231009)"
+        },
+        "body": {
+          "code": 500,
+          "message": "There was an error processing your request. It has been logged (ID: e8d7ff1f2faf3536)"
+        },
+        "bodyTruncated": false,
+        "durationMs": 14
+      },
+      "assertionResults": [
+        {
+          "assertionIndex": 0,
+          "field": "status",
+          "operator": "greaterThanOrEqual",
+          "passed": true,
+          "actual": 500,
+          "expected": 200,
+          "confidenceScore": 100
+        },
+        {
+          "assertionIndex": 1,
+          "field": "status",
+          "operator": "lessThan",
+          "passed": false,
+          "actual": 500,
+          "expected": 300,
+          "confidenceScore": 0
+        },
+        {
+          "assertionIndex": 2,
+          "field": "$..",
+          "operator": "jsonSchemaValid",
+          "passed": false,
+          "actual": {
+            "code": 500,
+            "message": "There was an error processing your request. It has been logged (ID: e8d7ff1f2faf3536)"
+          },
+          "expected": {
+            "required": [
+              "name",
+              "photoUrls"
+            ],
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer",
+                "format": "int64",
+                "example": 10
+              },
+              "name": {
+                "type": "string",
+                "example": "doggie"
+              },
+              "category": {
+                "$ref": "#/components/schemas/Category"
+              },
+              "photoUrls": {
+                "type": "array",
+                "xml": {
+                  "wrapped": true
+                },
+                "items": {
+                  "type": "string",
+                  "xml": {
+                    "name": "photoUrl"
+                  }
+                }
+              },
+              "tags": {
+                "type": "array",
+                "xml": {
+                  "wrapped": true
+                },
+                "items": {
+                  "$ref": "#/components/schemas/Tag"
+                }
+              },
+              "status": {
+                "type": "string",
+                "description": "pet status in the store",
+                "enum": [
+                  "available",
+                  "pending",
+                  "sold"
+                ]
+              }
+            },
+            "xml": {
+              "name": "pet"
+            }
+          },
+          "message": "Response body matches expected schema",
+          "confidenceScore": 0
+        }
+      ],
+      "extractedVariables": {},
+      "durationMs": 14
+    },
+    {
+      "stepId": "f67f235c-f929-40af-bd27-a2214c6f698b",
+      "stepName": "findPetsByStatus",
+      "status": "failed",
+      "request": {
+        "method": "GET",
+        "url": "/api/v3/pet/findByStatus",
+        "queryParams": {
+          "status": "{{status}}"
+        },
+        "bodyType": "none"
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "date": "Sun, 03 May 2026 17:55:28 GMT",
+          "content-type": "application/json",
+          "content-length": "140",
+          "connection": "keep-alive",
+          "access-control-allow-origin": "*",
+          "access-control-allow-methods": "GET, POST, DELETE, PUT",
+          "access-control-allow-headers": "Content-Type, api_key, Authorization",
+          "access-control-expose-headers": "Content-Disposition",
+          "server": "Jetty(9.4.53.v20231009)"
+        },
+        "body": {
+          "code": 400,
+          "message": "Input error: query parameter `status value `{{status}}` is not in the allowable values `[available, pending, sold]`"
+        },
+        "bodyTruncated": false,
+        "durationMs": 14
+      },
+      "assertionResults": [
+        {
+          "assertionIndex": 0,
+          "field": "status",
+          "operator": "greaterThanOrEqual",
+          "passed": true,
+          "actual": 400,
+          "expected": 200,
+          "confidenceScore": 100
+        },
+        {
+          "assertionIndex": 1,
+          "field": "status",
+          "operator": "lessThan",
+          "passed": false,
+          "actual": 400,
+          "expected": 300,
+          "confidenceScore": 0
+        },
+        {
+          "assertionIndex": 2,
+          "field": "$..",
+          "operator": "jsonSchemaValid",
+          "passed": false,
+          "actual": {
+            "code": 400,
+            "message": "Input error: query parameter `status value `{{status}}` is not in the allowable values `[available, pending, sold]`"
+          },
+          "expected": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Pet"
+            }
+          },
+          "message": "Response body matches expected schema",
+          "confidenceScore": 0
+        }
+      ],
+      "extractedVariables": {},
+      "durationMs": 14
+    },
+    {
+      "stepId": "221868b1-ee18-4f52-aa3c-fd73d925a9a5",
+      "stepName": "findPetsByTags",
+      "status": "failed",
+      "request": {
+        "method": "GET",
+        "url": "/api/v3/pet/findByTags",
+        "queryParams": {
+          "tags": "{{tags}}"
+        },
+        "bodyType": "none"
+      },
+      "response": {
+        "status": 500,
+        "headers": {
+          "date": "Sun, 03 May 2026 17:55:28 GMT",
+          "content-type": "application/json",
+          "content-length": "110",
+          "connection": "keep-alive",
+          "access-control-allow-origin": "*",
+          "access-control-allow-methods": "GET, POST, DELETE, PUT",
+          "access-control-allow-headers": "Content-Type, api_key, Authorization",
+          "access-control-expose-headers": "Content-Disposition",
+          "server": "Jetty(9.4.53.v20231009)"
+        },
+        "body": {
+          "code": 500,
+          "message": "There was an error processing your request. It has been logged (ID: bf0fefc206759fa1)"
+        },
+        "bodyTruncated": false,
+        "durationMs": 13
+      },
+      "assertionResults": [
+        {
+          "assertionIndex": 0,
+          "field": "status",
+          "operator": "greaterThanOrEqual",
+          "passed": true,
+          "actual": 500,
+          "expected": 200,
+          "confidenceScore": 100
+        },
+        {
+          "assertionIndex": 1,
+          "field": "status",
+          "operator": "lessThan",
+          "passed": false,
+          "actual": 500,
+          "expected": 300,
+          "confidenceScore": 0
+        },
+        {
+          "assertionIndex": 2,
+          "field": "$..",
+          "operator": "jsonSchemaValid",
+          "passed": false,
+          "actual": {
+            "code": 500,
+            "message": "There was an error processing your request. It has been logged (ID: bf0fefc206759fa1)"
+          },
+          "expected": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Pet"
+            }
+          },
+          "message": "Response body matches expected schema",
+          "confidenceScore": 0
+        }
+      ],
+      "extractedVariables": {},
+      "durationMs": 13
+    },
+    {
+      "stepId": "30915bb1-af84-4836-80fe-25ce0101f41a",
+      "stepName": "getPetById",
+      "status": "failed",
+      "request": {
+        "method": "GET",
+        "url": "/api/v3/pet/{{petId}}",
+        "bodyType": "none"
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "date": "Sun, 03 May 2026 17:55:28 GMT",
+          "content-type": "application/json",
+          "content-length": "97",
+          "connection": "keep-alive",
+          "access-control-allow-origin": "*",
+          "access-control-allow-methods": "GET, POST, DELETE, PUT",
+          "access-control-allow-headers": "Content-Type, api_key, Authorization",
+          "access-control-expose-headers": "Content-Disposition",
+          "server": "Jetty(9.4.53.v20231009)"
+        },
+        "body": {
+          "code": 400,
+          "message": "Input error: couldn't convert `{{petId}}` to type `class java.lang.Long`"
+        },
+        "bodyTruncated": false,
+        "durationMs": 13
+      },
+      "assertionResults": [
+        {
+          "assertionIndex": 0,
+          "field": "status",
+          "operator": "greaterThanOrEqual",
+          "passed": true,
+          "actual": 400,
+          "expected": 200,
+          "confidenceScore": 100
+        },
+        {
+          "assertionIndex": 1,
+          "field": "status",
+          "operator": "lessThan",
+          "passed": false,
+          "actual": 400,
+          "expected": 300,
+          "confidenceScore": 0
+        },
+        {
+          "assertionIndex": 2,
+          "field": "$..",
+          "operator": "jsonSchemaValid",
+          "passed": false,
+          "actual": {
+            "code": 400,
+            "message": "Input error: couldn't convert `{{petId}}` to type `class java.lang.Long`"
+          },
+          "expected": {
+            "required": [
+              "name",
+              "photoUrls"
+            ],
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer",
+                "format": "int64",
+                "example": 10
+              },
+              "name": {
+                "type": "string",
+                "example": "doggie"
+              },
+              "category": {
+                "$ref": "#/components/schemas/Category"
+              },
+              "photoUrls": {
+                "type": "array",
+                "xml": {
+                  "wrapped": true
+                },
+                "items": {
+                  "type": "string",
+                  "xml": {
+                    "name": "photoUrl"
+                  }
+                }
+              },
+              "tags": {
+                "type": "array",
+                "xml": {
+                  "wrapped": true
+                },
+                "items": {
+                  "$ref": "#/components/schemas/Tag"
+                }
+              },
+              "status": {
+                "type": "string",
+                "description": "pet status in the store",
+                "enum": [
+                  "available",
+                  "pending",
+                  "sold"
+                ]
+              }
+            },
+            "xml": {
+              "name": "pet"
+            }
+          },
+          "message": "Response body matches expected schema",
+          "confidenceScore": 0
+        }
+      ],
+      "extractedVariables": {},
+      "durationMs": 13
+    },
+    {
+      "stepId": "54679b32-7a9c-495a-92d1-a3c80a9a215e",
+      "stepName": "updatePetWithForm",
+      "status": "failed",
+      "request": {
+        "method": "POST",
+        "url": "/api/v3/pet/{{petId}}",
+        "queryParams": {
+          "name": "{{name}}",
+          "status": "{{status}}"
+        },
+        "bodyType": "none"
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "date": "Sun, 03 May 2026 17:55:28 GMT",
+          "content-type": "application/json",
+          "content-length": "97",
+          "connection": "keep-alive",
+          "access-control-allow-origin": "*",
+          "access-control-allow-methods": "GET, POST, DELETE, PUT",
+          "access-control-allow-headers": "Content-Type, api_key, Authorization",
+          "access-control-expose-headers": "Content-Disposition",
+          "server": "Jetty(9.4.53.v20231009)"
+        },
+        "body": {
+          "code": 400,
+          "message": "Input error: couldn't convert `{{petId}}` to type `class java.lang.Long`"
+        },
+        "bodyTruncated": false,
+        "durationMs": 13
+      },
+      "assertionResults": [
+        {
+          "assertionIndex": 0,
+          "field": "status",
+          "operator": "greaterThanOrEqual",
+          "passed": true,
+          "actual": 400,
+          "expected": 200,
+          "confidenceScore": 100
+        },
+        {
+          "assertionIndex": 1,
+          "field": "status",
+          "operator": "lessThan",
+          "passed": false,
+          "actual": 400,
+          "expected": 300,
+          "confidenceScore": 0
+        },
+        {
+          "assertionIndex": 2,
+          "field": "$..",
+          "operator": "jsonSchemaValid",
+          "passed": false,
+          "actual": {
+            "code": 400,
+            "message": "Input error: couldn't convert `{{petId}}` to type `class java.lang.Long`"
+          },
+          "expected": {
+            "required": [
+              "name",
+              "photoUrls"
+            ],
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer",
+                "format": "int64",
+                "example": 10
+              },
+              "name": {
+                "type": "string",
+                "example": "doggie"
+              },
+              "category": {
+                "$ref": "#/components/schemas/Category"
+              },
+              "photoUrls": {
+                "type": "array",
+                "xml": {
+                  "wrapped": true
+                },
+                "items": {
+                  "type": "string",
+                  "xml": {
+                    "name": "photoUrl"
+                  }
+                }
+              },
+              "tags": {
+                "type": "array",
+                "xml": {
+                  "wrapped": true
+                },
+                "items": {
+                  "$ref": "#/components/schemas/Tag"
+                }
+              },
+              "status": {
+                "type": "string",
+                "description": "pet status in the store",
+                "enum": [
+                  "available",
+                  "pending",
+                  "sold"
+                ]
+              }
+            },
+            "xml": {
+              "name": "pet"
+            }
+          },
+          "message": "Response body matches expected schema",
+          "confidenceScore": 0
+        }
+      ],
+      "extractedVariables": {},
+      "durationMs": 13
+    },
+    {
+      "stepId": "a06c3cd4-a0b0-4fd1-a8b4-61cffb0f7e5b",
+      "stepName": "deletePet",
+      "status": "failed",
+      "request": {
+        "method": "DELETE",
+        "url": "/api/v3/pet/{{petId}}",
+        "headers": {
+          "api_key": "{{api_key}}"
+        },
+        "bodyType": "none"
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "date": "Sun, 03 May 2026 17:55:28 GMT",
+          "content-type": "application/json",
+          "content-length": "97",
+          "connection": "keep-alive",
+          "access-control-allow-origin": "*",
+          "access-control-allow-methods": "GET, POST, DELETE, PUT",
+          "access-control-allow-headers": "Content-Type, api_key, Authorization",
+          "access-control-expose-headers": "Content-Disposition",
+          "server": "Jetty(9.4.53.v20231009)"
+        },
+        "body": {
+          "code": 400,
+          "message": "Input error: couldn't convert `{{petId}}` to type `class java.lang.Long`"
+        },
+        "bodyTruncated": false,
+        "durationMs": 14
+      },
+      "assertionResults": [
+        {
+          "assertionIndex": 0,
+          "field": "status",
+          "operator": "greaterThanOrEqual",
+          "passed": true,
+          "actual": 400,
+          "expected": 200,
+          "confidenceScore": 100
+        },
+        {
+          "assertionIndex": 1,
+          "field": "status",
+          "operator": "lessThan",
+          "passed": false,
+          "actual": 400,
+          "expected": 300,
+          "confidenceScore": 0
+        }
+      ],
+      "extractedVariables": {},
+      "durationMs": 14
+    },
+    {
+      "stepId": "98dc49e3-11e4-46fe-9a0f-f61175717bb7",
+      "stepName": "uploadFile",
+      "status": "failed",
+      "request": {
+        "method": "POST",
+        "url": "/api/v3/pet/{{petId}}/uploadImage",
+        "queryParams": {
+          "additionalMetadata": "{{additionalMetadata}}"
+        },
+        "bodyType": "none"
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "date": "Sun, 03 May 2026 17:55:28 GMT",
+          "content-type": "application/json",
+          "content-length": "97",
+          "connection": "keep-alive",
+          "access-control-allow-origin": "*",
+          "access-control-allow-methods": "GET, POST, DELETE, PUT",
+          "access-control-allow-headers": "Content-Type, api_key, Authorization",
+          "access-control-expose-headers": "Content-Disposition",
+          "server": "Jetty(9.4.53.v20231009)"
+        },
+        "body": {
+          "code": 400,
+          "message": "Input error: couldn't convert `{{petId}}` to type `class java.lang.Long`"
+        },
+        "bodyTruncated": false,
+        "durationMs": 16
+      },
+      "assertionResults": [
+        {
+          "assertionIndex": 0,
+          "field": "status",
+          "operator": "greaterThanOrEqual",
+          "passed": true,
+          "actual": 400,
+          "expected": 200,
+          "confidenceScore": 100
+        },
+        {
+          "assertionIndex": 1,
+          "field": "status",
+          "operator": "lessThan",
+          "passed": false,
+          "actual": 400,
+          "expected": 300,
+          "confidenceScore": 0
+        },
+        {
+          "assertionIndex": 2,
+          "field": "$..",
+          "operator": "jsonSchemaValid",
+          "passed": false,
+          "actual": {
+            "code": 400,
+            "message": "Input error: couldn't convert `{{petId}}` to type `class java.lang.Long`"
+          },
+          "expected": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "integer",
+                "format": "int32"
+              },
+              "type": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "xml": {
+              "name": "##default"
+            }
+          },
+          "message": "Response body matches expected schema",
+          "confidenceScore": 0
+        }
+      ],
+      "extractedVariables": {},
+      "durationMs": 16
+    },
+    {
+      "stepId": "3723940d-f0c1-4ff5-a8de-73abac1c9aeb",
+      "stepName": "getInventory",
+      "status": "failed",
+      "request": {
+        "method": "GET",
+        "url": "/api/v3/store/inventory",
+        "bodyType": "none"
+      },
+      "response": {
+        "status": 500,
+        "headers": {
+          "date": "Sun, 03 May 2026 17:55:28 GMT",
+          "content-type": "application/json",
+          "content-length": "110",
+          "connection": "keep-alive",
+          "access-control-allow-origin": "*",
+          "access-control-allow-methods": "GET, POST, DELETE, PUT",
+          "access-control-allow-headers": "Content-Type, api_key, Authorization",
+          "access-control-expose-headers": "Content-Disposition",
+          "server": "Jetty(9.4.53.v20231009)"
+        },
+        "body": {
+          "code": 500,
+          "message": "There was an error processing your request. It has been logged (ID: 46455af3d38a5a02)"
+        },
+        "bodyTruncated": false,
+        "durationMs": 14
+      },
+      "assertionResults": [
+        {
+          "assertionIndex": 0,
+          "field": "status",
+          "operator": "greaterThanOrEqual",
+          "passed": true,
+          "actual": 500,
+          "expected": 200,
+          "confidenceScore": 100
+        },
+        {
+          "assertionIndex": 1,
+          "field": "status",
+          "operator": "lessThan",
+          "passed": false,
+          "actual": 500,
+          "expected": 300,
+          "confidenceScore": 0
+        },
+        {
+          "assertionIndex": 2,
+          "field": "$..",
+          "operator": "jsonSchemaValid",
+          "passed": false,
+          "actual": {
+            "code": 500,
+            "message": "There was an error processing your request. It has been logged (ID: 46455af3d38a5a02)"
+          },
+          "expected": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          "message": "Response body matches expected schema",
+          "confidenceScore": 0
+        }
+      ],
+      "extractedVariables": {},
+      "durationMs": 14
+    },
+    {
+      "stepId": "e9bff0d7-9013-45c2-92c9-6859c9e326be",
+      "stepName": "placeOrder",
+      "status": "failed",
+      "request": {
+        "method": "POST",
+        "url": "/api/v3/store/order",
+        "body": {},
+        "bodyType": "json"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "date": "Sun, 03 May 2026 17:55:28 GMT",
+          "content-type": "application/json",
+          "content-length": "48",
+          "connection": "keep-alive",
+          "access-control-allow-origin": "*",
+          "access-control-allow-methods": "GET, POST, DELETE, PUT",
+          "access-control-allow-headers": "Content-Type, api_key, Authorization",
+          "access-control-expose-headers": "Content-Disposition",
+          "server": "Jetty(9.4.53.v20231009)"
+        },
+        "body": {
+          "id": 0,
+          "petId": 0,
+          "quantity": 0,
+          "complete": false
+        },
+        "bodyTruncated": false,
+        "durationMs": 13
+      },
+      "assertionResults": [
+        {
+          "assertionIndex": 0,
+          "field": "status",
+          "operator": "greaterThanOrEqual",
+          "passed": true,
+          "actual": 200,
+          "expected": 200,
+          "confidenceScore": 100
+        },
+        {
+          "assertionIndex": 1,
+          "field": "status",
+          "operator": "lessThan",
+          "passed": true,
+          "actual": 200,
+          "expected": 300,
+          "confidenceScore": 100
+        },
+        {
+          "assertionIndex": 2,
+          "field": "$..",
+          "operator": "jsonSchemaValid",
+          "passed": false,
+          "actual": {
+            "id": 0,
+            "petId": 0,
+            "quantity": 0,
+            "complete": false
+          },
+          "expected": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer",
+                "format": "int64",
+                "example": 10
+              },
+              "petId": {
+                "type": "integer",
+                "format": "int64",
+                "example": 198772
+              },
+              "quantity": {
+                "type": "integer",
+                "format": "int32",
+                "example": 7
+              },
+              "shipDate": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "status": {
+                "type": "string",
+                "description": "Order Status",
+                "example": "approved",
+                "enum": [
+                  "placed",
+                  "approved",
+                  "delivered"
+                ]
+              },
+              "complete": {
+                "type": "boolean"
+              }
+            },
+            "xml": {
+              "name": "order"
+            }
+          },
+          "message": "Response body matches expected schema",
+          "confidenceScore": 0
+        }
+      ],
+      "extractedVariables": {},
+      "durationMs": 13
+    },
+    {
+      "stepId": "11d5e2f9-1657-4c5f-bbc4-50cc4934eefe",
+      "stepName": "getOrderById",
+      "status": "failed",
+      "request": {
+        "method": "GET",
+        "url": "/api/v3/store/order/{{orderId}}",
+        "bodyType": "none"
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "date": "Sun, 03 May 2026 17:55:28 GMT",
+          "content-type": "application/json",
+          "content-length": "99",
+          "connection": "keep-alive",
+          "access-control-allow-origin": "*",
+          "access-control-allow-methods": "GET, POST, DELETE, PUT",
+          "access-control-allow-headers": "Content-Type, api_key, Authorization",
+          "access-control-expose-headers": "Content-Disposition",
+          "server": "Jetty(9.4.53.v20231009)"
+        },
+        "body": {
+          "code": 400,
+          "message": "Input error: couldn't convert `{{orderId}}` to type `class java.lang.Long`"
+        },
+        "bodyTruncated": false,
+        "durationMs": 16
+      },
+      "assertionResults": [
+        {
+          "assertionIndex": 0,
+          "field": "status",
+          "operator": "greaterThanOrEqual",
+          "passed": true,
+          "actual": 400,
+          "expected": 200,
+          "confidenceScore": 100
+        },
+        {
+          "assertionIndex": 1,
+          "field": "status",
+          "operator": "lessThan",
+          "passed": false,
+          "actual": 400,
+          "expected": 300,
+          "confidenceScore": 0
+        },
+        {
+          "assertionIndex": 2,
+          "field": "$..",
+          "operator": "jsonSchemaValid",
+          "passed": false,
+          "actual": {
+            "code": 400,
+            "message": "Input error: couldn't convert `{{orderId}}` to type `class java.lang.Long`"
+          },
+          "expected": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer",
+                "format": "int64",
+                "example": 10
+              },
+              "petId": {
+                "type": "integer",
+                "format": "int64",
+                "example": 198772
+              },
+              "quantity": {
+                "type": "integer",
+                "format": "int32",
+                "example": 7
+              },
+              "shipDate": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "status": {
+                "type": "string",
+                "description": "Order Status",
+                "example": "approved",
+                "enum": [
+                  "placed",
+                  "approved",
+                  "delivered"
+                ]
+              },
+              "complete": {
+                "type": "boolean"
+              }
+            },
+            "xml": {
+              "name": "order"
+            }
+          },
+          "message": "Response body matches expected schema",
+          "confidenceScore": 0
+        }
+      ],
+      "extractedVariables": {},
+      "durationMs": 16
+    },
+    {
+      "stepId": "55ecb049-4c2d-42a3-9819-b9a265f2ec90",
+      "stepName": "deleteOrder",
+      "status": "failed",
+      "request": {
+        "method": "DELETE",
+        "url": "/api/v3/store/order/{{orderId}}",
+        "bodyType": "none"
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "date": "Sun, 03 May 2026 17:55:28 GMT",
+          "content-type": "application/json",
+          "content-length": "99",
+          "connection": "keep-alive",
+          "access-control-allow-origin": "*",
+          "access-control-allow-methods": "GET, POST, DELETE, PUT",
+          "access-control-allow-headers": "Content-Type, api_key, Authorization",
+          "access-control-expose-headers": "Content-Disposition",
+          "server": "Jetty(9.4.53.v20231009)"
+        },
+        "body": {
+          "code": 400,
+          "message": "Input error: couldn't convert `{{orderId}}` to type `class java.lang.Long`"
+        },
+        "bodyTruncated": false,
+        "durationMs": 13
+      },
+      "assertionResults": [
+        {
+          "assertionIndex": 0,
+          "field": "status",
+          "operator": "greaterThanOrEqual",
+          "passed": true,
+          "actual": 400,
+          "expected": 200,
+          "confidenceScore": 100
+        },
+        {
+          "assertionIndex": 1,
+          "field": "status",
+          "operator": "lessThan",
+          "passed": false,
+          "actual": 400,
+          "expected": 300,
+          "confidenceScore": 0
+        }
+      ],
+      "extractedVariables": {},
+      "durationMs": 13
+    },
+    {
+      "stepId": "bf6579f8-f132-43ae-8336-cafa8876421d",
+      "stepName": "createUser",
+      "status": "failed",
+      "request": {
+        "method": "POST",
+        "url": "/api/v3/user",
+        "body": {},
+        "bodyType": "json"
+      },
+      "response": {
+        "status": 500,
+        "headers": {
+          "date": "Sun, 03 May 2026 17:55:29 GMT",
+          "content-type": "application/json",
+          "content-length": "110",
+          "connection": "keep-alive",
+          "access-control-allow-origin": "*",
+          "access-control-allow-methods": "GET, POST, DELETE, PUT",
+          "access-control-allow-headers": "Content-Type, api_key, Authorization",
+          "access-control-expose-headers": "Content-Disposition",
+          "server": "Jetty(9.4.53.v20231009)"
+        },
+        "body": {
+          "code": 500,
+          "message": "There was an error processing your request. It has been logged (ID: 76892d0cafa4ff52)"
+        },
+        "bodyTruncated": false,
+        "durationMs": 13
+      },
+      "assertionResults": [
+        {
+          "assertionIndex": 0,
+          "field": "status",
+          "operator": "greaterThanOrEqual",
+          "passed": true,
+          "actual": 500,
+          "expected": 200,
+          "confidenceScore": 100
+        },
+        {
+          "assertionIndex": 1,
+          "field": "status",
+          "operator": "lessThan",
+          "passed": false,
+          "actual": 500,
+          "expected": 300,
+          "confidenceScore": 0
+        },
+        {
+          "assertionIndex": 2,
+          "field": "$..",
+          "operator": "jsonSchemaValid",
+          "passed": false,
+          "actual": {
+            "code": 500,
+            "message": "There was an error processing your request. It has been logged (ID: 76892d0cafa4ff52)"
+          },
+          "expected": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer",
+                "format": "int64",
+                "example": 10
+              },
+              "username": {
+                "type": "string",
+                "example": "theUser"
+              },
+              "firstName": {
+                "type": "string",
+                "example": "John"
+              },
+              "lastName": {
+                "type": "string",
+                "example": "James"
+              },
+              "email": {
+                "type": "string",
+                "example": "john@email.com"
+              },
+              "password": {
+                "type": "string",
+                "example": "12345"
+              },
+              "phone": {
+                "type": "string",
+                "example": "12345"
+              },
+              "userStatus": {
+                "type": "integer",
+                "description": "User Status",
+                "format": "int32",
+                "example": 1
+              }
+            },
+            "xml": {
+              "name": "user"
+            }
+          },
+          "message": "Response body matches expected schema",
+          "confidenceScore": 0
+        }
+      ],
+      "extractedVariables": {},
+      "durationMs": 13
+    },
+    {
+      "stepId": "e4f67021-0641-482d-b110-d9649a1e0a70",
+      "stepName": "createUsersWithListInput",
+      "status": "failed",
+      "request": {
+        "method": "POST",
+        "url": "/api/v3/user/createWithList",
+        "body": {},
+        "bodyType": "json"
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "date": "Sun, 03 May 2026 17:55:29 GMT",
+          "content-type": "application/json",
+          "content-length": "97",
+          "connection": "keep-alive",
+          "access-control-allow-origin": "*",
+          "access-control-allow-methods": "GET, POST, DELETE, PUT",
+          "access-control-allow-headers": "Content-Type, api_key, Authorization",
+          "access-control-expose-headers": "Content-Disposition",
+          "server": "Jetty(9.4.53.v20231009)"
+        },
+        "body": {
+          "code": 400,
+          "message": "Input error: unable to convert input to io.swagger.petstore.model.User[]"
+        },
+        "bodyTruncated": false,
+        "durationMs": 13
+      },
+      "assertionResults": [
+        {
+          "assertionIndex": 0,
+          "field": "status",
+          "operator": "greaterThanOrEqual",
+          "passed": true,
+          "actual": 400,
+          "expected": 200,
+          "confidenceScore": 100
+        },
+        {
+          "assertionIndex": 1,
+          "field": "status",
+          "operator": "lessThan",
+          "passed": false,
+          "actual": 400,
+          "expected": 300,
+          "confidenceScore": 0
+        },
+        {
+          "assertionIndex": 2,
+          "field": "$..",
+          "operator": "jsonSchemaValid",
+          "passed": false,
+          "actual": {
+            "code": 400,
+            "message": "Input error: unable to convert input to io.swagger.petstore.model.User[]"
+          },
+          "expected": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer",
+                "format": "int64",
+                "example": 10
+              },
+              "username": {
+                "type": "string",
+                "example": "theUser"
+              },
+              "firstName": {
+                "type": "string",
+                "example": "John"
+              },
+              "lastName": {
+                "type": "string",
+                "example": "James"
+              },
+              "email": {
+                "type": "string",
+                "example": "john@email.com"
+              },
+              "password": {
+                "type": "string",
+                "example": "12345"
+              },
+              "phone": {
+                "type": "string",
+                "example": "12345"
+              },
+              "userStatus": {
+                "type": "integer",
+                "description": "User Status",
+                "format": "int32",
+                "example": 1
+              }
+            },
+            "xml": {
+              "name": "user"
+            }
+          },
+          "message": "Response body matches expected schema",
+          "confidenceScore": 0
+        }
+      ],
+      "extractedVariables": {},
+      "durationMs": 13
+    },
+    {
+      "stepId": "5aeeff6c-9411-4958-9c34-d99dca4a7a45",
+      "stepName": "loginUser",
+      "status": "passed",
+      "request": {
+        "method": "GET",
+        "url": "/api/v3/user/login",
+        "queryParams": {
+          "username": "{{username}}",
+          "password": "{{password}}"
+        },
+        "bodyType": "none"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "date": "Sun, 03 May 2026 17:55:29 GMT",
+          "content-type": "application/json",
+          "content-length": "43",
+          "connection": "keep-alive",
+          "access-control-allow-origin": "*",
+          "access-control-allow-methods": "GET, POST, DELETE, PUT",
+          "access-control-allow-headers": "Content-Type, api_key, Authorization",
+          "access-control-expose-headers": "Content-Disposition",
+          "x-rate-limit": "5000",
+          "x-expires-after": "Sun May 03 18:55:29 UTC 2026",
+          "server": "Jetty(9.4.53.v20231009)"
+        },
+        "body": "Logged in user session: 7411804788227766441",
+        "bodyTruncated": false,
+        "durationMs": 13
+      },
+      "assertionResults": [
+        {
+          "assertionIndex": 0,
+          "field": "status",
+          "operator": "greaterThanOrEqual",
+          "passed": true,
+          "actual": 200,
+          "expected": 200,
+          "confidenceScore": 100
+        },
+        {
+          "assertionIndex": 1,
+          "field": "status",
+          "operator": "lessThan",
+          "passed": true,
+          "actual": 200,
+          "expected": 300,
+          "confidenceScore": 100
+        },
+        {
+          "assertionIndex": 2,
+          "field": "$..",
+          "operator": "jsonSchemaValid",
+          "passed": true,
+          "actual": "Logged in user session: 7411804788227766441",
+          "expected": {
+            "type": "string"
+          },
+          "message": "Response body matches expected schema",
+          "confidenceScore": 100
+        }
+      ],
+      "extractedVariables": {},
+      "durationMs": 13
+    },
+    {
+      "stepId": "e38848d9-2fe3-447a-afa7-cfa3ed46bacc",
+      "stepName": "logoutUser",
+      "status": "passed",
+      "request": {
+        "method": "GET",
+        "url": "/api/v3/user/logout",
+        "bodyType": "none"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "date": "Sun, 03 May 2026 17:55:29 GMT",
+          "content-type": "application/json",
+          "content-length": "15",
+          "connection": "keep-alive",
+          "access-control-allow-origin": "*",
+          "access-control-allow-methods": "GET, POST, DELETE, PUT",
+          "access-control-allow-headers": "Content-Type, api_key, Authorization",
+          "access-control-expose-headers": "Content-Disposition",
+          "server": "Jetty(9.4.53.v20231009)"
+        },
+        "body": "User logged out",
+        "bodyTruncated": false,
+        "durationMs": 13
+      },
+      "assertionResults": [
+        {
+          "assertionIndex": 0,
+          "field": "status",
+          "operator": "greaterThanOrEqual",
+          "passed": true,
+          "actual": 200,
+          "expected": 200,
+          "confidenceScore": 100
+        },
+        {
+          "assertionIndex": 1,
+          "field": "status",
+          "operator": "lessThan",
+          "passed": true,
+          "actual": 200,
+          "expected": 300,
+          "confidenceScore": 100
+        }
+      ],
+      "extractedVariables": {},
+      "durationMs": 13
+    },
+    {
+      "stepId": "c20939d1-9e02-439b-a9bd-2e0182d95958",
+      "stepName": "getUserByName",
+      "status": "failed",
+      "request": {
+        "method": "GET",
+        "url": "/api/v3/user/{{username}}",
+        "bodyType": "none"
+      },
+      "response": {
+        "status": 500,
+        "headers": {
+          "date": "Sun, 03 May 2026 17:55:29 GMT",
+          "content-type": "application/json",
+          "content-length": "110",
+          "connection": "keep-alive",
+          "access-control-allow-origin": "*",
+          "access-control-allow-methods": "GET, POST, DELETE, PUT",
+          "access-control-allow-headers": "Content-Type, api_key, Authorization",
+          "access-control-expose-headers": "Content-Disposition",
+          "server": "Jetty(9.4.53.v20231009)"
+        },
+        "body": {
+          "code": 500,
+          "message": "There was an error processing your request. It has been logged (ID: 85900344ac9a2b29)"
+        },
+        "bodyTruncated": false,
+        "durationMs": 13
+      },
+      "assertionResults": [
+        {
+          "assertionIndex": 0,
+          "field": "status",
+          "operator": "greaterThanOrEqual",
+          "passed": true,
+          "actual": 500,
+          "expected": 200,
+          "confidenceScore": 100
+        },
+        {
+          "assertionIndex": 1,
+          "field": "status",
+          "operator": "lessThan",
+          "passed": false,
+          "actual": 500,
+          "expected": 300,
+          "confidenceScore": 0
+        },
+        {
+          "assertionIndex": 2,
+          "field": "$..",
+          "operator": "jsonSchemaValid",
+          "passed": false,
+          "actual": {
+            "code": 500,
+            "message": "There was an error processing your request. It has been logged (ID: 85900344ac9a2b29)"
+          },
+          "expected": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer",
+                "format": "int64",
+                "example": 10
+              },
+              "username": {
+                "type": "string",
+                "example": "theUser"
+              },
+              "firstName": {
+                "type": "string",
+                "example": "John"
+              },
+              "lastName": {
+                "type": "string",
+                "example": "James"
+              },
+              "email": {
+                "type": "string",
+                "example": "john@email.com"
+              },
+              "password": {
+                "type": "string",
+                "example": "12345"
+              },
+              "phone": {
+                "type": "string",
+                "example": "12345"
+              },
+              "userStatus": {
+                "type": "integer",
+                "description": "User Status",
+                "format": "int32",
+                "example": 1
+              }
+            },
+            "xml": {
+              "name": "user"
+            }
+          },
+          "message": "Response body matches expected schema",
+          "confidenceScore": 0
+        }
+      ],
+      "extractedVariables": {},
+      "durationMs": 13
+    },
+    {
+      "stepId": "fd27c671-2b04-458b-8c50-20d656e5e92e",
+      "stepName": "updateUser",
+      "status": "failed",
+      "request": {
+        "method": "PUT",
+        "url": "/api/v3/user/{{username}}",
+        "body": {},
+        "bodyType": "json"
+      },
+      "response": {
+        "status": 500,
+        "headers": {
+          "date": "Sun, 03 May 2026 17:55:29 GMT",
+          "content-type": "application/json",
+          "content-length": "110",
+          "connection": "keep-alive",
+          "access-control-allow-origin": "*",
+          "access-control-allow-methods": "GET, POST, DELETE, PUT",
+          "access-control-allow-headers": "Content-Type, api_key, Authorization",
+          "access-control-expose-headers": "Content-Disposition",
+          "server": "Jetty(9.4.53.v20231009)"
+        },
+        "body": {
+          "code": 500,
+          "message": "There was an error processing your request. It has been logged (ID: db36f5cb1372e4e7)"
+        },
+        "bodyTruncated": false,
+        "durationMs": 14
+      },
+      "assertionResults": [
+        {
+          "assertionIndex": 0,
+          "field": "status",
+          "operator": "greaterThanOrEqual",
+          "passed": true,
+          "actual": 500,
+          "expected": 200,
+          "confidenceScore": 100
+        },
+        {
+          "assertionIndex": 1,
+          "field": "status",
+          "operator": "lessThan",
+          "passed": false,
+          "actual": 500,
+          "expected": 300,
+          "confidenceScore": 0
+        }
+      ],
+      "extractedVariables": {},
+      "durationMs": 14
+    },
+    {
+      "stepId": "df6c03a0-c664-421d-b093-55a85041ace9",
+      "stepName": "deleteUser",
+      "status": "failed",
+      "request": {
+        "method": "DELETE",
+        "url": "/api/v3/user/{{username}}",
+        "bodyType": "none"
+      },
+      "response": {
+        "status": 500,
+        "headers": {
+          "date": "Sun, 03 May 2026 17:55:29 GMT",
+          "content-type": "application/json",
+          "content-length": "110",
+          "connection": "keep-alive",
+          "access-control-allow-origin": "*",
+          "access-control-allow-methods": "GET, POST, DELETE, PUT",
+          "access-control-allow-headers": "Content-Type, api_key, Authorization",
+          "access-control-expose-headers": "Content-Disposition",
+          "server": "Jetty(9.4.53.v20231009)"
+        },
+        "body": {
+          "code": 500,
+          "message": "There was an error processing your request. It has been logged (ID: 8a7ae8a9d64ffcb6)"
+        },
+        "bodyTruncated": false,
+        "durationMs": 13
+      },
+      "assertionResults": [
+        {
+          "assertionIndex": 0,
+          "field": "status",
+          "operator": "greaterThanOrEqual",
+          "passed": true,
+          "actual": 500,
+          "expected": 200,
+          "confidenceScore": 100
+        },
+        {
+          "assertionIndex": 1,
+          "field": "status",
+          "operator": "lessThan",
+          "passed": false,
+          "actual": 500,
+          "expected": 300,
+          "confidenceScore": 0
+        }
+      ],
+      "extractedVariables": {},
+      "durationMs": 13
+    }
+  ],
+  "variableContext": {}
+}

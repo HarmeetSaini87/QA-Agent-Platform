@@ -1871,7 +1871,8 @@ async function scriptSave() {
       locatorName: row.querySelector('.se-step-loc-name')?.value?.trim() || null,
       locatorType: row.querySelector('.se-step-loc-type')?.value || 'css',
       locator: row.querySelector('.se-step-selector')?.value?.trim() || null,
-      locatorId: null,
+      // OLD: locatorId: null,  // was always null — prevented T2 healing from finding alternatives
+      locatorId: row.dataset.locatorId || null,
       valueMode,
       value,
       testData,
@@ -1908,58 +1909,115 @@ async function scriptSave() {
 
   // Close editor + refresh list immediately — don't wait for locator sync
   const stepsForSync = steps;
+  const savedScriptId = editingScriptId || data.id; // capture before scriptEditorClose() nulls it
   _syncFailedLocators.clear();
   scriptEditorClose();
   await scriptLoad();
 
   // Background locator sync — surfaces failures as banner + step badges on re-open
-  _syncLocatorsToRepo(stepsForSync).then(failed => {
+  // Also patches locatorId back onto each step so T2 self-healing can find alternatives at codegen time
+  _syncLocatorsToRepo(stepsForSync).then(({ failed, selectorToId }) => {
     if (failed.length) {
       _syncFailedLocators = new Set(failed);
       _showSyncFailBanner(failed, 'script');
+    }
+    // Patch locatorId back onto saved steps — only if any were resolved
+    if (selectorToId.size > 0 && savedScriptId) {
+      const patchedSteps = stepsForSync.map(s =>
+        s.locator && selectorToId.has(s.locator)
+          ? { ...s, locatorId: selectorToId.get(s.locator) }
+          : s
+      );
+      const anyChanged = patchedSteps.some((s, i) => s.locatorId !== stepsForSync[i].locatorId);
+      if (anyChanged) {
+        fetch(`/api/scripts/${savedScriptId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ steps: patchedSteps }),
+        }).catch(() => { });
+      }
     }
   }).catch(() => { });
 }
 
 async function _syncLocatorsToRepo(steps) {
-  if (!currentProjectId) return []; // never save unscoped locators
+  if (!currentProjectId) return { failed: [], selectorToId: new Map() }; // never save unscoped locators
   const failed = [];
-  const tasks = steps
-    .filter(step => step.locatorName && step.locator)
-    .map(async step => {
-      try {
-        const existing = allLocators.find(l => l.name === step.locatorName);
-        if (existing) {
-          if (existing.selector !== step.locator || existing.selectorType !== step.locatorType) {
-            const res = await fetch(`/api/locators/${existing.id}`, {
-              method: 'PUT',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ selector: step.locator, selectorType: step.locatorType }),
-            });
-            if (!res.ok) failed.push(step.locatorName);
-          }
-        } else {
-          const res = await fetch('/api/locators', {
-            method: 'POST',
+  // selector → locatorId — returned so caller can patch locatorId back onto steps
+  const selectorToId = new Map();
+
+  // Dedup: one entry per unique selector — prevents parallel duplicate creation
+  const seen = new Map(); // selector -> step
+  for (const step of steps) {
+    if (step.locatorName && step.locator && !seen.has(step.locator)) {
+      seen.set(step.locator, step);
+    }
+  }
+  const uniqueSteps = Array.from(seen.values());
+
+  // Fetch ALL locators for this project including draft=true (recorder-captured ones)
+  // so we can promote them instead of creating bare duplicates
+  let allWithDraft = [];
+  try {
+    const r = await fetch(`/api/locators?projectId=${encodeURIComponent(currentProjectId)}&includeDraft=true`);
+    allWithDraft = r.ok ? await r.json() : [];
+  } catch { allWithDraft = []; }
+
+  // Sequential to avoid race conditions
+  for (const step of uniqueSteps) {
+    try {
+      // Match by selector+selectorType (finds draft recorder-created locators with alternatives)
+      // then fall back to name match
+      const existing =
+        allWithDraft.find(l => l.selector === step.locator && l.selectorType === step.locatorType) ||
+        allWithDraft.find(l => l.name === step.locatorName);
+
+      if (existing) {
+        // Promote draft → live, preserving all alternatives and healingProfile
+        const needsUpdate = existing.draft === true ||
+          existing.selector !== step.locator ||
+          existing.selectorType !== step.locatorType;
+        if (needsUpdate) {
+          const res = await fetch(`/api/locators/${existing.id}`, {
+            method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              name: step.locatorName,
-              selector: step.locator,
-              selectorType: step.locatorType,
-              projectId: currentProjectId || null,
-              pageModule: '',
-              description: `Auto-synced from step: ${step.description || ''}`.trim(),
-            }),
+            body: JSON.stringify({ draft: false }),
           });
           if (!res.ok) failed.push(step.locatorName);
+          else allWithDraft = allWithDraft.map(l => l.id === existing.id ? { ...l, draft: false } : l);
         }
-      } catch {
-        failed.push(step.locatorName);
+        selectorToId.set(step.locator, existing.id);
+      } else {
+        // No recorder-captured locator exists — create bare one as fallback
+        const res = await fetch('/api/locators', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: step.locatorName,
+            selector: step.locator,
+            selectorType: step.locatorType,
+            projectId: currentProjectId || null,
+            pageModule: '',
+            description: `Auto-synced from step: ${step.description || ''}`.trim(),
+          }),
+        });
+        if (!res.ok) {
+          failed.push(step.locatorName);
+        } else {
+          const created = await res.clone().json().catch(() => null);
+          if (created?.id) {
+            allWithDraft = [...allWithDraft, created];
+            selectorToId.set(step.locator, created.id);
+          }
+        }
       }
-    });
-  await Promise.all(tasks);
+    } catch {
+      failed.push(step.locatorName);
+    }
+  }
+
   try { await locatorLoadScoped(); } catch { /* non-fatal */ }
-  return failed;
+  return { failed, selectorToId };
 }
 
 function _showSyncFailBanner(failedNames, context) {

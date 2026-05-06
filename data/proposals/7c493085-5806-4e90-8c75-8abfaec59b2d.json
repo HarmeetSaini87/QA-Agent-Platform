@@ -1,0 +1,18 @@
+{
+  "id": "7c493085-5806-4e90-8c75-8abfaec59b2d",
+  "projectId": "test-proj",
+  "locatorId": "loc-t4-001",
+  "locatorName": "T4 Button",
+  "scriptId": "",
+  "scriptTitle": "",
+  "stepOrder": 1,
+  "oldSelector": "button.t4",
+  "oldSelectorType": "css",
+  "newSelector": "button.new-t4",
+  "newSelectorType": "css",
+  "confidence": 65,
+  "healedAt": "2026-05-02T18:31:51.294Z",
+  "status": "approved",
+  "reviewedBy": "admin",
+  "reviewedAt": "2026-05-02T18:31:51.294Z"
+}
