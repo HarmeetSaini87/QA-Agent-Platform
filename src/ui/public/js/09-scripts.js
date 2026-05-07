@@ -156,6 +156,7 @@ function scriptRender() {
                 <div style="display:flex;gap:4px">
                   ${isViewer() ? '' : `<button class="tbl-btn" onclick="scriptOpenEditor('${escHtml(s.id)}')">Edit</button>`}
                   <button class="tbl-btn dbg" onclick="debugOpen('${escHtml(s.id)}')">&#128027;</button>
+                  ${isViewer() ? '' : `<button class="tbl-btn" onclick="scriptClone('${escHtml(s.id)}')" title="Clone script"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>`}
                   ${isViewer() ? '' : `<button class="tbl-btn del" onclick="scriptDelete('${escHtml(s.id)}','${escHtml(s.title)}')">Del</button>`}
                 </div>
               </td>
@@ -2043,6 +2044,25 @@ function _showSyncFailBanner(failedNames, context) {
 
   const panel = document.getElementById(panelId);
   if (panel) panel.prepend(banner);
+}
+
+async function scriptClone(id) {
+  const res  = await fetch(`/api/scripts/${id}/clone`, { method: 'POST' });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const toast = document.createElement('div');
+    toast.style.cssText = 'position:fixed;bottom:24px;right:24px;background:#991b1b;color:#fff;padding:12px 20px;border-radius:8px;font-size:13px;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,.3)';
+    toast.textContent = '✗ ' + (data.error || 'Clone failed');
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 3500);
+    return;
+  }
+  const toast = document.createElement('div');
+  toast.style.cssText = 'position:fixed;bottom:24px;right:24px;background:#166534;color:#fff;padding:12px 20px;border-radius:8px;font-size:13px;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,.3)';
+  toast.textContent = `✓ Cloned as ${data.tcId}`;
+  document.body.appendChild(toast);
+  setTimeout(() => toast.remove(), 3500);
+  await scriptLoad();
 }
 
 async function scriptDelete(id, title) {
