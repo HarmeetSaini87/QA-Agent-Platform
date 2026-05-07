@@ -142,6 +142,40 @@ export function registerScriptsRoutes(app: express.Application): void {
     res.json({ updated, count: updated.length });
   });
 
+  app.post('/api/scripts/:id/clone', requireAuth, requireEditor, (req: Request, res: Response) => {
+    try {
+      const source = findById<TestScript>(SCRIPTS, req.params.id);
+      if (!source) { res.status(404).json({ error: 'Script not found' }); return; }
+
+      const projects = readAll<Project>(PROJECTS);
+      const proj = projects.find(p => p.id === source.projectId);
+      if (!proj) { res.status(404).json({ error: 'Project not found' }); return; }
+
+      if (!proj.tcIdCounter) proj.tcIdCounter = 1;
+      const tcId = `${proj.tcIdPrefix || 'TC'}-${String(proj.tcIdCounter).padStart(2, '0')}`;
+      proj.tcIdCounter += 1;
+
+      const now = new Date().toISOString();
+      const clone: TestScript = JSON.parse(JSON.stringify(source));
+      clone.id = uuidv4();
+      clone.tcId = tcId;
+      clone.title = `Copy of ${source.title}`;
+      clone.createdAt = now;
+      clone.modifiedAt = now;
+      clone.createdBy = req.session.username!;
+      clone.modifiedBy = req.session.username!;
+      clone.steps = clone.steps.map((s: ScriptStep) => ({ ...s, id: uuidv4() }));
+
+      writeAll(PROJECTS, projects.map(p => p.id === proj.id ? proj : p));
+      writeAll(SCRIPTS, [...readAll<TestScript>(SCRIPTS), clone]);
+
+      logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'SCRIPT_CLONED', resourceType: 'script', resourceId: clone.id, details: `${source.tcId} → ${tcId} Copy of ${source.title}`, ip: req.ip ?? null });
+      res.json({ success: true, id: clone.id, tcId });
+    } catch {
+      res.status(500).json({ error: 'Failed to clone script' });
+    }
+  });
+
   app.post('/api/scripts/bulk-suite', requireAuth, requireEditor, (req: Request, res: Response) => {
     const { ids, suiteId } = req.body as { ids?: string[]; suiteId?: string };
     if (!Array.isArray(ids) || ids.length === 0) { res.status(400).json({ error: 'ids array required' }); return; }
