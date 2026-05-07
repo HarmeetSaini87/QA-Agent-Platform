@@ -144,7 +144,8 @@ export function registerScriptsRoutes(app: express.Application): void {
 
   app.post('/api/scripts/:id/clone', requireAuth, requireEditor, (req: Request, res: Response) => {
     try {
-      const source = findById<TestScript>(SCRIPTS, req.params.id);
+      const scripts = readAll<TestScript>(SCRIPTS);
+      const source = scripts.find(s => s.id === req.params.id) ?? null;
       if (!source) { res.status(404).json({ error: 'Script not found' }); return; }
 
       const projects = readAll<Project>(PROJECTS);
@@ -167,7 +168,7 @@ export function registerScriptsRoutes(app: express.Application): void {
       clone.steps = clone.steps.map((s: ScriptStep) => ({ ...s, id: uuidv4() }));
 
       writeAll(PROJECTS, projects.map(p => p.id === proj.id ? proj : p));
-      writeAll(SCRIPTS, [...readAll<TestScript>(SCRIPTS), clone]);
+      writeAll(SCRIPTS, [...scripts, clone]);
 
       logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'SCRIPT_CLONED', resourceType: 'script', resourceId: clone.id, details: `${source.tcId} → ${tcId} Copy of ${source.title}`, ip: req.ip ?? null });
       res.json({ success: true, id: clone.id, tcId });
