@@ -592,6 +592,13 @@ select option { background: #1a1b1f; color: var(--neutral-900); }
   outline: none; color: var(--neutral-900); width: 100%; cursor: pointer;
 }
 .fm-select:focus { border-color: var(--brand); }
+.form-control {
+  padding: 6px 10px; border: 1.5px solid var(--neutral-200); border-radius: 6px;
+  font-size: 12.5px; font-family: var(--font); color: var(--neutral-900);
+  background: var(--neutral-100); outline: none;
+}
+.form-control:focus { border-color: var(--brand); outline: none; }
+select.form-control { padding: 6px 8px; font-size: 12px; cursor: pointer; }
 .fm-del {
   padding: 5px 7px; border: 1px solid var(--neutral-200); border-radius: 5px;
   background: var(--neutral-100); cursor: pointer; font-size: 13px; color: var(--neutral-400);
@@ -629,6 +636,79 @@ select option { background: #1a1b1f; color: var(--neutral-900); }
   .builder-layout { grid-template-columns: 1fr; }
   .builder-col-preview { position: static; }
   .builder-row-2, .builder-row-3 { grid-template-columns: 1fr; }
-  .step-row { grid-template-columns: 24px 1fr 1fr; grid-template-rows: auto auto; }
+  .step-row { grid-template-columns: 24px 1fr 1fr; grid-rows: auto auto; }
   .fieldmap-header, .fieldmap-row { grid-template-columns: 1fr 1fr 90px 32px; }
 }
+
+/* ══ LIGHT THEME — Warm Cream + Clay (Direction H) ═══════════════════════ */
+body[data-theme="light"] {
+  --brand:        #e07b39;
+  --brand-dark:   #c06828;
+  --brand-light:  #fef3ea;
+  --neutral-50:   #fffdf7;
+  --neutral-100:  #faf6ef;
+  --neutral-200:  #e8e0d0;
+  --neutral-300:  #d4c8b8;
+  --neutral-400:  #9c8b72;
+  --neutral-500:  #7c6f5a;
+  --neutral-700:  #4a3728;
+  --neutral-900:  #1a1208;
+  --success:      #16a34a;
+  --success-bg:   rgba(22,163,74,.1);
+  --danger:       #dc2626;
+  --danger-bg:    rgba(220,38,38,.1);
+  --warning:      #e07b39;
+  --warning-bg:   rgba(224,123,57,.1);
+  --shadow-sm:    0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.04);
+  --shadow-md:    0 4px 16px rgba(0,0,0,.1);
+}
+
+/* ── Light theme: hard-coded colour overrides ─────────────────────────────── */
+body[data-theme="light"] .sidebar { background: #f5f0e8; }
+body[data-theme="light"] .sidebar-logo h1 { color: #1a1208; }
+body[data-theme="light"] .nav-item:hover { background: rgba(0,0,0,.05); color: #4a3728; }
+body[data-theme="light"] .nav-item.active { background: rgba(224,123,57,.15); color: #1a1208; }
+body[data-theme="light"] .tc-table th { background: #f5f0e8; }
+body[data-theme="light"] .history-table th { background: #f5f0e8; }
+body[data-theme="light"] select option { background: #fff; color: #1a1208; }
+body[data-theme="light"] .form-control { background: #fff; color: #1a1208; border-color: #e8e0d0; }
+body[data-theme="light"] input[type="date"] { background: #fff; color: #1a1208; border-color: #e8e0d0; }
+body[data-theme="light"] input[type="date"]::-webkit-calendar-picker-indicator { filter: none; }
+body[data-theme="light"] .log-box { background: #faf6ef; color: #4a3728; border-color: #e8e0d0; }
+body[data-theme="light"] .log-box .log-pass { color: #16a34a; }
+body[data-theme="light"] .log-box .log-fail { color: #dc2626; }
+body[data-theme="light"] .log-box .log-info { color: #2563eb; }
+body[data-theme="light"] .log-box .log-warn { color: #d97706; }
+body[data-theme="light"] .spinner { border-color: rgba(0,0,0,.15); border-top-color: #1a1208; }
+body[data-theme="light"] .spinner.dark { border-color: rgba(224,123,57,.2); border-top-color: #e07b39; }
+body[data-theme="light"] .priority.high { background: rgba(220,38,38,.1); color: #dc2626; }
+body[data-theme="light"] .priority.medium { background: rgba(224,123,57,.12); color: #e07b39; }
+body[data-theme="light"] .priority.low { background: rgba(22,163,74,.1); color: #16a34a; }
+body[data-theme="light"] .status.running { background: rgba(224,123,57,.12); color: #e07b39; }
+body[data-theme="light"] .status.done { background: rgba(22,163,74,.1); color: #16a34a; }
+body[data-theme="light"] .status.failed { background: rgba(220,38,38,.1); color: #dc2626; }
+body[data-theme="light"] .alert.info { background: rgba(37,99,235,.08); color: #2563eb; border-left-color: #2563eb; }
+body[data-theme="light"] .alert.success { background: rgba(22,163,74,.08); color: #16a34a; border-left-color: #16a34a; }
+body[data-theme="light"] .alert.warning { background: rgba(224,123,57,.08); color: #d97706; border-left-color: #e07b39; }
+body[data-theme="light"] .alert.error { background: rgba(220,38,38,.08); color: #dc2626; border-left-color: #dc2626; }
+
+/* ── Theme toggle button ───────────────────────────────────────────────────── */
+.theme-toggle {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 6px;
+  color: var(--neutral-400);
+  transition: background .15s, color .15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.theme-toggle:hover { background: rgba(255,255,255,.05); color: var(--neutral-700); }
+body[data-theme="light"] .theme-toggle:hover { background: rgba(0,0,0,.05); }
+.theme-toggle svg { width: 16px; height: 16px; }
+.theme-toggle .icon-moon { display: none; }
+.theme-toggle .icon-sun { display: block; }
+body[data-theme="light"] .theme-toggle .icon-moon { display: block; }
+body[data-theme="light"] .theme-toggle .icon-sun { display: none; }

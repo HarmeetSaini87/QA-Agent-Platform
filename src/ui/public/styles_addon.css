@@ -967,6 +967,17 @@
   padding: 10px 14px; margin-bottom: 12px;
   font-size: 13px; color: #fcd34d;
 }
+body[data-theme="light"] .proj-required-banner { background: rgba(224,123,57,.08); border-color: rgba(224,123,57,.35); color: #c06828; }
+body[data-theme="light"] .proj-required-banner strong { color: #a85a1b; }
+body[data-theme="light"] .proj-select-required { border-color: #e07b39 !important; }
+body[data-theme="light"] .sync-fail-banner { background: rgba(224,123,57,.08); border-color: rgba(224,123,57,.35); border-left-color: #e07b39; color: #7c5a1b; }
+body[data-theme="light"] .sync-fail-close { color: #e07b39; }
+body[data-theme="light"] .sync-fail-step-badge { background: rgba(224,123,57,.12); border-color: rgba(224,123,57,.35); color: #e07b39; }
+body[data-theme="light"] .env-badge.env-dev { background: rgba(224,123,57,.12); color: #e07b39; border-color: rgba(224,123,57,.35); }
+body[data-theme="light"] .kw-tp-tip { color: #c06828; }
+body[data-theme="light"] .prop-badge-pending { background: rgba(224,123,57,.12); color: #e07b39; }
+body[data-theme="light"] .sd-locator-type { background: rgba(224,123,57,.12); color: #e07b39; }
+body[data-theme="light"] .value-toggle-td.active { background: rgba(224,123,57,.12); color: #e07b39; border-color: rgba(224,123,57,.35); }
 @keyframes proj-pulse {
   0%, 100% { box-shadow: 0 0 0 0 rgba(251,191,36,.6); }
   50%       { box-shadow: 0 0 0 5px rgba(251,191,36,0); }
@@ -1788,3 +1799,290 @@ body.viewer-mode .vr-action-delete {
   height: 22px;
   line-height: 1;
 }
+
+/* ══ LIGHT THEME — styles_addon overrides (Warm Cream + Clay) ════════════ */
+
+/* ── Custom property overrides for addon surfaces ──────────────────────── */
+body[data-theme="light"] {
+  --bg-card: #faf6ef;
+  --bg-input: #fff;
+  --bg-3: #f5f0e8;
+  --border: #d4c8b8;
+  --text-primary: #1a1208;
+  --text-muted: #9c8b72;
+  --surface-1: #fffdf7;
+  --surface-2: #faf6ef;
+  --primary: #e07b39;
+  --accent: #e07b39;
+}
+
+/* ── Sidebar section overrides ───────────────────────────────────────────── */
+body[data-theme="light"] .sidebar-username { color: #1a1208; }
+body[data-theme="light"] .sidebar-role     { color: #9c8b72; }
+body[data-theme="light"] .btn-logout        { color: rgba(0,0,0,.35); }
+body[data-theme="light"] .btn-logout:hover  { color: var(--danger); background: rgba(239,68,68,.12); }
+body[data-theme="light"] .sidebar-footer    { border-top-color: #e8e0d0; }
+body[data-theme="light"] .nav-section-label { color: #c4b49a; }
+body[data-theme="light"] .health-badge-text { color: #9c8b72; }
+body[data-theme="light"] .health-dot        { background: #d4c8b8; }
+body[data-theme="light"] .health-dot.ok     { background: #16a34a; box-shadow: 0 0 5px rgba(22,163,74,.4); }
+
+/* ── Step builder / keyword tooltip ─────────────────────────────────────── */
+body[data-theme="light"] .kw-tooltip-popup,
+body[data-theme="light"] .info-tip-popup  { background: #fffdf7; color: #1a1208; border-color: #e8e0d0; }
+body[data-theme="light"] .info-tip-circle  { background: rgba(224,123,57,.12); color: #e07b39; border-color: rgba(224,123,57,.3); }
+
+/* ── Locator tab ────────────────────────────────────────────────────────── */
+body[data-theme="light"] .loc-subtab      { color: #9c8b72; border-bottom-color: transparent; }
+body[data-theme="light"] .loc-subtab:hover { color: #1a1208; }
+body[data-theme="light"] .loc-subtab.active { color: #e07b39; border-bottom-color: #e07b39; }
+body[data-theme="light"] .lt-body-wrap::-webkit-scrollbar-track  { background: #f5f0e8; }
+body[data-theme="light"] .lt-body-wrap::-webkit-scrollbar-thumb  { background: #d4c8b8; }
+body[data-theme="light"] .lt-body-wrap::-webkit-scrollbar-thumb:hover { background: #9c8b72; }
+body[data-theme="light"] .loc-tbody-wrap::-webkit-scrollbar-track  { background: #f5f0e8; }
+body[data-theme="light"] .loc-tbody-wrap::-webkit-scrollbar-thumb  { background: #d4c8b8; }
+body[data-theme="light"] .loc-tbody-wrap::-webkit-scrollbar-thumb:hover { background: #9c8b72; }
+body[data-theme="light"] .lt-fixed thead tr,
+body[data-theme="light"] .lt-fixed thead th   { background: #f5f0e8; }
+body[data-theme="light"] .lt-fixed tbody tr:hover { background: rgba(224,123,57,.06); }
+
+/* ── Script builder (09-scripts) ───────────────────────────────────────── */
+body[data-theme="light"] .script-tbl-row:hover { background: rgba(224,123,57,.05); }
+body[data-theme="light"] .script-title  { color: #1a1208; }
+body[data-theme="light"] .script-meta-txt { color: #9c8b72; }
+body[data-theme="light"] .script-desc   { color: #7c6f5a; }
+body[data-theme="light"] .script-info-line { color: #9c8b72; border-top-color: #e8e0d0; }
+body[data-theme="light"] .fn-card,
+body[data-theme="light"] .suite-card { background: #faf6ef; border-color: #e8e0d0; }
+body[data-theme="light"] .fn-name,
+body[data-theme="light"] .suite-name { color: #1a1208; }
+body[data-theme="light"] .fn-desc  { color: #7c6f5a; }
+body[data-theme="light"] .fn-step-line { border-bottom-color: #f0ebe0; }
+body[data-theme="light"] .loc-pick-sel { color: #9c8b72; }
+body[data-theme="light"] .loc-pick-page { color: #9c8b72; }
+body[data-theme="light"] .suite-script-block { border-color: #e8e0d0; background: #faf6ef; }
+body[data-theme="light"] .suite-script-header { background: #f5f0e8; border-bottom-color: #e8e0d0; }
+body[data-theme="light"] .suite-script-chevron { color: #9c8b72; }
+body[data-theme="light"] .suite-step-num { color: #c4b49a; background: #f5f0e8; }
+body[data-theme="light"] .suite-step-loc { color: #7c6f5a; }
+body[data-theme="light"] .suite-step-val { color: #4a3728; }
+
+/* ── Hook step rows (styles_addon) ─────────────────────────────────────── */
+body[data-theme="light"] .hook-step-row { background: #faf6ef; border-color: #e8e0d0; }
+body[data-theme="light"] .hook-step-row:hover { background: #f5f0e8; }
+body[data-theme="light"] .hook-step-name { color: #1a1208; }
+body[data-theme="light"] .hook-step-detail { color: #4a3728; font-size: 12px; }
+body[data-theme="light"] .hook-step-line { border-bottom-color: #f0ebe0; padding: 2px 0; font-size: 12px; }
+
+/* ── Data table ─────────────────────────────────────────────────────────── */
+body[data-theme="light"] .data-tbl th { color: #c4b49a; background: #f5f0e8; border-bottom-color: #e8e0d0; }
+body[data-theme="light"] .data-tbl td { border-bottom-color: #f0ebe0; }
+
+/* ── Pin modal ──────────────────────────────────────────────────────────── */
+body[data-theme="light"] .pin-modal-overlay { background: rgba(0,0,0,.3); }
+body[data-theme="light"] .pin-modal-card { background: #fffdf7; border-color: #e8e0d0; box-shadow: 0 8px 32px rgba(0,0,0,.12); }
+body[data-theme="light"] .pin-modal-title { color: #1a1208; }
+body[data-theme="light"] .pin-modal-x { color: #9c8b72; }
+body[data-theme="light"] .pin-modal-x:hover { color: #1a1208; background: rgba(0,0,0,.05); }
+
+/* ── Step action buttons ─────────────────────────────────────────────────── */
+body[data-theme="light"] .step-action-btn { background: #faf6ef; color: #7c6f5a; border-color: #e8e0d0; }
+body[data-theme="light"] .step-action-btn:hover { background: #f5f0e8; color: #1a1208; }
+body[data-theme="light"] .step-action-btn:hover.pin-active { background: rgba(224,123,57,.1); color: #e07b39; border-color: rgba(224,123,57,.3); }
+body[data-theme="light"] .step-pin-pinned { color: #e07b39; background: rgba(224,123,57,.08); }
+body[data-theme="light"] .step-pin-disabled { color: #d4c8b8; }
+
+/* ── Filter / tag inputs ────────────────────────────────────────────────── */
+body[data-theme="light"] .filter-input { background: #fff; color: #1a1208; border-color: #e8e0d0; }
+body[data-theme="light"] .filter-input:focus { border-color: #e07b39; background: #fff; }
+
+/* ── Subcomponent rows ─────────────────────────────────────────────────── */
+body[data-theme="light"] .subcomp-row:hover { background: #f5f0e8; }
+body[data-theme="light"] .subcomp-name { color: #4a3728; }
+
+/* ── Step detail values ─────────────────────────────────────────────────── */
+body[data-theme="light"] .sd-child-step { border-top-color: #e8e0d0; }
+body[data-theme="light"] .sd-step-num { background: #f5f0e8; color: #9c8b72; }
+body[data-theme="light"] .sd-step-desc-txt { color: #4a3728; }
+body[data-theme="light"] .sd-step-loc { color: #7c6f5a; }
+body[data-theme="light"] .sd-step-val { color: #7c6f5a; }
+body[data-theme="light"] .sd-fn-steps { border-top-color: #e8e0d0; }
+
+/* ── Debug UI ──────────────────────────────────────────────────────────── */
+body[data-theme="light"] .debug-sidebar { background: #f5f0e8; border-right-color: #e8e0d0; }
+body[data-theme="light"] .debug-sidebar-brand { border-bottom-color: #e8e0d0; color: #1a1208; }
+body[data-theme="light"] .debug-step-item { color: #7c6f5a; border-bottom-color: #f0ebe0; }
+body[data-theme="light"] .debug-step-item:hover { background: rgba(224,123,57,.05); }
+body[data-theme="light"] .debug-step-item.active { background: rgba(224,123,57,.08); }
+body[data-theme="light"] .debug-step-pending { color: #d4c8b8; }
+body[data-theme="light"] .debug-step-skipped { color: #9c8b72; text-decoration: line-through; }
+body[data-theme="light"] .debug-step-desc { color: #7c6f5a; }
+body[data-theme="light"] .debug-step-order { color: #9c8b72; }
+body[data-theme="light"] .debug-main { background: #fffdf7; }
+body[data-theme="light"] .debug-toolbar { border-bottom-color: #e8e0d0; background: #fffdf7; }
+body[data-theme="light"] .debug-toolbar-btn { color: #9c8b72; }
+body[data-theme="light"] .debug-toolbar-btn:hover { color: #1a1208; background: rgba(0,0,0,.04); }
+body[data-theme="light"] .debug-toolbar-btn.active { color: #e07b39; }
+body[data-theme="light"] .debug-timeline { border-color: #d4c8b8; }
+body[data-theme="light"] .debug-tl-node { background: #f5f0e8; border-color: #d4c8b8; color: #9c8b72; }
+body[data-theme="light"] .debug-tl-node.pass { background: rgba(22,163,74,.1); border-color: rgba(22,163,74,.3); color: #16a34a; }
+body[data-theme="light"] .debug-tl-node.fail { background: rgba(220,38,38,.1); border-color: rgba(220,38,38,.3); color: #dc2626; }
+body[data-theme="light"] .debug-tl-node.run  { background: rgba(224,123,57,.1); border-color: rgba(224,123,57,.3); color: #e07b39; }
+
+/* ── Debug vars panel ──────────────────────────────────────────────────── */
+body[data-theme="light"] .debug-vars-panel { background: #faf6ef; border-left-color: #e8e0d0; }
+body[data-theme="light"] .debug-var-row { border-bottom-color: #f0ebe0; }
+body[data-theme="light"] .debug-var-name { color: #4a3728; }
+body[data-theme="light"] .debug-var-val { color: #7c6f5a; }
+
+/* ── Project select / component rows ──────────────────────────────────── */
+body[data-theme="light"] .ps-name { color: #4a3728; }
+body[data-theme="light"] .ps-badge { background: rgba(224,123,57,.1); color: #e07b39; }
+
+/* ── T4 modal ──────────────────────────────────────────────────────────── */
+body[data-theme="light"] .t4-modal-card { background: #fffdf7; border-color: #e8e0d0; }
+body[data-theme="light"] .t4-modal-title { color: #1a1208; }
+body[data-theme="light"] .t4-modal-subtitle { color: #9c8b72; }
+body[data-theme="light"] .t4-label { color: #9c8b72; }
+body[data-theme="light"] .t4-value { color: #4a3728; }
+body[data-theme="light"] .t4-input { background: #fff; color: #1a1208; border-color: #e8e0d0; }
+body[data-theme="light"] .t4-input:focus { border-color: #e07b39; box-shadow: 0 0 0 3px rgba(224,123,57,.12); }
+body[data-theme="light"] .t4-btn-approve { background: #16a34a; color: #fff; }
+body[data-theme="light"] .t4-btn-approve:hover { background: #15803d; }
+body[data-theme="light"] .t4-btn-reject { background: rgba(220,38,38,.1); color: #dc2626; }
+body[data-theme="light"] .t4-btn-reject:hover { background: rgba(220,38,38,.2); }
+body[data-theme="light"] .t4-status-line { color: #9c8b72; }
+body[data-theme="light"] .t4-fn-args { background: #faf6ef; color: #4a3728; }
+
+/* ── License panel ──────────────────────────────────────────────────────── */
+body[data-theme="light"] #license-banner { background: rgba(224,123,57,.1); color: #c06828; border-bottom-color: rgba(224,123,57,.2); }
+body[data-theme="light"] #license-banner.lic-error { background: rgba(220,38,38,.08); color: #dc2626; border-bottom-color: rgba(220,38,38,.2); }
+body[data-theme="light"] .lic-badge-starter { background: rgba(0,0,0,.06); color: #7c6f5a; }
+body[data-theme="light"] .lic-badge-pro { background: rgba(224,123,57,.1); color: #e07b39; }
+
+/* ── Analytics ─────────────────────────────────────────────────────────── */
+body[data-theme="light"] .an-chart-bar-wrap { background: #f5f0e8; }
+body[data-theme="light"] .an-chart-day { color: #9c8b72; }
+
+/* ── Project guard ─────────────────────────────────────────────────────── */
+body[data-theme="light"] .project-guard-title { color: #1a1208; }
+body[data-theme="light"] .project-guard-sub { color: #7c6f5a; }
+
+/* ── Tabbed Interface ─────────────────────────────────────────────────── */
+body[data-theme="light"] .tab-btn:hover { background: rgba(0,0,0,.04); }
+
+/* ── Project tabs (sub-tabs) ───────────────────────────────────────────── */
+body[data-theme="light"] .proj-tab { color: #9c8b72; }
+body[data-theme="light"] .proj-tab:hover { color: #e07b39; }
+body[data-theme="light"] .proj-tab-active { color: #e07b39 !important; border-bottom-color: #e07b39 !important; }
+
+/* ── Modal & overlay adjustments ───────────────────────────────────────── */
+body[data-theme="light"] .modal-backdrop { background: rgba(0,0,0,.25); }
+body[data-theme="light"] .modal { background: #fffdf7; border-color: #e8e0d0; }
+body[data-theme="light"] .modal-box { background: #fffdf7; border-color: #e8e0d0; }
+body[data-theme="light"] .modal-header { border-bottom-color: #e8e0d0; }
+body[data-theme="light"] .modal-footer { border-top-color: #e8e0d0; }
+body[data-theme="light"] .modal-close { color: #9c8b72; }
+body[data-theme="light"] .modal-close:hover { color: #1a1208; background: rgba(0,0,0,.05); }
+body[data-theme="light"] .modal-overlay { background: rgba(0,0,0,.25); }
+
+/* ── T4 modal overrides ─────────────────────────────────────────────────── */
+body[data-theme="light"] .t4-modal-backdrop { background: rgba(0,0,0,.25); backdrop-filter: none; }
+body[data-theme="light"] .t4-modal-box { background: #fffdf7; border-color: rgba(224,123,57,.35); box-shadow: 0 4px 24px rgba(0,0,0,.1), 0 0 0 1px rgba(224,123,57,.15); }
+body[data-theme="light"] .t4-modal-title { color: #c06828; }
+body[data-theme="light"] .t4-tier-badge { background: rgba(224,123,57,.12); color: #e07b39; border-color: rgba(224,123,57,.35); }
+
+/* ── Project guard overlay ─────────────────────────────────────────────── */
+body[data-theme="light"] .project-guard-overlay { background: rgba(0,0,0,.2); backdrop-filter: none; }
+body[data-theme="light"] .project-guard-inner { background: #fffdf7; border-color: #e8e0d0; box-shadow: 0 8px 32px rgba(0,0,0,.1); }
+
+/* ── Editor overlay ────────────────────────────────────────────────────── */
+body[data-theme="light"] .editor-overlay { background: #fffdf7; }
+body[data-theme="light"] .editor-header { background: #f5f0e8; border-bottom-color: #e8e0d0; }
+
+/* ── Keyword tooltip & info tip popups ─────────────────────────────────── */
+body[data-theme="light"] .kw-tooltip-popup { background: #fffdf7; border-color: #e8e0d0; box-shadow: 0 4px 16px rgba(0,0,0,.1); }
+body[data-theme="light"] .kw-tp-label { color: #9c8b72; }
+body[data-theme="light"] .kw-tp-what { color: #1a1208; }
+
+/* ── Table header / list headers ────────────────────────────────────────── */
+body[data-theme="light"] .data-tbl th { background: #f5f0e8; color: #7c6f5a; }
+body[data-theme="light"] .data-tbl tbody tr:hover { background: #faf6ef; }
+body[data-theme="light"] .td-frame { background: #faf6ef; }
+body[data-theme="light"] .td-frame-header { background: #f5f0e8; border-bottom-color: #e8e0d0; }
+
+/* ── Run history summary & metrics ─────────────────────────────────────── */
+body[data-theme="light"] .hist-summary-item { background: #faf6ef; border-color: #e8e0d0; }
+body[data-theme="light"] .hist-lbl { color: #9c8b72; }
+body[data-theme="light"] .hist-val { color: #4a3728; }
+body[data-theme="light"] .hist-metric { background: #faf6ef; border-color: #e8e0d0; }
+body[data-theme="light"] .hist-metric-val { color: #1a1208; }
+body[data-theme="light"] .hist-metric-lbl { color: #9c8b72; }
+body[data-theme="light"] .hist-metric-pass .hist-metric-val { color: #16a34a; }
+body[data-theme="light"] .hist-metric-fail .hist-metric-val { color: #dc2626; }
+
+/* ── Yellow/warning text — invisible on light bg ─────────────────────────── */
+body[data-theme="light"] .badge-medium { background: rgba(224,123,57,.12); color: #e07b39; }
+body[data-theme="light"] .badge-high { background: rgba(220,38,38,.1); color: #dc2626; }
+body[data-theme="light"] .badge-critical { background: rgba(220,38,38,.12); color: #dc2626; }
+body[data-theme="light"] .fc-filename { color: #16a34a; }
+body[data-theme="light"] .status.running { background: rgba(224,123,57,.12); color: #e07b39; }
+body[data-theme="light"] #license-banner.lic-warn { background: #faf0e4; color: #c06828; }
+body[data-theme="light"] #license-banner.lic-error { background: #fde8e8; color: #dc2626; }
+body[data-theme="light"] #license-banner.lic-info { background: #e8f0fa; color: #1d6fa5; }
+body[data-theme="light"] .lic-badge-team { background: rgba(79,140,201,.12); color: #3574a8; }
+
+/* ── Disabled buttons ──────────────────────────────────────────────────── */
+body[data-theme="light"] .btn:disabled { opacity: .45; }
+
+/* ── Method badges (API) ──────────────────────────────────────────────── */
+body[data-theme="light"] .badge-low { background: rgba(0,0,0,.06); color: #7c6f5a; }
+
+/* ── Select options ─────────────────────────────────────────────────────── */
+body[data-theme="light"] select option { background: #fff; color: #1a1208; }
+
+body[data-theme="light"] .data-table thead th { background: #f5f0e8; color: #7c6f5a; border-bottom-color: #e8e0d0; }
+body[data-theme="light"] .data-table tbody td { border-bottom-color: #f0ebe0; color: #4a3728; }
+body[data-theme="light"] .data-table tbody tr:hover td { background: #faf6ef; }
+
+/* ── Run comparison overlay (inline styles in JS) ─────────────────────── */
+body[data-theme="light"] #run-compare-overlay { background: rgba(0,0,0,.3) !important; backdrop-filter: none !important; }
+body[data-theme="light"] #run-compare-overlay > div > div { background: #fffdf7 !important; border-color: #e8e0d0 !important; box-shadow: 0 8px 32px rgba(0,0,0,.1) !important; }
+body[data-theme="light"] #run-compare-overlay [style*="background:#0f1318"],
+body[data-theme="light"] #run-compare-overlay [style*="background:#1a1f26"],
+body[data-theme="light"] #run-compare-overlay [style*="background:#1e1b4b"] { background: #faf6ef !important; }
+body[data-theme="light"] #run-compare-overlay [style*="background:#450a0a"] { background: rgba(220,38,38,.08) !important; border-color: rgba(220,38,38,.2) !important; }
+body[data-theme="light"] #run-compare-overlay [style*="background:#052e16"] { background: rgba(22,163,74,.08) !important; border-color: rgba(22,163,74,.2) !important; }
+body[data-theme="light"] #run-compare-overlay [style*="background:#422006"] { background: rgba(224,123,57,.08) !important; border-color: rgba(224,123,57,.2) !important; }
+body[data-theme="light"] #run-compare-overlay [style*="border:1px solid #2d3748"],
+body[data-theme="light"] #run-compare-overlay [style*="border:1px solid #374151"] { border-color: #e8e0d0 !important; }
+body[data-theme="light"] #run-compare-overlay [style*="border:2px solid"] { border-color: currentColor !important; }
+body[data-theme="light"] #run-compare-overlay [style*="color:#f1f5f9"],
+body[data-theme="light"] #run-compare-overlay [style*="color:#9ca3af"],
+body[data-theme="light"] #run-compare-overlay [style*="color:#6b7280"] { color: #4a3728 !important; }
+body[data-theme="light"] #run-compare-overlay [style*="color:#4b5563"] { color: #7c6f5a !important; }
+body[data-theme="light"] #run-compare-overlay th[style],
+body[data-theme="light"] #run-compare-overlay td[style*="border-bottom:1px solid #1e2a38"],
+body[data-theme="light"] #run-compare-overlay td[style*="border-bottom:1px solid #2d3748"] { border-bottom-color: #e8e0d0 !important; }
+
+/* ── Script modal dialogs (inline styles) ──────────────────────────────── */
+body[data-theme="light"] [style*="background:#1e2329"],
+body[data-theme="light"] [style*="background:#1a1f26"] { background: #fffdf7 !important; }
+
+/* ── Card & content area background (uses var but may have inline fallback) */
+body[data-theme="light"] .card { background: #faf6ef; border-color: #e8e0d0; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+body[data-theme="light"] .topbar { background: #faf6ef; border-bottom-color: #e8e0d0; }
+body[data-theme="light"] .content { background: var(--neutral-50); }
+body[data-theme="light"] .stat-card { background: #faf6ef; border-color: #e8e0d0; }
+body[data-theme="light"] .stat-card.total { border-left-color: var(--neutral-400); }
+body[data-theme="light"] .stat-card.pass  { border-left-color: var(--success); }
+body[data-theme="light"] .stat-card.fail  { border-left-color: var(--danger); }
+
+/* ── Inline warning boxes in execution tab ────────────────────────────── */
+body[data-theme="light"] [style*="background:#fff7ed"],
+body[data-theme="light"] [style*="background:#fef3c7"] { background: #fffdf7 !important; border-color: #e8e0d0 !important; color: #7c6f5a !important; }
+
+/* ── Scrollbar on main content ────────────────────────────────────────── */
+body[data-theme="light"] ::-webkit-scrollbar-thumb { background: #d4c8b8; }
+body[data-theme="light"] ::-webkit-scrollbar-thumb:hover { background: #9c8b72; }
+body[data-theme="light"] ::-webkit-scrollbar-track { background: #f5f0e8; }

@@ -1,3 +1,22 @@
+// ── Theme toggle ───────────────────────────────────────────────────────────────
+
+function toggleTheme() {
+  const body = document.body;
+  const current = body.getAttribute('data-theme') || 'dark';
+  const next = current === 'dark' ? 'light' : 'dark';
+  body.setAttribute('data-theme', next);
+  localStorage.setItem('qa-theme', next);
+}
+
+function initTheme() {
+  const saved = localStorage.getItem('qa-theme');
+  if (saved) {
+    document.body.setAttribute('data-theme', saved);
+  } else if (window.matchMedia('(prefers-color-scheme: light)').matches) {
+    document.body.setAttribute('data-theme', 'light');
+  }
+}
+
 // ── Auth bootstrap ─────────────────────────────────────────────────────────────
 
 let currentUser = null;   // { userId, username, role }
@@ -8,6 +27,7 @@ async function authBootstrap() {
     if (!res.ok) { window.location.href = '/login'; return; }
     currentUser = await res.json();
     document.body.classList.add('auth-checked');
+    initTheme();
     document.getElementById('sidebar-username').textContent = currentUser.username;
     document.getElementById('sidebar-role').textContent = currentUser.role;
 

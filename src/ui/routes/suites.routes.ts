@@ -82,8 +82,22 @@ export function registerSuitesRoutes(app: express.Application): void {
     res.json({ success: true });
   });
 
+  app.delete('/api/suites/bulk', requireEditor, (req: Request, res: Response) => {
+    const { ids } = req.body as { ids?: string[] };
+    if (!Array.isArray(ids) || ids.length === 0) { res.status(400).json({ error: 'ids array required' }); return; }
+    const deleted: string[] = [];
+    for (const id of ids) {
+      if (!findById<TestSuite>(SUITES, id)) continue;
+      remove(SUITES, id);
+      deleted.push(id);
+      logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'SUITE_DELETED', resourceType: 'suite', resourceId: id, details: 'bulk delete', ip: req.ip ?? null });
+    }
+    res.json({ deleted, count: deleted.length });
+  });
+
   app.delete('/api/suites/:id', requireEditor, (req: Request, res: Response) => {
     remove(SUITES, req.params.id);
+    logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'SUITE_DELETED', resourceType: 'suite', resourceId: req.params.id, details: null, ip: req.ip ?? null });
     res.json({ success: true });
   });
 

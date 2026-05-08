@@ -28,7 +28,10 @@ const PROD_ROOT = path.resolve(__dirname, '..');                     // this pro
 const DEV_ROOT  = path.resolve(PROD_ROOT, '..', 'qa-agent-platform-dev');
 
 const FILES_TO_COPY  = ['playwright.config.ts', 'tsconfig.json'];
-const DIRS_TO_COPY   = ['src'];
+// iis-site excluded: prod web.config must point to port 3000, dev points to 3003.
+// start-server.bat excluded: prod bat must cd into qa-agent-platform, not dev.
+// These files are prod-specific and must never be overwritten by promote.
+const DIRS_TO_COPY   = ['src', 'scripts', 'docs'];
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -253,8 +256,30 @@ async function main() {
     process.exit(1);
   }
 
+  // Prod runs via tsx from src/ directly — public assets must be in BOTH src and dist
+  // (src/ is the live path; dist/ is needed if ever switched to compiled mode)
+  banner('Step 8 — Copy static assets → src/ui/public + dist/ui/public');
+  const devPublic      = path.join(DEV_ROOT,  'src', 'ui', 'public');
+  const prodPublicSrc  = path.join(PROD_ROOT, 'src', 'ui', 'public');
+  const prodPublicDist = path.join(PROD_ROOT, 'dist', 'ui', 'public');
+  rmDir(prodPublicSrc);  copyDir(devPublic, prodPublicSrc);
+  rmDir(prodPublicDist); copyDir(devPublic, prodPublicDist);
+  ok('src/ui/public/ and dist/ui/public/ both updated from dev');
+
+  // Sync .playwright-browsers from dev → prod (browser exes are not in node_modules)
+  banner('Step 9 — Sync .playwright-browsers');
+  const devBrowsers  = path.join(DEV_ROOT,  '.playwright-browsers');
+  const prodBrowsers = path.join(PROD_ROOT, '.playwright-browsers');
+  if (fs.existsSync(devBrowsers)) {
+    rmDir(prodBrowsers);
+    copyDir(devBrowsers, prodBrowsers);
+    ok('.playwright-browsers synced dev → prod');
+  } else {
+    warn('.playwright-browsers not found in dev — skipping browser sync');
+  }
+
   // All done — clean up backup
-  banner('Step 8 — Restart prod server');
+  banner('Step 10 — Restart prod server');
 
   // Find PID holding port 3000
   let oldPid = null;
@@ -281,12 +306,12 @@ async function main() {
   // Start prod server — always log to server.log so we can verify
   info('Starting prod server → server.log…');
   const { spawn } = require('child_process');
-  const logStream = require('fs').createWriteStream(path.join(PROD_ROOT, 'server.log'), { flags: 'a' });
+  const logPath = path.join(PROD_ROOT, 'server.log');
   const srv = spawn('npm', ['run', 'ui'], {
     cwd: PROD_ROOT,
     shell: true,
     detached: true,
-    stdio: ['ignore', logStream, logStream],
+    stdio: ['ignore', fs.openSync(logPath, 'a'), fs.openSync(logPath, 'a')],
   });
   srv.unref();
 

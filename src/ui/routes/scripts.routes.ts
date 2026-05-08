@@ -102,12 +102,7 @@ export function registerScriptsRoutes(app: express.Application): void {
     res.json({ success: true });
   });
 
-  app.delete('/api/scripts/:id', requireEditor, (req: Request, res: Response) => {
-    remove(SCRIPTS, req.params.id);
-    logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'SCRIPT_DELETED', resourceType: 'script', resourceId: req.params.id, details: null, ip: req.ip ?? null });
-    res.json({ success: true });
-  });
-
+  // OLD: /api/scripts/:id was registered before /bulk — Express matched "bulk" as an id, silently no-oping bulk deletes
   app.delete('/api/scripts/bulk', requireAuth, requireEditor, (req: Request, res: Response) => {
     const { ids } = req.body as { ids?: string[] };
     if (!Array.isArray(ids) || ids.length === 0) { res.status(400).json({ error: 'ids array required' }); return; }
@@ -120,6 +115,12 @@ export function registerScriptsRoutes(app: express.Application): void {
       logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'SCRIPT_DELETED', resourceType: 'script', resourceId: id, details: `bulk delete`, ip: req.ip ?? null });
     }
     res.json({ deleted, count: deleted.length });
+  });
+
+  app.delete('/api/scripts/:id', requireEditor, (req: Request, res: Response) => {
+    remove(SCRIPTS, req.params.id);
+    logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'SCRIPT_DELETED', resourceType: 'script', resourceId: req.params.id, details: null, ip: req.ip ?? null });
+    res.json({ success: true });
   });
 
   app.patch('/api/scripts/bulk', requireAuth, requireEditor, (req: Request, res: Response) => {

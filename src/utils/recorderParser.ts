@@ -373,7 +373,7 @@ export function parseRecorderEvent(
     locatorType,
     locatorName: locatorName || undefined as any,  // convenience — not in type but used by UI
     valueMode:   'static',
-    value:       event.value || null,
+    value:       event.value ?? null,
     testData:    [],
     description: buildDescription(event),
     screenshot:  false,

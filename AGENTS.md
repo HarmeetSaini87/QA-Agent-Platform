@@ -26,6 +26,7 @@ Node.js / TypeScript · Express.js · Playwright · Vanilla JS frontend · JSON 
 6. **Never pre-load large files** — use graph tools first, read files only when needed.
 7. **`keywords.json`** is the source of truth for keyword definitions — extend there, not in generator.
 8. **`ui-reference-lookup.json`** is the selector reference for the target application.
+9. **Never modify `data/jira-config.json`** directly without explicit user consent. This file contains AES-256-GCM encrypted Jira credentials (API tokens). Truncation or corruption of the `apiTokenEnc` field causes authentication failures. Always use the `/api/jira/config` endpoint or atomic write pattern. Ask the user before touching it.
 
 ## Key Entry Points
 

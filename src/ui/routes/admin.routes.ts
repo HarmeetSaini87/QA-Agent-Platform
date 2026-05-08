@@ -49,10 +49,11 @@ export function registerAdminRoutes(app: express.Application): void {
   app.get('/api/admin/audit', requireAdmin, (req: Request, res: Response) => { const all = readAll<AuditEntry>(AUDIT); const page = parseInt((req.query.page as string) ?? '1') || 1; const size = parseInt((req.query.size as string) ?? '50') || 50; const start = (page - 1) * size; res.json({ total: all.length, page, size, entries: all.slice().reverse().slice(start, start + size) }); });
 
   // Settings
-  app.get('/api/admin/settings', requireAdmin, (_req, res) => { const rows = readAll<AppSettings & { id: string }>(SETTINGS); const s = rows[0] ?? { id: 'global', ...DEFAULT_SETTINGS }; const { nlApiKey, anthropicApiKey, ...safe } = s as any; const keyIsSet = !!((nlApiKey || anthropicApiKey || '').trim()); res.json({ ...safe, nlApiKeySet: keyIsSet }); });
+  app.get('/api/admin/settings', requireAdmin, (_req, res) => { const rows = readAll<AppSettings & { id: string }>(SETTINGS); const s = rows[0] ?? { id: 'global', ...DEFAULT_SETTINGS }; const { nlApiKey, anthropicApiKey, ...safe } = s as any; const keyIsSet = !!((nlApiKey || anthropicApiKey || '').trim()); if (safe.notifications) { const smtpPass = safe.notifications.smtpPass; safe.notifications = { ...safe.notifications, smtpPass: undefined, hasSmtpPass: !!(smtpPass && smtpPass.trim()) }; } res.json({ ...safe, nlApiKeySet: keyIsSet }); });
   app.put('/api/admin/settings', requireAdmin, (req: Request, res: Response) => {
     const current = readAll<AppSettings & { id: string }>(SETTINGS)[0] ?? { id: 'global', ...DEFAULT_SETTINGS };
     const notifications: NotificationSettings = { ...DEFAULT_NOTIFICATION_SETTINGS, ...(current.notifications ?? {}), ...(req.body.notifications ?? {}) };
+    if (!req.body.notifications?.smtpPass || req.body.notifications.smtpPass === '••••••••') { notifications.smtpPass = (current.notifications as any)?.smtpPass || ''; }
     const incomingKey = (req.body.nlApiKey || req.body.anthropicApiKey || '').trim();
     const nlApiKey = incomingKey || (current as any).nlApiKey || (current as any).anthropicApiKey || '';
     const { nlApiKey: _d1, anthropicApiKey: _d2, ...restBody } = req.body as any;

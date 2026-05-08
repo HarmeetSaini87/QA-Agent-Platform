@@ -6,7 +6,7 @@ let allLocators = [];
 let selectedLocators = new Set();
 let editingLocatorId = null;
 let _locPage = 0;
-const LOC_PAGE_SIZE = 10;
+let LOC_PAGE_SIZE = 10;
 
 async function locatorLoad() {
   if (!currentProjectId) {
@@ -234,11 +234,15 @@ function locatorRender() {
   if (wrap) {
     const start = filtered.length ? _locPage * LOC_PAGE_SIZE + 1 : 0;
     const end = Math.min((_locPage + 1) * LOC_PAGE_SIZE, filtered.length);
+    const rppOpts = [10,25,50,100,200,500].map(n => `<option value="${n}"${LOC_PAGE_SIZE===n?' selected':''}>${n}</option>`).join('');
     wrap.innerHTML = `
-      <span style="font-size:13px;color:var(--neutral-500)">${start}–${end} of ${filtered.length}</span>
+      <label style="font-size:12px;color:var(--neutral-500)">Rows per page:
+        <select class="fm-input" style="padding:2px 6px;font-size:12px;width:auto" onchange="_locSetPageSize(+this.value)">${rppOpts}</select>
+      </label>
+      ${totalPages <= 1 ? `<span style="font-size:13px;color:var(--neutral-500)">${start}–${end} of ${filtered.length}</span>` : `
       <button class="tbl-btn" onclick="_locPageGo(-1)" ${_locPage === 0 ? 'disabled' : ''}>&#8592; Prev</button>
-      <span style="font-size:13px">Page ${_locPage + 1} / ${totalPages}</span>
-      <button class="tbl-btn" onclick="_locPageGo(1)" ${_locPage >= totalPages - 1 ? 'disabled' : ''}>Next &#8594;</button>`;
+      <span style="font-size:13px">Page ${_locPage + 1} / ${totalPages} &nbsp;(${start}–${end} of ${filtered.length})</span>
+      <button class="tbl-btn" onclick="_locPageGo(1)" ${_locPage >= totalPages - 1 ? 'disabled' : ''}>Next &#8594;</button>`}`;
   }
 }
 
@@ -344,6 +348,12 @@ async function proposalReview(id, action) {
 
 function _locPageGo(delta) {
   _locPage += delta;
+  locatorRender();
+}
+
+function _locSetPageSize(n) {
+  LOC_PAGE_SIZE = n;
+  _locPage = 0;
   locatorRender();
 }
 

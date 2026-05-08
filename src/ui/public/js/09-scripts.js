@@ -62,7 +62,7 @@ let editingScriptId = null;
 let _compDefs = [];   // ComponentDef[] for current project in modal
 let _seCompDefs = [];   // ComponentDef[] for current project, used in script editor
 let _scriptPage = 0;
-const SCRIPT_PAGE_SIZE = 10;
+let SCRIPT_PAGE_SIZE = 10;
 
 async function scriptLoad() {
   const emptyEl = document.getElementById('script-list-empty');
@@ -105,11 +105,16 @@ function scriptRender() {
   const page = filtered.slice(_scriptPage * SCRIPT_PAGE_SIZE, (_scriptPage + 1) * SCRIPT_PAGE_SIZE);
   const start = filtered.length ? _scriptPage * SCRIPT_PAGE_SIZE + 1 : 0;
   const end = Math.min((_scriptPage + 1) * SCRIPT_PAGE_SIZE, filtered.length);
-  const pgHtml = totalPages <= 1 ? '' : `
+  const rppOpts = [10,25,50,100,200,500].map(n => `<option value="${n}"${SCRIPT_PAGE_SIZE===n?' selected':''}>${n}</option>`).join('');
+  const pgHtml = `
     <div class="lt-pagination">
+      <label style="font-size:12px;color:var(--neutral-500)">Rows per page:
+        <select class="fm-input" style="padding:2px 6px;font-size:12px;width:auto" onchange="_scriptSetPageSize(+this.value)">${rppOpts}</select>
+      </label>
+      ${totalPages <= 1 ? `<span style="font-size:12px;color:var(--neutral-500)">${start}–${end} of ${filtered.length}</span>` : `
       <button class="tbl-btn" onclick="_scriptPageGo(-1)" ${_scriptPage === 0 ? 'disabled' : ''}>&#8592; Prev</button>
       <span>Page ${_scriptPage + 1} / ${totalPages} &nbsp;(${start}–${end} of ${filtered.length})</span>
-      <button class="tbl-btn" onclick="_scriptPageGo(1)" ${_scriptPage >= totalPages - 1 ? 'disabled' : ''}>Next &#8594;</button>
+      <button class="tbl-btn" onclick="_scriptPageGo(1)" ${_scriptPage >= totalPages - 1 ? 'disabled' : ''}>Next &#8594;</button>`}
     </div>`;
   listEl.innerHTML = `
     <div style="display:flex;align-items:center;gap:8px;padding:6px 2px 8px;flex-wrap:wrap">
@@ -193,6 +198,12 @@ function _scriptSubcompFilter() {
 
 function _scriptPageGo(delta) {
   _scriptPage += delta;
+  scriptRender();
+}
+
+function _scriptSetPageSize(n) {
+  SCRIPT_PAGE_SIZE = n;
+  _scriptPage = 0;
   scriptRender();
 }
 

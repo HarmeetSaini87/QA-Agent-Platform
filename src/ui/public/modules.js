@@ -1215,7 +1215,7 @@ let allLocators = [];
 let selectedLocators = new Set();
 let editingLocatorId = null;
 let _locPage = 0;
-const LOC_PAGE_SIZE = 10;
+let LOC_PAGE_SIZE = 10;
 
 async function locatorLoad() {
   if (!currentProjectId) {
@@ -1443,11 +1443,15 @@ function locatorRender() {
   if (wrap) {
     const start = filtered.length ? _locPage * LOC_PAGE_SIZE + 1 : 0;
     const end = Math.min((_locPage + 1) * LOC_PAGE_SIZE, filtered.length);
+    const rppOpts = [10,25,50,100,200,500].map(n => `<option value="${n}"${LOC_PAGE_SIZE===n?' selected':''}>${n}</option>`).join('');
     wrap.innerHTML = `
-      <span style="font-size:13px;color:var(--neutral-500)">${start}–${end} of ${filtered.length}</span>
+      <label style="font-size:12px;color:var(--neutral-500)">Rows per page:
+        <select class="fm-input" style="padding:2px 6px;font-size:12px;width:auto" onchange="_locSetPageSize(+this.value)">${rppOpts}</select>
+      </label>
+      ${totalPages <= 1 ? `<span style="font-size:13px;color:var(--neutral-500)">${start}–${end} of ${filtered.length}</span>` : `
       <button class="tbl-btn" onclick="_locPageGo(-1)" ${_locPage === 0 ? 'disabled' : ''}>&#8592; Prev</button>
-      <span style="font-size:13px">Page ${_locPage + 1} / ${totalPages}</span>
-      <button class="tbl-btn" onclick="_locPageGo(1)" ${_locPage >= totalPages - 1 ? 'disabled' : ''}>Next &#8594;</button>`;
+      <span style="font-size:13px">Page ${_locPage + 1} / ${totalPages} &nbsp;(${start}–${end} of ${filtered.length})</span>
+      <button class="tbl-btn" onclick="_locPageGo(1)" ${_locPage >= totalPages - 1 ? 'disabled' : ''}>Next &#8594;</button>`}`;
   }
 }
 
@@ -1553,6 +1557,12 @@ async function proposalReview(id, action) {
 
 function _locPageGo(delta) {
   _locPage += delta;
+  locatorRender();
+}
+
+function _locSetPageSize(n) {
+  LOC_PAGE_SIZE = n;
+  _locPage = 0;
   locatorRender();
 }
 
@@ -2394,7 +2404,7 @@ let editingScriptId = null;
 let _compDefs = [];   // ComponentDef[] for current project in modal
 let _seCompDefs = [];   // ComponentDef[] for current project, used in script editor
 let _scriptPage = 0;
-const SCRIPT_PAGE_SIZE = 10;
+let SCRIPT_PAGE_SIZE = 10;
 
 async function scriptLoad() {
   const emptyEl = document.getElementById('script-list-empty');
@@ -2437,11 +2447,16 @@ function scriptRender() {
   const page = filtered.slice(_scriptPage * SCRIPT_PAGE_SIZE, (_scriptPage + 1) * SCRIPT_PAGE_SIZE);
   const start = filtered.length ? _scriptPage * SCRIPT_PAGE_SIZE + 1 : 0;
   const end = Math.min((_scriptPage + 1) * SCRIPT_PAGE_SIZE, filtered.length);
-  const pgHtml = totalPages <= 1 ? '' : `
+  const rppOpts = [10,25,50,100,200,500].map(n => `<option value="${n}"${SCRIPT_PAGE_SIZE===n?' selected':''}>${n}</option>`).join('');
+  const pgHtml = `
     <div class="lt-pagination">
+      <label style="font-size:12px;color:var(--neutral-500)">Rows per page:
+        <select class="fm-input" style="padding:2px 6px;font-size:12px;width:auto" onchange="_scriptSetPageSize(+this.value)">${rppOpts}</select>
+      </label>
+      ${totalPages <= 1 ? `<span style="font-size:12px;color:var(--neutral-500)">${start}–${end} of ${filtered.length}</span>` : `
       <button class="tbl-btn" onclick="_scriptPageGo(-1)" ${_scriptPage === 0 ? 'disabled' : ''}>&#8592; Prev</button>
       <span>Page ${_scriptPage + 1} / ${totalPages} &nbsp;(${start}–${end} of ${filtered.length})</span>
-      <button class="tbl-btn" onclick="_scriptPageGo(1)" ${_scriptPage >= totalPages - 1 ? 'disabled' : ''}>Next &#8594;</button>
+      <button class="tbl-btn" onclick="_scriptPageGo(1)" ${_scriptPage >= totalPages - 1 ? 'disabled' : ''}>Next &#8594;</button>`}
     </div>`;
   listEl.innerHTML = `
     <div style="display:flex;align-items:center;gap:8px;padding:6px 2px 8px;flex-wrap:wrap">
@@ -2525,6 +2540,12 @@ function _scriptSubcompFilter() {
 
 function _scriptPageGo(delta) {
   _scriptPage += delta;
+  scriptRender();
+}
+
+function _scriptSetPageSize(n) {
+  SCRIPT_PAGE_SIZE = n;
+  _scriptPage = 0;
   scriptRender();
 }
 
@@ -4528,6 +4549,9 @@ function nlClearSuggestions() {
 let allSuites = [];
 let editingSuiteId = null;
 let currentSuiteId = null;
+let _suitePage = 0;
+let SUITE_PAGE_SIZE = 10;
+let _suiteChecked = new Set();
 
 // ── Suite Hooks state ─────────────────────────────────────────────────────────
 let _hookBefore = []; // [{ keyword, locator, value, description }]
@@ -4714,6 +4738,8 @@ async function suiteLoad() {
   }
   const res = await fetch(`/api/suites?projectId=${encodeURIComponent(currentProjectId)}`);
   allSuites = await res.json();
+  _suitePage = 0;
+  _suiteChecked.clear();
   suiteRender();
   execLoad(); // keep execution tab suite dropdown in sync
 }
@@ -4727,20 +4753,118 @@ function suiteRender() {
   if (!currentProjectId) { emptyEl.style.display = ''; listEl.innerHTML = ''; return; }
   emptyEl.style.display = 'none';
   if (!filtered.length) { listEl.innerHTML = '<div class="builder-hint">No suites match the filter.</div>'; return; }
-  listEl.innerHTML = filtered.map(s => `
-    <div class="suite-card">
-      <div class="suite-card-header">
-        <div style="flex:1">
-          <div class="suite-name">${escHtml(s.name)}</div>
-          ${s.description ? `<div style="font-size:12.5px;color:var(--neutral-500);margin-top:3px">${escHtml(s.description)}</div>` : ''}
-          <div class="suite-meta">${(s.scriptIds || []).length} script${(s.scriptIds || []).length !== 1 ? 's' : ''} · By ${escHtml(s.createdBy || '—')} · ${formatDate(s.createdAt)}</div>
-        </div>
-        <div style="flex-shrink:0;display:flex;gap:6px;align-items:center">
-          ${isViewer() ? '' : `<button class="tbl-btn" onclick="suiteEditById('${escHtml(s.id)}')">Edit</button>`}
-          ${isViewer() ? '' : `<button class="tbl-btn del" onclick="suiteDelete('${escHtml(s.id)}','${escHtml(s.name)}')">Delete</button>`}
-        </div>
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / SUITE_PAGE_SIZE));
+  if (_suitePage >= totalPages) _suitePage = totalPages - 1;
+  const page = filtered.slice(_suitePage * SUITE_PAGE_SIZE, (_suitePage + 1) * SUITE_PAGE_SIZE);
+  const start = filtered.length ? _suitePage * SUITE_PAGE_SIZE + 1 : 0;
+  const end = Math.min((_suitePage + 1) * SUITE_PAGE_SIZE, filtered.length);
+
+  const checkedOnPage = page.filter(s => _suiteChecked.has(s.id)).length;
+  const allChecked = page.length > 0 && checkedOnPage === page.length;
+
+  const rppOpts = [10,25,50,100,200,500].map(n => `<option value="${n}"${SUITE_PAGE_SIZE===n?' selected':''}>${n}</option>`).join('');
+
+  const pgHtml = `
+    <div class="lt-pagination">
+      <label style="font-size:12px;color:var(--neutral-500)">Rows per page:
+        <select class="fm-input" style="padding:2px 6px;font-size:12px;width:auto" onchange="_suiteSetPageSize(+this.value)">${rppOpts}</select>
+      </label>
+      ${totalPages <= 1
+        ? `<span style="font-size:12px;color:var(--neutral-500)">${start}–${end} of ${filtered.length}</span>`
+        : `<button class="tbl-btn" onclick="_suitePageGo(-1)" ${_suitePage === 0 ? 'disabled' : ''}>&#8592; Prev</button>
+           <span style="font-size:12px">Page ${_suitePage + 1} / ${totalPages} &nbsp;(${start}–${end} of ${filtered.length})</span>
+           <button class="tbl-btn" onclick="_suitePageGo(1)" ${_suitePage >= totalPages - 1 ? 'disabled' : ''}>Next &#8594;</button>`}
+    </div>`;
+
+  listEl.innerHTML = `
+    <div style="display:flex;align-items:center;gap:8px;padding:6px 2px 8px;flex-wrap:wrap">
+      ${!isViewer() ? `<label style="display:flex;align-items:center;gap:5px;font-size:12.5px;cursor:pointer">
+        <input type="checkbox" id="suite-chk-all" ${allChecked ? 'checked' : ''} onchange="_suiteToggleAll(this.checked)" /> Select All
+      </label>` : ''}
+      <span id="suite-sel-count" style="font-size:12px;color:var(--neutral-500);font-weight:600">${_suiteChecked.size ? _suiteChecked.size + ' selected' : ''}</span>
+      <div id="suite-bulk-bar" style="${_suiteChecked.size ? 'display:flex' : 'display:none'};align-items:center;gap:6px;flex-wrap:wrap">
+        <button class="tbl-btn del" onclick="suiteDeleteSelected()">&#128465; Delete Selected</button>
       </div>
-    </div>`).join('');
+    </div>
+    <div class="lt-wrap">
+      <div class="lt-body-wrap">
+        <table class="data-table lt-fixed">
+          <thead><tr>
+            ${!isViewer() ? '<th style="min-width:32px;width:32px"></th>' : ''}
+            <th style="min-width:200px">Suite Name</th>
+            <th style="min-width:220px">Description</th>
+            <th style="min-width:80px">Scripts</th>
+            <th style="min-width:110px">Created By</th>
+            <th style="min-width:110px">Date</th>
+            <th style="min-width:120px">Actions</th>
+          </tr></thead>
+          <tbody>
+          ${page.map(s => `
+            <tr class="suite-tbl-row" data-id="${escHtml(s.id)}">
+              ${!isViewer() ? `<td><input type="checkbox" class="suite-row-chk" value="${escHtml(s.id)}" ${_suiteChecked.has(s.id) ? 'checked' : ''} onchange="_suiteChkChange(this)" /></td>` : ''}
+              <td title="${escHtml(s.name)}"><div style="font-weight:500">${escHtml(s.name)}</div></td>
+              <td title="${escHtml(s.description || '')}" style="font-size:12px;color:var(--neutral-500)">${escHtml(s.description || '—')}</td>
+              <td style="font-weight:600;color:var(--primary)">${(s.scriptIds || []).length}</td>
+              <td style="font-size:12px">${escHtml(s.createdBy || '—')}</td>
+              <td style="font-size:12px">${formatDate(s.createdAt)}</td>
+              <td>
+                <div style="display:flex;gap:4px">
+                  ${isViewer() ? '' : `<button class="tbl-btn" onclick="suiteEditById('${escHtml(s.id)}')">Edit</button>`}
+                  ${isViewer() ? '' : `<button class="tbl-btn del" onclick="suiteDelete('${escHtml(s.id)}','${escHtml(s.name)}')">Delete</button>`}
+                </div>
+              </td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    ${pgHtml}`;
+}
+
+function _suiteChkChange(chk) {
+  if (chk.checked) _suiteChecked.add(chk.value);
+  else _suiteChecked.delete(chk.value);
+  _suiteUpdateBulkBar();
+}
+
+function _suiteToggleAll(checked) {
+  const q = (document.getElementById('suite-filter')?.value ?? '').toLowerCase();
+  const filtered = allSuites.filter(s => !q || s.name.toLowerCase().includes(q));
+  const page = filtered.slice(_suitePage * SUITE_PAGE_SIZE, (_suitePage + 1) * SUITE_PAGE_SIZE);
+  page.forEach(s => checked ? _suiteChecked.add(s.id) : _suiteChecked.delete(s.id));
+  suiteRender();
+}
+
+function _suiteUpdateBulkBar() {
+  const bar = document.getElementById('suite-bulk-bar');
+  const cnt = document.getElementById('suite-sel-count');
+  if (bar) bar.style.display = _suiteChecked.size ? 'flex' : 'none';
+  if (cnt) cnt.textContent = _suiteChecked.size ? `${_suiteChecked.size} selected` : '';
+}
+
+function _suitePageGo(delta) {
+  _suitePage += delta;
+  suiteRender();
+}
+
+function _suiteSetPageSize(n) {
+  SUITE_PAGE_SIZE = n;
+  _suitePage = 0;
+  suiteRender();
+}
+
+async function suiteDeleteSelected() {
+  const ids = [..._suiteChecked];
+  if (!ids.length) return;
+  if (!confirm(`Delete ${ids.length} suite${ids.length > 1 ? 's' : ''}? This cannot be undone.`)) return;
+  const res = await fetch('/api/suites/bulk', {
+    method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids }),
+  });
+  const data = await res.json();
+  if (!res.ok) { alert(data.error || 'Delete failed'); return; }
+  _suiteChecked.clear();
+  await suiteLoad();
 }
 
 function _populateEnvDropdown(selectedEnvId = '') {
