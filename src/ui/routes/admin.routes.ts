@@ -7,7 +7,7 @@ import { hashPassword, validatePasswordStrength, verifyPassword } from '../../au
 import { requireAdmin, sanitizeInput } from '../../auth/middleware';
 import { logAudit } from '../../auth/audit';
 import { DEFAULT_SETTINGS, DEFAULT_NOTIFICATION_SETTINGS } from '../../data/types';
-import { sendRunNotification } from '../../utils/notifier';
+import { sendRunNotification, sendTestNotification } from '../../utils/notifier';
 import multer from 'multer';
 import * as path from 'path';
 
@@ -63,7 +63,7 @@ export function registerAdminRoutes(app: express.Application): void {
   app.post('/api/admin/settings/test-notification', requireAdmin, async (req: Request, res: Response) => {
     try {
       const settingsRow = readAll<AppSettings & { id: string }>(SETTINGS)[0]; const notifCfg = settingsRow?.notifications ?? DEFAULT_NOTIFICATION_SETTINGS;
-      const platformUrl = `${req.protocol}://${req.get('host')}`; const errors = await sendRunNotification(notifCfg, { runId: '', suiteName: '', projectName: '', status: 'done' as const, passed: 0, failed: 0, total: 0, duration: '', startedAt: '', executedBy: '', environmentName: '', platformUrl }); const hasError = Object.values(errors).some(Boolean);
+      const platformUrl = `${req.protocol}://${req.get('host')}`; const errors = await sendTestNotification(notifCfg, platformUrl); const hasError = Object.values(errors).some(Boolean);
       if (hasError) { res.json({ success: false, errors }); } else { res.json({ success: true }); }
     } catch (e: any) { res.status(500).json({ success: false, error: e.message }); }
   });

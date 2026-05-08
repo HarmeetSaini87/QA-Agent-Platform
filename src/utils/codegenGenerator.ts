@@ -566,6 +566,15 @@ function _generateStepCode(
     case 'FILL':
     case 'TYPE': {
       const fillVal = val === "''" ? `''` : val;
+      if (step.storeAs && locExpr) {
+        // OLD: used fillVal inline — dynamic tokens produce different values for action vs store
+        // return line(`await ${locExpr}.waitFor({ state: 'visible' });\n${indent}await ${locExpr}.fill(${fillVal});`)
+        return line(
+          `const ${pinValIdent(step.order)} = ${fillVal};\n` +
+          `${indent}await ${locExpr}.waitFor({ state: 'visible' });\n` +
+          `${indent}await ${locExpr}.fill(${pinValIdent(step.order)});`
+        );
+      }
       return locExpr
         ? line(`await ${locExpr}.waitFor({ state: 'visible' });\n${indent}await ${locExpr}.fill(${fillVal});`)
         : line(`// FILL: missing locator`);
@@ -577,6 +586,15 @@ function _generateStepCode(
         : line(`// CLEAR: missing locator`);
 
     case 'SELECT':
+      if (step.storeAs && locExpr) {
+        // OLD: used val inline — dynamic tokens produce different values for action vs store
+        // return line(`await ${locExpr}.waitFor({ state: 'visible' });\n${indent}await ${locExpr}.selectOption(${val});`)
+        return line(
+          `const ${pinValIdent(step.order)} = ${val};\n` +
+          `${indent}await ${locExpr}.waitFor({ state: 'visible' });\n` +
+          `${indent}await ${locExpr}.selectOption(${pinValIdent(step.order)});`
+        );
+      }
       return locExpr
         ? line(`await ${locExpr}.waitFor({ state: 'visible' });\n${indent}await ${locExpr}.selectOption(${val});`)
         : line(`// SELECT: missing locator`);
@@ -1121,15 +1139,35 @@ ${indent}}`
   }
 }
 
+// ── Temp variable for pinned step value ──────────────────────────────────────
+/** Temp variable name used to capture a pinned step's resolved value at runtime */
+function pinValIdent(order: number): string { return `_pinVal_${order}`; }
+
 // Emit a storeAs line after a step if the 📌 pin is set
-function storeAsLine(step: ScriptStep, locExpr: string | null, indent: string): string {
+// OLD: storeAsLine stored raw step.value template for FILL/TYPE (e.g. '{{random.text(8)}}') instead of resolved value
+// function storeAsLine(step: ScriptStep, locExpr: string | null, indent: string): string {
+//   const varName = (step.storeAs || '').trim();
+//   if (!varName || step.keyword?.toUpperCase() === 'SET VARIABLE') return '';
+//   const store = step.storeScope === 'global' ? '__globalVars' : '__sessionVars';
+//   const kw = (step.keyword || '').toUpperCase();
+//   if (kw === 'FILL' || kw === 'TYPE') {
+//     const raw = (step.value || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+//     return `${indent}${store}['${varName}'] = '${raw}'; // 📌 pinned`;
+//   }
+//   if (locExpr) {
+//     return `${indent}${store}['${varName}'] = (await ${locExpr}.innerText().catch(() => '')).trim(); // 📌 pinned`;
+//   }
+//   return '';
+// }
+function storeAsLine(step: ScriptStep, locExpr: string | null, indent: string, val?: string): string {
   const varName = (step.storeAs || '').trim();
   if (!varName || step.keyword?.toUpperCase() === 'SET VARIABLE') return '';
   const store = step.storeScope === 'global' ? '__globalVars' : '__sessionVars';
   const kw = (step.keyword || '').toUpperCase();
-  if (kw === 'FILL' || kw === 'TYPE') {
-    const raw = (step.value || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-    return `${indent}${store}['${varName}'] = '${raw}'; // 📌 pinned`;
+  if ((kw === 'FILL' || kw === 'TYPE' || kw === 'SELECT') && val) {
+    // val resolved by valueExpr() — caller emits the _pinVal_N temp var and action, we just store it
+    // OLD: return `${indent}${store}['${varName}'] = _pinVal_${step.order}; // 📌 pinned`;
+    return `${indent}${store}['${varName}'] = ${pinValIdent(step.order)}; // 📌 pinned`;
   }
   if (locExpr) {
     return `${indent}${store}['${varName}'] = (await ${locExpr}.innerText().catch(() => '')).trim(); // 📌 pinned`;
@@ -1358,7 +1396,7 @@ export function generateCodegenSpec(input: CodegenInput): string {
   } as unknown as ScriptStep);
 
   // ── One test.describe per suite, one test() per script (or per data row) ─────
-  lines.push(`test.describe('${suiteName.replace(/'/g, "\\'")}', () => {`);
+  lines.push(`test.describe.serial('${suiteName.replace(/'/g, "\\'")}', () => {`);
   lines.push(``);
 
   // ── Fast Mode: capture auth state once, reuse across all tests ───────────────
@@ -1652,7 +1690,9 @@ export function generateCodegenSpec(input: CodegenInput): string {
           lines.push(`      try {`);
           const innerCode = generateStepCode(step, project, environment, allFunctions, dataMap, '        ', runIdx);
           if (innerCode) lines.push(innerCode);
-          const pinLine = storeAsLine(step, step.locator ? buildLocatorExpr(step.locatorType || 'css', step.locator) : null, '        ');
+          // OLD: storeAsLine(step, ...) — did not pass val, FILL/TYPE stored raw template
+          // const pinLine = storeAsLine(step, step.locator ? buildLocatorExpr(step.locatorType || 'css', step.locator) : null, '        ');
+          const pinLine = storeAsLine(step, step.locator ? buildLocatorExpr(step.locatorType || 'css', step.locator) : null, '        ', valueExpr(step, dataMap, runIdx));
           if (pinLine) lines.push(pinLine);
           lines.push(`      } catch (__e_${step.order}: any) {`);
           lines.push(`        await page.screenshot({ path: \`\${__SS_DIR}/${testIdx}-\${__browser}-after-${step.order}.png\`, fullPage: false }).catch(() => {});`);
@@ -1710,7 +1750,9 @@ export function generateCodegenSpec(input: CodegenInput): string {
         } else {
           const code = generateStepCode(step, project, environment, allFunctions, dataMap, '      ', runIdx);
           if (code) lines.push(code);
-          const pinLine = storeAsLine(step, step.locator ? buildLocatorExpr(step.locatorType || 'css', step.locator) : null, '      ');
+          // OLD: storeAsLine(step, ...) — did not pass val, FILL/TYPE stored raw template
+          // const pinLine = storeAsLine(step, step.locator ? buildLocatorExpr(step.locatorType || 'css', step.locator) : null, '      ');
+          const pinLine = storeAsLine(step, step.locator ? buildLocatorExpr(step.locatorType || 'css', step.locator) : null, '      ', valueExpr(step, dataMap, runIdx));
           if (pinLine) lines.push(pinLine);
         }
 
@@ -2223,9 +2265,20 @@ export function generateDebugSpec(input: DebugCodegenInput): string {
       lines.push(`            }`);
 
     }
-    // 📌 Pin — store value into __sessionVars if storeAs is set (use patched locator)
-    const dbgPinLine = storeAsLine(step, step.locator ? `__buildLocator(page, __patchedLt_${step.order}, __patchedLoc_${step.order})` : null, '            ');
-    if (dbgPinLine) lines.push(dbgPinLine);
+    // 📌 Pin — store value into __sessionVars/__globalVars if storeAs is set (use patched locator)
+    // OLD: storeAsLine emitted _pinVal_N — not declared in debug path (uses __patchedVal_N)
+    // const dbgPinLine = storeAsLine(step, step.locator ? `__buildLocator(page, __patchedLt_${step.order}, __patchedLoc_${step.order})` : null, '            ', `__patchedVal_${step.order}`);
+    const dbgVarName = (step.storeAs || '').trim();
+    if (dbgVarName && step.keyword?.toUpperCase() !== 'SET VARIABLE') {
+      const dbgStore = step.storeScope === 'global' ? '__globalVars' : '__sessionVars';
+      const dbgKw = (step.keyword || '').toUpperCase();
+      if (dbgKw === 'FILL' || dbgKw === 'TYPE' || dbgKw === 'SELECT') {
+        lines.push(`            ${dbgStore}['${dbgVarName}'] = __patchedVal_${step.order}; // 📌 pinned (debug)`);
+      } else if (step.locator) {
+        lines.push(`            ${dbgStore}['${dbgVarName}'] = (await __buildLocator(page, __patchedLt_${step.order}, __patchedLoc_${step.order}).innerText().catch(() => '')).trim(); // 📌 pinned (debug)`);
+      }
+    }
+    // OLD: if (dbgPinLine) lines.push(dbgPinLine);
     // Wait for DOM/network to settle
     lines.push(`            await __waitForPageSettle(page);`);
     lines.push(`            break; // success — exit retry loop`);

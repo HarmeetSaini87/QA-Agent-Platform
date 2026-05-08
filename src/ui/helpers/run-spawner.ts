@@ -549,7 +549,7 @@ export function spawnRunWithSpec(record: RunRecord, specPath: string, headed?: b
       const settingsRow = readAll<AppSettings & { id: string }>(SETTINGS)[0];
       const notifCfg = settingsRow?.notifications ?? DEFAULT_NOTIFICATION_SETTINGS;
       const durationMs = record.finishedAt && record.startedAt ? new Date(record.finishedAt).getTime() - new Date(record.startedAt).getTime() : 0;
-      const platformUrl = `http://localhost:${PORT}`;
+      const platformUrl = config.ui.baseUrl;
       const summary = { runId, suiteName: record.suiteName ?? 'Unknown Suite', projectName: record.projectName ?? 'Unknown Project', status: record.status as 'done' | 'failed', passed: record.passed, failed: record.failed, total: record.total, duration: formatDuration(durationMs), startedAt: record.startedAt, executedBy: record.executedBy ?? 'scheduler', environmentName: record.environmentName ?? 'Default', platformUrl };
       sendRunNotification(notifCfg, summary).then(errs => { if (errs.email) logger.warn(`[notify] Email error: ${errs.email}`); if (errs.slack) logger.warn(`[notify] Slack error: ${errs.slack}`); if (errs.teams) logger.warn(`[notify] Teams error: ${errs.teams}`); }).catch(e => logger.warn(`[notify] Unexpected error: ${e.message}`));
     } catch (e: any) { logger.warn(`[notify] Settings read error: ${e.message}`); }

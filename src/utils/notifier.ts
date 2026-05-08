@@ -113,7 +113,7 @@ async function sendEmail(cfg: NotificationSettings, s: RunSummary): Promise<void
     </div>
     <a href="${reportUrl(s)}" style="display:inline-block;background:#3b82f6;color:#fff;padding:10px 20px;border-radius:6px;text-decoration:none;font-size:14px;font-weight:600">View Full Report →</a>
   </div>
-  <p style="font-size:11px;color:#9ca3af;margin-top:12px;text-align:center">QA Agent Platform · ${s.platformUrl}</p>
+  <p style="font-size:11px;color:#9ca3af;margin-top:12px;text-align:center">TestForge</p>
 </div>`;
 
   await transport.sendMail({
@@ -206,19 +206,20 @@ async function sendTeams(cfg: NotificationSettings, s: RunSummary): Promise<void
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
-export async function sendRunNotification(cfg: NotificationSettings, s: RunSummary): Promise<{ email?: string; slack?: string; teams?: string }> {
-  if (!shouldNotify(cfg, s)) return {};
-
+async function dispatchChannels(cfg: NotificationSettings, s: RunSummary): Promise<{ email?: string; slack?: string; teams?: string }> {
   const errors: { email?: string; slack?: string; teams?: string } = {};
-
   await sendEmail(cfg, s).catch(e => { errors.email = e.message; });
   await sendSlack(cfg, s).catch(e => { errors.slack = e.message; });
   await sendTeams(cfg, s).catch(e => { errors.teams = e.message; });
-
   return errors;
 }
 
-/** Send a test notification to verify settings — sends to all enabled channels */
+export async function sendRunNotification(cfg: NotificationSettings, s: RunSummary): Promise<{ email?: string; slack?: string; teams?: string }> {
+  if (!shouldNotify(cfg, s)) return {};
+  return dispatchChannels(cfg, s);
+}
+
+/** Send a test notification to verify settings — bypasses notifyOn* filters */
 export async function sendTestNotification(cfg: NotificationSettings, platformUrl: string): Promise<{ email?: string; slack?: string; teams?: string }> {
   const dummy: RunSummary = {
     runId:           'test-notification',
@@ -234,7 +235,7 @@ export async function sendTestNotification(cfg: NotificationSettings, platformUr
     environmentName: 'UAT',
     platformUrl,
   };
-  return sendRunNotification(cfg, dummy);
+  return dispatchChannels(cfg, dummy);
 }
 
 /** Format milliseconds into human-readable duration string */

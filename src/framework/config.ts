@@ -42,6 +42,9 @@ export const config = {
     port:        parseInt(optional('UI_PORT', '3000')),
     cookieName:  optional('SESSION_COOKIE_NAME', 'qa.sid'),
     envLabel:    optional('APP_ENV_LABEL', 'PROD'),  // 'DEV' | 'PROD' — shown in UI badge
+    get baseUrl(): string {
+      return optional('PLATFORM_BASE_URL', `http://localhost:${this.port}`);
+    },
   },
 
   // Paths — all configurable so dev and prod instances are fully isolated

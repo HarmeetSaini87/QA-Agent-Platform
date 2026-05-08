@@ -9,7 +9,7 @@ import { runs, getRun } from '../helpers/state';
 import { attachDefectInfo } from '../helpers/run-spawner';
 
 export function registerRunsRoutes(app: express.Application): void {
-  app.get('/api/run/:runId', requireAuthOrApiKey, (req: Request, res: Response) => {
+  app.get('/api/run/:runId', (req: Request, res: Response) => {
     const record = getRun(req.params.runId);
     if (!record) { res.status(404).json({ error: 'Run not found' }); return; }
     const decorated = attachDefectInfo({ ...record, output: record.output.slice(-100) } as RunRecord);

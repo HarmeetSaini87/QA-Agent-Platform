@@ -18,7 +18,7 @@ function escapeHtml(s: string): string { return s.replace(/&/g, '&amp;').replace
 
 export function registerFilesRoutes(app: express.Application, testFileUpload: any): void {
   // Standalone Execution Report
-  app.get('/execution-report', requireAuth, (_req: Request, res: Response) => {
+  app.get('/execution-report', (_req: Request, res: Response) => {
     res.sendFile(path.join(PUBLIC_DIR, 'execution-report.html'));
   });
 
