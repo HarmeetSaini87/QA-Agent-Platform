@@ -28,6 +28,7 @@ export interface RunSummary {
   executedBy:  string;
   environmentName: string;
   platformUrl: string;   // base URL of this platform instance e.g. http://qa-platform.local
+  isTest?:     boolean;  // true for test notifications
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -89,14 +90,20 @@ async function sendEmail(cfg: NotificationSettings, s: RunSummary): Promise<void
     tls:    { rejectUnauthorized: false },
   });
 
-  const subject = `${statusEmoji(s)} [QA Platform] ${s.suiteName} — ${s.failed > 0 ? `${s.failed} FAILED` : 'ALL PASSED'} (${passRate(s)})`;
+  const testTag = s.isTest ? '🔧 [TEST NOTIFICATION] ' : '';
+  const subject = `${testTag}${statusEmoji(s)} [TestForge] ${s.suiteName} — ${s.failed > 0 ? `${s.failed} FAILED` : 'ALL PASSED'} (${passRate(s)})`;
+
+  const headerBg = s.isTest ? '#6366f1' : (s.failed > 0 ? '#dc2626' : '#16a34a');
+  const headerTitle = s.isTest ? '🔧 Test Notification — Settings Verification' : `${statusEmoji(s)} Suite Run ${s.failed > 0 ? 'Failed' : 'Passed'}`;
+  const testBanner = s.isTest ? '<div style="background:#fef3c7;border:1px solid #f59e0b;padding:10px 16px;border-radius:6px;margin-bottom:16px;font-size:13px;color:#92400e">⚠️ This is a <strong>test notification</strong> to verify your email settings. No actual test run occurred.</div>' : '';
 
   const html = `
 <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
-  <div style="background:${s.failed > 0 ? '#dc2626' : '#16a34a'};padding:16px 24px;border-radius:8px 8px 0 0">
-    <h2 style="color:#fff;margin:0;font-size:18px">${statusEmoji(s)} Suite Run ${s.failed > 0 ? 'Failed' : 'Passed'}</h2>
+  <div style="background:${headerBg};padding:16px 24px;border-radius:8px 8px 0 0">
+    <h2 style="color:#fff;margin:0;font-size:18px">${headerTitle}</h2>
   </div>
   <div style="background:#f9fafb;padding:24px;border:1px solid #e5e7eb;border-top:none;border-radius:0 0 8px 8px">
+    ${testBanner}
     <table style="width:100%;border-collapse:collapse;font-size:14px">
       <tr><td style="padding:6px 0;color:#6b7280;width:140px">Suite</td><td style="padding:6px 0;font-weight:600">${s.suiteName}</td></tr>
       <tr><td style="padding:6px 0;color:#6b7280">Project</td><td style="padding:6px 0">${s.projectName}</td></tr>
@@ -129,15 +136,17 @@ async function sendEmail(cfg: NotificationSettings, s: RunSummary): Promise<void
 async function sendSlack(cfg: NotificationSettings, s: RunSummary): Promise<void> {
   if (!cfg.slackEnabled || !cfg.slackWebhook) return;
 
-  const color = s.failed > 0 ? '#dc2626' : '#16a34a';
+  const color = s.isTest ? '#6366f1' : (s.failed > 0 ? '#dc2626' : '#16a34a');
+  const testLabel = s.isTest ? '🔧 *TEST NOTIFICATION* — Settings Verification\n' : '';
   const body = {
     attachments: [{
       color,
       blocks: [
         {
           type: 'section',
-          text: { type: 'mrkdwn', text: `${statusEmoji(s)} *${s.suiteName}* — ${s.failed > 0 ? `*${s.failed} test(s) FAILED*` : '*All tests passed*'} (${passRate(s)})` },
+          text: { type: 'mrkdwn', text: `${testLabel}${statusEmoji(s)} *${s.suiteName}* — ${s.failed > 0 ? `*${s.failed} test(s) FAILED*` : '*All tests passed*'} (${passRate(s)})` },
         },
+        ...(s.isTest ? [{ type: 'section', text: { type: 'mrkdwn', text: ':warning: This is a *test notification* to verify your channel settings. No actual test run occurred.' } }] : []),
         {
           type: 'section',
           fields: [
@@ -165,7 +174,28 @@ async function sendSlack(cfg: NotificationSettings, s: RunSummary): Promise<void
 async function sendTeams(cfg: NotificationSettings, s: RunSummary): Promise<void> {
   if (!cfg.teamsEnabled || !cfg.teamsWebhook) return;
 
-  const color = s.failed > 0 ? 'attention' : 'good';
+  const color = s.isTest ? 'accent' : (s.failed > 0 ? 'attention' : 'good');
+  const teamsCardBody: object[] = [
+    ...(s.isTest ? [{
+      type: 'TextBlock',
+      text: '🔧 TEST NOTIFICATION — Settings Verification',
+      weight: 'Bolder',
+      size: 'Medium',
+      color: 'Accent',
+    }, {
+      type: 'TextBlock',
+      text: '⚠️ This is a test notification to verify your channel settings. No actual test run occurred.',
+      wrap: true,
+      color: 'Warning',
+    }] : []),
+    {
+      type: 'TextBlock',
+      text: `${statusEmoji(s)} ${s.suiteName} — ${s.failed > 0 ? `${s.failed} FAILED` : 'ALL PASSED'} (${passRate(s)})`,
+      weight: 'Bolder',
+      size:   'Medium',
+      color,
+    },
+  ];
   const body = {
     type:        'message',
     attachments: [{
@@ -175,13 +205,7 @@ async function sendTeams(cfg: NotificationSettings, s: RunSummary): Promise<void
         type:    'AdaptiveCard',
         version: '1.4',
         body: [
-          {
-            type: 'TextBlock',
-            text: `${statusEmoji(s)} ${s.suiteName} — ${s.failed > 0 ? `${s.failed} FAILED` : 'ALL PASSED'} (${passRate(s)})`,
-            weight: 'Bolder',
-            size:   'Medium',
-            color,
-          },
+          ...teamsCardBody,
           {
             type:    'FactSet',
             facts: [
@@ -234,6 +258,7 @@ export async function sendTestNotification(cfg: NotificationSettings, platformUr
     executedBy:      'admin',
     environmentName: 'UAT',
     platformUrl,
+    isTest:          true,
   };
   return dispatchChannels(cfg, dummy);
 }

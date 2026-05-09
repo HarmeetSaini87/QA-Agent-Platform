@@ -491,12 +491,21 @@ function _debugOnError({ stepIdx, keyword, locator, errorMessage, errorType }) {
   const currentLt = stepMeta?.locatorType || 'css';
   const currentVal = stepMeta?.value || '';
 
+  // Page-level asserts: act on `page` directly — locator fields not applicable
+  const PAGE_LEVEL_ASSERT_KW = new Set([
+    'ASSERT URL', 'ASSERT URL NOT', 'ASSERT TITLE', 'ASSERT TITLE NOT',
+    'ASSERT DOWNLOAD COUNT', 'ASSERT RESPONSE OK', 'ASSERT FILE DOWNLOADED', 'ASSERT EXCEL ROW COUNT',
+  ]);
+  const kwUpper = (keyword || '').toUpperCase().trim();
+  const isPageLevel = PAGE_LEVEL_ASSERT_KW.has(kwUpper);
+
   const editPanel = document.createElement('div');
   editPanel.id = 'dbg-inline-edit';
   editPanel.style.cssText = 'margin-top:12px;background:#1e293b;border:1px solid #f59e0b;border-radius:8px;padding:14px 16px';
   editPanel.innerHTML = `
     <div style="font-size:12px;font-weight:700;color:#f59e0b;margin-bottom:10px;letter-spacing:0.5px">✎ EDIT &amp; RETRY — correct the step without stopping the session</div>
     <div style="display:grid;grid-template-columns:130px 1fr;gap:8px;align-items:center;font-size:12px;color:#94a3b8">
+      ${isPageLevel ? '' : `
       <label>Locator Type</label>
       <select id="dbg-edit-loctype" class="fm-input" style="font-size:12px;padding:3px 6px;background:#0f172a;color:#e2e8f0;border-color:#334155">
         ${LOCATOR_TYPES.map(t => `<option value="${t}" ${currentLt === t ? 'selected' : ''}>${t}</option>`).join('')}
@@ -505,6 +514,7 @@ function _debugOnError({ stepIdx, keyword, locator, errorMessage, errorType }) {
       <input id="dbg-edit-loc" class="fm-input" type="text" value="${escHtml(currentLoc)}"
         placeholder="Enter corrected locator…"
         style="font-family:monospace;font-size:12px;padding:3px 6px;background:#0f172a;color:#e2e8f0;border-color:#334155">
+      `}
       <label>Value</label>
       <input id="dbg-edit-val" class="fm-input" type="text" value="${escHtml(currentVal)}"
         placeholder="Enter corrected value…"
@@ -538,7 +548,10 @@ async function _debugApplyRetry(stepIdx, stepNum) {
   const value = document.getElementById('dbg-edit-val')?.value;
   const persist = document.getElementById('dbg-edit-persist')?.checked !== false;
 
-  if (!locator) { alert('Locator cannot be empty'); return; }
+  // OLD: always required locator — blocked page-level asserts (ASSERT URL, ASSERT TITLE, etc.)
+  // if (!locator) { alert('Locator cannot be empty'); return; }
+  // Locator is optional for page-level asserts (no locator field shown); required only when field is visible
+  if (document.getElementById('dbg-edit-loc') && !locator) { alert('Locator cannot be empty'); return; }
 
   // Persist changes to script + locator repo
   if (persist && _debugSessionId) {
@@ -605,6 +618,16 @@ async function debugContinue(action) {
       }
     });
     _debugRenderSteps();
+    // Clear error panel + inline edit so next step renders cleanly (not underneath error UI)
+    document.getElementById('dbg-inline-edit')?.remove();
+    const _skipErrPanel = document.getElementById('dbg-error-panel');
+    if (_skipErrPanel) _skipErrPanel.style.display = 'none';
+    // Reset header to neutral "running" state — next _debugOnStep will populate real values
+    document.getElementById('dbg-kw').textContent = '—';
+    document.getElementById('dbg-loc').textContent = '—';
+    document.getElementById('dbg-val').textContent = '—';
+    _debugSetProgress('Stepping…');
+    _debugSetStatus('running');
   }
 
   if (action === 'stop') {

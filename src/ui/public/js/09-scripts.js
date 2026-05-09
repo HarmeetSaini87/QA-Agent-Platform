@@ -1446,6 +1446,8 @@ function scriptStepPinOpen(btn) {
       badge.classList.toggle('step-pin-badge-global', scopeVal === 'global');
     }
     btn.classList.add('step-pin-active');
+    // Refresh all downstream steps currently in Variable mode so they pick up the new pin
+    _refreshAllVarDropdowns();
   };
 
   // Focus the name input
@@ -1462,6 +1464,17 @@ function scriptStepPinClear(btn) {
     badge.classList.remove('step-pin-badge-global');
   }
   row.querySelector('.step-pin-icon')?.classList.remove('step-pin-active');
+  // Refresh all downstream steps in Variable mode so they drop the cleared pin
+  _refreshAllVarDropdowns();
+}
+
+// Refresh every step currently showing the Variable source panel — called after any pin change
+function _refreshAllVarDropdowns() {
+  document.querySelectorAll('#se-steps-container .script-step-row').forEach(r => {
+    if (r.querySelector('.se-step-val-var') && r.querySelector('.se-step-val-var').style.display !== 'none') {
+      _loadVarOptions(r);
+    }
+  });
 }
 
 // SET VARIABLE source change

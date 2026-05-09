@@ -627,7 +627,8 @@
 .step-action-btn.step-del-icon:hover   { color: var(--danger); background: var(--danger-bg); border-color: var(--danger); }
 .step-action-btn.step-clone-icon:hover { color: #059669; background: #d1fae5; border-color: #059669; }
 .step-action-btn.step-pin-icon:hover   { color: #7c3aed; background: #ede9fe; border-color: #7c3aed; }
-.step-action-btn.step-pin-active       { color: #7c3aed; background: #ede9fe; border-color: #7c3aed; }
+.step-action-btn.step-pin-icon.step-pin-active       { color: #7c3aed; background: #ede9fe; border-color: #7c3aed; }
+.step-action-btn.step-pin-icon.step-pin-active:hover { color: #6d28d9; background: #ddd6fe; border-color: #6d28d9; }
 .step-action-btn.step-pin-disabled,
 .step-action-btn.step-pin-disabled:hover { opacity: .35; cursor: not-allowed; color: var(--neutral-400); background: var(--neutral-100); border-color: var(--neutral-200); }
 
@@ -1888,7 +1889,8 @@ body[data-theme="light"] .pin-modal-x:hover { color: #1a1208; background: rgba(0
 /* ── Step action buttons ─────────────────────────────────────────────────── */
 body[data-theme="light"] .step-action-btn { background: #faf6ef; color: #7c6f5a; border-color: #e8e0d0; }
 body[data-theme="light"] .step-action-btn:hover { background: #f5f0e8; color: #1a1208; }
-body[data-theme="light"] .step-action-btn:hover.pin-active { background: rgba(224,123,57,.1); color: #e07b39; border-color: rgba(224,123,57,.3); }
+body[data-theme="light"] .step-action-btn.step-pin-active { color: #7c3aed; background: #ede9fe; border-color: #7c3aed; }
+body[data-theme="light"] .step-action-btn.step-pin-active:hover { color: #6d28d9; background: #ddd6fe; border-color: #6d28d9; }
 body[data-theme="light"] .step-pin-pinned { color: #e07b39; background: rgba(224,123,57,.08); }
 body[data-theme="light"] .step-pin-disabled { color: #d4c8b8; }
 
