@@ -1823,7 +1823,7 @@ export function generateDebugSpec(input: DebugCodegenInput): string {
 
   // ── File header ────────────────────────────────────────────────────────────
   lines.push(`/** Auto-generated Debug Spec — QA Agent Platform */`);
-  lines.push(`import { test } from '@playwright/test';`);
+  lines.push(`import { test, expect } from '@playwright/test';`);
   lines.push(`import * as _fs from 'fs';`);
   lines.push(``);
   lines.push(`const __SS_DIR     = '${ssDir}';`);
