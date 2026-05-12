@@ -31,6 +31,14 @@ export interface RecorderEvent {
   alternatives?:     LocatorAlternative[];
   importanceScore?:  number;
   pageKey?:          string;
+  // ── v5 gap-fix fields ──────────────────────────────────────────────────────
+  frameContext?:    { frameId: string | null; frameName: string | null; frameSrc: string | null } | null;
+  position?:        { x: number; y: number } | null;   // CLICK_AT_COORDS
+  scrollPosition?:  { x: number; y: number } | null;   // SCROLL
+  toSelector?:      string | null;                      // DRAG target selector
+  toSelectorType?:  string | null;                      // DRAG target selectorType
+  canvasDrag?:      { fromX: number; fromY: number; toX: number; toY: number } | null; // CANVAS_DRAG
+  rfAction?:        Record<string, unknown> | null; // RF_* semantic payload
 }
 
 // ── Keyword mapping ───────────────────────────────────────────────────────────
@@ -47,10 +55,25 @@ const EVENT_TO_KEYWORD: Record<string, string> = {
   ACCEPT_ALERT:   'ACCEPT ALERT',
   ACCEPT_DIALOG:  'ACCEPT DIALOG',
   HANDLE_PROMPT:  'HANDLE PROMPT',
-  ASSERT_VISIBLE: 'ASSERT VISIBLE',  // auto-captured from flash/toast messages
-  ASSERT_TOAST:   'ASSERT TOAST',    // CR4: auto-captured toast with text assertion
-  ASSERT_TEXT:    'ASSERT TEXT',     // CR4: inline validation / field error message
-  ASSERT_URL:     'ASSERT URL',      // CR4: auto-captured after SPA navigation
+  ASSERT_VISIBLE:  'ASSERT VISIBLE',  // auto-captured from flash/toast messages
+  ASSERT_TOAST:    'ASSERT TOAST',    // CR4: auto-captured toast with text assertion
+  ASSERT_TEXT:     'ASSERT TEXT',     // CR4: inline validation / field error message
+  ASSERT_URL:      'ASSERT URL',      // CR4: auto-captured after SPA navigation
+  // ── v5 new event types ────────────────────────────────────────────────────
+  HOVER:           'HOVER',
+  DBLCLICK:        'DBLCLICK',
+  RIGHT_CLICK:     'RIGHT CLICK',
+  PRESS_KEY:       'PRESS KEY',
+  DRAG:            'DRAG DROP',
+  SCROLL:          'SCROLL TO',
+  CLICK_AT_COORDS: 'CLICK AT COORDS',
+  SWITCH_FRAME:    'SWITCH FRAME',
+  CANVAS_DRAG:     'CANVAS DRAG',
+  // ── React Flow semantic actions ───────────────────────────────────────────
+  RF_NODE_DRAG:    'RF NODE DRAG',
+  RF_CONNECT:      'RF CONNECT',
+  RF_PAN:          'RF PAN',
+  RF_DROP_NODE:    'RF DROP NODE',
 };
 
 // ── Locator Repository resolution ─────────────────────────────────────────────
@@ -115,10 +138,20 @@ function eventTypeToVerb(eventType: string): string {
     ASSERT_TOAST:   'Assert Toast',
     ASSERT_TEXT:    'Assert Text',
     ASSERT_URL:     'Assert URL',
-    HOVER:          'Hover',
-    FOCUS:          'Focus',
-    DBLCLICK:       'Double Click',
-    RIGHT_CLICK:    'Right Click',
+    HOVER:           'Hover',
+    FOCUS:           'Focus',
+    DBLCLICK:        'Double Click',
+    RIGHT_CLICK:     'Right Click',
+    PRESS_KEY:       'Press Key',
+    DRAG:            'Drag & Drop',
+    SCROLL:          'Scroll',
+    CLICK_AT_COORDS: 'Click At Coordinates',
+    SWITCH_FRAME:    'Switch Frame',
+    CANVAS_DRAG:     'Canvas Drag',
+    RF_NODE_DRAG:    'RF Node Drag',
+    RF_CONNECT:      'RF Connect Nodes',
+    RF_PAN:          'RF Pan Canvas',
+    RF_DROP_NODE:    'RF Drop Node',
   };
   if (map[eventType]) return map[eventType];
   // Generic: FILE_CHOOSER-style fallback → "File Chooser" (Title Case, underscores → spaces)
@@ -308,6 +341,13 @@ export function parseRecorderEvent(
   const noLocatorKeywords = new Set([
     'GOTO', 'ACCEPT ALERT', 'ACCEPT DIALOG', 'HANDLE PROMPT',
     'ASSERT URL', 'ASSERT TOAST', 'WAIT FOR TOAST',
+    'PRESS KEY',    // chord string, not a DOM element
+    'SCROLL TO',    // positional scroll — value carries {x,y}; locator is optional
+    'SWITCH FRAME', // frame selector stored in value, not locator repo
+    'RF PAN',       // viewport pan — no element locator
+    'RF DROP NODE', // drop coords only — no stable locator
+    // CANVAS DRAG, RF NODE DRAG, RF CONNECT intentionally NOT here — canvas/node locator IS saved — the canvas element
+    // itself IS saved to the locator repo so healing can find it if selector changes.
     // ASSERT TEXT and ASSERT VISIBLE DO have a locator target
   ]);
 
@@ -371,12 +411,20 @@ export function parseRecorderEvent(
     locator,
     locatorId,
     locatorType,
-    locatorName: locatorName || undefined as any,  // convenience — not in type but used by UI
-    valueMode:   'static',
-    value:       event.value ?? null,
-    testData:    [],
-    description: buildDescription(event),
-    screenshot:  false,
+    locatorName:  locatorName || undefined as any,  // convenience — not in type but used by UI
+    valueMode:    'static',
+    value:        event.value ?? null,
+    testData:     [],
+    description:  buildDescription(event),
+    screenshot:   false,
+    // ── v5 extra metadata (stored on step for codegen + UI display) ──────────
+    ...(event.frameContext  ? { frameContext:   event.frameContext  } : {}),
+    ...(event.position      ? { position:       event.position      } : {}),
+    ...(event.scrollPosition? { scrollPosition: event.scrollPosition} : {}),
+    ...(event.toSelector    ? { toSelector:     event.toSelector,
+                                toSelectorType: event.toSelectorType } : {}),
+    ...(event.canvasDrag    ? { canvasDrag:     event.canvasDrag    } : {}),
+    ...(event.rfAction      ? { rfAction:       event.rfAction      } : {}),
   } as ScriptStep & { locatorName?: string };
 
   return { step, locatorCreated, locatorName };
@@ -407,8 +455,39 @@ function buildDescription(event: RecorderEvent): string {
     case 'HANDLE_PROMPT':  return val  ? `Handle prompt: ${val}` : 'Handle prompt';
     case 'HOVER':          return name ? `Hover over ${name}` : 'Hover over element';
     case 'FOCUS':          return name ? `Focus on ${name}` : 'Focus on element';
-    case 'DBLCLICK':       return name ? `Double-click ${name}` : 'Double-click element';
-    case 'RIGHT_CLICK':    return name ? `Right-click ${name}` : 'Right-click element';
-    default:               return name ? `${verb} ${name}` : verb;
+    case 'DBLCLICK':        return name ? `Double-click ${name}` : 'Double-click element';
+    case 'RIGHT_CLICK':     return name ? `Right-click ${name}` : 'Right-click element';
+    case 'PRESS_KEY':       return val  ? `Press key: ${val}` : 'Press key';
+    case 'DRAG':            return name ? `Drag ${name}` : 'Drag element';
+    case 'SCROLL':          return val  ? `Scroll to ${val}` : 'Scroll page';
+    case 'CLICK_AT_COORDS': return val  ? `Click canvas at ${val}` : 'Click at coordinates';
+    case 'SWITCH_FRAME':    return val  ? `Switch to frame: ${val}` : 'Switch frame';
+    case 'CANVAS_DRAG': {
+      try {
+        const cd = JSON.parse(val || '{}');
+        return `Canvas drag (${cd.fromX ?? '?'},${cd.fromY ?? '?'}) → (${cd.toX ?? '?'},${cd.toY ?? '?'})`;
+      } catch { return 'Canvas drag'; }
+    }
+    case 'RF_NODE_DRAG': {
+      try {
+        const d = JSON.parse(val || '{}');
+        return `Move node "${d.nodeId ?? '?'}" by (${d.deltaFlow?.x ?? '?'}, ${d.deltaFlow?.y ?? '?'})`;
+      } catch { return 'RF node drag'; }
+    }
+    case 'RF_CONNECT':
+      return name ? `Connect "${name}"` : 'Connect nodes';
+    case 'RF_PAN': {
+      try {
+        const d = JSON.parse(val || '{}');
+        return `Pan canvas (${d.dx ?? '?'}, ${d.dy ?? '?'})`;
+      } catch { return 'Pan canvas'; }
+    }
+    case 'RF_DROP_NODE': {
+      try {
+        const d = JSON.parse(val || '{}');
+        return `Drop "${d.nodeType ?? '?'}" node at (${d.dropFlow?.x ?? '?'}, ${d.dropFlow?.y ?? '?'})`;
+      } catch { return 'Drop node'; }
+    }
+    default:                return name ? `${verb} ${name}` : verb;
   }
 }

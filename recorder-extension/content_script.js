@@ -1,10 +1,12 @@
 /**
- * content_script.js — QA Agent Recorder Extension v4
+ * content_script.js — QA Agent Recorder Extension v5
  *
  * Injected into the AUT tab when user starts recording.
- * Captures: click, fill (blur), select, check/uncheck, file upload,
- *           window.alert/confirm/prompt, open shadow DOM (recursive),
- *           same-origin iframes.
+ * Captures: click, dblclick, contextmenu, fill (blur), select (incl. multi),
+ *           check/uncheck, file upload, hover, drag & drop, keyboard shortcuts,
+ *           contenteditable, window.alert/confirm/prompt,
+ *           deep shadow DOM (recursive + attachShadow monkey-patch),
+ *           same-origin iframes (nested, with frameId context tagging).
  *
  * Each captured action POSTed to platformOrigin/api/recorder/step.
  * Notifies background.js via chrome.runtime.sendMessage for badge update.
@@ -18,6 +20,23 @@
  *   CR3. Natural language smartName — label[for] awareness for label elements.
  *   P1.  Self-Healing Phase 1 — healingProfile, alternatives[], importanceScore,
  *        pageKey captured on every step.
+ *
+ * v5 gap fixes:
+ *   G1.  Iframe frame context — frameId/frameName/frameSrc tagged on every step
+ *        from inside an iframe so codegenGenerator can wrap in frameLocator().
+ *   G2.  Nested iframes — injectIntoIframe() now calls scanForIframes(doc)
+ *        recursively so level-2+ iframes are injected.
+ *   G3.  Deep shadow DOM — attachShadow monkey-patch in MAIN world catches
+ *        dynamically created shadow roots on existing elements.
+ *   G4.  Hover — mouseenter listener emits HOVER step for tooltip/menu triggers.
+ *   G5.  Keyboard — keydown listener emits PRESS_KEY for Escape/Enter/Tab/F1-F12
+ *        and common Ctrl/Meta shortcuts.
+ *   G6.  contenteditable — FILL uses innerText instead of el.value for
+ *        rich-text editors (Quill, ProseMirror, TipTap, Draft.js, etc.).
+ *   G7.  Multi-select — SELECT step captures all selected option texts as array.
+ *   G8.  Double-click — dblclick listener emits DBLCLICK step.
+ *   G9.  Right-click — contextmenu listener emits RIGHT_CLICK step.
+ *   G10. Drag & drop — mousedown+mousemove+mouseup sequence emits DRAG step.
  */
 (function () {
   'use strict';
@@ -40,6 +59,30 @@
   // ── CR2: Central dedup state ──────────────────────────────────────────────────
   let _lastEmitted = { eventType: '', selector: '', value: '', ts: 0 };
   let _pendingFill = null;  // { el, loc, value, timer } — buffered until typing stops
+
+  // ── G1: Iframe context registry — maps document → frame descriptor ────────────
+  // When events are captured inside an iframe, we tag every step with frameId/
+  // frameName/frameSrc so codegenGenerator can wrap selectors in frameLocator().
+  const _iframeContextMap = new WeakMap(); // document → { frameId, frameName, frameSrc }
+
+  function _getFrameContext(doc) {
+    if (doc === document) return null; // main frame — no wrapping needed
+    return _iframeContextMap.get(doc) || null;
+  }
+
+  // ── G3: attachShadow monkey-patch request (main world) ────────────────────────
+  // Ask background.js to inject the shadow root patcher in MAIN world so that
+  // el.attachShadow() calls on existing elements are intercepted and we receive
+  // a __qa_shadowroot custom event for each newly created shadow root.
+  let _shadowPatcherInjected = false;
+  function injectShadowPatcher() {
+    if (_shadowPatcherInjected) return;
+    _shadowPatcherInjected = true;
+    chrome.runtime.sendMessage({ type: 'INJECT_SHADOW_PATCHER' });
+  }
+
+  // ── G10: Drag tracking state ──────────────────────────────────────────────────
+  let _dragState = null; // { el, loc, startX, startY, moved, isCanvas, isRF, rfCtx }
 
   // ── Self-init from chrome.storage (survives SSO redirects + race conditions) ─
   chrome.storage.local.get(['recorderState'], (result) => {
@@ -77,8 +120,11 @@
   // Route through background service worker to avoid Mixed Content blocks.
   // AUT may be HTTPS while platform is HTTP — browsers block direct HTTPS→HTTP
   // fetch. The extension background worker is not subject to this restriction.
-  function postStep(payload) {
+  // G1: attach frameContext when step originates inside an iframe.
+  function postStep(payload, sourceDoc) {
     if (!_active || !_token || !_platformOrigin) return;
+    const frameCtx = _getFrameContext(sourceDoc || document);
+    if (frameCtx) Object.assign(payload, { frameContext: frameCtx });
     chrome.runtime.sendMessage({
       type: 'POST_STEP',
       platformOrigin: _platformOrigin,
@@ -120,8 +166,92 @@
     'form', 'fieldset', 'figure', 'figcaption', 'blockquote',
     'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
     'i', 'em', 'strong', 'small', 'b', 'u', 's',
-    'img', 'svg', 'path', 'g', 'circle', 'rect', 'polygon',
+    'img',
+    // SVG structural containers — actionable SVGs handled separately via isSvgActionable()
+    'svg', 'g', 'defs', 'symbol', 'marker',
+    // SVG shape primitives — not actionable unless they have data-testid/aria-label/title
+    'path', 'circle', 'rect', 'polygon', 'polyline', 'line', 'ellipse',
   ]);
+
+  // SVG tags that can be meaningfully actionable (icon buttons, text, use elements)
+  const SVG_ACTIONABLE_TAGS = new Set(['text', 'tspan', 'use', 'image', 'foreignobject']);
+
+  // G11: SVG actionability check — true if the SVG element should be recorded
+  function isSvgActionable(el) {
+    const tag = (el.tagName || '').toLowerCase();
+    if (SVG_ACTIONABLE_TAGS.has(tag)) return true;
+    if (el.hasAttribute('data-testid') || el.hasAttribute('aria-label')) return true;
+    if (el.getAttribute('role')) return true;
+    try { if (window.getComputedStyle(el).cursor === 'pointer') return true; } catch {}
+    // Flow builder connector detection — SVG <path>/<line>/<polyline> that has
+    // a stroke (visible line) and is inside a flow/graph/diagram container.
+    if (['path', 'line', 'polyline', 'ellipse', 'circle', 'rect'].includes(tag)) {
+      const stroke = el.getAttribute('stroke') || (el.style && el.style.stroke) || '';
+      const hasStroke = stroke && stroke !== 'none' && stroke !== 'transparent';
+      if (hasStroke) {
+        // Check if inside a flow builder container (React Flow, JointJS, GoJS, Mermaid)
+        const flowParent = el.closest && el.closest(
+          '[class*="react-flow"],[class*="joint"],[class*="gojs"],[class*="mermaid"],' +
+          '[class*="flow-graph"],[class*="diagram"],[class*="canvas-container"],' +
+          '[data-testid*="flow"],[data-testid*="graph"],[data-testid*="canvas"]'
+        );
+        if (flowParent) return true;
+        // Fallback: any stroked path with an id or data attribute is likely intentional
+        if (el.id || el.getAttribute('data-id') || el.getAttribute('data-edge-id') ||
+            el.getAttribute('data-link-id') || el.getAttribute('data-connector-id')) return true;
+      }
+    }
+    return false;
+  }
+
+  // G11: Build a Playwright-compatible SVG locator
+  // Priority: data-testid → connector ids → aria-label → title child → <use> href → ancestor
+  function buildSvgLocator(el) {
+    const tid = el.getAttribute('data-testid');
+    if (tid) return { sel: `[data-testid="${tid}"]`, type: 'testid' };
+
+    // Flow builder connector / edge identifiers (React Flow, JointJS, GoJS, draw.io)
+    for (const attr of ['data-edge-id', 'data-link-id', 'data-connector-id', 'data-id', 'data-cell-id']) {
+      const v = el.getAttribute(attr);
+      if (v) return { sel: `[${attr}="${v}"]`, type: 'css' };
+    }
+    // Stable element id on connector path
+    if (el.id && !isDynamicId(el.id)) return { sel: `#${el.id}`, type: 'css' };
+
+    const al = el.getAttribute('aria-label');
+    if (al && al.trim()) return { sel: `//*[@aria-label="${al.trim()}"]`, type: 'xpath' };
+
+    // SVG <title> child element — Playwright getByTitle / aria-label fallback
+    const titleEl = el.querySelector && el.querySelector('title');
+    if (titleEl) {
+      const t = (titleEl.textContent || '').trim();
+      if (t) return { sel: `svg[title="${t}"], [aria-label="${t}"]`, type: 'css' };
+    }
+
+    // <use href="#icon-name"> — extract icon id as semantic label
+    if ((el.tagName || '').toLowerCase() === 'use') {
+      const href = el.getAttribute('href') || el.getAttribute('xlink:href') || '';
+      if (href.startsWith('#')) {
+        return { sel: `use[href="${href}"]`, type: 'css' };
+      }
+    }
+
+    // Nearest SVG ancestor with a stable attribute
+    let svgAncestor = el;
+    while (svgAncestor && (svgAncestor.tagName || '').toUpperCase() !== 'SVG' && svgAncestor !== document.body) {
+      svgAncestor = svgAncestor.parentElement;
+    }
+    if (svgAncestor && svgAncestor !== document.body) {
+      const svgTid = svgAncestor.getAttribute('data-testid');
+      if (svgTid) return { sel: `[data-testid="${svgTid}"]`, type: 'testid' };
+      const svgAl = svgAncestor.getAttribute('aria-label');
+      if (svgAl) return { sel: `//*[@aria-label="${svgAl}"]`, type: 'xpath' };
+    }
+
+    // Positional fallback — warn developer
+    console.warn('[QA Recorder] SVG element lacks stable locator — add data-testid or aria-label');
+    return { sel: buildRelativeXPath(el), type: 'xpath' };
+  }
 
   // ── CR1: Visibility guard ─────────────────────────────────────────────────────
   function isVisibleElement(el) {
@@ -149,6 +279,11 @@
 
     // <a> with href
     if (tag === 'a' && el.getAttribute('href') != null) return true;
+
+    // SVG elements — use dedicated SVG actionability check
+    if (el.namespaceURI === 'http://www.w3.org/2000/svg' || SVG_ACTIONABLE_TAGS.has(tag)) {
+      return isSvgActionable(el);
+    }
 
     // Container tags need an explicit interaction signal
     if (CONTAINER_TAGS.has(tag)) {
@@ -384,6 +519,11 @@
     if (!el || el.nodeType !== 1) return { sel: '', type: 'css' };
     const r   = root || document;
     const tag = el.tagName.toLowerCase();
+
+    // G11: SVG elements — use dedicated SVG locator strategy before generic CSS
+    if (el.namespaceURI === 'http://www.w3.org/2000/svg' || SVG_ACTIONABLE_TAGS.has(tag)) {
+      return buildSvgLocator(el);
+    }
 
     // 1. data-* automation attributes — gold standard
     for (const attr of ['data-testid', 'data-qa', 'data-cy', 'data-id', 'data-automation']) {
@@ -956,6 +1096,25 @@
       }
     }
 
+    // Cross-origin iframe click — emit SWITCH_FRAME instead of CLICK
+    // User clicking the iframe element itself signals intent to interact inside it.
+    if (el.tagName === 'IFRAME' && _crossOriginIframes.has(el)) {
+      _emitSwitchFrame(el);
+      return;
+    }
+    // Also check if click landed on a cross-origin iframe via closest()
+    const iframeAncestor = el.closest && el.closest('iframe');
+    if (iframeAncestor && _crossOriginIframes.has(iframeAncestor)) {
+      _emitSwitchFrame(iframeAncestor);
+      return;
+    }
+
+    // Canvas click — capture pointer coordinates relative to canvas bounds
+    if (el.tagName === 'CANVAS') {
+      _emitCanvasClick(el, e);
+      return;
+    }
+
     // CR1: reject invisible elements and non-actionable containers
     if (!isVisibleElement(el)) return;
     if (!isActionableClick(el)) return;
@@ -1073,14 +1232,17 @@
       return;
     }
     if (el.tagName === 'SELECT') {
-      const val = el.options[el.selectedIndex]?.text || el.value;
+      // G7: multi-select — capture all selected option texts as comma-separated string
+      const selectedTexts = el.multiple
+        ? Array.from(el.selectedOptions).map(o => o.text || o.value).join(', ')
+        : (el.options[el.selectedIndex]?.text || el.value);
       // Mark this SELECT so handleClick suppresses the post-selection browser click
       _lastSelectChange = { el, ts: Date.now() };
       postStep({
         eventType:    'SELECT',
         selector:     loc.sel,
         selectorType: loc.type,
-        value:        val,
+        value:        selectedTexts,
         smartName:    smartName(el),
         tagName:      'select',
         url:          location.href,
@@ -1093,18 +1255,24 @@
   // so that if the user briefly loses and re-gains focus on the same field
   // (common in React/Angular with synthetic events), only one FILL is recorded.
   // If the user moves to a different field, the pending fill is flushed first.
+  // G6: contenteditable — use innerText instead of el.value for rich-text editors.
   function handleBlur(e) {
     if (!_active) return;
     const el = e.target;
     if (!el || el.nodeType !== 1) return;
     const tag  = el.tagName.toLowerCase();
     const type = (el.type || '').toLowerCase();
+    const isContentEditable = el.isContentEditable || el.getAttribute('contenteditable') === 'true' || el.getAttribute('contenteditable') === '';
     const fillable = ['text', 'email', 'password', 'search', 'url', 'tel', 'number', ''];
-    if (!((tag === 'input' && fillable.includes(type)) || tag === 'textarea')) return;
-    if (!el.value && el.value !== '0') return;
+    if (!((tag === 'input' && fillable.includes(type)) || tag === 'textarea' || isContentEditable)) return;
 
-    const loc   = bestSelector(el);
-    const value = el.value;
+    // G6: contenteditable uses innerText; inputs use .value
+    const value = isContentEditable
+      ? (el.innerText || el.textContent || '').trim()
+      : el.value;
+    if (!value && value !== '0') return;
+
+    const loc = bestSelector(el);
 
     if (_pendingFill && _pendingFill.loc.sel === loc.sel) {
       // Same field blurred again — update value and reset merge timer
@@ -1121,31 +1289,617 @@
     _pendingFill.timer = setTimeout(flushPendingFill, FILL_MERGE_MS);
   }
 
-  // ── Attach / detach ──────────────────────────────────────────────────────────
-  function attachToRoot(root) {
-    root.addEventListener('click',    handleClick,  true);
-    root.addEventListener('change',   handleChange, true);
-    root.addEventListener('blur',     handleBlur,   true);
-    root.addEventListener('focusout', handleBlur,   true);
-  }
-  function detachFromRoot(root) {
-    root.removeEventListener('click',    handleClick,  true);
-    root.removeEventListener('change',   handleChange, true);
-    root.removeEventListener('blur',     handleBlur,   true);
-    root.removeEventListener('focusout', handleBlur,   true);
+  // ── G8: Double-click handler ──────────────────────────────────────────────────
+  function handleDblClick(e) {
+    if (!_active) return;
+    const el = e.target;
+    if (!el || el.nodeType !== 1) return;
+    if (!isVisibleElement(el)) return;
+    const loc = bestSelector(el);
+    if (!shouldEmit('DBLCLICK', loc.sel, '')) return;
+    recordEmit('DBLCLICK', loc.sel, '');
+    postStep({
+      eventType:    'DBLCLICK',
+      selector:     loc.sel,
+      selectorType: loc.type,
+      value:        '',
+      smartName:    smartName(el),
+      tagName:      el.tagName.toLowerCase(),
+      url:          location.href,
+      ...buildStepMeta(el, loc.sel),
+    });
   }
 
-  // Shadow DOM
+  // ── G9: Right-click (context menu) handler ───────────────────────────────────
+  function handleContextMenu(e) {
+    if (!_active) return;
+    const el = e.target;
+    if (!el || el.nodeType !== 1) return;
+    if (!isVisibleElement(el) || !isActionableClick(el)) return;
+    const loc = bestSelector(el);
+    if (!shouldEmit('RIGHT_CLICK', loc.sel, '')) return;
+    recordEmit('RIGHT_CLICK', loc.sel, '');
+    postStep({
+      eventType:    'RIGHT_CLICK',
+      selector:     loc.sel,
+      selectorType: loc.type,
+      value:        '',
+      smartName:    smartName(el),
+      tagName:      el.tagName.toLowerCase(),
+      url:          location.href,
+      ...buildStepMeta(el, loc.sel),
+    });
+  }
+
+  // ── G4: Hover handler ─────────────────────────────────────────────────────────
+  // Only emit HOVER for elements that likely trigger UI changes (tooltips, menus).
+  // Debounce: suppress rapid mouse-over noise — only emit after 400ms dwell.
+  let _hoverTimer = null;
+  let _hoverEl    = null;
+  function handleMouseEnter(e) {
+    if (!_active) return;
+    const el = e.target;
+    if (!el || el.nodeType !== 1) return;
+    if (!isVisibleElement(el)) return;
+    // Only hover on elements that have a hover-reveal signal
+    const hasHoverSignal = (
+      el.hasAttribute('title') ||
+      el.hasAttribute('data-tooltip') ||
+      el.hasAttribute('aria-describedby') ||
+      el.hasAttribute('data-toggle') ||
+      el.hasAttribute('data-bs-toggle') ||
+      (el.getAttribute('role') === 'tooltip') ||
+      el.matches && el.matches('[class*="tooltip"],[class*="dropdown-toggle"],[class*="has-submenu"]')
+    );
+    if (!hasHoverSignal) return;
+    clearTimeout(_hoverTimer);
+    _hoverEl    = el;
+    _hoverTimer = setTimeout(() => {
+      if (!_active || _hoverEl !== el) return;
+      const loc = bestSelector(el);
+      if (!shouldEmit('HOVER', loc.sel, '')) return;
+      recordEmit('HOVER', loc.sel, '');
+      postStep({
+        eventType:    'HOVER',
+        selector:     loc.sel,
+        selectorType: loc.type,
+        value:        '',
+        smartName:    smartName(el),
+        tagName:      el.tagName.toLowerCase(),
+        url:          location.href,
+        ...buildStepMeta(el, loc.sel),
+      });
+    }, 400);
+  }
+  function handleMouseLeave() {
+    clearTimeout(_hoverTimer);
+    _hoverEl = null;
+  }
+
+  // ── G5: Keyboard handler ──────────────────────────────────────────────────────
+  // Capture structural keys (Escape, Enter, Tab, F-keys) and common shortcuts.
+  // Suppress plain printable-character keystrokes — those are captured via FILL.
+  const KEY_CAPTURE = new Set([
+    'Escape', 'Enter', 'Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
+    'Delete', 'Backspace', 'Home', 'End', 'PageUp', 'PageDown',
+    'F1','F2','F3','F4','F5','F6','F7','F8','F9','F10','F11','F12',
+  ]);
+  function handleKeyDown(e) {
+    if (!_active) return;
+    const el  = e.target;
+    const key = e.key;
+    // Ctrl/Meta + letter shortcut (e.g. Ctrl+A, Ctrl+S)
+    const isShortcut = (e.ctrlKey || e.metaKey) && key.length === 1;
+    if (!KEY_CAPTURE.has(key) && !isShortcut) return;
+    // Suppress Enter/Tab on <input> — those just move focus; FILL captures the value
+    if ((key === 'Enter' || key === 'Tab') && el && el.tagName === 'INPUT' && !el.getAttribute('role')) return;
+
+    const modifiers = [
+      e.ctrlKey  ? 'Control' : '',
+      e.metaKey  ? 'Meta'    : '',
+      e.altKey   ? 'Alt'     : '',
+      e.shiftKey ? 'Shift'   : '',
+    ].filter(Boolean);
+    const chord = [...modifiers, key].join('+');
+    const loc   = el && el.nodeType === 1 ? bestSelector(el) : { sel: 'body', type: 'css' };
+    if (!shouldEmit('PRESS_KEY', chord, '')) return;
+    recordEmit('PRESS_KEY', chord, '');
+    postStep({
+      eventType:    'PRESS_KEY',
+      selector:     loc.sel,
+      selectorType: loc.type,
+      value:        chord,
+      smartName:    `Press ${chord}`,
+      tagName:      (el && el.tagName ? el.tagName.toLowerCase() : ''),
+      url:          location.href,
+    });
+  }
+
+  // ── React Flow Engine ─────────────────────────────────────────────────────────
+  // Detects React Flow canvas context and converts screen↔flow coordinates.
+  // React Flow applies transform: translate(tx,ty) scale(zoom) on .react-flow__viewport
+  // All node positions are in FLOW SPACE — must normalize before storing.
+
+  const RF_SELECTORS = {
+    root:       '.react-flow',
+    pane:       '.react-flow__pane',
+    viewport:   '.react-flow__viewport',
+    node:       '.react-flow__node',
+    handle:     '.react-flow__handle',
+    edge:       '.react-flow__edge',
+    edgePath:   '.react-flow__edge-path',
+    minimap:    '.react-flow__minimap',
+    controls:   '.react-flow__controls',
+  };
+
+  // Parse "translate(tx, ty) scale(z)" or matrix(...) from viewport element
+  function _rfParseTransform(viewport) {
+    if (!viewport) return null;
+    try {
+      const raw = viewport.style.transform || getComputedStyle(viewport).transform || '';
+      // translate(Xpx, Ypx) scale(Z)
+      const t = raw.match(/translate\(\s*([-\d.]+)px,\s*([-\d.]+)px\)\s*scale\(([-\d.]+)\)/);
+      if (t) return { tx: parseFloat(t[1]), ty: parseFloat(t[2]), zoom: parseFloat(t[3]) };
+      // matrix(a,b,c,d,e,f) — CSS matrix: a=scale, e=translateX, f=translateY
+      const m = raw.match(/matrix\(([-\d.]+),\s*([-\d.]+),\s*([-\d.]+),\s*([-\d.]+),\s*([-\d.]+),\s*([-\d.]+)\)/);
+      if (m) return { tx: parseFloat(m[5]), ty: parseFloat(m[6]), zoom: parseFloat(m[1]) };
+    } catch {}
+    return null;
+  }
+
+  // Screen pixel → React Flow flow-space coordinate
+  function _rfScreenToFlow(screenX, screenY, rfRect, vp) {
+    if (!vp) return { x: Math.round(screenX - rfRect.left), y: Math.round(screenY - rfRect.top) };
+    const flowX = (screenX - rfRect.left - vp.tx) / vp.zoom;
+    const flowY = (screenY - rfRect.top  - vp.ty) / vp.zoom;
+    return { x: Math.round(flowX), y: Math.round(flowY) };
+  }
+
+  // Capture full React Flow context at event time
+  function _rfGetContext() {
+    const root     = document.querySelector(RF_SELECTORS.root);
+    if (!root) return null;
+    const viewport = root.querySelector(RF_SELECTORS.viewport);
+    const vp       = _rfParseTransform(viewport);
+    const rfRect   = root.getBoundingClientRect();
+    return { root, viewport, vp, rfRect };
+  }
+
+  // Get stable node identifier: data-id → aria-label → text label → fallback
+  function _rfNodeId(nodeEl) {
+    if (!nodeEl) return null;
+    return nodeEl.getAttribute('data-id') ||
+           nodeEl.getAttribute('data-nodeid') ||
+           nodeEl.getAttribute('data-testid') ||
+           nodeEl.getAttribute('aria-label') ||
+           (nodeEl.querySelector('.react-flow__node-label,label,[class*="label"],[class*="title"]')?.textContent || '').trim().substring(0, 60) ||
+           nodeEl.id || null;
+  }
+
+  // Get handle position: 'source' or 'target' + side (top/right/bottom/left)
+  function _rfHandleInfo(handleEl) {
+    if (!handleEl) return null;
+    const pos  = handleEl.getAttribute('data-handlepos') || handleEl.getAttribute('data-position') || '';
+    const type = handleEl.getAttribute('data-handletype') || handleEl.getAttribute('data-type') ||
+                 (handleEl.classList.contains('source') ? 'source' : handleEl.classList.contains('target') ? 'target' : '');
+    const id   = handleEl.getAttribute('data-handleid') || handleEl.getAttribute('id') || '';
+    return { type, position: pos, id };
+  }
+
+  // Classify drag action from element context
+  function _rfClassifyAction(el, rfCtx) {
+    if (!el || !rfCtx) return null;
+    const node   = el.closest(RF_SELECTORS.node);
+    const handle = el.closest(RF_SELECTORS.handle);
+    const pane   = el.closest(RF_SELECTORS.pane);
+    if (handle) return 'connectNodes';    // dragging from a handle = edge creation
+    if (node)   return 'dragNode';        // dragging a node body
+    if (pane)   return 'panCanvas';       // dragging blank pane = pan
+    return null;
+  }
+
+  // HTML5 DnD — sidebar → canvas node drop
+  let _rfDndNodeType = null; // captured from dragstart dataTransfer
+  function _handleDragStart(e) {
+    if (!_active) return;
+    try {
+      // React Flow convention: dataTransfer.getData('application/reactflow') = nodeType
+      const nodeType = e.dataTransfer?.getData('application/reactflow') ||
+                       e.dataTransfer?.getData('text/plain') || null;
+      if (nodeType) _rfDndNodeType = nodeType;
+    } catch {}
+  }
+
+  // ── G10: Drag & drop handlers ─────────────────────────────────────────────────
+  const DRAG_THRESHOLD_PX = 10;
+
+  function handleMouseDown(e) {
+    if (!_active || e.button !== 0) return;
+    const el = e.target;
+    if (!el || el.nodeType !== 1) return;
+
+    const isCanvas = el.tagName === 'CANVAS';
+    const rfCtx    = _rfGetContext();
+    const isRF     = !!(rfCtx && el.closest(RF_SELECTORS.root));
+
+    if (!isCanvas && !isRF && (!isVisibleElement(el) || !isActionableClick(el))) return;
+
+    _dragState = {
+      el,
+      loc:    bestSelector(el),
+      startX: e.clientX,
+      startY: e.clientY,
+      moved:  false,
+      isCanvas,
+      isRF,
+      rfCtx,  // snapshot of viewport transform at mousedown time
+    };
+  }
+
+  function handleMouseMove(e) {
+    if (!_dragState) return;
+    const dx = Math.abs(e.clientX - _dragState.startX);
+    const dy = Math.abs(e.clientY - _dragState.startY);
+    if (dx > DRAG_THRESHOLD_PX || dy > DRAG_THRESHOLD_PX) _dragState.moved = true;
+  }
+
+  function handleMouseUp(e) {
+    if (!_dragState) return;
+    const ds = _dragState;
+    _dragState = null;
+    if (!ds.moved) return;
+
+    // ── React Flow semantic drag ──────────────────────────────────────────────
+    if (ds.isRF && ds.rfCtx) {
+      const { rfCtx } = ds;
+      const action = _rfClassifyAction(ds.el, rfCtx);
+
+      if (action === 'connectNodes') {
+        // Edge creation: handle → handle drag
+        const srcHandle = ds.el.closest(RF_SELECTORS.handle);
+        const srcNode   = srcHandle?.closest(RF_SELECTORS.node);
+        const tgtEl     = e.target;
+        const tgtHandle = tgtEl?.closest(RF_SELECTORS.handle);
+        const tgtNode   = tgtHandle?.closest(RF_SELECTORS.node) || tgtEl?.closest(RF_SELECTORS.node);
+
+        const srcNodeId   = _rfNodeId(srcNode)   || 'unknown';
+        const tgtNodeId   = _rfNodeId(tgtNode)   || 'unknown';
+        const srcHandleInfo = _rfHandleInfo(srcHandle) || {};
+        const tgtHandleInfo = _rfHandleInfo(tgtHandle) || {};
+
+        const payload = {
+          sourceNode:     srcNodeId,
+          sourceHandle:   srcHandleInfo.type || 'source',
+          sourcePosition: srcHandleInfo.position || '',
+          targetNode:     tgtNodeId,
+          targetHandle:   tgtHandleInfo.type || 'target',
+          targetPosition: tgtHandleInfo.position || '',
+          // Fallback flow coords if handles not found
+          fromFlow: _rfScreenToFlow(ds.startX, ds.startY, rfCtx.rfRect, rfCtx.vp),
+          toFlow:   _rfScreenToFlow(e.clientX, e.clientY, rfCtx.rfRect, rfCtx.vp),
+          viewport: rfCtx.vp,
+        };
+        const key = `${srcNodeId}→${tgtNodeId}`;
+        if (!shouldEmit('RF_CONNECT', key, '')) return;
+        recordEmit('RF_CONNECT', key, '');
+        postStep({
+          eventType:    'RF_CONNECT',
+          selector:     srcHandle ? bestSelector(srcHandle).sel : ds.loc.sel,
+          selectorType: 'css',
+          value:        JSON.stringify(payload),
+          smartName:    `Connect "${srcNodeId}" → "${tgtNodeId}"`,
+          tagName:      'div',
+          url:          location.href,
+          rfAction:     payload,
+        });
+
+      } else if (action === 'dragNode') {
+        // Node reposition: record nodeId + flow-space target position
+        const nodeEl  = ds.el.closest(RF_SELECTORS.node);
+        const nodeId  = _rfNodeId(nodeEl) || 'unknown';
+        const toFlow  = _rfScreenToFlow(e.clientX, e.clientY, rfCtx.rfRect, rfCtx.vp);
+        const fromFlow = _rfScreenToFlow(ds.startX, ds.startY, rfCtx.rfRect, rfCtx.vp);
+
+        const payload = {
+          nodeId,
+          fromFlow,
+          toFlow,
+          deltaFlow: { x: Math.round(toFlow.x - fromFlow.x), y: Math.round(toFlow.y - fromFlow.y) },
+          viewport: rfCtx.vp,
+        };
+        const key = `${nodeId}:${toFlow.x},${toFlow.y}`;
+        if (!shouldEmit('RF_NODE_DRAG', key, '')) return;
+        recordEmit('RF_NODE_DRAG', key, '');
+        postStep({
+          eventType:    'RF_NODE_DRAG',
+          selector:     nodeEl ? bestSelector(nodeEl).sel : ds.loc.sel,
+          selectorType: 'css',
+          value:        JSON.stringify(payload),
+          smartName:    `Move node "${nodeId}" by (${payload.deltaFlow.x}, ${payload.deltaFlow.y})`,
+          tagName:      'div',
+          url:          location.href,
+          rfAction:     payload,
+          ...buildStepMeta(nodeEl || ds.el, nodeEl ? bestSelector(nodeEl).sel : ds.loc.sel),
+        });
+
+      } else if (action === 'panCanvas') {
+        // Canvas pan: record viewport delta in screen px (pan is screen-space)
+        const dx = Math.round(e.clientX - ds.startX);
+        const dy = Math.round(e.clientY - ds.startY);
+        const payload = { dx, dy, viewport: rfCtx.vp };
+        if (!shouldEmit('RF_PAN', `${dx},${dy}`, '')) return;
+        recordEmit('RF_PAN', `${dx},${dy}`, '');
+        postStep({
+          eventType:    'RF_PAN',
+          selector:     RF_SELECTORS.pane,
+          selectorType: 'css',
+          value:        JSON.stringify(payload),
+          smartName:    `Pan canvas (${dx > 0 ? '+' : ''}${dx}, ${dy > 0 ? '+' : ''}${dy})`,
+          tagName:      'div',
+          url:          location.href,
+          rfAction:     payload,
+        });
+      }
+      return;
+    }
+
+    // ── Raw canvas drag (non-ReactFlow) ──────────────────────────────────────
+    if (ds.isCanvas) {
+      const rect  = ds.el.getBoundingClientRect();
+      const fromX = Math.round(ds.startX - rect.left);
+      const fromY = Math.round(ds.startY - rect.top);
+      const toX   = Math.round(e.clientX  - rect.left);
+      const toY   = Math.round(e.clientY  - rect.top);
+      const coords = JSON.stringify({ fromX, fromY, toX, toY });
+      if (!shouldEmit('CANVAS_DRAG', ds.loc.sel, coords)) return;
+      recordEmit('CANVAS_DRAG', ds.loc.sel, coords);
+      postStep({
+        eventType:    'CANVAS_DRAG',
+        selector:     ds.loc.sel,
+        selectorType: ds.loc.type,
+        value:        coords,
+        smartName:    `Canvas drag (${fromX},${fromY}) → (${toX},${toY})`,
+        tagName:      'canvas',
+        url:          location.href,
+        canvasDrag:   { fromX, fromY, toX, toY },
+        ...buildStepMeta(ds.el, ds.loc.sel),
+      });
+      return;
+    }
+
+    // ── Normal DOM drag ───────────────────────────────────────────────────────
+    const dropEl = e.target;
+    if (!dropEl || dropEl === ds.el || dropEl.nodeType !== 1) return;
+    const toLoc = bestSelector(dropEl);
+    if (!shouldEmit('DRAG', ds.loc.sel, toLoc.sel)) return;
+    recordEmit('DRAG', ds.loc.sel, toLoc.sel);
+    postStep({
+      eventType:    'DRAG',
+      selector:     ds.loc.sel,
+      selectorType: ds.loc.type,
+      value:        toLoc.sel,
+      smartName:    `Drag ${smartName(ds.el)} → ${smartName(dropEl)}`,
+      tagName:      ds.el.tagName.toLowerCase(),
+      url:          location.href,
+      toSelector:   toLoc.sel,
+      toSelectorType: toLoc.type,
+      ...buildStepMeta(ds.el, ds.loc.sel),
+    });
+  }
+
+  // ── Canvas coordinate click ───────────────────────────────────────────────────
+  // Captures click position relative to canvas top-left.
+  // Playwright needs locator.click({ position: { x, y } }) for canvas UIs.
+  function _emitCanvasClick(canvas, e) {
+    const rect = canvas.getBoundingClientRect();
+    const x    = Math.round(e.clientX - rect.left);
+    const y    = Math.round(e.clientY - rect.top);
+    const loc  = bestSelector(canvas);
+    const key  = `${loc.sel}:${x},${y}`;
+    if (!shouldEmit('CLICK_AT_COORDS', key, '')) return;
+    recordEmit('CLICK_AT_COORDS', key, '');
+    postStep({
+      eventType:    'CLICK_AT_COORDS',
+      selector:     loc.sel,
+      selectorType: loc.type,
+      value:        JSON.stringify({ x, y }),
+      smartName:    `Click canvas at (${x}, ${y})`,
+      tagName:      'canvas',
+      url:          location.href,
+      position:     { x, y },
+      ...buildStepMeta(canvas, loc.sel),
+    });
+  }
+
+  // ── Scroll capture ────────────────────────────────────────────────────────────
+  // Debounced — emits SCROLL after 600ms of scroll inactivity.
+  // Captures scrollLeft/scrollTop of the scrolled element (or window).
+  let _scrollTimer   = null;
+  let _scrollTarget  = null;
+  let _scrollLastPos = { x: 0, y: 0 };
+
+  function handleScroll(e) {
+    if (!_active) return;
+    const el   = e.target;
+    const isWin = !el || el === document || el === document.documentElement || el === document.body;
+    const scrollX = isWin ? window.scrollX : el.scrollLeft;
+    const scrollY = isWin ? window.scrollY : el.scrollTop;
+
+    // Suppress sub-pixel noise
+    if (Math.abs(scrollX - _scrollLastPos.x) < 5 && Math.abs(scrollY - _scrollLastPos.y) < 5) return;
+    _scrollLastPos = { x: scrollX, y: scrollY };
+    _scrollTarget  = isWin ? null : el;
+
+    clearTimeout(_scrollTimer);
+    _scrollTimer = setTimeout(() => {
+      if (!_active) return;
+      const target = _scrollTarget;
+      const sx     = isWin ? window.scrollX : (target ? target.scrollLeft : 0);
+      const sy     = isWin ? window.scrollY : (target ? target.scrollTop  : 0);
+      let loc = { sel: 'window', type: 'css' };
+      if (target && target.nodeType === 1) loc = bestSelector(target);
+      if (!shouldEmit('SCROLL', loc.sel, `${sx},${sy}`)) return;
+      recordEmit('SCROLL', loc.sel, `${sx},${sy}`);
+      postStep({
+        eventType:    'SCROLL',
+        selector:     loc.sel,
+        selectorType: loc.type,
+        value:        JSON.stringify({ x: sx, y: sy }),
+        smartName:    `Scroll to (${sx}, ${sy})`,
+        tagName:      target ? (target.tagName || '').toLowerCase() : 'window',
+        url:          location.href,
+        scrollPosition: { x: sx, y: sy },
+      });
+    }, 600);
+  }
+
+  // ── Attach / detach ──────────────────────────────────────────────────────────
+  // ── HTML5 DnD drop handler — sidebar → ReactFlow canvas node creation ────────
+  function _handleDrop(e) {
+    if (!_active) return;
+    const rfCtx = _rfGetContext();
+    if (!rfCtx) return;
+    // Only fire if drop lands inside React Flow pane
+    const pane = e.target?.closest(RF_SELECTORS.pane) || e.target?.closest(RF_SELECTORS.root);
+    if (!pane) return;
+
+    let nodeType = _rfDndNodeType;
+    _rfDndNodeType = null;
+    // Also try reading from event directly (same-origin DnD)
+    try {
+      nodeType = nodeType ||
+        e.dataTransfer?.getData('application/reactflow') ||
+        e.dataTransfer?.getData('text/plain') || 'unknown';
+    } catch {}
+    if (!nodeType) return;
+
+    const dropFlow = _rfScreenToFlow(e.clientX, e.clientY, rfCtx.rfRect, rfCtx.vp);
+    const payload  = { nodeType, dropFlow, viewport: rfCtx.vp };
+    const key      = `${nodeType}:${dropFlow.x},${dropFlow.y}`;
+    if (!shouldEmit('RF_DROP_NODE', key, '')) return;
+    recordEmit('RF_DROP_NODE', key, '');
+    postStep({
+      eventType:    'RF_DROP_NODE',
+      selector:     RF_SELECTORS.pane,
+      selectorType: 'css',
+      value:        JSON.stringify(payload),
+      smartName:    `Drop node "${nodeType}" at flow (${dropFlow.x}, ${dropFlow.y})`,
+      tagName:      'div',
+      url:          location.href,
+      rfAction:     payload,
+    });
+  }
+
+  function attachToRoot(root) {
+    root.addEventListener('click',       handleClick,       true);
+    root.addEventListener('dblclick',    handleDblClick,    true);
+    root.addEventListener('contextmenu', handleContextMenu, true);
+    root.addEventListener('change',      handleChange,      true);
+    root.addEventListener('blur',        handleBlur,        true);
+    root.addEventListener('focusout',    handleBlur,        true);
+    root.addEventListener('mouseenter',  handleMouseEnter,  true);
+    root.addEventListener('mouseleave',  handleMouseLeave,  true);
+    root.addEventListener('keydown',     handleKeyDown,     true);
+    root.addEventListener('mousedown',   handleMouseDown,   true);
+    root.addEventListener('mousemove',   handleMouseMove,   true);
+    root.addEventListener('mouseup',     handleMouseUp,     true);
+    root.addEventListener('dragstart',   _handleDragStart,  true);
+    root.addEventListener('drop',        _handleDrop,       true);
+    root.addEventListener('scroll',      handleScroll,      false);
+  }
+  function detachFromRoot(root) {
+    root.removeEventListener('click',       handleClick,       true);
+    root.removeEventListener('dblclick',    handleDblClick,    true);
+    root.removeEventListener('contextmenu', handleContextMenu, true);
+    root.removeEventListener('change',      handleChange,      true);
+    root.removeEventListener('blur',        handleBlur,        true);
+    root.removeEventListener('focusout',    handleBlur,        true);
+    root.removeEventListener('mouseenter',  handleMouseEnter,  true);
+    root.removeEventListener('mouseleave',  handleMouseLeave,  true);
+    root.removeEventListener('keydown',     handleKeyDown,     true);
+    root.removeEventListener('mousedown',   handleMouseDown,   true);
+    root.removeEventListener('mousemove',   handleMouseMove,   true);
+    root.removeEventListener('mouseup',     handleMouseUp,     true);
+    root.removeEventListener('dragstart',   _handleDragStart,  true);
+    root.removeEventListener('drop',        _handleDrop,       true);
+    root.removeEventListener('scroll',      handleScroll,      false);
+  }
+
+  // ── G3: Deep shadow DOM — recursive injection ─────────────────────────────────
+  // injectIntoShadowRoot scans shadow root for nested shadow roots recursively.
   function injectIntoShadowRoot(sr) {
+    if (sr.__qaInjected) return;
+    sr.__qaInjected = true;
     attachToRoot(sr);
+    // Scan for already-existing nested shadow hosts
+    sr.querySelectorAll('*').forEach(el => { if (el.shadowRoot) injectIntoShadowRoot(el.shadowRoot); });
     new MutationObserver(muts => muts.forEach(m => m.addedNodes.forEach(n => {
+      if (n.nodeType !== 1) return;
       if (n.shadowRoot) injectIntoShadowRoot(n.shadowRoot);
+      if (n.querySelectorAll) n.querySelectorAll('*').forEach(c => { if (c.shadowRoot) injectIntoShadowRoot(c.shadowRoot); });
     }))).observe(sr, { childList: true, subtree: true });
   }
 
-  // Same-origin iframes
+  // ── G1+G2: Iframe injection with frame context tagging + nested recursion ─────
+  // Registers the iframe's document in _iframeContextMap so any step emitted from
+  // within carries frameId/frameName/frameSrc for Playwright frameLocator() wrapping.
+  // Cross-origin iframes: cannot inject inside, but register the iframe element
+  // itself so handleClick() can emit SWITCH_FRAME when user clicks on it.
+  const _crossOriginIframes = new WeakSet(); // iframe elements that are cross-origin
+
   function injectIntoIframe(iframe) {
-    try { const doc = iframe.contentDocument; if (doc) { attachToRoot(doc); scanShadow(doc); } } catch {}
+    try {
+      const doc = iframe.contentDocument;
+      if (!doc) {
+        // null doc = cross-origin — mark the element for SWITCH_FRAME emission
+        _crossOriginIframes.add(iframe);
+        return;
+      }
+      if (doc.__qaInjected) return;
+      doc.__qaInjected = true;
+      // Register frame context so steps from this document carry frame metadata
+      _iframeContextMap.set(doc, {
+        frameId:   iframe.id   || null,
+        frameName: iframe.name || null,
+        frameSrc:  (() => { try { return iframe.contentWindow.location.href; } catch { return iframe.src || null; } })(),
+      });
+      attachToRoot(doc);
+      scanShadow(doc);
+      // G2: recurse into nested iframes inside this iframe
+      scanForIframes(doc);
+    } catch {
+      // cross-origin access denied — mark for SWITCH_FRAME
+      _crossOriginIframes.add(iframe);
+    }
+  }
+
+  // ── Cross-origin: emit SWITCH_FRAME when user clicks the iframe element ───────
+  // Playwright handles cross-origin frames via page.frameLocator(selector).
+  // We emit a SWITCH_FRAME step so codegen knows to wrap subsequent steps.
+  function _emitSwitchFrame(iframe) {
+    const loc  = bestSelector(iframe);
+    const name = iframe.name || iframe.id || iframe.src || '';
+    if (!shouldEmit('SWITCH_FRAME', loc.sel, name)) return;
+    recordEmit('SWITCH_FRAME', loc.sel, name);
+    postStep({
+      eventType:    'SWITCH_FRAME',
+      selector:     loc.sel,
+      selectorType: loc.type,
+      value:        name,
+      smartName:    `Switch to frame: ${name || loc.sel}`,
+      tagName:      'iframe',
+      url:          location.href,
+      frameContext: {
+        frameId:   iframe.id   || null,
+        frameName: iframe.name || null,
+        frameSrc:  iframe.src  || null,
+      },
+    });
+  }
+
+  // G2: scan a document for all iframes and inject into each
+  function scanForIframes(root) {
+    root.querySelectorAll('iframe').forEach(injectIntoIframe);
   }
 
   function scanShadow(root) {
@@ -1172,6 +1926,14 @@
     attachToRoot(document);
     scanShadow(document);
     document.querySelectorAll('iframe').forEach(injectIntoIframe);
+    // Window-level scroll (page scroll) — does not bubble through document root
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    injectShadowPatcher(); // G3: main-world attachShadow monkey-patch
+    // Listen for dynamically created shadow roots reported by MAIN world patcher
+    document.addEventListener('__qa_shadowroot', (e) => {
+      const host = e.detail && e.detail.host;
+      if (host && host.shadowRoot) injectIntoShadowRoot(host.shadowRoot);
+    });
 
     const _allAddedNodes = [];
     _domObserver = new MutationObserver(muts => {
@@ -1272,6 +2034,10 @@
   function detachListeners() {
     flushPendingFill();  // CR2: emit any buffered fill before stopping
     detachFromRoot(document);
+    window.removeEventListener('scroll', handleScroll, { passive: true });
+    clearTimeout(_scrollTimer);
+    clearTimeout(_hoverTimer);
+    _dragState = null;
     if (_domObserver) { _domObserver.disconnect(); _domObserver = null; }
   }
 

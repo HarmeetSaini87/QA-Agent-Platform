@@ -198,6 +198,60 @@
           }
         },
         {
+          "key": "CLICK AT COORDS", "label": "Click At Coordinates", "needsLocator": true, "needsValue": true, "valueHint": "{\"x\": 120, \"y\": 45}",
+          "helpLabel": "Clicks at specific x,y pixel coordinates within an element (for canvas UIs)",
+          "tooltip": {
+            "what": "Clicks at a specific pixel position relative to the element's top-left corner. Required for canvas-based UIs (charts, diagram editors, drawing tools) where Playwright cannot target sub-elements.",
+            "example": "Locator: canvas#chart  Value: {\"x\": 120, \"y\": 45}",
+            "tip": "Coordinates are relative to the element bounds, not the page. Recorded automatically by the QA Recorder when clicking on a <canvas> element."
+          }
+        },
+        {
+          "key": "CANVAS DRAG", "label": "Canvas Drag", "needsLocator": true, "needsValue": true, "valueHint": "{\"fromX\":100,\"fromY\":200,\"toX\":400,\"toY\":200}",
+          "helpLabel": "Drags from one pixel coordinate to another within a canvas element (flow builders, charts)",
+          "tooltip": {
+            "what": "Performs a pixel-precise mouse drag entirely within a <canvas> element. Used for flow builder node repositioning, chart range selection, diagram editor connections, and drawing tools where sub-elements have no DOM selectors.",
+            "example": "Locator: canvas#flow-canvas  Value: {\"fromX\":100,\"fromY\":200,\"toX\":400,\"toY\":200}\n→ Drags from canvas-relative (100,200) to (400,200) with 20 smooth steps",
+            "tip": "Coordinates are relative to the canvas top-left corner, not the page. The QA Recorder captures these automatically when you drag inside a <canvas>. Use CLICK AT COORDS for single-point canvas clicks."
+          }
+        },
+        {
+          "key": "RF NODE DRAG", "label": "RF Node Drag", "needsLocator": true, "needsValue": true, "valueHint": "{\"nodeId\":\"My Node\",\"fromFlow\":{\"x\":100,\"y\":200},\"toFlow\":{\"x\":400,\"y\":200}}",
+          "helpLabel": "Drags a React Flow node to a new position (flow-space coordinates)",
+          "tooltip": {
+            "what": "Repositions a node in a React Flow canvas. Uses flow-space coordinates that are stable across zoom/pan changes — the recorder captures these automatically by normalizing the viewport transform.",
+            "example": "Locator: .react-flow__node  Value: {\"nodeId\":\"Send Email\",\"fromFlow\":{\"x\":100,\"y\":200},\"toFlow\":{\"x\":400,\"y\":200}}",
+            "tip": "Coordinates are in React Flow's internal flow-space, not screen pixels. Replay reads the live viewport transform and converts back to screen coordinates automatically."
+          }
+        },
+        {
+          "key": "RF CONNECT", "label": "RF Connect Nodes", "needsLocator": false, "needsValue": true, "valueHint": "{\"sourceNode\":\"Node A\",\"sourceHandle\":\"source\",\"targetNode\":\"Node B\",\"targetHandle\":\"target\"}",
+          "helpLabel": "Creates an edge by dragging from source handle to target handle in React Flow",
+          "tooltip": {
+            "what": "Records an edge connection gesture between two React Flow nodes. Uses semantic node labels and handle positions — stable across layout re-renders. Falls back to flow-space coordinates if handles are not found at replay time.",
+            "example": "Value: {\"sourceNode\":\"Fetch Data\",\"sourcePosition\":\"right\",\"targetNode\":\"Process\",\"targetPosition\":\"left\"}",
+            "tip": "Add data-testid or aria-label to your nodes for most stable replay. Without them, the recorder uses the node's text label."
+          }
+        },
+        {
+          "key": "RF PAN", "label": "RF Pan Canvas", "needsLocator": false, "needsValue": true, "valueHint": "{\"dx\":100,\"dy\":50}",
+          "helpLabel": "Pans the React Flow canvas by dragging the background pane",
+          "tooltip": {
+            "what": "Replays a canvas pan gesture (dragging blank area). Stores the screen-space delta in pixels. Applied from the center of the pane so it is independent of viewport size.",
+            "example": "Value: {\"dx\":200,\"dy\":-100}  →  pan right 200px, up 100px",
+            "tip": "Pan steps are optional in most test flows — consider whether a pan is truly required for replay or can be skipped."
+          }
+        },
+        {
+          "key": "RF DROP NODE", "label": "RF Drop Node", "needsLocator": false, "needsValue": true, "valueHint": "{\"nodeType\":\"decision\",\"dropFlow\":{\"x\":300,\"y\":200}}",
+          "helpLabel": "Drops a new node from sidebar onto the React Flow canvas via HTML5 drag-and-drop",
+          "tooltip": {
+            "what": "Simulates an HTML5 DnD sidebar→canvas drop. Dispatches dragover + drop events with the correct dataTransfer data at the recorded flow-space coordinates. The node type is captured from dataTransfer.getData('application/reactflow').",
+            "example": "Value: {\"nodeType\":\"httpRequest\",\"dropFlow\":{\"x\":300,\"y\":200}}",
+            "tip": "Requires your sidebar to set dataTransfer.setData('application/reactflow', nodeType) on dragstart. This is the React Flow convention — most implementations follow it."
+          }
+        },
+        {
           "key": "JS CLICK", "label": "JS Click", "needsLocator": true, "needsValue": false, "valueHint": "",
           "helpLabel": "Clicks an element using JavaScript — bypasses visibility checks",
           "tooltip": {

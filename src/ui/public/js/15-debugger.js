@@ -495,6 +495,12 @@ function _debugOnError({ stepIdx, keyword, locator, errorMessage, errorType }) {
   const PAGE_LEVEL_ASSERT_KW = new Set([
     'ASSERT URL', 'ASSERT URL NOT', 'ASSERT TITLE', 'ASSERT TITLE NOT',
     'ASSERT DOWNLOAD COUNT', 'ASSERT RESPONSE OK', 'ASSERT FILE DOWNLOADED', 'ASSERT EXCEL ROW COUNT',
+    // GAP13 + RF: locator field not applicable for these — hide in retry edit panel
+    'PRESS KEY', 'PRESS_KEY',
+    'SCROLL TO', 'SCROLL_TO',
+    'SWITCH FRAME', 'SWITCH_FRAME',
+    'RF PAN', 'RF_PAN',
+    'RF DROP NODE', 'RF_DROP_NODE',
   ]);
   const kwUpper = (keyword || '').toUpperCase().trim();
   const isPageLevel = PAGE_LEVEL_ASSERT_KW.has(kwUpper);

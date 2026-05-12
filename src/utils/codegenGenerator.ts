@@ -333,6 +333,7 @@ function _generateStepCode(
         : line(`// DBLCLICK: missing locator`);
 
     case 'RIGHT CLICK':
+    // OLD: only handled space-separated name; RIGHT_CLICK (underscore) now handled in v5 block below
       return locExpr
         ? line(`await ${locExpr}.waitFor({ state: 'visible' });\n${indent}await ${locExpr}.click({ button: 'right' });`)
         : line(`// RIGHT CLICK: missing locator`);
@@ -619,8 +620,250 @@ function _generateStepCode(
         ? line(`await ${locExpr}.waitFor({ state: 'visible' });\n${indent}await ${locExpr}.focus();`)
         : line(`// FOCUS: missing locator`);
 
+    // Recorder v5 event types — mapped from extension content_script.js
+    case 'PRESS_KEY':
     case 'PRESS KEY':
+      // val is the chord string e.g. "Escape", "Control+S", "Tab"
       return line(`await page.keyboard.press(${val});`);
+
+    case 'RIGHT_CLICK':
+      return locExpr
+        ? line(`await ${locExpr}.waitFor({ state: 'visible' });\n${indent}await ${locExpr}.click({ button: 'right' });`)
+        : line(`// RIGHT_CLICK: missing locator`);
+
+    case 'DRAG': {
+      // step.locator = source selector; step.value = target selector (set by recorder)
+      const src = step.locator || '';
+      const tgt = step.value   || '';
+      if (src && tgt) {
+        return line(`await page.dragAndDrop('${src.replace(/'/g, "\\'")}', '${tgt.replace(/'/g, "\\'")}');`);
+      }
+      return line(`// DRAG: missing source or target selector`);
+    }
+
+    case 'SCROLL': {
+      // value is JSON { x, y } — scroll the element or window
+      let sx = 0, sy = 0;
+      try { const p = JSON.parse(step.value || '{}'); sx = p.x || 0; sy = p.y || 0; } catch {}
+      if (locExpr && step.locator !== 'window') {
+        return line(`await ${locExpr}.evaluate((el, [x, y]) => el.scrollTo(x, y), [${sx}, ${sy}]);`);
+      }
+      return line(`await page.evaluate(([x, y]) => window.scrollTo(x, y), [${sx}, ${sy}]);`);
+    }
+
+    // ── React Flow semantic actions ────────────────────────────────────────────
+    // All RF cases read the live viewport transform at replay time and convert
+    // flow-space coordinates back to screen-space — stable across zoom/pan/resize.
+    case 'RF NODE DRAG':
+    case 'RF_NODE_DRAG': {
+      let nodeId = '', fromFlow = { x: 0, y: 0 }, toFlow = { x: 0, y: 0 };
+      try {
+        const d  = JSON.parse(step.value || '{}');
+        nodeId   = d.nodeId   || '';
+        fromFlow = d.fromFlow || { x: 0, y: 0 };
+        toFlow   = d.toFlow   || { x: 0, y: 0 };
+      } catch {}
+      const i   = indent;
+      const pfx = comment ? comment + '\n' : '';
+      return pfx + [
+        `${i}await (async () => {`,
+        `${i}  // Read live viewport transform — stable across zoom/pan changes`,
+        `${i}  const __vp = await page.evaluate(() => {`,
+        `${i}    const vEl = document.querySelector('.react-flow__viewport');`,
+        `${i}    if (!vEl) return { tx: 0, ty: 0, zoom: 1 };`,
+        `${i}    const raw = vEl.style.transform || getComputedStyle(vEl).transform || '';`,
+        `${i}    const t = raw.match(/translate\\(([\\-\\d.]+)px,\\s*([\\-\\d.]+)px\\)\\s*scale\\(([\\-\\d.]+)\\)/);`,
+        `${i}    if (t) return { tx: +t[1], ty: +t[2], zoom: +t[3] };`,
+        `${i}    const m = raw.match(/matrix\\(([\\-\\d.]+),[^,]+,[^,]+,[^,]+,([\\-\\d.]+),([\\-\\d.]+)\\)/);`,
+        `${i}    return m ? { tx: +m[2], ty: +m[3], zoom: +m[1] } : { tx: 0, ty: 0, zoom: 1 };`,
+        `${i}  });`,
+        `${i}  const __rfRoot = page.locator('.react-flow');`,
+        `${i}  const __rfBox  = await __rfRoot.boundingBox();`,
+        `${i}  if (!__rfBox) throw new Error('RF NODE DRAG: react-flow root not found');`,
+        `${i}  const __fromX = __rfBox.x + ${fromFlow.x} * __vp.zoom + __vp.tx;`,
+        `${i}  const __fromY = __rfBox.y + ${fromFlow.y} * __vp.zoom + __vp.ty;`,
+        `${i}  const __toX   = __rfBox.x + ${toFlow.x}  * __vp.zoom + __vp.tx;`,
+        `${i}  const __toY   = __rfBox.y + ${toFlow.y}  * __vp.zoom + __vp.ty;`,
+        `${i}  await page.mouse.move(__fromX, __fromY);`,
+        `${i}  await page.mouse.down();`,
+        `${i}  await page.mouse.move(__toX, __toY, { steps: 20 });`,
+        `${i}  await page.mouse.up();`,
+        `${i}})();`,
+      ].join('\n');
+    }
+
+    case 'RF CONNECT':
+    case 'RF_CONNECT': {
+      // Semantic edge creation: drag from source handle to target handle.
+      // Uses node label/id to find elements — stable across layout changes.
+      let sourceNode = '', sourceHandle = 'source', targetNode = '', targetHandle = 'target';
+      let sourcePos  = '', targetPos = '';
+      let fromFlow = { x: 0, y: 0 }, toFlow = { x: 0, y: 0 };
+      try {
+        const d    = JSON.parse(step.value || '{}');
+        sourceNode = d.sourceNode   || '';
+        sourceHandle = d.sourceHandle || 'source';
+        sourcePos  = d.sourcePosition || '';
+        targetNode = d.targetNode   || '';
+        targetHandle = d.targetHandle || 'target';
+        targetPos  = d.targetPosition || '';
+        fromFlow   = d.fromFlow || { x: 0, y: 0 };
+        toFlow     = d.toFlow   || { x: 0, y: 0 };
+      } catch {}
+      const i   = indent;
+      const pfx = comment ? comment + '\n' : '';
+      // Build handle selectors — prefer semantic node label lookup
+      const srcNodeSel = sourceNode
+        ? `.react-flow__node:has(*[class*="label"]:text-is("${sourceNode.replace(/"/g, '\\"')}"), [data-id="${sourceNode.replace(/"/g, '\\"')}"]):first-of-type`
+        : '.react-flow__node:first-of-type';
+      const tgtNodeSel = targetNode
+        ? `.react-flow__node:has(*[class*="label"]:text-is("${targetNode.replace(/"/g, '\\"')}"), [data-id="${targetNode.replace(/"/g, '\\"')}"]):first-of-type`
+        : '.react-flow__node:last-of-type';
+      const srcHandleSel = sourcePos
+        ? `[data-handlepos="${sourcePos}"][data-handletype="${sourceHandle}"]`
+        : `.react-flow__handle.${sourceHandle}`;
+      const tgtHandleSel = targetPos
+        ? `[data-handlepos="${targetPos}"][data-handletype="${targetHandle}"]`
+        : `.react-flow__handle.${targetHandle}`;
+      return pfx + [
+        `${i}await (async () => {`,
+        `${i}  // RF CONNECT: drag source handle → target handle`,
+        `${i}  // Read live viewport for coordinate fallback`,
+        `${i}  const __vp = await page.evaluate(() => {`,
+        `${i}    const vEl = document.querySelector('.react-flow__viewport');`,
+        `${i}    const raw = vEl?.style.transform || '';`,
+        `${i}    const t = raw.match(/translate\\(([\\-\\d.]+)px,\\s*([\\-\\d.]+)px\\)\\s*scale\\(([\\-\\d.]+)\\)/);`,
+        `${i}    return t ? { tx: +t[1], ty: +t[2], zoom: +t[3] } : { tx: 0, ty: 0, zoom: 1 };`,
+        `${i}  });`,
+        `${i}  const __rfBox = await page.locator('.react-flow').boundingBox();`,
+        `${i}  if (!__rfBox) throw new Error('RF CONNECT: react-flow root not found');`,
+        `${i}  // Try semantic handle locators first, fall back to flow-space coords`,
+        `${i}  try {`,
+        `${i}    const __srcHandle = page.locator('${srcNodeSel}').locator('${srcHandleSel}');`,
+        `${i}    const __tgtHandle = page.locator('${tgtNodeSel}').locator('${tgtHandleSel}');`,
+        `${i}    await __srcHandle.waitFor({ state: 'visible', timeout: 5000 });`,
+        `${i}    await __tgtHandle.waitFor({ state: 'visible', timeout: 5000 });`,
+        `${i}    await __srcHandle.dragTo(__tgtHandle);`,
+        `${i}  } catch {`,
+        `${i}    // Fallback: flow-space coordinate drag`,
+        `${i}    const __fX = __rfBox.x + ${fromFlow.x} * __vp.zoom + __vp.tx;`,
+        `${i}    const __fY = __rfBox.y + ${fromFlow.y} * __vp.zoom + __vp.ty;`,
+        `${i}    const __tX = __rfBox.x + ${toFlow.x}  * __vp.zoom + __vp.tx;`,
+        `${i}    const __tY = __rfBox.y + ${toFlow.y}  * __vp.zoom + __vp.ty;`,
+        `${i}    await page.mouse.move(__fX, __fY);`,
+        `${i}    await page.mouse.down();`,
+        `${i}    await page.mouse.move(__tX, __tY, { steps: 20 });`,
+        `${i}    await page.mouse.up();`,
+        `${i}  }`,
+        `${i}})();`,
+      ].join('\n');
+    }
+
+    case 'RF PAN':
+    case 'RF_PAN': {
+      let dx = 0, dy = 0;
+      try { const d = JSON.parse(step.value || '{}'); dx = d.dx || 0; dy = d.dy || 0; } catch {}
+      const i   = indent;
+      const pfx = comment ? comment + '\n' : '';
+      return pfx + [
+        `${i}await (async () => {`,
+        `${i}  const __pane = page.locator('.react-flow__pane');`,
+        `${i}  await __pane.waitFor({ state: 'visible' });`,
+        `${i}  const __box  = await __pane.boundingBox();`,
+        `${i}  if (!__box) throw new Error('RF PAN: pane not found');`,
+        `${i}  const __cx = __box.x + __box.width  / 2;`,
+        `${i}  const __cy = __box.y + __box.height / 2;`,
+        `${i}  await page.mouse.move(__cx, __cy);`,
+        `${i}  await page.mouse.down();`,
+        `${i}  await page.mouse.move(__cx + ${dx}, __cy + ${dy}, { steps: 15 });`,
+        `${i}  await page.mouse.up();`,
+        `${i}})();`,
+      ].join('\n');
+    }
+
+    case 'RF DROP NODE':
+    case 'RF_DROP_NODE': {
+      let nodeType = 'node', dropFlow = { x: 0, y: 0 };
+      try {
+        const d   = JSON.parse(step.value || '{}');
+        nodeType  = d.nodeType  || 'node';
+        dropFlow  = d.dropFlow  || { x: 0, y: 0 };
+      } catch {}
+      const i   = indent;
+      const pfx = comment ? comment + '\n' : '';
+      return pfx + [
+        `${i}await (async () => {`,
+        `${i}  // RF DROP NODE: simulate HTML5 DnD from sidebar → canvas`,
+        `${i}  const __vp = await page.evaluate(() => {`,
+        `${i}    const vEl = document.querySelector('.react-flow__viewport');`,
+        `${i}    const raw = vEl?.style.transform || '';`,
+        `${i}    const t = raw.match(/translate\\(([\\-\\d.]+)px,\\s*([\\-\\d.]+)px\\)\\s*scale\\(([\\-\\d.]+)\\)/);`,
+        `${i}    return t ? { tx: +t[1], ty: +t[2], zoom: +t[3] } : { tx: 0, ty: 0, zoom: 1 };`,
+        `${i}  });`,
+        `${i}  const __rfBox = await page.locator('.react-flow').boundingBox();`,
+        `${i}  if (!__rfBox) throw new Error('RF DROP NODE: react-flow root not found');`,
+        `${i}  const __dropX = __rfBox.x + ${dropFlow.x} * __vp.zoom + __vp.tx;`,
+        `${i}  const __dropY = __rfBox.y + ${dropFlow.y} * __vp.zoom + __vp.ty;`,
+        `${i}  // Dispatch dataTransfer drag sequence — React Flow expects dragstart + drop`,
+        `${i}  await page.evaluate(([x, y, nt]) => {`,
+        `${i}    const pane = document.querySelector('.react-flow__pane');`,
+        `${i}    if (!pane) return;`,
+        `${i}    const dt = new DataTransfer();`,
+        `${i}    dt.setData('application/reactflow', nt);`,
+        `${i}    pane.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, clientX: x, clientY: y, dataTransfer: dt }));`,
+        `${i}    pane.dispatchEvent(new DragEvent('drop',     { bubbles: true, cancelable: true, clientX: x, clientY: y, dataTransfer: dt }));`,
+        `${i}  }, [__dropX, __dropY, '${nodeType.replace(/'/g, "\\'")}']);`,
+        `${i}})();`,
+      ].join('\n');
+    }
+
+    case 'CANVAS DRAG':
+    case 'CANVAS_DRAG': {
+      // Coordinate-based drag on a <canvas> element (flow builders, charts, diagram editors).
+      // value = JSON { fromX, fromY, toX, toY } relative to canvas top-left.
+      // Uses page.mouse for pixel-precise control; 20 intermediate steps for smooth drag.
+      let fromX = 0, fromY = 0, toX = 0, toY = 0;
+      try {
+        const cd = JSON.parse(step.value || '{}');
+        fromX = cd.fromX || 0; fromY = cd.fromY || 0;
+        toX   = cd.toX   || 0; toY   = cd.toY   || 0;
+      } catch {}
+      if (!locExpr) return line(`// CANVAS DRAG: missing canvas locator`);
+      const i = indent;
+      const pfx = comment ? comment + '\n' : '';
+      return pfx + [
+        `${i}await (async () => {`,
+        `${i}  await ${locExpr}.waitFor({ state: 'visible' });`,
+        `${i}  const __box = await ${locExpr}.boundingBox();`,
+        `${i}  if (!__box) throw new Error('CANVAS DRAG: canvas element not found');`,
+        `${i}  const __absFromX = __box.x + ${fromX};`,
+        `${i}  const __absFromY = __box.y + ${fromY};`,
+        `${i}  const __absToX   = __box.x + ${toX};`,
+        `${i}  const __absToY   = __box.y + ${toY};`,
+        `${i}  await page.mouse.move(__absFromX, __absFromY);`,
+        `${i}  await page.mouse.down();`,
+        `${i}  await page.mouse.move(__absToX, __absToY, { steps: 20 });`,
+        `${i}  await page.mouse.up();`,
+        `${i}})();`,
+      ].join('\n');
+    }
+
+    case 'CLICK AT COORDS':
+    case 'CLICK_AT_COORDS': {
+      // value is JSON { x, y } relative to element bounds
+      let cx = 0, cy = 0;
+      try { const p = JSON.parse(step.value || '{}'); cx = p.x || 0; cy = p.y || 0; } catch {}
+      return locExpr
+        ? line(`await ${locExpr}.waitFor({ state: 'visible' });\n${indent}await ${locExpr}.click({ position: { x: ${cx}, y: ${cy} } });`)
+        : line(`// CLICK AT COORDS: missing locator`);
+    }
+
+    case 'SWITCH_FRAME': {
+      // Emitted when user clicks a cross-origin iframe — signals frame context switch.
+      // Generates a frameLocator variable for subsequent steps to use.
+      const frameSel = step.locator || step.value || 'iframe';
+      return line(`// Switch to cross-origin frame — use frame.locator() for elements inside\nconst frame = page.frameLocator('${frameSel.replace(/'/g, "\\'")}');`);
+    }
 
     case 'UPLOAD FILE':
       return locExpr
@@ -645,8 +888,22 @@ function _generateStepCode(
       ].join('\n');
     }
 
-    case 'SCROLL TO':
-      return locExpr ? line(`await ${locExpr}.scrollIntoViewIfNeeded();`) : line(`await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));`);
+    case 'SCROLL TO': {
+      // Recorder v5 SCROLL: value is JSON {x,y} — scroll to position
+      // Manual keyword SCROLL TO with a locator: scroll element into view
+      let ssx = 0, ssy = 0;
+      let hasPosVal = false;
+      try { const sp = JSON.parse(step.value || ''); ssx = sp.x || 0; ssy = sp.y || 0; hasPosVal = true; } catch {}
+      if (hasPosVal) {
+        if (locExpr && step.locator && step.locator !== 'window') {
+          return line(`await ${locExpr}.evaluate((el, [x, y]) => el.scrollTo(x, y), [${ssx}, ${ssy}]);`);
+        }
+        return line(`await page.evaluate(([x, y]) => window.scrollTo(x, y), [${ssx}, ${ssy}]);`);
+      }
+      return locExpr
+        ? line(`await ${locExpr}.scrollIntoViewIfNeeded();`)
+        : line(`await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));`);
+    }
 
     case 'DRAG DROP': {
       const [src, tgt] = (step.locator || '').split('>>').map(s => s.trim());
@@ -1303,6 +1560,56 @@ export function generateCodegenSpec(input: CodegenInput): string {
   lines.push(`    case 'SELECT':         await loc.selectOption(value); break;`);
   lines.push(`    case 'WAIT SELECTOR': case 'WAIT VISIBLE': await loc.waitFor({ state: 'visible' }); break;`);
   lines.push(`    case 'WAIT HIDDEN':    await loc.waitFor({ state: 'hidden' }); break;`);
+  lines.push(`    // GAP13 — new locator-based keywords wired into T2/T3 healing dispatch`);
+  lines.push(`    case 'RIGHT CLICK':    await loc.waitFor({ state: 'visible', timeout: 5000 }); await loc.click({ button: 'right' }); break;`);
+  lines.push(`    case 'DRAG': {`);
+  lines.push(`      // value = target selector; loc = source element`);
+  lines.push(`      await loc.waitFor({ state: 'visible', timeout: 5000 });`);
+  lines.push(`      const __dragBox_heal = await loc.boundingBox();`);
+  lines.push(`      if (__dragBox_heal) {`);
+  lines.push(`        const __tgtLoc_heal = page.locator(value).first();`);
+  lines.push(`        const __tgtBox_heal = await __tgtLoc_heal.boundingBox();`);
+  lines.push(`        if (__tgtBox_heal) { await page.dragAndDrop(await loc.evaluate((el: any) => el.tagName), value); }`);
+  lines.push(`      } break; }`);
+  lines.push(`    case 'CLICK AT COORDS': {`);
+  lines.push(`      await loc.waitFor({ state: 'visible', timeout: 5000 });`);
+  lines.push(`      try { const __pos_heal = JSON.parse(value); await loc.click({ position: { x: __pos_heal.x, y: __pos_heal.y } }); } catch { await loc.click(); }`);
+  lines.push(`      break; }`);
+  lines.push(`    case 'CANVAS DRAG': {`);
+  lines.push(`      // loc = canvas element; value = JSON {fromX,fromY,toX,toY} relative to element`);
+  lines.push(`      await loc.waitFor({ state: 'visible', timeout: 5000 });`);
+  lines.push(`      try {`);
+  lines.push(`        const __cd_heal = JSON.parse(value); const __box_heal = await loc.boundingBox();`);
+  lines.push(`        if (__box_heal) {`);
+  lines.push(`          await page.mouse.move(__box_heal.x + __cd_heal.fromX, __box_heal.y + __cd_heal.fromY);`);
+  lines.push(`          await page.mouse.down();`);
+  lines.push(`          await page.mouse.move(__box_heal.x + __cd_heal.toX, __box_heal.y + __cd_heal.toY, { steps: 20 });`);
+  lines.push(`          await page.mouse.up();`);
+  lines.push(`        }`);
+  lines.push(`      } catch { await loc.click(); } break; }`);
+  lines.push(`    case 'RF NODE DRAG': {`);
+  lines.push(`      // loc = RF pane; value = JSON {nodeId,fromFlowX,fromFlowY,toFlowX,toFlowY}`);
+  lines.push(`      try {`);
+  lines.push(`        const __rnd_heal = JSON.parse(value);`);
+  lines.push(`        const __rfBox_heal = await loc.boundingBox();`);
+  lines.push(`        const __vp_heal = await page.evaluate(() => { const t = document.querySelector('.react-flow__viewport'); const m = t ? (getComputedStyle(t).transform || '') : ''; const nums = m.match(/matrix\\(([^)]+)\\)/); const p = nums ? nums[1].split(',').map(Number) : [1,0,0,1,0,0]; return { zoom: p[0], tx: p[4], ty: p[5] }; });`);
+  lines.push(`        if (__rfBox_heal && __vp_heal) {`);
+  lines.push(`          const sx = __rfBox_heal.x + __rnd_heal.fromFlowX * __vp_heal.zoom + __vp_heal.tx;`);
+  lines.push(`          const sy = __rfBox_heal.y + __rnd_heal.fromFlowY * __vp_heal.zoom + __vp_heal.ty;`);
+  lines.push(`          const tx = __rfBox_heal.x + __rnd_heal.toFlowX  * __vp_heal.zoom + __vp_heal.tx;`);
+  lines.push(`          const ty = __rfBox_heal.y + __rnd_heal.toFlowY  * __vp_heal.zoom + __vp_heal.ty;`);
+  lines.push(`          await page.mouse.move(sx, sy); await page.mouse.down();`);
+  lines.push(`          await page.mouse.move(tx, ty, { steps: 20 }); await page.mouse.up();`);
+  lines.push(`        }`);
+  lines.push(`      } catch { await loc.click(); } break; }`);
+  lines.push(`    case 'RF CONNECT': {`);
+  lines.push(`      // loc = RF container; value = JSON {sourceNode,sourceHandle,targetNode,targetHandle}`);
+  lines.push(`      try {`);
+  lines.push(`        const __rc_heal = JSON.parse(value);`);
+  lines.push(`        const __srcH_heal = loc.locator(\`[data-nodeid="\${__rc_heal.sourceNode}"][data-handleid="\${__rc_heal.sourceHandle}"]\`).first();`);
+  lines.push(`        const __tgtH_heal = loc.locator(\`[data-nodeid="\${__rc_heal.targetNode}"][data-handleid="\${__rc_heal.targetHandle}"]\`).first();`);
+  lines.push(`        await __srcH_heal.dragTo(__tgtH_heal);`);
+  lines.push(`      } catch { await loc.click(); } break; }`);
   lines.push(`    // ASSERT cases — used by T4 heal: verify element found with new selector`);
   lines.push(`    case 'ASSERT VISIBLE':  await loc.waitFor({ state: 'visible',  timeout: 8000 }); break;`);
   lines.push(`    case 'ASSERT HIDDEN':   await loc.waitFor({ state: 'hidden',   timeout: 8000 }); break;`);
@@ -1992,11 +2299,14 @@ export function generateDebugSpec(input: DebugCodegenInput): string {
   lines.push(`  }).catch(() => {});`);
   lines.push(`  if (!locVal) return;`);
   lines.push(`  const kw = keyword.toUpperCase();`);
-  lines.push(`  const color = ['CLICK', 'DBLCLICK'].includes(kw) ? '#ef4444'`);
-  lines.push(`    : ['FILL', 'TYPE', 'CLEAR'].includes(kw)        ? '#3b82f6'`);
-  lines.push(`    : ['SELECT', 'CHECK', 'UNCHECK'].includes(kw)   ? '#f97316'`);
-  lines.push(`    : ['HOVER', 'FOCUS'].includes(kw)               ? '#eab308'`);
-  lines.push(`    : kw.startsWith('ASSERT')                       ? '#22c55e'`);
+  lines.push(`  const color = ['CLICK', 'DBLCLICK', 'RIGHT CLICK', 'RIGHT_CLICK'].includes(kw) ? '#ef4444'`);
+  lines.push(`    : ['FILL', 'TYPE', 'CLEAR'].includes(kw)                               ? '#3b82f6'`);
+  lines.push(`    : ['SELECT', 'CHECK', 'UNCHECK'].includes(kw)                          ? '#f97316'`);
+  lines.push(`    : ['HOVER', 'HOVER AND CLICK', 'FOCUS'].includes(kw)                  ? '#eab308'`);
+  lines.push(`    : kw.startsWith('ASSERT')                                              ? '#22c55e'`);
+  lines.push(`    : ['DRAG', 'CANVAS DRAG', 'CANVAS_DRAG', 'RF NODE DRAG', 'RF_NODE_DRAG', 'RF CONNECT', 'RF_CONNECT', 'RF DROP NODE', 'RF_DROP_NODE'].includes(kw) ? '#ec4899'`);
+  lines.push(`    : ['RF PAN', 'RF_PAN', 'SCROLL TO', 'SCROLL_TO', 'SCROLL INTO VIEW'].includes(kw) ? '#06b6d4'`);
+  lines.push(`    : ['PRESS KEY', 'PRESS_KEY', 'SWITCH FRAME', 'SWITCH_FRAME', 'CLICK AT COORDS', 'CLICK_AT_COORDS'].includes(kw) ? '#a855f7'`);
   lines.push(`    : '#8b5cf6';`);
   lines.push(`  try {`);
   lines.push(`    let loc: any;`);
@@ -2361,6 +2671,96 @@ export function generateDebugSpec(input: DebugCodegenInput): string {
       lines.push(`              case 'ASSERT FILE DOWNLOADED': case 'ASSERT EXCEL ROW COUNT':`);
       lines.push(`                // File-system asserts — re-execute original generated code path`);
       lines.push(`                ${code.trim().split('\n').join(' ')} break;`);
+      // ── GAP13 + RF: new keyword cases in retry switch ────────────────────────
+      lines.push(`              // ── GAP13 new keywords ─────────────────────────────────────────────────`);
+      lines.push(`              case 'RIGHT CLICK':`);
+      lines.push(`                await __retryLoc_${o}.waitFor({ state: 'visible', timeout: 10000 });`);
+      lines.push(`                await __retryLoc_${o}.click({ button: 'right' }); break;`);
+      lines.push(`              case 'PRESS KEY': case 'PRESS_KEY':`);
+      lines.push(`                // page-level — value is the key combo (e.g. "Enter", "Control+A")`);
+      lines.push(`                await page.keyboard.press(__patchedVal_${o}); break;`);
+      lines.push(`              case 'SCROLL TO': case 'SCROLL_TO': {`);
+      lines.push(`                // with locator → scroll element into view; without → page.mouse.wheel from JSON`);
+      lines.push(`                if (__patchedLoc_${o}) { await __retryLoc_${o}.scrollIntoViewIfNeeded(); }`);
+      lines.push(`                else { try { const __sc_${o} = JSON.parse(__patchedVal_${o}); await page.mouse.wheel(__sc_${o}.x ?? 0, __sc_${o}.y ?? 0); } catch {} }`);
+      lines.push(`                break; }`);
+      lines.push(`              case 'DRAG': {`);
+      lines.push(`                // locator = source selector, value = target selector`);
+      lines.push(`                const __dragSrc_${o} = __patchedLoc_${o}; const __dragTgt_${o} = __patchedVal_${o};`);
+      lines.push(`                if (__dragSrc_${o} && __dragTgt_${o}) { await page.dragAndDrop(__dragSrc_${o}, __dragTgt_${o}); }`);
+      lines.push(`                break; }`);
+      lines.push(`              case 'CLICK AT COORDS': case 'CLICK_AT_COORDS': {`);
+      lines.push(`                await __retryLoc_${o}.waitFor({ state: 'visible', timeout: 10000 });`);
+      lines.push(`                try { const __pos_${o} = JSON.parse(__patchedVal_${o}); await __retryLoc_${o}.click({ position: { x: __pos_${o}.x, y: __pos_${o}.y } }); }`);
+      lines.push(`                catch { await __retryLoc_${o}.click(); } break; }`);
+      lines.push(`              case 'SWITCH FRAME': case 'SWITCH_FRAME':`);
+      lines.push(`                // page-level — value is frame selector/URL; nothing to retry meaningfully, just wait`);
+      lines.push(`                await page.frameLocator(__patchedVal_${o}).locator('body').waitFor({ timeout: 10000 }).catch(() => {}); break;`);
+      lines.push(`              case 'CANVAS DRAG': case 'CANVAS_DRAG': {`);
+      lines.push(`                // locator = canvas element; value = JSON {fromX,fromY,toX,toY}`);
+      lines.push(`                await __retryLoc_${o}.waitFor({ state: 'visible', timeout: 10000 });`);
+      lines.push(`                try {`);
+      lines.push(`                  const __cd_${o} = JSON.parse(__patchedVal_${o}); const __cdBox_${o} = await __retryLoc_${o}.boundingBox();`);
+      lines.push(`                  if (__cdBox_${o}) {`);
+      lines.push(`                    await page.mouse.move(__cdBox_${o}.x + __cd_${o}.fromX, __cdBox_${o}.y + __cd_${o}.fromY);`);
+      lines.push(`                    await page.mouse.down();`);
+      lines.push(`                    await page.mouse.move(__cdBox_${o}.x + __cd_${o}.toX, __cdBox_${o}.y + __cd_${o}.toY, { steps: 20 });`);
+      lines.push(`                    await page.mouse.up();`);
+      lines.push(`                  }`);
+      lines.push(`                } catch { await __retryLoc_${o}.click(); } break; }`);
+      lines.push(`              case 'RF NODE DRAG': case 'RF_NODE_DRAG': {`);
+      lines.push(`                // locator = RF pane; value = JSON {nodeId,fromFlowX,fromFlowY,toFlowX,toFlowY}`);
+      lines.push(`                await __retryLoc_${o}.waitFor({ state: 'visible', timeout: 10000 });`);
+      lines.push(`                try {`);
+      lines.push(`                  const __rnd_${o} = JSON.parse(__patchedVal_${o});`);
+      lines.push(`                  const __rfBox_${o} = await __retryLoc_${o}.boundingBox();`);
+      lines.push(`                  const __vp_${o} = await page.evaluate(() => { const t = document.querySelector('.react-flow__viewport'); const m = t ? (getComputedStyle(t).transform || '') : ''; const n = m.match(/matrix\\\\(([^)]+)\\\\)/); const p = n ? n[1].split(',').map(Number) : [1,0,0,1,0,0]; return { zoom: p[0], tx: p[4], ty: p[5] }; });`);
+      lines.push(`                  if (__rfBox_${o} && __vp_${o}) {`);
+      lines.push(`                    const __sx_${o} = __rfBox_${o}.x + __rnd_${o}.fromFlowX * __vp_${o}.zoom + __vp_${o}.tx;`);
+      lines.push(`                    const __sy_${o} = __rfBox_${o}.y + __rnd_${o}.fromFlowY * __vp_${o}.zoom + __vp_${o}.ty;`);
+      lines.push(`                    const __tx_${o} = __rfBox_${o}.x + __rnd_${o}.toFlowX  * __vp_${o}.zoom + __vp_${o}.tx;`);
+      lines.push(`                    const __ty_${o} = __rfBox_${o}.y + __rnd_${o}.toFlowY  * __vp_${o}.zoom + __vp_${o}.ty;`);
+      lines.push(`                    await page.mouse.move(__sx_${o}, __sy_${o}); await page.mouse.down();`);
+      lines.push(`                    await page.mouse.move(__tx_${o}, __ty_${o}, { steps: 20 }); await page.mouse.up();`);
+      lines.push(`                  }`);
+      lines.push(`                } catch { await __retryLoc_${o}.click(); } break; }`);
+      lines.push(`              case 'RF CONNECT': case 'RF_CONNECT': {`);
+      lines.push(`                // locator = RF container; value = JSON {sourceNode,sourceHandle,targetNode,targetHandle}`);
+      lines.push(`                await __retryLoc_${o}.waitFor({ state: 'attached', timeout: 10000 });`);
+      lines.push(`                try {`);
+      lines.push(`                  const __rc_${o} = JSON.parse(__patchedVal_${o});`);
+      lines.push(`                  const __srcH_${o} = __retryLoc_${o}.locator(\`[data-nodeid="\${__rc_${o}.sourceNode}"][data-handleid="\${__rc_${o}.sourceHandle}"]\`).first();`);
+      lines.push(`                  const __tgtH_${o} = __retryLoc_${o}.locator(\`[data-nodeid="\${__rc_${o}.targetNode}"][data-handleid="\${__rc_${o}.targetHandle}"]\`).first();`);
+      lines.push(`                  await __srcH_${o}.dragTo(__tgtH_${o});`);
+      lines.push(`                } catch { await __retryLoc_${o}.click(); } break; }`);
+      lines.push(`              case 'RF PAN': case 'RF_PAN': {`);
+      lines.push(`                // page-level pan — value = JSON {deltaX,deltaY}; locator = RF pane`);
+      lines.push(`                try {`);
+      lines.push(`                  const __rp_${o} = JSON.parse(__patchedVal_${o});`);
+      lines.push(`                  const __rpBox_${o} = await __retryLoc_${o}.boundingBox();`);
+      lines.push(`                  if (__rpBox_${o}) {`);
+      lines.push(`                    const __cx_${o} = __rpBox_${o}.x + __rpBox_${o}.width / 2;`);
+      lines.push(`                    const __cy_${o} = __rpBox_${o}.y + __rpBox_${o}.height / 2;`);
+      lines.push(`                    await page.mouse.move(__cx_${o}, __cy_${o}); await page.mouse.down();`);
+      lines.push(`                    await page.mouse.move(__cx_${o} + (__rp_${o}.deltaX ?? 0), __cy_${o} + (__rp_${o}.deltaY ?? 0), { steps: 15 }); await page.mouse.up();`);
+      lines.push(`                  }`);
+      lines.push(`                } catch {} break; }`);
+      lines.push(`              case 'RF DROP NODE': case 'RF_DROP_NODE': {`);
+      lines.push(`                // page-level drop — value = JSON {nodeType,flowX,flowY}; locator = RF pane`);
+      lines.push(`                try {`);
+      lines.push(`                  const __rdn_${o} = JSON.parse(__patchedVal_${o});`);
+      lines.push(`                  const __rdnBox_${o} = await __retryLoc_${o}.boundingBox();`);
+      lines.push(`                  const __rdnVp_${o} = await page.evaluate(() => { const t = document.querySelector('.react-flow__viewport'); const m = t ? (getComputedStyle(t).transform || '') : ''; const n = m.match(/matrix\\\\(([^)]+)\\\\)/); const p = n ? n[1].split(',').map(Number) : [1,0,0,1,0,0]; return { zoom: p[0], tx: p[4], ty: p[5] }; });`);
+      lines.push(`                  if (__rdnBox_${o} && __rdnVp_${o}) {`);
+      lines.push(`                    const __rdnSx_${o} = __rdnBox_${o}.x + 10; const __rdnSy_${o} = __rdnBox_${o}.y + 10;`);
+      lines.push(`                    const __rdnTx_${o} = __rdnBox_${o}.x + __rdn_${o}.flowX * __rdnVp_${o}.zoom + __rdnVp_${o}.tx;`);
+      lines.push(`                    const __rdnTy_${o} = __rdnBox_${o}.y + __rdn_${o}.flowY * __rdnVp_${o}.zoom + __rdnVp_${o}.ty;`);
+      lines.push(`                    await page.evaluate(([nt, tx, ty]: [string, number, number]) => {`);
+      lines.push(`                      const dt = new DataTransfer(); dt.setData('application/reactflow', nt);`);
+      lines.push(`                      document.querySelector('.react-flow__pane')?.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, clientX: tx, clientY: ty, dataTransfer: dt }));`);
+      lines.push(`                    }, [__rdn_${o}.nodeType, __rdnTx_${o}, __rdnTy_${o}]);`);
+      lines.push(`                  }`);
+      lines.push(`                } catch {} break; }`);
       lines.push(`              default:`);
       lines.push(`                // Fallback: attempt click for unknown keywords with a locator`);
       lines.push(`                await __retryLoc_${o}.waitFor({ state: 'visible', timeout: 10000 });`);

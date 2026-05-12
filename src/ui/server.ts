@@ -93,6 +93,20 @@ const testFileUpload = multer({
 
 // ── Express app ───────────────────────────────────────────────────────────────
 const app = express();
+
+// ── Trust proxy (IIS ARR reverse proxy) ──────────────────────────────────────
+// The platform is accessed via IIS ARR (http://qa-launchpad.test → localhost:PORT).
+// Without this, req.ip always resolves to 127.0.0.1 (IIS loopback) instead of
+// the real remote client IP carried in the X-Forwarded-For header.
+//
+// `1`  = trust exactly ONE proxy hop (IIS on the same machine).
+//        This is the safest setting: rejects spoofed X-Forwarded-For headers
+//        sent directly by end-users bypassing IIS.
+//
+// Enterprise note: if the stack grows (e.g. load-balancer → IIS → Node),
+// increment this count or set it to the specific upstream IP(s).
+app.set('trust proxy', 1);
+
 app.use(express.json());
 
 // ── Session middleware ─────────────────────────────────────────────────────────

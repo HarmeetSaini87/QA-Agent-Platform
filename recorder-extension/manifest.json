@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "QA Agent Recorder",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Record browser interactions and stream them live into the QA Agent Platform Test Script editor.",
 
   "permissions": [

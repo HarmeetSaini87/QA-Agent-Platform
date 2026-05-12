@@ -135,6 +135,30 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       break;
     }
 
+    case 'INJECT_SHADOW_PATCHER': {
+      // G3: Monkey-patch Element.prototype.attachShadow in MAIN world so dynamically
+      // created shadow roots on EXISTING elements fire a __qa_shadowroot DOM event
+      // that the isolated content script catches to inject listeners.
+      const tabId   = sender.tab?.id;
+      const frameId = sender.frameId ?? 0;
+      if (!tabId) break;
+      chrome.scripting.executeScript({
+        target: { tabId, frameIds: [frameId] },
+        world:  'MAIN',
+        func: () => {
+          if (window.__qaShadowPatched) return;
+          window.__qaShadowPatched = true;
+          const _origAttachShadow = Element.prototype.attachShadow;
+          Element.prototype.attachShadow = function (init) {
+            const sr = _origAttachShadow.call(this, init);
+            document.dispatchEvent(new CustomEvent('__qa_shadowroot', { detail: { host: this } }));
+            return sr;
+          };
+        },
+      }).catch(err => console.warn('[QA Recorder] Shadow patcher injection failed:', err.message));
+      break;
+    }
+
     case 'INJECT_URL_PATCHER': {
       // Hook pushState/replaceState in the PAGE's main world so SPA navigations
       // fire a __qa_urlchange DOM event that the isolated content script can catch.
