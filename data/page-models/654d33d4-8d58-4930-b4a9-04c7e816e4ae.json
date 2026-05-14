@@ -1,0 +1,14 @@
+{
+  "id": "654d33d4-8d58-4930-b4a9-04c7e816e4ae",
+  "projectId": "946e114f-f8b9-4206-85e7-dc3023784cc0",
+  "pageKey": "ssoqa10.billcall.net/Account/Login",
+  "pageName": "ssoqa10.billcall.net/Account/Login",
+  "locatorIds": [
+    "64a44a81-f4e0-4a43-aab1-8a3b6151f8a5",
+    "89baeb90-861d-45a8-a448-9e8299c04eff",
+    "3cc55e6b-2571-4f2c-a1c0-dfd62e38aff4",
+    "f1e37502-e907-4c24-9d31-3b64c22b6558"
+  ],
+  "capturedAt": "2026-05-12T13:33:51.485Z",
+  "capturedFrom": "recorder"
+}

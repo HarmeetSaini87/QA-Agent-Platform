@@ -80,3 +80,14 @@ test-files/
 # Added by code-review-graph
 .code-review-graph/
 .playwright-browsers/
+
+# Runtime-generated platform data — not source code
+data/proposals/
+data/api-runs/
+data/api-snapshots/
+data/healing-log.ndjson
+data/nl-log.ndjson
+data/prescan/
+
+# Backup folder
+.bak/
