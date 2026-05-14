@@ -39,6 +39,7 @@ export interface RecorderEvent {
   toSelectorType?:  string | null;                      // DRAG target selectorType
   canvasDrag?:      { fromX: number; fromY: number; toX: number; toY: number } | null; // CANVAS_DRAG
   rfAction?:        Record<string, unknown> | null; // RF_* semantic payload
+  enrichRfDrop?:    boolean;                        // true = update last RF_DROP_NODE step, not create new
 }
 
 // ── Keyword mapping ───────────────────────────────────────────────────────────
@@ -345,9 +346,10 @@ export function parseRecorderEvent(
     'SCROLL TO',    // positional scroll — value carries {x,y}; locator is optional
     'SWITCH FRAME', // frame selector stored in value, not locator repo
     'RF PAN',       // viewport pan — no element locator
-    'RF DROP NODE', // drop coords only — no stable locator
-    // CANVAS DRAG, RF NODE DRAG, RF CONNECT intentionally NOT here — canvas/node locator IS saved — the canvas element
-    // itself IS saved to the locator repo so healing can find it if selector changes.
+    'RF DROP NODE', // drop target is the canvas pane, not a stable element locator
+    // RF NODE DRAG: selector is nodeStableSel (data-testid/aria-label/text) — saved to locator repo
+    // RF CONNECT:   selector is sourceNodeStableSel — saved to locator repo for self-healing
+    // CANVAS DRAG, RF NODE DRAG, RF CONNECT intentionally NOT here — node locator IS saved to repo.
     // ASSERT TEXT and ASSERT VISIBLE DO have a locator target
   ]);
 
@@ -471,11 +473,18 @@ function buildDescription(event: RecorderEvent): string {
     case 'RF_NODE_DRAG': {
       try {
         const d = JSON.parse(val || '{}');
-        return `Move node "${d.nodeId ?? '?'}" by (${d.deltaFlow?.x ?? '?'}, ${d.deltaFlow?.y ?? '?'})`;
+        const lbl = d.nodeLabel || d.nodeId || '?';
+        return `Move node "${lbl}" by (${d.deltaFlow?.x ?? '?'}, ${d.deltaFlow?.y ?? '?'})`;
       } catch { return 'RF node drag'; }
     }
-    case 'RF_CONNECT':
-      return name ? `Connect "${name}"` : 'Connect nodes';
+    case 'RF_CONNECT': {
+      try {
+        const d = JSON.parse(val || '{}');
+        const src = d.sourceNodeLabel || d.sourceNode || '?';
+        const tgt = d.targetNodeLabel || d.targetNode || '?';
+        return `Connect "${src}" → "${tgt}"`;
+      } catch { return name ? `Connect "${name}"` : 'Connect nodes'; }
+    }
     case 'RF_PAN': {
       try {
         const d = JSON.parse(val || '{}');
@@ -485,9 +494,275 @@ function buildDescription(event: RecorderEvent): string {
     case 'RF_DROP_NODE': {
       try {
         const d = JSON.parse(val || '{}');
-        return `Drop "${d.nodeType ?? '?'}" node at (${d.dropFlow?.x ?? '?'}, ${d.dropFlow?.y ?? '?'})`;
+        const lbl = d.placedNodeLabel || d.nodeType || '?';
+        return `Drop node "${lbl}" at flow (${d.dropFlow?.x ?? '?'}, ${d.dropFlow?.y ?? '?'})`;
       } catch { return 'Drop node'; }
     }
     default:                return name ? `${verb} ${name}` : verb;
   }
+}
+
+// ── Post-recording step normalizer ────────────────────────────────────────────
+//
+// Runs once when the user clicks Stop Recording (called in recorder.routes.ts
+// before the steps array is returned to the UI).  Never mutates steps in-place
+// during live capture — only applied to the completed snapshot.
+//
+// Rules applied in order:
+//  N1. Drop blank steps (empty keyword AND empty locator AND empty value)
+//  N2. Drop SCROLL steps where position is {x:0,y:0} (initial-position noise)
+//  N3. Collapse consecutive SCROLL steps on the same target — keep last only
+//  N4. Merge consecutive FILL steps on the same locator — keep last value only
+//  N5. Drop CLICK that immediately precedes a FILL/SELECT on the same locator
+//  N6. Drop CLICK that immediately follows a SELECT on the same locator (browser synthetic)
+//  N7. Deduplicate consecutive identical steps (same keyword + locator + value)
+//  N8. Collapse burst of consecutive ASSERT_TEXT / ASSERT_TOAST / ASSERT_VISIBLE
+//      with identical text → keep first occurrence only
+//  N9. Re-number order field 1-based after cleanup
+
+export function normalizeRecordedSteps(steps: ScriptStep[]): ScriptStep[] {
+  if (!steps || steps.length === 0) return steps;
+
+  let out = [...steps];
+
+  // N1 — blank steps
+  out = out.filter(s => {
+    const kw  = (s.keyword  ?? '').trim();
+    const loc = (s.locator  ?? '').trim();
+    const val = (s.value    ?? '').toString().trim();
+    return kw !== '' || loc !== '' || val !== '';
+  });
+
+  // N2 — scroll to {x:0,y:0} OR {} (initial-position noise emitted before real scroll)
+  out = out.filter(s => {
+    if (s.keyword !== 'SCROLL TO') return true;
+    const raw = (s.value ?? '').toString().trim();
+    if (raw === '{}' || raw === '') return false;  // empty object = zero position
+    try {
+      const pos = JSON.parse(raw);
+      if ((pos.x ?? 0) === 0 && (pos.y ?? 0) === 0) return false;
+    } catch { /* not JSON — keep */ }
+    return true;
+  });
+
+  // N3 — consecutive SCROLLs on same target → keep last
+  out = collapseConsecutive(out, (s) => s.keyword === 'SCROLL TO', (a, b) => locKey(a) === locKey(b));
+
+  // N4 — consecutive FILLs on same locator → keep last (final typed value)
+  out = collapseConsecutive(out, (s) => s.keyword === 'Fill', (a, b) => locKey(a) === locKey(b));
+
+  // N5 — CLICK immediately before FILL/SELECT on same locator → drop the CLICK
+  //       (focusing a field before typing produces a spurious click)
+  out = filterWithContext(out, (prev, cur) => {
+    if (!prev) return true;
+    if (prev.keyword === 'Click' && (cur.keyword === 'Fill' || cur.keyword === 'Select') && locKey(prev) === locKey(cur)) return false;
+    return true;
+  });
+
+  // N6 — CLICK immediately after SELECT on same locator → drop the CLICK
+  //       (browser fires a synthetic click on <select> after value chosen)
+  out = filterWithContext(out, (prev, cur) => {
+    if (!prev) return true;
+    if (cur.keyword === 'Click' && prev.keyword === 'Select' && locKey(prev) === locKey(cur)) return false;
+    return true;
+  });
+
+  // N7 — consecutive exact duplicates (same keyword + locator + value) → keep first
+  out = collapseConsecutive(out, () => true, (a, b) => a.keyword === b.keyword && locKey(a) === locKey(b) && String(a.value ?? '') === String(b.value ?? ''));
+
+  // N8 — burst of consecutive ASSERT_TEXT / ASSERT_TOAST / ASSERT_VISIBLE with same text → keep first
+  const assertTypes = new Set(['Assert Text', 'Assert Toast', 'Assert Visible']);
+  out = collapseConsecutive(
+    out,
+    (s) => assertTypes.has(s.keyword),
+    (a, b) => a.keyword === b.keyword && String(a.value ?? '') === String(b.value ?? ''),
+  );
+
+  // N9 — dual-locator collapse: consecutive same-keyword + same-value on DIFFERENT locators
+  //       (recorder emits both XPath and role/label locator for the same physical element)
+  //       Keep the step with the "better" locator (non-XPath preferred over XPath).
+  out = dualLocatorCollapse(out);
+
+  // N10 — drop ASSERT TOAST/TEXT whose value matches pagination/data-count patterns
+  //        e.g. "Showing 1 to 50 of 343 entries" — grid label, not a real assertion
+  const PAGINATION_RE = /^showing\s+\d+\s+to\s+\d+\s+of\s+\d+/i;
+  out = out.filter(s => {
+    if (s.keyword !== 'Assert Toast' && s.keyword !== 'Assert Text') return true;
+    return !PAGINATION_RE.test((s.value ?? '').toString().trim());
+  });
+
+  // N11 — extend dual-locator collapse to consecutive ASSERT steps with same value
+  //        (BM-01 pattern: XPath assert + alert:Error assert for same error message)
+  const assertKws = new Set(['Assert Toast', 'Assert Text', 'Assert Visible']);
+  out = dualLocatorCollapse(out, (s) => assertKws.has(s.keyword));
+
+  // N12 — drop HOVER immediately before CLICK / FILL / SELECT on same locator
+  //        (mouse-over before click is navigation noise, not a test intent)
+  out = filterWithContext(out, (prev, cur) => {
+    if (!prev) return true;
+    if (prev.keyword === 'Hover' && ['Click', 'Fill', 'Select'].includes(cur.keyword ?? '') && locKey(prev) === locKey(cur)) return false;
+    return true;
+  });
+
+  // N13 — re-number
+  out = out.map((s, i) => ({ ...s, order: i + 1 }));
+
+  return out;
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+// Stable locator identity: prefer locatorId, fall back to locator string lowercased
+function locKey(s: ScriptStep): string {
+  return (s.locatorId ?? (s.locator ?? '').toLowerCase().trim());
+}
+
+// For steps matching predicate, collapse consecutive runs where groupFn says they're equivalent
+// — within each run, only the LAST item survives (most-recent state wins).
+function collapseConsecutive(
+  steps: ScriptStep[],
+  predicate: (s: ScriptStep) => boolean,
+  groupFn: (a: ScriptStep, b: ScriptStep) => boolean,
+): ScriptStep[] {
+  const result: ScriptStep[] = [];
+  let i = 0;
+  while (i < steps.length) {
+    if (!predicate(steps[i])) {
+      result.push(steps[i++]);
+      continue;
+    }
+    // Collect run of consecutive matching steps that are equivalent
+    let runEnd = i;
+    while (runEnd + 1 < steps.length && predicate(steps[runEnd + 1]) && groupFn(steps[i], steps[runEnd + 1])) {
+      runEnd++;
+    }
+    // Keep last of run (final value / final scroll position)
+    result.push(steps[runEnd]);
+    i = runEnd + 1;
+  }
+  return result;
+}
+
+// Filter where each step sees its predecessor (after prior filters have run)
+function filterWithContext(
+  steps: ScriptStep[],
+  keep: (prev: ScriptStep | null, cur: ScriptStep) => boolean,
+): ScriptStep[] {
+  const result: ScriptStep[] = [];
+  for (let i = 0; i < steps.length; i++) {
+    const prev = result.length > 0 ? result[result.length - 1] : null;
+    if (keep(prev, steps[i])) result.push(steps[i]);
+  }
+  return result;
+}
+
+// N9 helper: collapse consecutive same-keyword + same-value pairs that differ only in locator.
+// Recorder emits both the XPath path and the label/role locator for the same element.
+// Keep whichever has the better locator (non-XPath wins); drop the other.
+// predicate: optional filter — only collapse steps matching this predicate (default: all steps)
+function dualLocatorCollapse(steps: ScriptStep[], predicate?: (s: ScriptStep) => boolean): ScriptStep[] {
+  function isXPath(s: ScriptStep): boolean {
+    return s.locatorType === 'xpath' || (s.locator ?? '').startsWith('//*') || (s.locator ?? '').startsWith('(//');
+  }
+  // For asserts, also normalise value for comparison — strip leading "Error " prefix that
+  // the alert: composite locator injects (e.g. "Error Internal server error..." vs "Internal server error...")
+  function normVal(s: ScriptStep): string {
+    return String(s.value ?? '').replace(/^Error\s+/i, '').trim();
+  }
+  const result: ScriptStep[] = [];
+  for (let i = 0; i < steps.length; i++) {
+    const cur  = steps[i];
+    const prev = result.length > 0 ? result[result.length - 1] : null;
+    const applies = !predicate || predicate(cur);
+    if (
+      applies &&
+      prev &&
+      (!predicate || predicate(prev)) &&
+      prev.keyword === cur.keyword &&
+      normVal(prev) === normVal(cur) &&
+      locKey(prev) !== locKey(cur)   // different locators — potential dual-emit
+    ) {
+      const prevXPath = isXPath(prev);
+      const curXPath  = isXPath(cur);
+      if (!prevXPath && curXPath) {
+        continue;                         // prev already better — drop cur
+      }
+      if (prevXPath && !curXPath) {
+        result[result.length - 1] = cur;  // cur is better — replace prev
+        continue;
+      }
+      continue;                           // both same quality — keep prev, drop cur
+    }
+    result.push(cur);
+  }
+  return result;
+}
+
+// ── Login boilerplate detector ────────────────────────────────────────────────
+//
+// Scans the first N steps of a recorded script for the canonical login sequence:
+//   FILL Username → FILL Password → CLICK btnLogin   (+ optional nav CLICKs after)
+//
+// Returns suggestions for wrapping the boilerplate in a CALL FUNCTION.
+// Detection only — does NOT modify steps.
+
+export interface BoilerplateSuggestion {
+  startIndex: number;   // 0-based index of first boilerplate step
+  endIndex:   number;   // 0-based index of last boilerplate step (inclusive)
+  stepCount:  number;
+  type:       'login';
+  label:      string;
+}
+
+export function detectBoilerplate(steps: ScriptStep[]): BoilerplateSuggestion[] {
+  const suggestions: BoilerplateSuggestion[] = [];
+  if (!steps || steps.length < 3) return suggestions;
+
+  const head = steps.slice(0, Math.min(12, steps.length));
+  let userIdx = -1, passIdx = -1, loginIdx = -1;
+
+  for (let i = 0; i < head.length; i++) {
+    const s   = head[i];
+    const kw  = (s.keyword  ?? '').toLowerCase();
+    const loc = (s.locator  ?? '').toLowerCase();
+    const val = (s.value    ?? '').toString().toLowerCase();
+
+    if (kw === 'fill' && (loc.includes('username') || loc.includes('user') || loc.includes('email') || val.includes('user'))) {
+      userIdx = i;
+    }
+    if (kw === 'fill' && (loc.includes('password') || loc.includes('pass'))) {
+      passIdx = i;
+    }
+    if (
+      (kw === 'click' && (loc.includes('login') || loc.includes('signin') || loc.includes('btnlogin') || loc.includes('submit'))) ||
+      (kw === 'press key' && val === 'enter')
+    ) {
+      loginIdx = i;
+    }
+  }
+
+  if (userIdx === -1 || passIdx === -1 || loginIdx === -1) return suggestions;
+  if (!(userIdx < passIdx && passIdx < loginIdx)) return suggestions;
+
+  // Extend to include immediate post-login nav CLICKs (menu/sidebar items)
+  let endIdx = loginIdx;
+  const NAV_RE = /^m\d+p\d*$|^nav|^menu|^sidebar/i;
+  for (let i = loginIdx + 1; i < head.length && i <= loginIdx + 4; i++) {
+    const s = head[i];
+    if ((s.keyword ?? '') === 'Click' && NAV_RE.test((s.locator ?? '').trim())) {
+      endIdx = i;
+    } else {
+      break;
+    }
+  }
+
+  suggestions.push({
+    startIndex: userIdx,
+    endIndex:   endIdx,
+    stepCount:  endIdx - userIdx + 1,
+    type:       'login',
+    label:      `Login + navigation (${endIdx - userIdx + 1} steps) — wrap in a reusable function?`,
+  });
+
+  return suggestions;
 }

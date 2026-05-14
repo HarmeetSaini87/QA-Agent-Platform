@@ -4,8 +4,16 @@
   "pageKey": "raqa30.billcall.net/FlowRecon/StartCreateEdit",
   "pageName": "raqa30.billcall.net/FlowRecon/StartCreateEdit",
   "locatorIds": [
-    "5ee3aa20-ed0a-4f10-b8fa-5c524cfdb12c"
+    "5ee3aa20-ed0a-4f10-b8fa-5c524cfdb12c",
+    "a2044cc1-1424-4a7e-b895-003f0a1378e2",
+    "395796c9-73dd-463c-ad0d-8cec220ddb9f",
+    "901aa8cb-2a3d-408e-a25d-58b723689109",
+    "6d8ef7a3-683f-4b22-a884-9e1e7337e8cf",
+    "85dae5de-4058-413f-b396-12ef4215c48b",
+    "df39633a-6f0f-4a96-a089-baa12577818f",
+    "3e7917e9-a056-48d5-a9a3-de287c3eddf1",
+    "1c0539bc-22ff-4ea0-a3db-9886359fa7c3"
   ],
-  "capturedAt": "2026-05-12T13:33:51.493Z",
+  "capturedAt": "2026-05-14T10:22:03.827Z",
   "capturedFrom": "recorder"
 }

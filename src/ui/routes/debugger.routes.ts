@@ -195,12 +195,13 @@ export function registerDebuggerRoutes(app: express.Application): void {
   });
 
   app.post('/api/debug/continue', requireAuth, (req: Request, res: Response) => {
-    const { sessionId, action, locator, locatorType, value } = req.body as {
+    const { sessionId, action, locator, locatorType, value, frameContext } = req.body as {
       sessionId: string;
       action: 'continue' | 'skip' | 'stop' | 'retry';
       locator?: string;
       locatorType?: string;
       value?: string;
+      frameContext?: string | null;
     };
     const session = debugSessions.get(sessionId);
 
@@ -239,6 +240,8 @@ export function registerDebuggerRoutes(app: express.Application): void {
         if (locator !== undefined) gatePayload.locator = locator;
         if (locatorType !== undefined) gatePayload.locatorType = locatorType;
         if (value !== undefined) gatePayload.value = value;
+        // frameContext: null = top frame, string = iframe selector e.g. "#flowIframe"
+        if (frameContext !== undefined) gatePayload.frameContext = frameContext;
       }
       fs.writeFileSync(gateFile, JSON.stringify(gatePayload));
       logger.info(`[debug:continue] Wrote gate.json for ${sessionId} with action '${action}' → ${gateFile}`);
@@ -250,12 +253,13 @@ export function registerDebuggerRoutes(app: express.Application): void {
   });
 
   app.post('/api/debug/patch-step', requireAuth, (req: Request, res: Response) => {
-    const { sessionId, stepOrder, locator, locatorType, value } = req.body as {
+    const { sessionId, stepOrder, locator, locatorType, value, frameContext } = req.body as {
       sessionId: string;
       stepOrder: number;
       locator?: string;
       locatorType?: string;
       value?: string;
+      frameContext?: string | null;
     };
 
     const session = debugSessions.get(sessionId);
@@ -283,6 +287,8 @@ export function registerDebuggerRoutes(app: express.Application): void {
     if (locator !== undefined) step.locator = locator;
     if (locatorType !== undefined) step.locatorType = locatorType;
     if (value !== undefined) step.value = value;
+    // OLD: frameContext not persisted — iframe steps lost frame scope after patch
+    if (frameContext !== undefined) (step as any).frameContext = frameContext;
     script.modifiedBy = req.session.username!;
     script.modifiedAt = new Date().toISOString();
     upsert(SCRIPTS, script);

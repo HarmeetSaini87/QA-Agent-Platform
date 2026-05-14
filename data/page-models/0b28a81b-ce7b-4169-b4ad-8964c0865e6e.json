@@ -1,0 +1,12 @@
+{
+  "id": "0b28a81b-ce7b-4169-b4ad-8964c0865e6e",
+  "projectId": "b9034b6b-0583-4dc8-9009-a8c03d317827",
+  "pageKey": "qa.bmchealth.in/dashboard",
+  "pageName": "qa.bmchealth.in/dashboard",
+  "locatorIds": [
+    "acb23cc8-4dd0-427d-b4e7-5db5868329dc",
+    "f49cc12e-4ada-474f-acd7-05b4ef5a627d"
+  ],
+  "capturedAt": "2026-05-14T09:38:01.582Z",
+  "capturedFrom": "recorder"
+}

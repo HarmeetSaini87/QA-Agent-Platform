@@ -1,0 +1,27 @@
+{
+  "id": "799c406b-c4e2-41b6-bec8-dfd1783dd21e",
+  "projectId": "b9034b6b-0583-4dc8-9009-a8c03d317827",
+  "pageKey": "qa.bmchealth.in/front-desk/patient-quick-registration",
+  "pageName": "qa.bmchealth.in/front-desk/patient-quick-registration",
+  "locatorIds": [
+    "f452c666-7215-44f0-a922-71ba9a97b6ed",
+    "4a52704a-7899-4ba9-a999-df6a5047c45b",
+    "0a9d2119-d38a-4d93-a4f5-2939b50aad23",
+    "380ad669-2a93-4e7c-97e2-8795c9238bc3",
+    "d5a5c03b-05d2-48ec-ab6e-150d0ce8b343",
+    "d629462d-9e29-4f8c-9994-604ccd7fb736",
+    "ce3878a2-4fba-4d96-b569-96d3723d46c8",
+    "6d15f9a4-88fc-4769-8b8c-925666ef538f",
+    "c45c0c53-b04d-4ff0-93d4-65febe50d16b",
+    "e2f513af-b3e3-4ad4-bda6-228134629e5e",
+    "a7251610-5d45-4ecb-a707-c54f4816621e",
+    "5104654e-1e50-4b7c-95a4-b24aedeb6bfd",
+    "39369c4b-e392-4450-88f3-7c0d807ee91c",
+    "77846279-ded7-4728-8cbd-5abb9393fbdd",
+    "106ff07e-42cc-489c-8e73-fa3436f766d8",
+    "bb92b533-b126-40c6-ac00-119bcb746742",
+    "b78a9647-a6b7-4bfb-b0c0-059b394b8e28"
+  ],
+  "capturedAt": "2026-05-14T09:38:01.587Z",
+  "capturedFrom": "recorder"
+}

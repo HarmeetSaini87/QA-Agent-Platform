@@ -8,7 +8,7 @@ import { requireAuth } from '../../auth/middleware';
 import { logAudit } from '../../auth/audit';
 import { readAll, upsert, findById, LOCATORS, SCRIPTS, FUNCTIONS } from '../../data/store';
 import type { Locator, CommonFunction } from '../../data/types';
-import { parseRecorderEvent } from '../../utils/recorderParser';
+import { parseRecorderEvent, normalizeRecordedSteps, detectBoilerplate } from '../../utils/recorderParser';
 import { requireFeature } from '../helpers/middleware';
 import { recorderSessions, recorderSsePush } from '../helpers/sse';
 import { upsertPageModel } from '../../utils/pageModelManager';
@@ -80,7 +80,12 @@ export function registerRecorderRoutes(app: express.Application): void {
     session.sseClients.clear();
     const durationSecs = Math.floor((Date.now() - session.createdAt) / 1000);
     logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'RECORDER_STOPPED', resourceType: 'recorder', resourceId: token.slice(0, 8), details: `steps=${session.stepCount} duration=${durationSecs}s project=${session.projectId}`, ip: req.ip ?? null });
-    logger.info(`[recorder] Session stopped: ${token.slice(0, 8)} — ${session.stepCount} steps captured`);
+    logger.info(`[recorder] Session stopped: ${token.slice(0, 8)} — ${session.stepCount} steps captured (pre-cleanup)`);
+    // Post-recording cleanup: remove noise steps before returning to UI
+    const rawCount = session.steps.length;
+    session.steps = normalizeRecordedSteps(session.steps);
+    session.stepCount = session.steps.length;
+    logger.info(`[recorder] Cleanup: ${rawCount} → ${session.stepCount} steps (removed ${rawCount - session.stepCount} noise steps)`);
     setImmediate(() => {
       const locIdsByPage = new Map<string, Set<string>>();
       for (const step of session.steps) {
@@ -95,7 +100,8 @@ export function registerRecorderRoutes(app: express.Application): void {
         try { upsertPageModel({ projectId: session.projectId, pageKey: pk, locatorIds: [...ids], capturedFrom: 'recorder' }); logger.info(`[recorder] PageModel upserted: project=${session.projectId} pageKey=${pk} locators=${ids.size}`); } catch (e) { logger.warn(`[recorder] PageModel upsert failed: ${e}`); }
       }
     });
-    res.json({ success: true, stepCount: session.stepCount, steps: session.steps });
+    const boilerplateSuggestions = detectBoilerplate(session.steps);
+    res.json({ success: true, stepCount: session.stepCount, steps: session.steps, boilerplateSuggestions });
   });
 
   app.post('/api/recorder/heartbeat', (req: Request, res: Response) => {

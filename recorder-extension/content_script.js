@@ -78,7 +78,7 @@
   function injectShadowPatcher() {
     if (_shadowPatcherInjected) return;
     _shadowPatcherInjected = true;
-    chrome.runtime.sendMessage({ type: 'INJECT_SHADOW_PATCHER' });
+    if (chrome.runtime?.id) try { chrome.runtime.sendMessage({ type: 'INJECT_SHADOW_PATCHER' }, () => { void chrome.runtime.lastError; }); } catch {}
   }
 
   // ── G10: Drag tracking state ──────────────────────────────────────────────────
@@ -125,12 +125,21 @@
     if (!_active || !_token || !_platformOrigin) return;
     const frameCtx = _getFrameContext(sourceDoc || document);
     if (frameCtx) Object.assign(payload, { frameContext: frameCtx });
-    chrome.runtime.sendMessage({
-      type: 'POST_STEP',
-      platformOrigin: _platformOrigin,
-      token: _token,
-      payload,
-    });
+    // Guard: chrome.runtime.id goes undefined when extension context is invalidated
+    if (!chrome.runtime?.id) {
+      _active = false;
+      console.error('[QA Recorder][ERROR] Extension reloaded while tab was open — recording stopped. Refresh this page (F5) to resume.');
+      return;
+    }
+    try {
+      chrome.runtime.sendMessage({
+        type: 'POST_STEP',
+        platformOrigin: _platformOrigin,
+        token: _token,
+        payload,
+      // No-op callback converts unhandled promise rejection → handled callback error
+      }, () => { void chrome.runtime.lastError; });
+    } catch { /* synchronous throw fallback */ }
   }
 
   // ── Dynamic ID detection — never use generated IDs as locators ───────────────
@@ -249,7 +258,7 @@
     }
 
     // Positional fallback — warn developer
-    console.warn('[QA Recorder] SVG element lacks stable locator — add data-testid or aria-label');
+    console.warn('[QA Recorder][WARN] SVG element lacks stable locator — add data-testid or aria-label');
     return { sel: buildRelativeXPath(el), type: 'xpath' };
   }
 
@@ -471,7 +480,7 @@
         const idx      = siblings.indexOf(el) + 1;
         const x        = idx > 0 ? `//*[${ancId}]//${tag}[${idx}]` : `//*[${ancId}]//${tag}`;
         if (xpUnique(x)) {
-          console.warn('[QA Recorder] Relative positional XPath — add data-testid or id for stability:', x);
+          console.warn('[QA Recorder][WARN] Relative positional XPath — add data-testid or id for stability:', x);
           return x;
         }
       }
@@ -491,11 +500,11 @@
           ? `@id="${node.id}"`
           : `@data-testid="${node.getAttribute('data-testid')}"`;
         parts.unshift(`//*[${anId}]`);
-        console.warn('[QA Recorder] Anchored positional XPath:', parts.join('/'));
+        console.warn('[QA Recorder][WARN] Anchored positional XPath:', parts.join('/'));
         return parts.join('/');
       }
     }
-    console.warn('[QA Recorder] No stable locator — add data-testid, id, or aria-label');
+    console.warn('[QA Recorder][WARN] No stable locator — add data-testid, id, or aria-label');
     return '//' + parts.join('/');
   }
 
@@ -896,7 +905,7 @@
 
   function _emitToastAssert(text, selector, selectorType) {
     const now = Date.now();
-    if (_lastToastEmit.text === text && now - _lastToastEmit.ts < 2000) return; // deduplicate
+    if (_lastToastEmit.text === text && now - _lastToastEmit.ts < 5000) return; // deduplicate (5s window prevents React re-render bursts)
     _lastToastEmit = { text, ts: now };
     if (!shouldEmit('ASSERT_TOAST', selector, text)) return;
     recordEmit('ASSERT_TOAST', selector, text);
@@ -1035,12 +1044,17 @@
   function shouldEmit(eventType, selector, value) {
     const now  = Date.now();
     const last = _lastEmitted;
-    // Block exact duplicate (same type + selector + value within 1s)
-    if (last.eventType === eventType && last.selector === selector && last.value === value && now - last.ts < 1000) return false;
+    // Block exact duplicate (same type + selector + value within 2s)
+    if (last.eventType === eventType && last.selector === selector && last.value === value && now - last.ts < 2000) return false;
     // Block CLICK immediately after FILL on same element (FILL already implies interaction)
-    if (eventType === 'CLICK' && last.eventType === 'FILL' && last.selector === selector && now - last.ts < 800) return false;
+    if (eventType === 'CLICK' && last.eventType === 'FILL' && last.selector === selector && now - last.ts < 1500) return false;
+    // Block CLICK immediately after SELECT on same element (browser synthetic post-select click)
+    if (eventType === 'CLICK' && last.eventType === 'SELECT' && last.selector === selector && now - last.ts < 1500) return false;
     // Block FILL with identical value on same selector (re-focused without changing)
     if (eventType === 'FILL' && last.eventType === 'FILL' && last.selector === selector && last.value === value) return false;
+    // Block duplicate ASSERT (text/toast/visible) with same value within 5s regardless of selector
+    const assertTypes = new Set(['ASSERT_TEXT', 'ASSERT_TOAST', 'ASSERT_VISIBLE']);
+    if (assertTypes.has(eventType) && assertTypes.has(last.eventType) && last.value === value && now - last.ts < 5000) return false;
     return true;
   }
 
@@ -1077,9 +1091,37 @@
   }
 
   // ── Event handlers ────────────────────────────────────────────────────────────
+  // Tags that are purely decorative children — clicks should be attributed to
+  // the nearest interactive ancestor (button, a, [role=button], etc.) so that
+  // bestSelector / healing profiles are built on the stable parent, not the icon.
+  // svg/use/path intentionally excluded — handled by dedicated isSvgActionable/buildSvgLocator path
+  const TRANSPARENT_CHILD_TAGS = new Set(['i', 'em', 'b', 'strong', 'small', 'span']);
+
+  function resolveClickTarget(el) {
+    if (!el || el.nodeType !== 1) return el;
+    const tag = (el.tagName || '').toLowerCase();
+    if (!TRANSPARENT_CHILD_TAGS.has(tag)) return el;
+    // Only bubble if the element itself has no stable identity
+    if (el.id && !isDynamicId(el.id)) return el;
+    if (el.getAttribute('data-testid') || el.getAttribute('aria-label')) return el;
+    // Determine RF root boundary — never bubble past it (RF nodes have their own ID scheme)
+    const rfRoot = el.closest && el.closest(RF_SELECTORS.root);
+    let p = el.parentElement;
+    while (p && p !== document.body) {
+      // Stop if we'd cross out of the RF root into the outer page
+      if (rfRoot && !rfRoot.contains(p)) break;
+      const ptag = (p.tagName || '').toLowerCase();
+      if (INTERACTIVE_TAGS.has(ptag) || p.getAttribute('role') === 'button' || p.getAttribute('role') === 'link') return p;
+      if ((p.id && !isDynamicId(p.id)) || p.getAttribute('data-testid')) return p;
+      p = p.parentElement;
+    }
+    return el; // no stable ancestor found — fall through to original
+  }
+
   function handleClick(e) {
     if (!_active) return;
-    const el = e.target;
+    // OLD: const el = e.target;
+    const el = resolveClickTarget(e.target);
     if (!el || el.nodeType !== 1) return;
     if (el.type === 'file') return; // handled by change
 
@@ -1476,6 +1518,24 @@
            nodeEl.id || null;
   }
 
+  // Extract semantic metadata from a .react-flow__node element for stable cross-session identification.
+  // Priority: data-testid > aria-label > visible label text > data-id (ephemeral fallback).
+  function _rfNodeMeta(nodeEl) {
+    if (!nodeEl) return null;
+    const dataId   = nodeEl.getAttribute('data-id') || nodeEl.getAttribute('data-nodeid') || null;
+    const testId   = nodeEl.getAttribute('data-testid') || null;
+    const ariaLbl  = nodeEl.getAttribute('aria-label') || null;
+    const labelEl  = nodeEl.querySelector('.react-flow__node-label,label,[class*="label"],[class*="title"],p,span');
+    const label    = (labelEl?.textContent || nodeEl.textContent || '').trim().replace(/\s+/g,' ').substring(0, 80) || null;
+    // Stable selector: prefer testId → ariaLabel → label text → dataId
+    const stableSel = testId   ? `[data-testid="${testId}"]`
+                    : ariaLbl  ? `[aria-label="${ariaLbl}"]`
+                    : label    ? `.react-flow__node:has-text("${label}")`
+                    : dataId   ? `.react-flow__node[data-id="${dataId}"]`
+                    : null;
+    return { dataId, testId, ariaLabel: ariaLbl, label, stableSel };
+  }
+
   // Get handle position: 'source' or 'target' + side (top/right/bottom/left)
   function _rfHandleInfo(handleEl) {
     if (!handleEl) return null;
@@ -1502,12 +1562,22 @@
   let _rfDndNodeType = null; // captured from dragstart dataTransfer
   function _handleDragStart(e) {
     if (!_active) return;
-    try {
-      // React Flow convention: dataTransfer.getData('application/reactflow') = nodeType
-      const nodeType = e.dataTransfer?.getData('application/reactflow') ||
-                       e.dataTransfer?.getData('text/plain') || null;
-      if (nodeType) _rfDndNodeType = nodeType;
-    } catch {}
+    // dataTransfer values are empty at dragstart (React clears them after synthetic event)
+    // Read node type from the DOM element itself instead
+    const el = e.target;
+    if (!el) return;
+    // Try data attributes first, then label text, then class name
+    const nodeType =
+      el.getAttribute('data-node-type') ||
+      el.getAttribute('data-type')      ||
+      el.getAttribute('data-nodetype')  ||
+      // nodelabel sibling/child text — app uses 'nodelabel' as dataTransfer key
+      (el.querySelector('[class*="label"],[class*="title"],p,span')?.textContent?.trim()) ||
+      el.getAttribute('aria-label')     ||
+      (el.textContent?.trim()?.substring(0, 40)) ||
+      el.className?.split(' ').find(c => c && !c.includes('node-box') && !c.includes('drag')) ||
+      null;
+    if (nodeType) _rfDndNodeType = nodeType;
   }
 
   // ── G10: Drag & drop handlers ─────────────────────────────────────────────────
@@ -1515,7 +1585,8 @@
 
   function handleMouseDown(e) {
     if (!_active || e.button !== 0) return;
-    const el = e.target;
+    // OLD: const el = e.target;
+    const el = resolveClickTarget(e.target);
     if (!el || el.nodeType !== 1) return;
 
     const isCanvas = el.tagName === 'CANVAS';
@@ -1566,28 +1637,41 @@
         const tgtNodeId   = _rfNodeId(tgtNode)   || 'unknown';
         const srcHandleInfo = _rfHandleInfo(srcHandle) || {};
         const tgtHandleInfo = _rfHandleInfo(tgtHandle) || {};
+        // Semantic metadata for stable cross-session replay
+        const srcMeta = _rfNodeMeta(srcNode);
+        const tgtMeta = _rfNodeMeta(tgtNode);
 
         const payload = {
-          sourceNode:     srcNodeId,
-          sourceHandle:   srcHandleInfo.type || 'source',
-          sourcePosition: srcHandleInfo.position || '',
-          targetNode:     tgtNodeId,
-          targetHandle:   tgtHandleInfo.type || 'target',
-          targetPosition: tgtHandleInfo.position || '',
+          sourceNode:       srcNodeId,
+          sourceNodeLabel:  srcMeta?.label    || srcNodeId,
+          sourceNodeTestId: srcMeta?.testId   || null,
+          sourceNodeAriaLabel: srcMeta?.ariaLabel || null,
+          sourceNodeStableSel: srcMeta?.stableSel || null,
+          sourceHandle:     srcHandleInfo.type || 'source',
+          sourcePosition:   srcHandleInfo.position || '',
+          targetNode:       tgtNodeId,
+          targetNodeLabel:  tgtMeta?.label    || tgtNodeId,
+          targetNodeTestId: tgtMeta?.testId   || null,
+          targetNodeAriaLabel: tgtMeta?.ariaLabel || null,
+          targetNodeStableSel: tgtMeta?.stableSel || null,
+          targetHandle:     tgtHandleInfo.type || 'target',
+          targetPosition:   tgtHandleInfo.position || '',
           // Fallback flow coords if handles not found
           fromFlow: _rfScreenToFlow(ds.startX, ds.startY, rfCtx.rfRect, rfCtx.vp),
           toFlow:   _rfScreenToFlow(e.clientX, e.clientY, rfCtx.rfRect, rfCtx.vp),
           viewport: rfCtx.vp,
         };
+        const srcLabel = srcMeta?.label || srcNodeId;
+        const tgtLabel = tgtMeta?.label || tgtNodeId;
         const key = `${srcNodeId}→${tgtNodeId}`;
         if (!shouldEmit('RF_CONNECT', key, '')) return;
         recordEmit('RF_CONNECT', key, '');
         postStep({
           eventType:    'RF_CONNECT',
-          selector:     srcHandle ? bestSelector(srcHandle).sel : ds.loc.sel,
-          selectorType: 'css',
+          selector:     srcMeta?.stableSel || (srcHandle ? bestSelector(srcHandle).sel : ds.loc.sel),
+          selectorType: srcMeta?.testId ? 'testid' : srcMeta?.ariaLabel ? 'css' : 'css',
           value:        JSON.stringify(payload),
-          smartName:    `Connect "${srcNodeId}" → "${tgtNodeId}"`,
+          smartName:    `Connect "${srcLabel}" → "${tgtLabel}"`,
           tagName:      'div',
           url:          location.href,
           rfAction:     payload,
@@ -1597,11 +1681,17 @@
         // Node reposition: record nodeId + flow-space target position
         const nodeEl  = ds.el.closest(RF_SELECTORS.node);
         const nodeId  = _rfNodeId(nodeEl) || 'unknown';
+        const nodeMeta = _rfNodeMeta(nodeEl);
+        const nodeLabel = nodeMeta?.label || nodeId;
         const toFlow  = _rfScreenToFlow(e.clientX, e.clientY, rfCtx.rfRect, rfCtx.vp);
         const fromFlow = _rfScreenToFlow(ds.startX, ds.startY, rfCtx.rfRect, rfCtx.vp);
 
         const payload = {
           nodeId,
+          nodeLabel,
+          nodeTestId:   nodeMeta?.testId   || null,
+          nodeAriaLabel: nodeMeta?.ariaLabel || null,
+          nodeStableSel: nodeMeta?.stableSel || null,
           fromFlow,
           toFlow,
           deltaFlow: { x: Math.round(toFlow.x - fromFlow.x), y: Math.round(toFlow.y - fromFlow.y) },
@@ -1610,16 +1700,17 @@
         const key = `${nodeId}:${toFlow.x},${toFlow.y}`;
         if (!shouldEmit('RF_NODE_DRAG', key, '')) return;
         recordEmit('RF_NODE_DRAG', key, '');
+        const nodeSel = nodeMeta?.stableSel || (nodeEl ? bestSelector(nodeEl).sel : ds.loc.sel);
         postStep({
           eventType:    'RF_NODE_DRAG',
-          selector:     nodeEl ? bestSelector(nodeEl).sel : ds.loc.sel,
+          selector:     nodeSel,
           selectorType: 'css',
           value:        JSON.stringify(payload),
-          smartName:    `Move node "${nodeId}" by (${payload.deltaFlow.x}, ${payload.deltaFlow.y})`,
+          smartName:    `Move node "${nodeLabel}" by (${payload.deltaFlow.x}, ${payload.deltaFlow.y})`,
           tagName:      'div',
           url:          location.href,
           rfAction:     payload,
-          ...buildStepMeta(nodeEl || ds.el, nodeEl ? bestSelector(nodeEl).sel : ds.loc.sel),
+          ...buildStepMeta(nodeEl || ds.el, nodeSel),
         });
 
       } else if (action === 'panCanvas') {
@@ -1738,7 +1829,10 @@
       const sy     = isWin ? window.scrollY : (target ? target.scrollTop  : 0);
       let loc = { sel: 'window', type: 'css' };
       if (target && target.nodeType === 1) loc = bestSelector(target);
+      // Suppress if movement from last emitted position is trivial (<100px) — avoids initial-zero pairs
+      if (Math.abs(sx - _scrollLastEmitted.x) < 100 && Math.abs(sy - _scrollLastEmitted.y) < 100) return;
       if (!shouldEmit('SCROLL', loc.sel, `${sx},${sy}`)) return;
+      _scrollLastEmitted = { x: sx, y: sy };
       recordEmit('SCROLL', loc.sel, `${sx},${sy}`);
       postStep({
         eventType:    'SCROLL',
@@ -1757,11 +1851,16 @@
   // ── HTML5 DnD drop handler — sidebar → ReactFlow canvas node creation ────────
   function _handleDrop(e) {
     if (!_active) return;
-    const rfCtx = _rfGetContext();
-    if (!rfCtx) return;
+    // OLD: const rfCtx = _rfGetContext(); if (!rfCtx) return;
+    // Before first node drop, .react-flow__pane may not exist yet (React hasn't rendered it).
+    // rfCtx can be null on first drop — fall through if _rfDndNodeType is set (DnD in progress).
+    let rfCtx = _rfGetContext();
+    if (!rfCtx && !_rfDndNodeType) return;
     // Only fire if drop lands inside React Flow pane
+    // OLD: const pane = e.target?.closest(RF_SELECTORS.pane) || e.target?.closest(RF_SELECTORS.root); if (!pane) return;
+    // Before first drop, pane/root may not exist in DOM — allow if we have a pending node type
     const pane = e.target?.closest(RF_SELECTORS.pane) || e.target?.closest(RF_SELECTORS.root);
-    if (!pane) return;
+    if (!pane && !_rfDndNodeType) return;
 
     let nodeType = _rfDndNodeType;
     _rfDndNodeType = null;
@@ -1769,16 +1868,29 @@
     try {
       nodeType = nodeType ||
         e.dataTransfer?.getData('application/reactflow') ||
-        e.dataTransfer?.getData('text/plain') || 'unknown';
+        e.dataTransfer?.getData('nodelabel')             ||
+        e.dataTransfer?.getData('text/plain')            || null;
     } catch {}
-    if (!nodeType) return;
+    // Always record the drop even if node type unresolved — use 'unknown' fallback
+    if (!nodeType) nodeType = 'unknown';
 
-    const dropFlow = _rfScreenToFlow(e.clientX, e.clientY, rfCtx.rfRect, rfCtx.vp);
-    const payload  = { nodeType, dropFlow, viewport: rfCtx.vp };
+    // rfCtx may be null on first-ever drop (canvas not yet rendered); use fallback rect/vp
+    const rfRect   = rfCtx?.rfRect || (pane ? pane.getBoundingClientRect() : { left: 0, top: 0 });
+    const vp       = rfCtx?.vp     || null;
+    const dropFlow = _rfScreenToFlow(e.clientX, e.clientY, rfRect, vp);
+    const payload  = { nodeType, dropFlow, viewport: vp };
     const key      = `${nodeType}:${dropFlow.x},${dropFlow.y}`;
     if (!shouldEmit('RF_DROP_NODE', key, '')) return;
     recordEmit('RF_DROP_NODE', key, '');
-    postStep({
+
+    // Snapshot existing node data-ids so we can identify the NEW node after React renders it
+    const _rfRoot = document.querySelector(RF_SELECTORS.root);
+    const _existingIds = new Set(
+      Array.from(document.querySelectorAll(RF_SELECTORS.node)).map(n => n.getAttribute('data-id'))
+    );
+
+    // Post the step immediately (so recording isn't blocked), then enrich via mutation callback
+    const stepBase = {
       eventType:    'RF_DROP_NODE',
       selector:     RF_SELECTORS.pane,
       selectorType: 'css',
@@ -1787,7 +1899,40 @@
       tagName:      'div',
       url:          location.href,
       rfAction:     payload,
-    });
+    };
+    postStep(stepBase);
+
+    // One-shot observer: when React renders the new node element, enrich the last posted step
+    // with stable semantic metadata (label, testId, ariaLabel, stableSel).
+    // 800ms timeout — if node doesn't appear, silently give up (step already recorded above).
+    if (_rfRoot) {
+      const _dropObs = new MutationObserver(() => {
+        const newNode = Array.from(document.querySelectorAll(RF_SELECTORS.node))
+          .find(n => !_existingIds.has(n.getAttribute('data-id')));
+        if (!newNode) return;
+        _dropObs.disconnect();
+        clearTimeout(_dropObsTimer);
+        const meta = _rfNodeMeta(newNode);
+        if (!meta) return;
+        const enriched = Object.assign({}, payload, {
+          placedNodeDataId:    meta.dataId,
+          placedNodeLabel:     meta.label,
+          placedNodeTestId:    meta.testId,
+          placedNodeAriaLabel: meta.ariaLabel,
+          placedNodeStableSel: meta.stableSel,
+        });
+        // Re-post as an enrichment patch — server /api/recorder/step handles this via enrichRfDrop flag
+        postStep({
+          ...stepBase,
+          value:     JSON.stringify(enriched),
+          smartName: `Drop node "${meta.label || nodeType}" at flow (${dropFlow.x}, ${dropFlow.y})`,
+          rfAction:  enriched,
+          enrichRfDrop: true,  // signal to server: update the last RF_DROP_NODE step value
+        });
+      });
+      const _dropObsTimer = setTimeout(() => _dropObs.disconnect(), 800);
+      _dropObs.observe(_rfRoot, { childList: true, subtree: true });
+    }
   }
 
   function attachToRoot(root) {
@@ -1847,12 +1992,43 @@
   // itself so handleClick() can emit SWITCH_FRAME when user clicks on it.
   const _crossOriginIframes = new WeakSet(); // iframe elements that are cross-origin
 
+  function _doInjectIntoIframeDoc(iframe) {
+    try {
+      const doc = iframe.contentDocument;
+      if (!doc || doc.readyState === 'uninitialized') return;
+      if (doc.__qaInjected) return;
+      doc.__qaInjected = true;
+      _iframeContextMap.set(doc, {
+        frameId:   iframe.id   || null,
+        frameName: iframe.name || null,
+        frameSrc:  (() => { try { return iframe.contentWindow.location.href; } catch { return iframe.src || null; } })(),
+      });
+      attachToRoot(doc);
+      scanShadow(doc);
+      scanForIframes(doc);
+    } catch { _crossOriginIframes.add(iframe); }
+  }
+
   function injectIntoIframe(iframe) {
     try {
       const doc = iframe.contentDocument;
       if (!doc) {
         // null doc = cross-origin — mark the element for SWITCH_FRAME emission
         _crossOriginIframes.add(iframe);
+        return;
+      }
+      // If iframe not yet loaded, wait for load event then inject into final document.
+      // No {once:true} — iframe may reload (e.g. React canvas re-render reloads src)
+      // and we must re-inject each time into the fresh document.
+      if (doc.readyState === 'loading' || doc.readyState === 'uninitialized' || doc.URL === 'about:blank') {
+        if (!iframe.__qaLoadWatcher) {
+          iframe.__qaLoadWatcher = true;
+          iframe.addEventListener('load', () => {
+            // Clear injected flag on old doc — new document needs fresh injection
+            try { if (iframe.contentDocument) delete iframe.contentDocument.__qaInjected; } catch {}
+            _doInjectIntoIframeDoc(iframe);
+          });
+        }
         return;
       }
       if (doc.__qaInjected) return;
@@ -1919,7 +2095,7 @@
   function injectDialogInterceptor() {
     if (_dialogInterceptorInjected) return;
     _dialogInterceptorInjected = true;
-    chrome.runtime.sendMessage({ type: 'INJECT_DIALOG_PATCHER' });
+    if (chrome.runtime?.id) try { chrome.runtime.sendMessage({ type: 'INJECT_DIALOG_PATCHER' }, () => { void chrome.runtime.lastError; }); } catch {}
   }
 
   function attachListeners() {
@@ -1998,7 +2174,7 @@
     window.addEventListener('popstate',    _onUrlChange);
     window.addEventListener('hashchange',  _onUrlChange);
     // pushState/replaceState must be hooked in main world — request injection
-    chrome.runtime.sendMessage({ type: 'INJECT_URL_PATCHER' });
+    if (chrome.runtime?.id) try { chrome.runtime.sendMessage({ type: 'INJECT_URL_PATCHER' }, () => { void chrome.runtime.lastError; }); } catch {}
     document.addEventListener('__qa_urlchange', _onUrlChange);
 
     injectDialogInterceptor();

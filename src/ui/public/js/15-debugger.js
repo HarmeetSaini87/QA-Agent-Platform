@@ -505,11 +505,15 @@ function _debugOnError({ stepIdx, keyword, locator, errorMessage, errorType }) {
   const kwUpper = (keyword || '').toUpperCase().trim();
   const isPageLevel = PAGE_LEVEL_ASSERT_KW.has(kwUpper);
 
+  // frameContext: from step metadata — null = top frame, string = iframe selector
+  const stepFrameCtx = stepMeta?.frameContext || null;
+
   const editPanel = document.createElement('div');
   editPanel.id = 'dbg-inline-edit';
   editPanel.style.cssText = 'margin-top:12px;background:#1e293b;border:1px solid #f59e0b;border-radius:8px;padding:14px 16px';
   editPanel.innerHTML = `
-    <div style="font-size:12px;font-weight:700;color:#f59e0b;margin-bottom:10px;letter-spacing:0.5px">✎ EDIT &amp; RETRY — correct the step without stopping the session</div>
+    <div style="font-size:12px;font-weight:700;color:#f59e0b;margin-bottom:10px;letter-spacing:0.5px">✎ EDIT &amp; RETRY — correct the step without stopping the session${stepFrameCtx ? ` <span style="font-size:10px;background:#1d4ed8;color:#bfdbfe;padding:2px 6px;border-radius:4px;margin-left:6px;font-weight:600">⬚ iframe: ${escHtml(stepFrameCtx)}</span>` : ''}</div>
+    <input type="hidden" id="dbg-edit-framecontext" value="${escHtml(stepFrameCtx || '')}">
     <div style="display:grid;grid-template-columns:130px 1fr;gap:8px;align-items:center;font-size:12px;color:#94a3b8">
       ${isPageLevel ? '' : `
       <label>Locator Type</label>
@@ -554,6 +558,11 @@ async function _debugApplyRetry(stepIdx, stepNum) {
   const value = document.getElementById('dbg-edit-val')?.value;
   const persist = document.getElementById('dbg-edit-persist')?.checked !== false;
 
+  // frameContext: read from hidden field (populated from step metadata on error panel render)
+  // null = top frame, string = iframe selector e.g. "#flowIframe"
+  const frameContextEl = document.getElementById('dbg-edit-framecontext');
+  const frameContext = frameContextEl ? (frameContextEl.value || null) : null;
+
   // OLD: always required locator — blocked page-level asserts (ASSERT URL, ASSERT TITLE, etc.)
   // if (!locator) { alert('Locator cannot be empty'); return; }
   // Locator is optional for page-level asserts (no locator field shown); required only when field is visible
@@ -571,6 +580,7 @@ async function _debugApplyRetry(stepIdx, stepNum) {
           locator,
           locatorType,
           value,
+          frameContext,
         }),
       });
     } catch (e) {
@@ -606,6 +616,7 @@ async function _debugApplyRetry(stepIdx, stepNum) {
       locator,
       locatorType,
       value,
+      frameContext,
     }),
   }).catch(() => { });
 }
@@ -695,10 +706,12 @@ function _debugRenderSteps() {
     const state = _debugStepState[s.order] || 'pending';
     const icons = { pending: '○', active: '●', done: '✓', skipped: '⏭', error: '✗', failed: '✗' };
     const icon = icons[state] || '○';
+    // Show iframe badge when step lives inside a frame context
+    const fcBadge = s.frameContext ? `<span style="font-size:9px;background:#1d4ed8;color:#bfdbfe;padding:1px 4px;border-radius:3px;margin-left:4px;vertical-align:middle" title="Runs inside iframe: ${escHtml(s.frameContext)}">⬚</span>` : '';
     return `<div class="debug-step-row debug-step-${state}" data-order="${s.order}">
       <span class="debug-step-icon">${icon}</span>
       <div class="debug-step-info">
-        <span class="debug-step-kw">${escHtml(s.keyword || '')}</span>
+        <span class="debug-step-kw">${escHtml(s.keyword || '')}${fcBadge}</span>
         ${s.description ? `<span class="debug-step-desc">${escHtml(s.description)}</span>` : ''}
       </div>
       <span class="debug-step-order">${s.order}</span>

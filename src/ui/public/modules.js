@@ -7574,11 +7574,15 @@ function _debugOnError({ stepIdx, keyword, locator, errorMessage, errorType }) {
   const kwUpper = (keyword || '').toUpperCase().trim();
   const isPageLevel = PAGE_LEVEL_ASSERT_KW.has(kwUpper);
 
+  // frameContext: from step metadata — null = top frame, string = iframe selector
+  const stepFrameCtx = stepMeta?.frameContext || null;
+
   const editPanel = document.createElement('div');
   editPanel.id = 'dbg-inline-edit';
   editPanel.style.cssText = 'margin-top:12px;background:#1e293b;border:1px solid #f59e0b;border-radius:8px;padding:14px 16px';
   editPanel.innerHTML = `
-    <div style="font-size:12px;font-weight:700;color:#f59e0b;margin-bottom:10px;letter-spacing:0.5px">✎ EDIT &amp; RETRY — correct the step without stopping the session</div>
+    <div style="font-size:12px;font-weight:700;color:#f59e0b;margin-bottom:10px;letter-spacing:0.5px">✎ EDIT &amp; RETRY — correct the step without stopping the session${stepFrameCtx ? ` <span style="font-size:10px;background:#1d4ed8;color:#bfdbfe;padding:2px 6px;border-radius:4px;margin-left:6px;font-weight:600">⬚ iframe: ${escHtml(stepFrameCtx)}</span>` : ''}</div>
+    <input type="hidden" id="dbg-edit-framecontext" value="${escHtml(stepFrameCtx || '')}">
     <div style="display:grid;grid-template-columns:130px 1fr;gap:8px;align-items:center;font-size:12px;color:#94a3b8">
       ${isPageLevel ? '' : `
       <label>Locator Type</label>
@@ -7623,6 +7627,11 @@ async function _debugApplyRetry(stepIdx, stepNum) {
   const value = document.getElementById('dbg-edit-val')?.value;
   const persist = document.getElementById('dbg-edit-persist')?.checked !== false;
 
+  // frameContext: read from hidden field (populated from step metadata on error panel render)
+  // null = top frame, string = iframe selector e.g. "#flowIframe"
+  const frameContextEl = document.getElementById('dbg-edit-framecontext');
+  const frameContext = frameContextEl ? (frameContextEl.value || null) : null;
+
   // OLD: always required locator — blocked page-level asserts (ASSERT URL, ASSERT TITLE, etc.)
   // if (!locator) { alert('Locator cannot be empty'); return; }
   // Locator is optional for page-level asserts (no locator field shown); required only when field is visible
@@ -7640,6 +7649,7 @@ async function _debugApplyRetry(stepIdx, stepNum) {
           locator,
           locatorType,
           value,
+          frameContext,
         }),
       });
     } catch (e) {
@@ -7675,6 +7685,7 @@ async function _debugApplyRetry(stepIdx, stepNum) {
       locator,
       locatorType,
       value,
+      frameContext,
     }),
   }).catch(() => { });
 }
@@ -7764,10 +7775,12 @@ function _debugRenderSteps() {
     const state = _debugStepState[s.order] || 'pending';
     const icons = { pending: '○', active: '●', done: '✓', skipped: '⏭', error: '✗', failed: '✗' };
     const icon = icons[state] || '○';
+    // Show iframe badge when step lives inside a frame context
+    const fcBadge = s.frameContext ? `<span style="font-size:9px;background:#1d4ed8;color:#bfdbfe;padding:1px 4px;border-radius:3px;margin-left:4px;vertical-align:middle" title="Runs inside iframe: ${escHtml(s.frameContext)}">⬚</span>` : '';
     return `<div class="debug-step-row debug-step-${state}" data-order="${s.order}">
       <span class="debug-step-icon">${icon}</span>
       <div class="debug-step-info">
-        <span class="debug-step-kw">${escHtml(s.keyword || '')}</span>
+        <span class="debug-step-kw">${escHtml(s.keyword || '')}${fcBadge}</span>
         ${s.description ? `<span class="debug-step-desc">${escHtml(s.description)}</span>` : ''}
       </div>
       <span class="debug-step-order">${s.order}</span>
@@ -8021,6 +8034,10 @@ async function recorderStop() {
     if (stopRes.ok) {
       const stopData = await stopRes.json();
       recordedSteps = stopData.steps || [];
+      // N13 — boilerplate suggestion returned by server
+      if (stopData.boilerplateSuggestions && stopData.boilerplateSuggestions.length > 0) {
+        _showBoilerplateSuggestions(stopData.boilerplateSuggestions, recordedSteps);
+      }
     }
   } catch { /* ignore — server will auto-expire */ }
 
@@ -8050,6 +8067,51 @@ async function recorderStop() {
       console.warn('[Recorder] Pattern analysis failed:', err);
     }
   }
+}
+
+// ── N13 — Login Boilerplate Suggestion ───────────────────────────────────────
+// Shows a banner after Stop Recording when login+nav steps are detected.
+// Lets the user wrap them into a CALL FUNCTION in one click.
+function _showBoilerplateSuggestions(suggestions, steps) {
+  if (!suggestions || suggestions.length === 0) return;
+  const s = suggestions[0]; // process first (login is always the only one)
+
+  const banner = document.createElement('div');
+  banner.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:10001;background:#1e293b;border:1px solid rgba(139,92,246,.5);border-radius:12px;padding:16px 20px;max-width:540px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,.5);display:flex;flex-direction:column;gap:10px';
+
+  banner.innerHTML = `
+    <div style="display:flex;align-items:center;gap:8px">
+      <span style="background:#7c3aed;color:#fff;font-size:10px;padding:2px 8px;border-radius:999px;font-weight:700;flex-shrink:0">SUGGESTION</span>
+      <span style="color:#e2e8f0;font-size:13px;font-weight:600">Login boilerplate detected</span>
+      <button id="bp-dismiss" style="margin-left:auto;background:none;border:none;color:#64748b;cursor:pointer;font-size:16px;line-height:1">&#x2715;</button>
+    </div>
+    <div style="color:#94a3b8;font-size:12px;line-height:1.6">
+      Steps ${s.startIndex + 1}–${s.endIndex + 1} (${s.stepCount} steps) are login+navigation — repeated in every script.
+      Wrap them in a <strong style="color:#a78bfa">Common Function</strong> once and reuse via <code style="background:#0f172a;padding:1px 5px;border-radius:3px;font-size:11px">CALL FUNCTION</code>.
+    </div>
+    <div style="display:flex;gap:8px">
+      <button id="bp-wrap" style="flex:1;background:#7c3aed;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer">Wrap in Common Function</button>
+      <button id="bp-keep" style="flex:1;background:#1e293b;color:#94a3b8;border:1px solid #334155;border-radius:8px;padding:8px 14px;font-size:13px;cursor:pointer">Keep as-is</button>
+    </div>`;
+
+  document.body.appendChild(banner);
+
+  document.getElementById('bp-dismiss').onclick = () => banner.remove();
+  document.getElementById('bp-keep').onclick    = () => banner.remove();
+  document.getElementById('bp-wrap').onclick    = async () => {
+    banner.remove();
+    // Reuse CR6 mechanism: build a synthetic pattern and call _cr6ShowCard
+    const boilerplateSteps = steps.slice(s.startIndex, s.endIndex + 1);
+    const syntheticPattern = {
+      startIndex:      s.startIndex,
+      endIndex:        s.endIndex,
+      steps:           boilerplateSteps,
+      matchCount:      0,
+      suggestedName:   'Login',
+      duplicateFnId:   undefined,
+    };
+    _cr6ShowCard(syntheticPattern, steps.length, () => {});
+  };
 }
 
 // ── CR6 — Intelligent Step Grouping (Common Function suggestions) ─────────────

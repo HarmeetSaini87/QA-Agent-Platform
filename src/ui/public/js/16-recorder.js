@@ -101,6 +101,10 @@ async function recorderStop() {
     if (stopRes.ok) {
       const stopData = await stopRes.json();
       recordedSteps = stopData.steps || [];
+      // N13 — boilerplate suggestion returned by server
+      if (stopData.boilerplateSuggestions && stopData.boilerplateSuggestions.length > 0) {
+        _showBoilerplateSuggestions(stopData.boilerplateSuggestions, recordedSteps);
+      }
     }
   } catch { /* ignore — server will auto-expire */ }
 
@@ -130,6 +134,51 @@ async function recorderStop() {
       console.warn('[Recorder] Pattern analysis failed:', err);
     }
   }
+}
+
+// ── N13 — Login Boilerplate Suggestion ───────────────────────────────────────
+// Shows a banner after Stop Recording when login+nav steps are detected.
+// Lets the user wrap them into a CALL FUNCTION in one click.
+function _showBoilerplateSuggestions(suggestions, steps) {
+  if (!suggestions || suggestions.length === 0) return;
+  const s = suggestions[0]; // process first (login is always the only one)
+
+  const banner = document.createElement('div');
+  banner.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:10001;background:#1e293b;border:1px solid rgba(139,92,246,.5);border-radius:12px;padding:16px 20px;max-width:540px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,.5);display:flex;flex-direction:column;gap:10px';
+
+  banner.innerHTML = `
+    <div style="display:flex;align-items:center;gap:8px">
+      <span style="background:#7c3aed;color:#fff;font-size:10px;padding:2px 8px;border-radius:999px;font-weight:700;flex-shrink:0">SUGGESTION</span>
+      <span style="color:#e2e8f0;font-size:13px;font-weight:600">Login boilerplate detected</span>
+      <button id="bp-dismiss" style="margin-left:auto;background:none;border:none;color:#64748b;cursor:pointer;font-size:16px;line-height:1">&#x2715;</button>
+    </div>
+    <div style="color:#94a3b8;font-size:12px;line-height:1.6">
+      Steps ${s.startIndex + 1}–${s.endIndex + 1} (${s.stepCount} steps) are login+navigation — repeated in every script.
+      Wrap them in a <strong style="color:#a78bfa">Common Function</strong> once and reuse via <code style="background:#0f172a;padding:1px 5px;border-radius:3px;font-size:11px">CALL FUNCTION</code>.
+    </div>
+    <div style="display:flex;gap:8px">
+      <button id="bp-wrap" style="flex:1;background:#7c3aed;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer">Wrap in Common Function</button>
+      <button id="bp-keep" style="flex:1;background:#1e293b;color:#94a3b8;border:1px solid #334155;border-radius:8px;padding:8px 14px;font-size:13px;cursor:pointer">Keep as-is</button>
+    </div>`;
+
+  document.body.appendChild(banner);
+
+  document.getElementById('bp-dismiss').onclick = () => banner.remove();
+  document.getElementById('bp-keep').onclick    = () => banner.remove();
+  document.getElementById('bp-wrap').onclick    = async () => {
+    banner.remove();
+    // Reuse CR6 mechanism: build a synthetic pattern and call _cr6ShowCard
+    const boilerplateSteps = steps.slice(s.startIndex, s.endIndex + 1);
+    const syntheticPattern = {
+      startIndex:      s.startIndex,
+      endIndex:        s.endIndex,
+      steps:           boilerplateSteps,
+      matchCount:      0,
+      suggestedName:   'Login',
+      duplicateFnId:   undefined,
+    };
+    _cr6ShowCard(syntheticPattern, steps.length, () => {});
+  };
 }
 
 // ── CR6 — Intelligent Step Grouping (Common Function suggestions) ─────────────

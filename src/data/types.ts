@@ -125,6 +125,7 @@ export interface Locator {
   healingProfile?:   HealingProfile;       // element fingerprint for similarity matching
   healingStats?:     HealingStats;         // runtime heal event counters
   pageKey?:          string | null;        // normalised URL at time of recording
+  frameContext?:     string | null;        // iframe selector when locator lives inside iframe e.g. "#flowIframe"
 }
 
 export interface CommonFunction {
@@ -183,6 +184,11 @@ export interface ScriptStep {
   storeScope?:   'session' | 'global';  // session = current script only; global = shared across suite
   storeSource?:  'text' | 'value' | 'attr' | 'js';  // only for SET VARIABLE keyword
   storeAttrName?: string;        // attribute name when storeSource = 'attr'
+  // ── Frame context (set by SWITCH_FRAME steps) ─────────────────────────────
+  // When non-null, this step executes inside an iframe. Value is the iframe
+  // CSS selector e.g. "#flowIframe". Propagated by recorderParser from
+  // RecorderEvent.frameContext and consumed by codegenGenerator + debugger.
+  frameContext?:  string | null;  // iframe selector e.g. "#flowIframe", null = top frame
 }
 
 export interface TestScript {

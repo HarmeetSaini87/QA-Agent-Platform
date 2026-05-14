@@ -53,39 +53,44 @@ function getStepHealingProfile(locatorId: string | null): object | null {
 // ── Locator builder ────────────────────────────────────────────────────────────
 // Maps locatorType + value to Playwright locator expression string
 
-function buildLocatorExpr(locatorType: string | null | undefined, locator: string): string {
+// OLD: buildLocatorExpr(locatorType, locator) — always used `page` as root, broke iframe steps
+// function buildLocatorExpr(locatorType: string | null | undefined, locator: string): string { ... }
+function buildLocatorExpr(locatorType: string | null | undefined, locator: string, frameCtx?: string | null): string {
   const t = (locatorType || 'css').toLowerCase();
   // Use double-quoted JS strings for all locators — avoids single-quote
   // conflicts with XPath predicates like normalize-space()='...'
   const dq = (s: string) => s.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  // When step lives inside an iframe, scope to frameLocator instead of page directly.
+  // frameCtx is the iframe CSS selector e.g. "#flowIframe".
+  const root = frameCtx ? `page.frameLocator("${dq(frameCtx)}")` : 'page';
 
   switch (t) {
-    case 'text':    return `page.getByText("${dq(locator)}")`;
-    case 'testid':  return `page.getByTestId("${dq(locator)}")`;
+    case 'text':    return `${root}.getByText("${dq(locator)}")`;
+    case 'testid':  return `${root}.getByTestId("${dq(locator)}")`;
     case 'role': {
       const [role, ...nameParts] = locator.split(':');
       const name = nameParts.join(':').trim();
       return name
-        ? `page.getByRole("${dq(role.trim())}", { name: "${dq(name)}" })`
-        : `page.getByRole("${dq(role.trim())}")`;
+        ? `${root}.getByRole("${dq(role.trim())}", { name: "${dq(name)}" })`
+        : `${root}.getByRole("${dq(role.trim())}")`;
     }
-    case 'xpath':   return `page.locator("xpath=${dq(locator)}")`;
-    case 'id':      return `page.locator("#${dq(locator.replace(/^#/, ''))}")`;
-    case 'name':    return locator.includes('[name=') ? `page.locator("${dq(locator)}")` : `page.locator("[name=\\"${dq(locator)}\\"]")`;
-    case 'label':   return `page.getByLabel("${dq(locator.replace(/^label:/i, ''))}")`;
-    case 'placeholder': return `page.getByPlaceholder("${dq(locator)}")`;
+    case 'xpath':   return `${root}.locator("xpath=${dq(locator)}")`;
+    case 'id':      return `${root}.locator("#${dq(locator.replace(/^#/, ''))}")`;
+    case 'name':    return locator.includes('[name=') ? `${root}.locator("${dq(locator)}")` : `${root}.locator("[name=\\"${dq(locator)}\\"]")`;
+    case 'label':   return `${root}.getByLabel("${dq(locator.replace(/^label:/i, ''))}")`;
+    case 'placeholder': return `${root}.getByPlaceholder("${dq(locator)}")`;
     case 'nth': {
       // format: "css-selector:N"  e.g.  ".row:2"  (0-based index)
       const lastColon = locator.lastIndexOf(':');
       if (lastColon > 0) {
         const sel = locator.slice(0, lastColon);
         const idx = parseInt(locator.slice(lastColon + 1), 10);
-        return `page.locator("${dq(sel)}").nth(${isNaN(idx) ? 0 : idx})`;
+        return `${root}.locator("${dq(sel)}").nth(${isNaN(idx) ? 0 : idx})`;
       }
-      return `page.locator("${dq(locator)}").nth(0)`;
+      return `${root}.locator("${dq(locator)}").nth(0)`;
     }
-    case 'last':    return `page.locator("${dq(locator)}").last()`;
-    default:        return `page.locator("${dq(locator)}")`;   // css
+    case 'last':    return `${root}.locator("${dq(locator)}").last()`;
+    default:        return `${root}.locator("${dq(locator)}")`;   // css
   }
 }
 
@@ -295,8 +300,12 @@ function _generateStepCode(
   const lt  = step.locatorType || 'css';
   const val = valueExpr(step, dataMap, runIdx);
   const comment = step.description ? `${indent}// ${step.description}` : '';
+  // frameCtx: non-null when step lives inside an iframe (set by SWITCH_FRAME in script)
+  const fc = (step as any).frameContext as string | null | undefined;
 
-  const locExpr = loc ? buildLocatorExpr(lt, loc) : null;
+  // OLD: buildLocatorExpr(lt, loc) — never passed frameCtx, iframe steps always searched top frame
+  // const locExpr = loc ? buildLocatorExpr(lt, loc) : null;
+  const locExpr = loc ? buildLocatorExpr(lt, loc, fc) : null;
 
   const line = (code: string) =>
     (comment ? comment + '\n' : '') + `${indent}${code}`;
@@ -1957,9 +1966,24 @@ export function generateCodegenSpec(input: CodegenInput): string {
       // Keywords that don't need visual diff wrapping
       const NO_DIFF_KW = new Set(['SCREENSHOT', 'WAIT', 'GOTO', 'VERIFY', 'ASSERT TEXT', 'ASSERT VISIBLE', 'ASSERT HIDDEN', 'ASSERT VALUE', 'WAIT FOR TOAST', 'ASSERT TOAST', 'ASSERT UNCHECKED', 'ASSERT CHECKED', 'ASSERT EDITABLE', 'ASSERT READONLY', 'ASSERT EMPTY', 'ASSERT FOCUSED', 'ASSERT CLASS', 'ASSERT CSS', 'ASSERT RESPONSE OK']);
 
+      // Frame context tracker — updated by SWITCH_FRAME steps, consumed by locator expressions.
+      // null = top frame (page); string = iframe selector e.g. "#flowIframe"
+      let __activeFrameCtx: string | null = null;
+
       for (let si = 0; si < sortedSteps.length; si++) {
         const step     = sortedSteps[si];
         const kw       = (step.keyword || '').toUpperCase().trim();
+
+        // Track frame context: SWITCH_FRAME updates active frame for all subsequent steps.
+        // "_top", "top", or empty value = return to top frame (page).
+        if (kw === 'SWITCH_FRAME' || kw === 'SWITCH FRAME') {
+          const frameSel = step.locator || step.value || '';
+          __activeFrameCtx = (!frameSel || frameSel === '_top' || frameSel === 'top') ? null : frameSel;
+        }
+        // Propagate active frame context to the step so _generateStepCode uses correct root
+        if (__activeFrameCtx && kw !== 'SWITCH_FRAME' && kw !== 'SWITCH FRAME') {
+          (step as any).frameContext = __activeFrameCtx;
+        }
         const needsDiff = !NO_DIFF_KW.has(kw);
 
         // Skip dialog steps — they are injected before the PRECEDING step via look-ahead
@@ -1999,7 +2023,7 @@ export function generateCodegenSpec(input: CodegenInput): string {
           if (innerCode) lines.push(innerCode);
           // OLD: storeAsLine(step, ...) — did not pass val, FILL/TYPE stored raw template
           // const pinLine = storeAsLine(step, step.locator ? buildLocatorExpr(step.locatorType || 'css', step.locator) : null, '        ');
-          const pinLine = storeAsLine(step, step.locator ? buildLocatorExpr(step.locatorType || 'css', step.locator) : null, '        ', valueExpr(step, dataMap, runIdx));
+          const pinLine = storeAsLine(step, step.locator ? buildLocatorExpr(step.locatorType || 'css', step.locator, (step as any).frameContext) : null, '        ', valueExpr(step, dataMap, runIdx));
           if (pinLine) lines.push(pinLine);
           lines.push(`      } catch (__e_${step.order}: any) {`);
           lines.push(`        await page.screenshot({ path: \`\${__SS_DIR}/${testIdx}-\${__browser}-after-${step.order}.png\`, fullPage: false }).catch(() => {});`);
@@ -2059,7 +2083,7 @@ export function generateCodegenSpec(input: CodegenInput): string {
           if (code) lines.push(code);
           // OLD: storeAsLine(step, ...) — did not pass val, FILL/TYPE stored raw template
           // const pinLine = storeAsLine(step, step.locator ? buildLocatorExpr(step.locatorType || 'css', step.locator) : null, '      ');
-          const pinLine = storeAsLine(step, step.locator ? buildLocatorExpr(step.locatorType || 'css', step.locator) : null, '      ', valueExpr(step, dataMap, runIdx));
+          const pinLine = storeAsLine(step, step.locator ? buildLocatorExpr(step.locatorType || 'css', step.locator, (step as any).frameContext) : null, '      ', valueExpr(step, dataMap, runIdx));
           if (pinLine) lines.push(pinLine);
         }
 
@@ -2190,28 +2214,31 @@ export function generateDebugSpec(input: DebugCodegenInput): string {
   // ── __buildLocator — runtime universal locator builder (all types) ───────────
   // Used exclusively in debug retry blocks so patched locatorType+locator are
   // resolved at runtime rather than being baked into the spec at generation time.
-  lines.push(`function __buildLocator(page: any, lt: string, loc: string): any {`);
+  // OLD: __buildLocator(page, lt, loc) — always used page as root, broke iframe steps
+  // NEW: accepts optional frameCtx — when set, scopes to page.frameLocator(frameCtx)
+  lines.push(`function __buildLocator(page: any, lt: string, loc: string, frameCtx?: string | null): any {`);
+  lines.push(`  const root = frameCtx ? page.frameLocator(frameCtx) : page;`);
   lines.push(`  switch ((lt || 'css').toLowerCase()) {`);
-  lines.push(`    case 'text':        return page.getByText(loc);`);
-  lines.push(`    case 'testid':      return page.getByTestId(loc);`);
-  lines.push(`    case 'label':       return page.getByLabel(loc.replace(/^label:/i, ''));`);
-  lines.push(`    case 'placeholder': return page.getByPlaceholder(loc);`);
-  lines.push(`    case 'title':       return page.getByTitle(loc);`);
-  lines.push(`    case 'xpath':       return page.locator('xpath=' + loc);`);
-  lines.push(`    case 'id':          return page.locator('#' + loc.replace(/^#/, ''));`);
-  lines.push(`    case 'name':        return loc.includes('[name=') ? page.locator(loc) : page.locator('[name="' + loc + '"]');`);
+  lines.push(`    case 'text':        return root.getByText(loc);`);
+  lines.push(`    case 'testid':      return root.getByTestId(loc);`);
+  lines.push(`    case 'label':       return root.getByLabel(loc.replace(/^label:/i, ''));`);
+  lines.push(`    case 'placeholder': return root.getByPlaceholder(loc);`);
+  lines.push(`    case 'title':       return root.getByTitle(loc);`);
+  lines.push(`    case 'xpath':       return root.locator('xpath=' + loc);`);
+  lines.push(`    case 'id':          return root.locator('#' + loc.replace(/^#/, ''));`);
+  lines.push(`    case 'name':        return loc.includes('[name=') ? root.locator(loc) : root.locator('[name="' + loc + '"]');`);
   lines.push(`    case 'role': {`);
   lines.push(`      const ci = loc.lastIndexOf(':');`);
-  lines.push(`      if (ci > -1) return page.getByRole(loc.slice(0, ci) as any, { name: loc.slice(ci + 1) });`);
-  lines.push(`      return page.getByRole(loc as any);`);
+  lines.push(`      if (ci > -1) return root.getByRole(loc.slice(0, ci) as any, { name: loc.slice(ci + 1) });`);
+  lines.push(`      return root.getByRole(loc as any);`);
   lines.push(`    }`);
   lines.push(`    case 'nth': {`);
   lines.push(`      const ci = loc.lastIndexOf(':');`);
-  lines.push(`      if (ci > -1) return page.locator(loc.slice(0, ci)).nth(parseInt(loc.slice(ci + 1), 10) || 0);`);
-  lines.push(`      return page.locator(loc).nth(0);`);
+  lines.push(`      if (ci > -1) return root.locator(loc.slice(0, ci)).nth(parseInt(loc.slice(ci + 1), 10) || 0);`);
+  lines.push(`      return root.locator(loc).nth(0);`);
   lines.push(`    }`);
-  lines.push(`    case 'last':        return page.locator(loc).last();`);
-  lines.push(`    default:            return page.locator(loc);  // css`);
+  lines.push(`    case 'last':        return root.locator(loc).last();`);
+  lines.push(`    default:            return root.locator(loc);  // css`);
   lines.push(`  }`);
   lines.push(`}`);
   lines.push(``);
@@ -2368,6 +2395,9 @@ export function generateDebugSpec(input: DebugCodegenInput): string {
   lines.push(`    await new Promise<void>(r => { const iv = setInterval(() => { try { if (_fs.existsSync(__GATE)) { clearInterval(iv); try { _fs.unlinkSync(__GATE); } catch {} try { _fs.unlinkSync(__PENDING); } catch {} r(); } } catch {} }, 300); setTimeout(() => { clearInterval(iv); r(); }, 30*60*1000); });`);
   lines.push('');
 
+  // Frame context tracker for debug spec — updated by SWITCH_FRAME steps
+  let __dbgActiveFrameCtx: string | null = null;
+
   for (let si = 0; si < sortedSteps.length; si++) {
     const step = sortedSteps[si];
     const kw      = (step.keyword || '').toUpperCase().trim();
@@ -2376,6 +2406,14 @@ export function generateDebugSpec(input: DebugCodegenInput): string {
     const dispVal = debugValueDisplay(step).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
     const dispLoc = loc.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
     const kwSlug  = kw.replace(/\s+/g, '_');
+
+    // Track frame context across steps in debug spec
+    if (kw === 'SWITCH_FRAME' || kw === 'SWITCH FRAME') {
+      const frameSel = step.locator || step.value || '';
+      __dbgActiveFrameCtx = (!frameSel || frameSel === '_top' || frameSel === 'top') ? null : frameSel;
+    }
+    // frameContext for this step: use step's own value if set (from recorder), else active tracker
+    const stepFc = (step as any).frameContext as string | null | undefined ?? __dbgActiveFrameCtx;
 
     // Dialog steps are injected before the PRECEDING step via look-ahead.
     // In the debugger we still show them as an instant "done" step (no pause)
@@ -2515,6 +2553,9 @@ export function generateDebugSpec(input: DebugCodegenInput): string {
     lines.push(`        let __patchedLoc_${step.order}  = __gate_${step.order}.locator ?? '${loc.replace(/'/g, "\\'")}';`);
     lines.push(`        let __patchedLt_${step.order}   = __gate_${step.order}.locatorType ?? '${lt}';`);
     lines.push(`        let __patchedVal_${step.order}  = __gate_${step.order}.value ?? '${dispVal.replace(/'/g, "\\'")}';`);
+    // frameContext: bake in the step's frame context at generation time; allow override via gate (Apply & Retry)
+    const fcLiteral = stepFc ? `'${stepFc.replace(/'/g, "\\'")}'` : 'null';
+    lines.push(`        let __patchedFc_${step.order}   = __gate_${step.order}.frameContext ?? ${fcLiteral};`);
     lines.push(`        let __currentAction_${step.order} = __gate_${step.order}.action;`);
     lines.push(`        while (true) {`);
     lines.push(`          try {`);
@@ -2531,7 +2572,7 @@ export function generateDebugSpec(input: DebugCodegenInput): string {
       // generated code. This handles ALL locator types correctly without fragile string
       // replacement that breaks on chained methods or special characters in selectors.
       const o = step.order;
-      lines.push(`            const __retryLoc_${o} = __buildLocator(page, __patchedLt_${o}, __patchedLoc_${o});`);
+      lines.push(`            const __retryLoc_${o} = __buildLocator(page, __patchedLt_${o}, __patchedLoc_${o}, __patchedFc_${o});`);
       lines.push(`            switch ('${kw}') {`);
       lines.push(`              case 'CLICK': case 'JS CLICK':`);
       lines.push(`                await __retryLoc_${o}.waitFor({ state: 'visible', timeout: 10000 });`);
@@ -2651,7 +2692,7 @@ export function generateDebugSpec(input: DebugCodegenInput): string {
       lines.push(`                break; }`);
       lines.push(`              case 'ASSERT TOAST': case 'ASSERTTOAST': {`);
       lines.push(`                const __toastSel_${o} = __patchedLoc_${o} || '[role="alert"],[role="status"],[class*="toast"],[class*="snackbar"],[class*="flash"],[class*="notification"]';`);
-      lines.push(`                const __toastLoc_${o} = __patchedLoc_${o} ? __buildLocator(page, __patchedLt_${o}, __patchedLoc_${o}) : page.locator(__toastSel_${o}).first();`);
+      lines.push(`                const __toastLoc_${o} = __patchedLoc_${o} ? __buildLocator(page, __patchedLt_${o}, __patchedLoc_${o}, __patchedFc_${o}) : page.locator(__toastSel_${o}).first();`);
       lines.push(`                await __toastLoc_${o}.waitFor({ state: 'visible', timeout: 8000 });`);
       lines.push(`                if (__patchedVal_${o}) { const __toastTxt_${o} = await __toastLoc_${o}.innerText(); if (!__toastTxt_${o}.toLowerCase().includes(__patchedVal_${o}.toLowerCase())) throw new Error('Toast text mismatch: expected "' + __patchedVal_${o} + '" in "' + __toastTxt_${o} + '"'); }`);
       lines.push(`                break; }`);
@@ -2778,7 +2819,7 @@ export function generateDebugSpec(input: DebugCodegenInput): string {
       if (dbgKw === 'FILL' || dbgKw === 'TYPE' || dbgKw === 'SELECT') {
         lines.push(`            ${dbgStore}['${dbgVarName}'] = __patchedVal_${step.order}; // 📌 pinned (debug)`);
       } else if (step.locator) {
-        lines.push(`            ${dbgStore}['${dbgVarName}'] = (await __buildLocator(page, __patchedLt_${step.order}, __patchedLoc_${step.order}).innerText().catch(() => '')).trim(); // 📌 pinned (debug)`);
+        lines.push(`            ${dbgStore}['${dbgVarName}'] = (await __buildLocator(page, __patchedLt_${step.order}, __patchedLoc_${step.order}, __patchedFc_${step.order}).innerText().catch(() => '')).trim(); // 📌 pinned (debug)`);
       }
     }
     // OLD: if (dbgPinLine) lines.push(dbgPinLine);
@@ -2798,6 +2839,7 @@ export function generateDebugSpec(input: DebugCodegenInput): string {
     lines.push(`            if (__reGate_${step.order}.locator)     __patchedLoc_${step.order} = __reGate_${step.order}.locator!;`);
     lines.push(`            if (__reGate_${step.order}.locatorType) __patchedLt_${step.order}  = __reGate_${step.order}.locatorType!;`);
     lines.push(`            if (__reGate_${step.order}.value !== undefined) __patchedVal_${step.order} = __reGate_${step.order}.value!;`);
+    lines.push(`            if (__reGate_${step.order}.frameContext !== undefined) __patchedFc_${step.order} = __reGate_${step.order}.frameContext ?? null;`);
     lines.push(`            __currentAction_${step.order} = __reGate_${step.order}.action;`);
     lines.push(`          }`);
     lines.push(`        } // end retry loop`);

@@ -1,0 +1,13 @@
+{
+  "id": "e76d2c0d-d55c-4b99-8413-79d0792f8bff",
+  "projectId": "b9034b6b-0583-4dc8-9009-a8c03d317827",
+  "pageKey": "qa.bmchealth.in/",
+  "pageName": "qa.bmchealth.in/",
+  "locatorIds": [
+    "47ca5b0b-592c-48d5-afb7-260103fda3b7",
+    "89a02286-d205-4802-873d-aa807db10657",
+    "34fb0116-fd71-4e6b-9c51-2115780566ae"
+  ],
+  "capturedAt": "2026-05-14T09:38:01.577Z",
+  "capturedFrom": "recorder"
+}

@@ -84,6 +84,24 @@ export function registerAuthRoutes(app: express.Application): void {
     const session = recorderSessions.get(event?.token);
     if (!session || !session.active) { res.status(404).json({ error: 'session not found or inactive' }); return; }
     session.lastActivity = Date.now();
+
+    // enrichRfDrop: post-drop MutationObserver enrichment — update the last RF_DROP_NODE step
+    // instead of creating a new step. Enriches value/rfAction/description with placed node metadata.
+    if (event.enrichRfDrop) {
+      const lastDrop = [...session.steps].reverse().find((s: any) => s.keyword === 'RF DROP NODE');
+      if (lastDrop) {
+        try {
+          const enriched = JSON.parse(event.value || '{}');
+          (lastDrop as any).value       = event.value;
+          (lastDrop as any).rfAction    = enriched;
+          (lastDrop as any).description = event.smartName || (lastDrop as any).description;
+          recorderSsePush(event.token, 'recorder:step:enriched', { stepId: (lastDrop as any).id, value: event.value, rfAction: enriched, description: (lastDrop as any).description });
+        } catch { /* malformed JSON — ignore, keep original step */ }
+      }
+      res.json({ success: true, enriched: true });
+      return;
+    }
+
     session.stepCount++;
     const { step, locatorCreated, locatorName } = parseRecorderEvent(event, session.projectId, session.createdBy, session.stepCount);
     session.steps.push(step);
