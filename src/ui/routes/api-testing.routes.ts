@@ -9,10 +9,11 @@ import { logAudit } from '../../auth/audit';
 import { encryptSensitiveVars, decryptSensitiveVars } from '../../utils/apiSecrets';
 import { runCollection } from '../../utils/apiRunner';
 import { resolveAuthHeaders } from '../../utils/apiAuth';
-import { importFromOpenApi } from '../../utils/openapiImport';
+// OLD: direct legacy import — replaced by import-engine adapter in Phase D Step 3
+// import { importFromOpenApi } from '../../utils/openapiImport';
 // OLD: direct legacy import — replaced by import-engine adapter in Phase D Step 3
 // import { importFromPostman } from '../../utils/postmanImport';
-import { adaptPostmanImport } from '../../api-runtime/import-engine/import-engine-adapter';
+import { adaptPostmanImport, adaptOpenApiImport } from '../../api-runtime/import-engine/import-engine-adapter';
 import { importFromCurl } from '../../utils/curlImport';
 import { substituteVars, snapshotContext } from '../../utils/apiVariables';
 import { evaluateAssertions } from '../../utils/apiAssertions';
@@ -228,16 +229,28 @@ export function registerApiTestingRoutes(app: express.Application): void {
 
   // ── Import Endpoints ────────────────────────────────────────────────────────
 
+  // OLD: called importFromOpenApi directly, returned bare ApiCollection
+  // app.post('/api/api-collections/import/openapi', requireAuth, requireEditor, (req: Request, res: Response) => {
+  //   const { specContent, environmentId, tag, includeExamples, projectId } = req.body as { ... };
+  //   if (!specContent || !environmentId) { res.status(400).json({ error: 'specContent and environmentId are required' }); return; }
+  //   try {
+  //     const collection = importFromOpenApi(specContent, environmentId, { tag, includeExamples });
+  //     if (projectId) (collection as ApiCollection).projectId = projectId;
+  //     logAudit({ ..., details: `steps:${collection.steps.length}...` });
+  //     res.json(collection);
+  //   } catch (e) { res.status(400).json({ error: (e as Error).message }); }
+  // });
+
   app.post('/api/api-collections/import/openapi', requireAuth, requireEditor, (req: Request, res: Response) => {
     const { specContent, environmentId, tag, includeExamples, projectId } = req.body as {
       specContent?: string; environmentId?: string; tag?: string; includeExamples?: boolean; projectId?: string;
     };
     if (!specContent || !environmentId) { res.status(400).json({ error: 'specContent and environmentId are required' }); return; }
     try {
-      const collection = importFromOpenApi(specContent, environmentId, { tag, includeExamples });
-      if (projectId) (collection as ApiCollection).projectId = projectId;
-      logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'IMPORT_OPENAPI', resourceType: 'api-collection', resourceId: collection.id, details: `steps:${collection.steps.length}${tag ? ` tag:${tag}` : ''}`, ip: req.ip ?? null });
-      res.json(collection);
+      const adapted = adaptOpenApiImport(specContent, environmentId, { tag, includeExamples, projectId });
+      const { collection, warnings, compatibility } = adapted;
+      logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'IMPORT_OPENAPI', resourceType: 'api-collection', resourceId: collection.id, details: `steps:${collection.steps.length}${tag ? ` tag:${tag}` : ''} warnings:${warnings.length}`, ip: req.ip ?? null });
+      res.json({ ...collection, warnings, compatibility });
     } catch (e) {
       res.status(400).json({ error: (e as Error).message });
     }
@@ -253,10 +266,15 @@ export function registerApiTestingRoutes(app: express.Application): void {
       const fetchRes = await fetch(url);
       if (!fetchRes.ok) { res.status(400).json({ error: `Failed to fetch spec: ${fetchRes.status} ${fetchRes.statusText}` }); return; }
       const specContent = await fetchRes.text();
-      const collection = importFromOpenApi(specContent, environmentId, { tag, includeExamples });
-      (collection as ApiCollection).projectId = projectId;
-      logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'IMPORT_OPENAPI_URL', resourceType: 'api-collection', resourceId: collection.id, details: `steps:${collection.steps.length} url:${url}${tag ? ` tag:${tag}` : ''}`, ip: req.ip ?? null });
-      res.json(collection);
+      // OLD: called importFromOpenApi directly, no warnings in response
+      // const collection = importFromOpenApi(specContent, environmentId, { tag, includeExamples });
+      // (collection as ApiCollection).projectId = projectId;
+      // logAudit({ ..., details: `steps:${collection.steps.length} url:${url}...` });
+      // res.json(collection);
+      const adapted = adaptOpenApiImport(specContent, environmentId, { tag, includeExamples, projectId });
+      const { collection, warnings, compatibility } = adapted;
+      logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'IMPORT_OPENAPI_URL', resourceType: 'api-collection', resourceId: collection.id, details: `steps:${collection.steps.length} url:${url}${tag ? ` tag:${tag}` : ''} warnings:${warnings.length}`, ip: req.ip ?? null });
+      res.json({ ...collection, warnings, compatibility });
     } catch (e) {
       res.status(500).json({ error: (e as Error).message });
     }

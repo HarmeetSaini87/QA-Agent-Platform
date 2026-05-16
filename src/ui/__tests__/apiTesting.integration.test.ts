@@ -555,6 +555,45 @@ it('GET /api/api-collections — returns collections filtered by projectId', asy
       expect(res.status).toBe(200);
       expect(typeof res.body.compatibility?.compatible).toBe('boolean');
     });
+
+    it('POST /api/api-collections/import/openapi — response includes warnings array', async () => {
+      const app = createTestApp();
+      const spec = JSON.stringify({
+        openapi: '3.0.0',
+        info: { title: 'Test', version: '1.0.0' },
+        servers: [{ url: 'https://api.example.com' }],
+        paths: {
+          '/items': { get: { operationId: 'listItems', summary: 'List', responses: { '200': { description: 'ok' } } } }
+        }
+      });
+
+      const res = await request(app)
+        .post('/api/api-collections/import/openapi')
+        .send({ specContent: spec, environmentId: 'env-test' });
+
+      expect(res.status).toBe(200);
+      expect(Array.isArray(res.body.warnings)).toBe(true);
+      expect(res.body.steps).toBeDefined();
+    });
+
+    it('POST /api/api-collections/import/openapi — response includes compatibility report', async () => {
+      const app = createTestApp();
+      const spec = JSON.stringify({
+        openapi: '3.0.0',
+        info: { title: 'Test', version: '1.0.0' },
+        servers: [{ url: 'https://api.example.com' }],
+        paths: {
+          '/items': { get: { operationId: 'listItems', summary: 'List', responses: { '200': { description: 'ok' } } } }
+        }
+      });
+
+      const res = await request(app)
+        .post('/api/api-collections/import/openapi')
+        .send({ specContent: spec, environmentId: 'env-test' });
+
+      expect(res.status).toBe(200);
+      expect(typeof res.body.compatibility?.compatible).toBe('boolean');
+    });
   });
 
   // ═══════════════════════════════════════════════════════════════
