@@ -36,6 +36,11 @@ describe('validatePostmanParity', () => {
     expect(Array.isArray(report.urlMismatches)).toBe(true);
   });
 
+  it('returns name mismatches array', () => {
+    const report = validatePostmanParity(singleRequestPM, 'env-1');
+    expect(Array.isArray(report.nameMismatches)).toBe(true);
+  });
+
   it('has overallParity boolean', () => {
     const report = validatePostmanParity(singleRequestPM, 'env-1');
     expect(typeof report.overallParity).toBe('boolean');
