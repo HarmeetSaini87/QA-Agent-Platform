@@ -120,6 +120,7 @@ All code changes, experiments, and new features are developed here FIRST.
 > **📋 See [docs/superpowers/plans/2026-05-02-api-testing-phase4.md](docs/superpowers/plans/2026-05-02-api-testing-phase4.md) — API Testing Phase 4 plan: Frontend + Integration (Wks 6–8) — 3 UI modules, flakiness, Jira, self-healing, suite runner, HAR viewer.**
 > **📋 See [docs/superpowers/plans/2026-05-02-api-testing-phase5.md](docs/superpowers/plans/2026-05-02-api-testing-phase5.md) — API Testing Phase 5 plan: Advanced (Wks 9–11) — baselines, contract drift, Faker data, pre/post scripts.**
 > **📋 See [docs/superpowers/specs/2026-05-16-phase-d-step5-workflow-graph-projection-design.md](docs/superpowers/specs/2026-05-16-phase-d-step5-workflow-graph-projection-design.md) — Phase D Step 5: Workflow Graph Projection design spec (approved, pending implementation). Read-only graph projection contracts, builder, service, GET /api/workflows/:collectionId/graph endpoint.**
+> **📋 See [docs/superpowers/plans/2026-05-16-phase-d-step5-workflow-graph-projection.md](docs/superpowers/plans/2026-05-16-phase-d-step5-workflow-graph-projection.md) — Phase D Step 5 implementation plan (11 tasks). Only use when user says to implement this plan.**
 
 ---
 
