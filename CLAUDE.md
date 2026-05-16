@@ -113,26 +113,13 @@ All code changes, experiments, and new features are developed here FIRST.
 > **📋 See [docs/DEPLOYMENT_CICD.md](docs/DEPLOYMENT_CICD.md) — CI/CD pipeline setup and deployment guide.**
 > **📋 See [docs/superpowers/specs/2026-04-20-component-subcomponent-design.md](docs/superpowers/specs/2026-04-20-component-subcomponent-design.md) — Component/Subcomponent feature design spec (approved, pending implementation). Only use when user asks to implement this feature.**
 > **📋 See [docs/superpowers/plans/2026-04-20-component-subcomponent.md](docs/superpowers/plans/2026-04-20-component-subcomponent.md) — Step-by-step implementation plan for Component/Subcomponent (8 tasks, checkbox-tracked). Only use when user says to execute/implement this plan.**
-> **📋 See [docs/superpowers/specs/2026-04-26-flakiness-intelligence-design.md](docs/superpowers/specs/2026-04-26-flakiness-intelligence-design.md) — Flakiness Intelligence design spec. FEATURE IS COMPLETE (2026-04-26).**
-> **📋 See [docs/superpowers/plans/2026-04-26-flakiness-intelligence.md](docs/superpowers/plans/2026-04-26-flakiness-intelligence.md) — Flakiness Intelligence 10-task plan. ALL TASKS COMPLETE (2026-04-26).**
-> **📋 See [docs/FLAKINESS_INTELLIGENCE_TEST_GUIDE.md](docs/FLAKINESS_INTELLIGENCE_TEST_GUIDE.md) — 88 test cases (functional, edge cases, business scenarios, E2E journeys) for Flakiness Intelligence.**
-> **📋 See [docs/FLAKINESS_INTELLIGENCE_USER_GUIDE.md](docs/FLAKINESS_INTELLIGENCE_USER_GUIDE.md) — User-facing guide explaining flakiness scoring, quarantine, classification, and config for QA Engineers and Managers.**
-> **📋 See [docs/superpowers/specs/2026-04-27-trace-viewer-design.md](docs/superpowers/specs/2026-04-27-trace-viewer-design.md) — Trace Viewer embed design spec. FEATURE IS COMPLETE (2026-04-27).**
-> **📋 See [docs/superpowers/plans/2026-04-27-trace-viewer.md](docs/superpowers/plans/2026-04-27-trace-viewer.md) — Trace Viewer 8-task plan. ALL TASKS COMPLETE (2026-04-27).**
-> **📋 See [docs/superpowers/specs/2026-04-27-auto-file-defect-design.md](docs/superpowers/specs/2026-04-27-auto-file-defect-design.md) — Auto-File Jira Defect design spec. FEATURE IS COMPLETE (2026-04-28).**
-> **📋 See [docs/superpowers/plans/2026-04-27-auto-file-defect.md](docs/superpowers/plans/2026-04-27-auto-file-defect.md) — Auto-File Defect 9-task plan. ALL TASKS COMPLETE (2026-04-28). Manual E2E testing pending against Jira sandbox.**
-> **📋 See [docs/AUTO_FILE_DEFECT_USER_GUIDE.md](docs/AUTO_FILE_DEFECT_USER_GUIDE.md) — User-facing guide for Editors / Admins / SDETs.**
-> **📋 See [docs/AUTO_FILE_DEFECT_TEST_GUIDE.md](docs/AUTO_FILE_DEFECT_TEST_GUIDE.md) — 65-test E2E checklist against Jira sandbox.**
-> **📋 See [docs/superpowers/specs/2026-04-30-nl-keyword-suggestion-design.md](docs/superpowers/specs/2026-04-30-nl-keyword-suggestion-design.md) — NL → Keyword Suggestion design spec. FEATURE IS COMPLETE (2026-05-01).**
 > **📋 See [docs/superpowers/specs/2026-05-02-api-testing-design.md](docs/superpowers/specs/2026-05-02-api-testing-design.md) — API Testing Module design spec (v2.0, approved, ready for implementation).**
-> **📋 See [docs/superpowers/specs/2026-05-16-phase-d-step5-workflow-graph-projection-design.md](docs/superpowers/specs/2026-05-16-phase-d-step5-workflow-graph-projection-design.md) — Phase D Step 5: Workflow Graph Projection design spec (approved, pending implementation). Read-only graph projection contracts, builder, service, GET /api/workflows/:collectionId/graph endpoint.**
 > **📋 See [docs/superpowers/plans/2026-05-02-api-testing-phase1.md](docs/superpowers/plans/2026-05-02-api-testing-phase1.md) — API Testing Phase 1 plan: Foundations (Wks 1–2) — types, store, CRUD routes, encryption.**
 > **📋 See [docs/superpowers/plans/2026-05-02-api-testing-phase2.md](docs/superpowers/plans/2026-05-02-api-testing-phase2.md) — API Testing Phase 2 plan: Engine Core (Wks 3–4) — DAG, runner, assertions, auth, variable resolution.**
 > **📋 See [docs/superpowers/plans/2026-05-02-api-testing-phase3.md](docs/superpowers/plans/2026-05-02-api-testing-phase3.md) — API Testing Phase 3 plan: Import Engines (Wk 5) — OpenAPI, Postman, cURL.**
 > **📋 See [docs/superpowers/plans/2026-05-02-api-testing-phase4.md](docs/superpowers/plans/2026-05-02-api-testing-phase4.md) — API Testing Phase 4 plan: Frontend + Integration (Wks 6–8) — 3 UI modules, flakiness, Jira, self-healing, suite runner, HAR viewer.**
 > **📋 See [docs/superpowers/plans/2026-05-02-api-testing-phase5.md](docs/superpowers/plans/2026-05-02-api-testing-phase5.md) — API Testing Phase 5 plan: Advanced (Wks 9–11) — baselines, contract drift, Faker data, pre/post scripts.**
-> **📋 See [docs/NL_KEYWORD_SUGGESTION_USER_GUIDE.md](docs/NL_KEYWORD_SUGGESTION_USER_GUIDE.md) — User-facing guide for SDETs and Admins: inline suggest, bulk panel, provider config, alias map.**
-> **📋 See [docs/NL_KEYWORD_SUGGESTION_TEST_GUIDE.md](docs/NL_KEYWORD_SUGGESTION_TEST_GUIDE.md) — 47 test cases covering rule engine, AI provider, cache, rate limit, alias map, UI, edge cases, security.**
+> **📋 See [docs/superpowers/specs/2026-05-16-phase-d-step5-workflow-graph-projection-design.md](docs/superpowers/specs/2026-05-16-phase-d-step5-workflow-graph-projection-design.md) — Phase D Step 5: Workflow Graph Projection design spec (approved, pending implementation). Read-only graph projection contracts, builder, service, GET /api/workflows/:collectionId/graph endpoint.**
 
 ---
 
