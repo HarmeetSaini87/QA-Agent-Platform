@@ -10,6 +10,63 @@
 
 import type { ApiTestStep } from '../../data/types';
 
+// ── Phase D Step 4: Hybrid workflow metadata ───────────────────────────────
+
+/** Maximum Postman folder nesting depth before FOLDER_DEPTH_EXCEEDED warning. */
+export const DEFAULT_MAX_FOLDER_DEPTH = 5;
+
+export type WorkflowNormalizationSource =
+  | 'legacy'
+  | 'postman'
+  | 'openapi'
+  | 'manual'
+  | 'ai';
+
+/**
+ * Recursive folder/tag tree. Root node = collection root.
+ * Postman: built from item[] hierarchy.
+ * OpenAPI: shallow tree from operation tags (depth = 1).
+ */
+export interface FolderNode {
+  id: string;
+  name: string;
+  /** Original Postman folder _postman_id — for re-import sync. Optional. */
+  sourceId?: string;
+  /** readonly — prevents accidental mutation in graph tooling */
+  readonly children: readonly FolderNode[];
+  /** readonly — prevents accidental mutation in graph tooling */
+  readonly stepIds: readonly string[];
+  depth: number;
+}
+
+/**
+ * Dependency visualization metadata — populated from DependencyDetectionResult.
+ * isHeuristic: true = hints are inferred, NOT guaranteed.
+ * Execution engine MUST NOT read this.
+ */
+export interface WorkflowGraphHints {
+  detectedEntities: string[];
+  operationEntityMap: Record<string, string[]>;
+  /** Suggested cluster labels for graph grouping. */
+  suggestedGroups: string[];
+  /** Estimated dependency edge count. */
+  edgeCount: number;
+  /** Always true for OpenAPI/Postman — tag-based inference only. */
+  isHeuristic?: boolean;
+}
+
+/**
+ * AI workflow readiness flags — computed at import time, never at execution time.
+ * readinessScore: 0–100 composite metric.
+ */
+export interface WorkflowAiReadiness {
+  normalizedStepCount: number;
+  hasVariableBindings: boolean;
+  hasDependencyHints: boolean;
+  hasFolderHierarchy: boolean;
+  readinessScore: number;
+}
+
 // ── Enums ─────────────────────────────────────────────────────────────────────
 
 export type WorkflowExecutionMode = 'sequential' | 'dag' | 'parallel';
@@ -49,6 +106,45 @@ export interface WorkflowMetadata {
   version?: string;
   /** Human description for AI-generated or imported workflows */
   description?: string;
+  // ── Phase D Step 4 additions ────────────────────────────────────────────────
+  /**
+   * Bumped when metadata schema evolves.
+   * Absent = pre-Phase-D envelope (treat as metadataVersion: 0).
+   * Never blocks execution — provenance only.
+   */
+  metadataVersion?: number;
+
+  /**
+   * ISO timestamp when metadata was generated.
+   * Used for replay, re-import, AI enrichment, migration debugging.
+   */
+  metadataGeneratedAt?: string;
+
+  /**
+   * How this envelope was normalized.
+   * Used for debugging, analytics, AI enrichment, import RCA.
+   */
+  normalizationSource?: WorkflowNormalizationSource;
+
+  /**
+   * Root of folder/tag hierarchy.
+   * Postman: recursive FolderNode tree.
+   * OpenAPI: shallow tree from operation tags.
+   * Manual/Legacy: absent.
+   */
+  folderHierarchy?: FolderNode;
+
+  /**
+   * Dependency visualization metadata for future graph rendering.
+   * Populated from DependencyDetectionResult at import time.
+   */
+  graphHints?: WorkflowGraphHints;
+
+  /**
+   * AI workflow readiness — for future AI orchestration.
+   * Computed at import time only.
+   */
+  aiReadiness?: WorkflowAiReadiness;
 }
 
 // ── Contract config ───────────────────────────────────────────────────────────
@@ -86,6 +182,40 @@ export interface WorkflowNode {
   group?: string;
   /** Disable this node without removing it */
   disabled?: boolean;
+  // ── Phase D Step 4 additions ────────────────────────────────────────────────
+  /**
+   * Framework-neutral layout coordinate for future graph editor.
+   * locked: true = auto-layout must not reposition this node.
+   * Execution engine MUST NOT read this field.
+   */
+  position?: {
+    x: number;
+    y: number;
+    locked?: boolean;
+  };
+
+  /**
+   * Display-only cluster label for graph rendering.
+   * Derived from Postman folder name or OpenAPI tag.
+   * Separate from group (which drives parallel fan-out scheduling).
+   * Execution engine MUST NOT read this field.
+   */
+  visualGroup?: string;
+
+  /**
+   * Ancestor path root → leaf (index 0 = root, last = this node name).
+   * Empty array = no hierarchy (manual collection).
+   *
+   * Examples:
+   *   Postman: ['Pets API', 'Auth', 'POST /auth/token']
+   *   OpenAPI: ['pets', 'GET /pets/{petId}']
+   *   Manual:  []
+   *
+   * Intentionally denormalized — enables per-node traversal, breadcrumbs,
+   * filtering, and AI clustering without tree-walking.
+   * Execution engine MUST NOT read this field.
+   */
+  hierarchyPath?: string[];
 }
 
 // ── WorkflowEnvelope — top-level DSL model ───────────────────────────────────
