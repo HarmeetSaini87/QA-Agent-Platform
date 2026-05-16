@@ -66,7 +66,7 @@ export function adaptOpenApiImport(
   });
 
   if (opts?.projectId) {
-    (collection as ApiCollection).projectId = opts.projectId;
+    collection.projectId = opts.projectId;
   }
 
   return {
