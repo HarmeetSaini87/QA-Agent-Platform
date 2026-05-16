@@ -10,7 +10,7 @@
 
 import { v4 as uuidv4 } from 'uuid';
 import type { ApiCollection } from '../data/types';
-import type { WorkflowEnvelope } from '../shared-core/contracts/workflow.contract';
+import type { WorkflowEnvelope, WorkflowNormalizationSource } from '../shared-core/contracts/workflow.contract';
 
 export function collectionToWorkflow(collection: ApiCollection): WorkflowEnvelope {
   return {
@@ -34,6 +34,10 @@ export function collectionToWorkflow(collection: ApiCollection): WorkflowEnvelop
       projectId: collection.projectId,
       tags: collection.tags ?? [],
       version: '1.0',
+      // Phase D Step 4: provenance fields
+      metadataVersion: 1,
+      metadataGeneratedAt: new Date().toISOString(),
+      normalizationSource: 'legacy' as WorkflowNormalizationSource,
     },
   };
 }
@@ -69,6 +73,13 @@ export function stepsToWorkflow(
     schemaVersion: '1.0',
     workflow: { id, name, legacyNodes: steps },
     execution: { mode: 'sequential', onFailure: 'stop', logLevel: 'standard' },
-    metadata: { createdAt: new Date().toISOString(), source, collectionId: id },
+    metadata: {
+      createdAt: new Date().toISOString(),
+      source,
+      collectionId: id,
+      metadataVersion: 1,
+      metadataGeneratedAt: new Date().toISOString(),
+      normalizationSource: (source === 'manual' ? 'manual' : 'legacy') as WorkflowNormalizationSource,
+    },
   };
 }
