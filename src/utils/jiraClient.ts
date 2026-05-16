@@ -112,7 +112,8 @@ export class JiraClient {
   async searchOpenDefectByTestId(testId: string, suiteId: string, projectKey: string): Promise<string | null> {
     // suiteId reserved for future scoping; v1 keys on testId since it's globally unique
     const jql = `project = ${projectKey} AND statusCategory != Done AND text ~ "${testId}"`;
-    const out = (await this.req('POST', '/rest/api/3/search', {
+    // OLD: POST /rest/api/3/search — removed by Atlassian (CHANGE-2046), now returns 400
+    const out = (await this.req('POST', '/rest/api/3/search/jql', {
       jql, fields: ['summary'], maxResults: 1,
     })) as any;
     return out?.issues?.[0]?.key || null;

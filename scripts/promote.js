@@ -31,7 +31,7 @@ const FILES_TO_COPY  = ['playwright.config.ts', 'tsconfig.json'];
 // iis-site excluded: prod web.config must point to port 3000, dev points to 3003.
 // start-server.bat excluded: prod bat must cd into qa-agent-platform, not dev.
 // These files are prod-specific and must never be overwritten by promote.
-const DIRS_TO_COPY   = ['src', 'scripts', 'docs'];
+const DIRS_TO_COPY   = ['src', 'scripts', 'docs', 'recorder-extension'];
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -281,6 +281,11 @@ async function main() {
   // All done — clean up backup
   banner('Step 10 — Restart prod server');
 
+  // Prod is managed by QA-Platform-Service-Monitor (service-monitor.ps1 via schtasks).
+  // The monitor polls every 30s and calls scripts/start-qa-platform.ps1 when port 3000 is down.
+  // We must NOT spawn the server ourselves — the monitor will do it and would race/conflict.
+  // Strategy: kill the old PID → monitor detects port down → respawns within 30s → we poll.
+
   // Find PID holding port 3000
   let oldPid = null;
   try {
@@ -290,48 +295,37 @@ async function main() {
   } catch {}
 
   if (oldPid) {
-    info(`Found prod server on PID ${oldPid} — killing…`);
+    info(`Found prod server on PID ${oldPid} — killing (monitor will respawn)…`);
     try {
       spawnSync('taskkill', [`//F`, `//PID`, oldPid], { shell: true });
       ok(`PID ${oldPid} terminated.`);
     } catch (e) {
       warn(`Could not kill PID ${oldPid}: ${e.message}`);
     }
-    // Brief wait for port to release
-    await new Promise(r => setTimeout(r, 1500));
   } else {
-    info('No existing server found on port 3000.');
+    info('No existing server found on port 3000 — monitor will start it.');
   }
 
-  // Start prod server — always log to server.log so we can verify
-  info('Starting prod server → server.log…');
-  const { spawn } = require('child_process');
-  const logPath = path.join(PROD_ROOT, 'server.log');
-  const srv = spawn('npm', ['run', 'ui'], {
-    cwd: PROD_ROOT,
-    shell: true,
-    detached: true,
-    stdio: ['ignore', fs.openSync(logPath, 'a'), fs.openSync(logPath, 'a')],
-  });
-  srv.unref();
-
-  // Wait up to 10s for port 3000 to respond
-  info('Waiting for server to accept connections…');
+  // Poll up to 60s — monitor checks every 30s, start-qa-platform.ps1 needs a few seconds to boot
+  info('Waiting for service monitor to respawn prod server (up to 60s)…');
   let up = false;
-  for (let i = 0; i < 20; i++) {
-    await new Promise(r => setTimeout(r, 500));
+  for (let i = 0; i < 60; i++) {
+    await new Promise(r => setTimeout(r, 1000));
     try {
       const check = spawnSync('curl', ['-s', 'http://localhost:3000', '-o', '/dev/null', '-w', '%{http_code}'], { shell: true, encoding: 'utf8' });
-      if (check.stdout.trim() === '200') { up = true; break; }
+      const code = check.stdout.trim();
+      if (code === '200' || code === '302') { up = true; break; }
     } catch {}
   }
 
   if (!up) {
-    fail('Server did not respond on port 3000 within 10 seconds.');
-    fail('Check server.log for startup errors.');
-    process.exit(1);
+    warn('Server did not respond on port 3000 within 60 seconds.');
+    warn('Monitor may need more time. Check: curl http://localhost:3000');
+    warn('Monitor log: E:\\AI Agent\\service-monitor.log');
+    warn('Prod server log: ' + path.join(PROD_ROOT, 'logs', 'server.log'));
+  } else {
+    ok('Prod server is UP on port 3000.');
   }
-  ok('Prod server is UP on port 3000.');
 
   // Verify server.log has today's date
   try {

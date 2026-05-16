@@ -33,6 +33,7 @@ export interface Project {
   isActive:     boolean;
   createdAt:    string;
   createdBy:    string;
+  jiraProjectKey?: string;         // e.g. "BANK" — overrides global jira-config.json projectKey
   // Legacy — kept for backward compat with old data; ignored by new UI
   appUrl?:      string;
   credentials?: ProjectCredential[];
@@ -126,6 +127,9 @@ export interface Locator {
   healingStats?:     HealingStats;         // runtime heal event counters
   pageKey?:          string | null;        // normalised URL at time of recording
   frameContext?:     string | null;        // iframe selector when locator lives inside iframe e.g. "#flowIframe"
+  // ── Name provenance (naming preservation feature) ─────────────────────────
+  nameSource?:       'auto' | 'user';      // 'auto' = recorder-generated, 'user' = human-renamed (immutable to recorder)
+  updatedBy?:        string;               // last editor username — audit trail, foundation for future optimistic locking
 }
 
 export interface CommonFunction {

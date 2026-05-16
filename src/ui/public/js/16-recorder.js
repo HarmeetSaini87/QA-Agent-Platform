@@ -1,4 +1,4 @@
-// ══════════════════════════════════════════════════════════════════════════════
+﻿// ══════════════════════════════════════════════════════════════════════════════
 // UI RECORDER — live step capture from browser interactions
 // ══════════════════════════════════════════════════════════════════════════════
 // Flow:
@@ -115,6 +115,15 @@ async function recorderStop() {
   if (status) { status.style.display = 'none'; }
 
   console.info('[Recorder] Stopped. Steps are in the editor — review and save.');
+
+  // Replace raw SSE-streamed rows with server-normalized steps
+  if (recordedSteps.length > 0) {
+    const container = document.getElementById('se-steps-container');
+    if (container) {
+      container.innerHTML = '';
+      recordedSteps.forEach(step => scriptAddStep(step));
+    }
+  }
 
   // CR6 — Intelligent Step Grouping: analyse recorded steps for reusable patterns
   if (recordedSteps.length >= 3 && currentProjectId) {

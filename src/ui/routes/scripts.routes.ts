@@ -4,6 +4,7 @@ import { readAll, writeAll, findById, upsert, remove, SCRIPTS, PROJECTS, LOCATOR
 import type { TestScript, ScriptStep, Locator, Project } from '../../data/types';
 import { requireAuth, requireEditor, sanitizeInput } from '../../auth/middleware';
 import { logAudit } from '../../auth/audit';
+import { fingerprintProfile, inferNameSource, isUserDefined } from '../../utils/locatorIdentity';
 
 function finaliseDraftLocators(steps: ScriptStep[], projectId: string): ScriptStep[] {
   const allLocs = readAll<Locator>(LOCATORS);
@@ -15,18 +16,42 @@ function finaliseDraftLocators(steps: ScriptStep[], projectId: string): ScriptSt
     const draft = allLocs.find(l => l.id === step.locatorId && l.draft);
     if (!draft) return step;
 
+    // Priority 1: semantic fingerprint match (healingProfile — DOM-agnostic, most resilient)
+    // Catches re-recordings of same element even when selector drifted (React re-render, nth-child, etc.)
+    const draftFp = fingerprintProfile(draft.healingProfile);
+    const byFingerprint = draftFp
+      ? finalized.find(l => {
+          const fp = fingerprintProfile(l.healingProfile);
+          return fp && fp === draftFp;
+        })
+      : undefined;
+    if (byFingerprint) {
+      // Reuse existing locator — name is NEVER overwritten regardless of nameSource
+      writeAll(LOCATORS, allLocs.filter(l => l.id !== draft.id));
+      return { ...step, locatorId: byFingerprint.id, locatorName: byFingerprint.name, locator: byFingerprint.selector, locatorType: byFingerprint.selectorType } as ScriptStep;
+    }
+
+    // Priority 2: selector exact match (structural fallback when healingProfile absent)
     const bySelector = finalized.find(l => norm(l.selector) === norm(draft.selector));
     if (bySelector) {
       writeAll(LOCATORS, allLocs.filter(l => l.id !== draft.id));
       return { ...step, locatorId: bySelector.id, locatorName: bySelector.name, locator: bySelector.selector, locatorType: bySelector.selectorType } as ScriptStep;
     }
 
-    const byName = finalized.find(l => norm(l.name) === norm(draft.name));
+    // OLD: const byName = finalized.find(l => norm(l.name) === norm(draft.name));
+    // REMOVED: unrestricted name-match caused user renames to be silently overwritten
+    // Priority 3: name match ONLY between two auto-generated locators (safe dedup, no user-name risk)
+    const byName = finalized.find(l =>
+      norm(l.name) === norm(draft.name) &&
+      (l.nameSource ?? inferNameSource(l.name)) === 'auto' &&
+      (draft.nameSource ?? 'auto') === 'auto'
+    );
     if (byName) {
       writeAll(LOCATORS, allLocs.filter(l => l.id !== draft.id));
       return { ...step, locatorId: byName.id, locatorName: byName.name, locator: byName.selector, locatorType: byName.selectorType } as ScriptStep;
     }
 
+    // Priority 4: no match — promote draft to permanent locator
     draft.draft = false;
     draft.updatedAt = new Date().toISOString();
     upsert(LOCATORS, draft);

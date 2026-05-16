@@ -19,8 +19,9 @@ import dotenv from 'dotenv';
 import { config } from '../framework/config';
 import { logger } from '../utils/logger';
 import { seedDefaults } from '../data/seed';
-import { readAll, writeAll, findById, USERS, SETTINGS } from '../data/store';
-import type { User, AppSettings, BrowserName, ScheduledRun, TestScript } from '../data/types';
+import { readAll, writeAll, findById, upsert, USERS, SETTINGS, LOCATORS } from '../data/store';
+import type { User, AppSettings, BrowserName, ScheduledRun, TestScript, Locator } from '../data/types';
+import { inferNameSource } from '../utils/locatorIdentity';
 import type { RunRecord, DebugSession } from './helpers/types';
 import { requireAuth, requireAdmin, requireEditor, requireAuthOrApiKey, sanitizeInput } from '../auth/middleware';
 import { validateLicenseKey, validateLicFile, storeLicense, loadStoredLicense, getLicensePayload, refreshLicenseCache, clearLicenseCache, isAutoTrial, trialDaysRemaining, AUTO_TRIAL_DAYS, isFeatureEnabled, checkMachineBinding, checkExpiryTick, getMachineId, getSeatsUsed, getSeatUsageRatio, recordLogin, recordLogout, isSeatAvailable, transferLicense, activateAutoTrial, checkStoredLicFile } from '../utils/licenseManager';
@@ -260,8 +261,24 @@ wss.on('connection', (ws) => {
   ws.on('close', () => { for (const runId of subscribed) unsubscribe(runId, ws); });
 });
 
+// ── One-time migration: infer nameSource for existing locators ────────────────
+// Runs once at startup. Idempotent — skips locators that already have nameSource set.
+// Conservative default: anything NOT matching recorder auto-pattern → 'user'
+// This protects legacy manually-renamed business names in existing repositories.
+function migrateNameSources(): void {
+  const locs = readAll<Locator>(LOCATORS);
+  const toMigrate = locs.filter(l => !l.nameSource);
+  if (!toMigrate.length) return;
+  const updated = locs.map(l => l.nameSource ? l : { ...l, nameSource: inferNameSource(l.name) });
+  writeAll(LOCATORS, updated);
+  const autoCount = toMigrate.filter(l => inferNameSource(l.name) === 'auto').length;
+  const userCount = toMigrate.length - autoCount;
+  logger.info(`[locatorIdentity] Migration: ${toMigrate.length} locators updated — ${userCount} marked 'user', ${autoCount} marked 'auto'`);
+}
+
 // ── Server startup ────────────────────────────────────────────────────────────
 server.listen(PORT, '0.0.0.0', async () => {
+  migrateNameSources();
   // License checks
   const licFileCheck = checkStoredLicFile();
   if (!licFileCheck.ok) {

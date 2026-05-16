@@ -14,17 +14,19 @@ export function registerProjectsRoutes(app: express.Application): void {
   app.get('/api/projects', (req: Request, res: Response) => { res.json(readAll<Project>('projects').filter(p => p.isActive)); });
   app.get('/api/projects/all', requireAdmin, (_req, res) => { res.json(readAll<Project>('projects')); });
   app.post('/api/projects', requireAdmin, (req: Request, res: Response) => {
-    const { name, description, tcIdPrefix, environments } = req.body as any;
+    const { name, description, tcIdPrefix, environments, jiraProjectKey } = req.body as any;
     if (!name) { res.status(400).json({ error: 'Project name is required' }); return; }
     const existing = readAll<Project>('projects'); if (existing.find(p => p.name === name.trim())) { res.status(409).json({ error: 'Project name already exists' }); return; }
-    const project: Project = { id: uuidv4(), name: sanitizeInput(name), description: sanitizeInput(description ?? ''), tcIdPrefix: sanitizeInput(tcIdPrefix || 'TC'), tcIdCounter: 1, environments: (environments ?? []) as ProjectEnvironment[], isActive: true, createdAt: new Date().toISOString(), createdBy: req.session.username! };
+    const normJiraKey = jiraProjectKey ? String(jiraProjectKey).trim().toUpperCase().replace(/[^A-Z0-9]/g, '') : undefined;
+    const project: Project = { id: uuidv4(), name: sanitizeInput(name), description: sanitizeInput(description ?? ''), tcIdPrefix: sanitizeInput(tcIdPrefix || 'TC'), tcIdCounter: 1, environments: (environments ?? []) as ProjectEnvironment[], isActive: true, createdAt: new Date().toISOString(), createdBy: req.session.username!, ...(normJiraKey ? { jiraProjectKey: normJiraKey } : {}) };
     upsert('projects', project); logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'PROJECT_CREATED', resourceType: 'project', resourceId: project.id, details: project.name, ip: req.ip ?? null });
     res.json({ success: true, id: project.id });
   });
   app.put('/api/projects/:id', requireAdmin, (req: Request, res: Response) => {
     const project = findById<Project>('projects', req.params.id); if (!project) { res.status(404).json({ error: 'Not found' }); return; }
-    const { name, description, tcIdPrefix, environments, isActive } = req.body as any;
+    const { name, description, tcIdPrefix, environments, isActive, jiraProjectKey } = req.body as any;
     if (name) project.name = sanitizeInput(name); if (description !== undefined) project.description = sanitizeInput(description); if (tcIdPrefix) project.tcIdPrefix = sanitizeInput(tcIdPrefix); if (environments) project.environments = environments; if (isActive !== undefined) project.isActive = !!isActive;
+    if (jiraProjectKey !== undefined) project.jiraProjectKey = jiraProjectKey ? String(jiraProjectKey).trim().toUpperCase().replace(/[^A-Z0-9]/g, '') || undefined : undefined;
     upsert('projects', project); logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'PROJECT_UPDATED', resourceType: 'project', resourceId: project.id, details: project.name, ip: req.ip ?? null }); res.json({ success: true });
   });
   app.post('/api/projects/:id/next-tc-id', requireAuth, (req: Request, res: Response) => {
@@ -48,7 +50,7 @@ export function registerProjectsRoutes(app: express.Application): void {
   app.put('/api/locators/:id', requireEditor, (req: Request, res: Response) => {
     const loc = findById<Locator>(LOCATORS, req.params.id); if (!loc) { res.status(404).json({ error: 'Not found' }); return; }
     const { name, selector, selectorType, pageModule, projectId, description, alternatives, draft } = req.body as any;
-    if (name) loc.name = sanitizeInput(name); if (selector) loc.selector = sanitizeInput(selector); if (selectorType) loc.selectorType = selectorType; if (pageModule !== undefined) loc.pageModule = sanitizeInput(pageModule); if (projectId !== undefined) loc.projectId = projectId; if (description !== undefined) loc.description = sanitizeInput(description); if (Array.isArray(alternatives)) loc.alternatives = alternatives; if (draft === false) loc.draft = false;
+    if (name) { loc.name = sanitizeInput(name); loc.nameSource = 'user'; loc.updatedBy = (req as any).session?.username ?? 'unknown'; } if (selector) loc.selector = sanitizeInput(selector); if (selectorType) loc.selectorType = selectorType; if (pageModule !== undefined) loc.pageModule = sanitizeInput(pageModule); if (projectId !== undefined) loc.projectId = projectId; if (description !== undefined) loc.description = sanitizeInput(description); if (Array.isArray(alternatives)) loc.alternatives = alternatives; if (draft === false) loc.draft = false;
     loc.updatedAt = new Date().toISOString(); upsert(LOCATORS, loc); res.json({ success: true });
   });
   function cleanupOrphanedLocatorReferences(locatorIds: string[]) {

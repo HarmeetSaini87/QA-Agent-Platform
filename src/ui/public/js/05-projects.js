@@ -231,6 +231,7 @@ async function projLoad() {
           </div>
           <div style="font-size:12px;color:var(--neutral-400);margin-top:4px">
             TC Prefix: <strong>${escHtml(p.tcIdPrefix || 'TC')}</strong> &nbsp;·&nbsp; Next ID: <strong>${escHtml(p.tcIdPrefix || 'TC')}-${String(p.tcIdCounter || 1).padStart(2, '0')}</strong>
+            ${p.jiraProjectKey ? `&nbsp;·&nbsp; Jira: <strong style="color:var(--primary)">${escHtml(p.jiraProjectKey)}</strong>` : '<span style="color:#f59e0b">&nbsp;·&nbsp; Jira key: not set</span>'}
           </div>
         </div>
         <div style="flex-shrink:0;display:flex;gap:6px;align-items:center">
@@ -252,6 +253,7 @@ function projOpenModal(id = null) {
     document.getElementById('pm-name').value = '';
     document.getElementById('pm-prefix').value = '';
     document.getElementById('pm-desc').value = '';
+    document.getElementById('pm-jira-key').value = '';
     document.getElementById('proj-envs').innerHTML = '';
   }
   openModal('modal-project');
@@ -267,6 +269,7 @@ async function projEdit(id) {
   document.getElementById('pm-name').value = p.name;
   document.getElementById('pm-prefix').value = p.tcIdPrefix || '';
   document.getElementById('pm-desc').value = p.description || '';
+  document.getElementById('pm-jira-key').value = p.jiraProjectKey || '';
   const envsEl = document.getElementById('proj-envs');
   envsEl.innerHTML = '';
   (p.environments || []).forEach(e => projAddEnv(e.id, e.name, e.url));
@@ -299,10 +302,12 @@ async function projSave() {
     url: row.querySelector('.env-url').value.trim(),
   })).filter(e => e.url);
 
+  const jiraKey = (document.getElementById('pm-jira-key').value || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
   const body = {
     name, tcIdPrefix: prefix,
     description: document.getElementById('pm-desc').value.trim(),
     environments,
+    jiraProjectKey: jiraKey || null,
   };
   const method = editingProjectId ? 'PUT' : 'POST';
   const apiUrl = editingProjectId ? `/api/projects/${editingProjectId}` : '/api/projects';

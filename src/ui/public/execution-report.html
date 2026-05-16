@@ -1066,7 +1066,7 @@ function buildTestRow(t, i, r) {
       const cls = t.defectStatus === 'closed' ? 'defect-btn-closed' : 'defect-btn-open';
       const label = t.defectStatus === 'closed' ? 'Closed' : 'Open';
       defectCell = `<button class="defect-btn ${cls}"
-        onclick="event.stopPropagation();openDefectExisting(${esc(JSON.stringify(t.defectKey))})"
+        onclick="event.stopPropagation();openDefectExisting(${esc(JSON.stringify(t.defectKey))},${esc(JSON.stringify(t.testId))})"
         title="View defect ${esc(t.defectKey)}">&#128030; ${esc(t.defectKey)} (${label})</button>`;
     } else {
       defectCell = `<button class="defect-btn defect-btn-file"
@@ -1799,8 +1799,11 @@ async function openDefectModal(runId, testId) {
   }).join('');
 
   body.innerHTML =
-    '<div class="defect-section"><h4>Project Key</h4>' +
-      '<input id="dfx-project-key" type="text" value="' + esc2(cfg.projectKey || '') + '" readonly></div>' +
+    // OLD: Project Key from global cfg.projectKey — now per-project
+    '<div class="defect-section"><h4>Jira Project</h4>' +
+      (draft.jiraProjectKey
+        ? '<div style="padding:6px 10px;background:#f0fdf4;border:1px solid #86efac;border-radius:5px;font-weight:700;color:#15803d;font-size:13px">' + esc2(draft.jiraProjectKey) + '</div>'
+        : '<div style="padding:6px 10px;background:#fef2f2;border:1px solid #fca5a5;border-radius:5px;color:#dc2626;font-size:12.5px">⚠ Jira Project Key not set for this project. Go to Admin → Project Management to configure it.</div>') + '</div>' +
     '<div class="defect-section"><h4>Issue Type</h4>' +
       '<input id="dfx-issue-type" type="text" value="' + esc2(cfg.issueType || 'Defect') + '" readonly></div>' +
     '<div class="defect-section"><h4>Priority *</h4>' +
@@ -1830,7 +1833,9 @@ async function openDefectModal(runId, testId) {
       '<option value="env-issue">env-issue</option>' +
     '</select>' +
     '<button class="btn" onclick="dismissDefectFromModal()">Dismiss</button>' +
-    '<button class="btn btn-primary" onclick="approveAndFile()">Approve & File</button>';
+    (draft.jiraProjectKey
+      ? '<button class="btn btn-primary" onclick="approveAndFile()">Approve & File</button>'
+      : '<button class="btn btn-primary" disabled title="Set Jira Project Key in Admin → Project Management first">Approve & File</button>');
 }
 
 function adfPreview(adf) {
@@ -1887,7 +1892,10 @@ async function approveAndFile() {
     msg.innerHTML = '<div class="defect-banner-warn">⚠ Already filed as <strong>' + esc2(existing.defectKey) + '</strong>. ' +
       '<a href="' + esc2(existing.jiraUrl) + '" target="_blank" rel="noopener">Open in Jira ↗</a></div>';
   } else {
-    msg.innerHTML = '<div class="defect-banner-error">✗ ' + esc2(j && j.error && j.error.message || 'File failed') + '</div>';
+    // OLD: msg.innerHTML = '<div class="defect-banner-error">✗ ' + esc2(j && j.error && j.error.message || 'File failed') + '</div>';
+    const errDetail = j && j.error && j.error.details ? '\n' + JSON.stringify(j.error.details, null, 2) : '';
+    msg.innerHTML = '<div class="defect-banner-error">✗ ' + esc2(j && j.error && j.error.message || 'File failed') +
+      (errDetail ? '<pre style="margin:6px 0 0;font-size:11px;white-space:pre-wrap;word-break:break-all">' + esc2(errDetail) + '</pre>' : '') + '</div>';
   }
 }
 
@@ -1922,16 +1930,28 @@ async function dismissDefectFromModal() {
   document.getElementById('defect-modal-footer').innerHTML = '<button class="btn btn-primary" onclick="closeDefectModal()">Close</button>';
 }
 
-function openDefectExisting(defectKey) {
+// OLD: used /api/defects/open/:key server redirect — broke in new tab (relative redirect went to local host)
+async function openDefectExisting(defectKey, testId) {
   const m = document.getElementById('defect-modal');
   const body = document.getElementById('defect-modal-body');
   const footer = document.getElementById('defect-modal-footer');
   m.hidden = false;
   body.innerHTML = '<p>Defect <strong>' + esc2(defectKey) + '</strong> is filed for this test.</p>' +
     '<p>Use the link below to open it in Jira.</p>';
-  footer.innerHTML =
-    '<button class="btn" onclick="closeDefectModal()">Close</button>' +
-    '<a class="btn btn-primary" href="/api/defects/open/' + encodeURIComponent(defectKey) + '" target="_blank" rel="noopener">Open in Jira ↗</a>';
+  footer.innerHTML = '<button class="btn" onclick="closeDefectModal()">Close</button><span style="font-size:12px;color:#6b7280">Loading…</span>';
+  try {
+    const r = await fetch('/api/defects/by-test/' + encodeURIComponent(testId));
+    const j = r.ok ? await r.json() : null;
+    const rec = j && j.defects && j.defects.find(function(d) { return d.defectKey === defectKey; });
+    const url = (rec && rec.jiraUrl) || ('https://pnmx.atlassian.net/browse/' + encodeURIComponent(defectKey));
+    footer.innerHTML =
+      '<button class="btn" onclick="closeDefectModal()">Close</button>' +
+      '<a class="btn btn-primary" href="' + esc2(url) + '" target="_blank" rel="noopener">Open in Jira ↗</a>';
+  } catch (_) {
+    footer.innerHTML =
+      '<button class="btn" onclick="closeDefectModal()">Close</button>' +
+      '<a class="btn btn-primary" href="' + esc2('/api/defects/open/' + encodeURIComponent(defectKey)) + '" target="_blank" rel="noopener">Open in Jira ↗</a>';
+  }
 }
 
 document.addEventListener('keydown', function(e) {

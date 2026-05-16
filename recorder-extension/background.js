@@ -28,12 +28,50 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           target: { tabId, allFrames: true },
           files:  ['content_script.js'],
         }).then(() => {
-          // Send init message to all frames in the tab (main + all iframes)
+          // Send init message to all frames in the tab (main + all iframes).
+          // For non-top frames: inject a script into the PARENT frame (frameId 0) to find
+          // the <iframe> element by matching src/url, extract id/name/src attributes.
+          // This works even for cross-origin iframes — parent DOM is always accessible.
           chrome.webNavigation?.getAllFrames({ tabId }, frames => {
-            (frames || [{ frameId: 0 }]).forEach(frame => {
-              chrome.tabs.sendMessage(tabId, { type: 'RECORDER_INIT', token, platformOrigin }, { frameId: frame.frameId }).catch(() => {});
+            // Always init top frame first (no frameInfo needed)
+            chrome.tabs.sendMessage(tabId, { type: 'RECORDER_INIT', token, platformOrigin, frameInfo: null }, { frameId: 0 }).catch(() => {});
+
+            const childFrames = (frames || []).filter(f => f.frameId !== 0);
+            childFrames.forEach(frame => {
+              const frameSrc = frame.url || null;
+              // Query the parent frame DOM to get id/name of the <iframe> element
+              chrome.scripting.executeScript({
+                target: { tabId, frameIds: [0] }, // run in TOP frame
+                func: (src) => {
+                  // Find <iframe> whose src matches (partial match for cross-origin stability)
+                  const iframes = Array.from(document.querySelectorAll('iframe'));
+                  const match = iframes.find(el => {
+                    try { return el.src === src || (src && el.src && el.src.split('?')[0] === src.split('?')[0]); } catch { return false; }
+                  }) || iframes.find(el => {
+                    try { return src && el.src && src.includes(new URL(el.src).pathname); } catch { return false; }
+                  });
+                  if (!match) return null;
+                  return {
+                    iframeId:   match.id   || null,
+                    iframeName: match.name || null,
+                    iframeSrc:  match.src  || src,
+                  };
+                },
+                args: [frameSrc],
+              }).then(results => {
+                const attrs = results?.[0]?.result;
+                const frameInfo = {
+                  frameId:   attrs?.iframeId   || null,
+                  frameName: attrs?.iframeName || null,
+                  frameSrc:  attrs?.iframeSrc  || frameSrc,
+                };
+                chrome.tabs.sendMessage(tabId, { type: 'RECORDER_INIT', token, platformOrigin, frameInfo }, { frameId: frame.frameId }).catch(() => {});
+              }).catch(() => {
+                // Fallback: send with url-only frameInfo
+                chrome.tabs.sendMessage(tabId, { type: 'RECORDER_INIT', token, platformOrigin, frameInfo: { frameId: null, frameName: null, frameSrc } }, { frameId: frame.frameId }).catch(() => {});
+              });
             });
-          }) ?? chrome.tabs.sendMessage(tabId, { type: 'RECORDER_INIT', token, platformOrigin });
+          }) ?? chrome.tabs.sendMessage(tabId, { type: 'RECORDER_INIT', token, platformOrigin, frameInfo: null });
           sendResponse({ success: true });
         }).catch(err => {
           sendResponse({ success: false, error: err.message });
@@ -212,10 +250,32 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
     }).then(() => {
       // Notify all frames
       chrome.webNavigation?.getAllFrames({ tabId }, frames => {
-        (frames || [{ frameId: 0 }]).forEach(frame => {
-          chrome.tabs.sendMessage(tabId, { type: 'RECORDER_INIT', token: state.token, platformOrigin: state.platformOrigin }, { frameId: frame.frameId }).catch(() => {});
-        });
-      }) ?? chrome.tabs.sendMessage(tabId, { type: 'RECORDER_INIT', token: state.token, platformOrigin: state.platformOrigin }).catch(() => {});
+        chrome.tabs.sendMessage(tabId, { type: 'RECORDER_INIT', token: state.token, platformOrigin: state.platformOrigin, frameInfo: null }, { frameId: 0 }).catch(() => {});
+          const childFrames2 = (frames || []).filter(f => f.frameId !== 0);
+          childFrames2.forEach(frame => {
+            const frameSrc = frame.url || null;
+            chrome.scripting.executeScript({
+              target: { tabId, frameIds: [0] },
+              func: (src) => {
+                const iframes = Array.from(document.querySelectorAll('iframe'));
+                const match = iframes.find(el => {
+                  try { return el.src === src || (src && el.src && el.src.split('?')[0] === src.split('?')[0]); } catch { return false; }
+                }) || iframes.find(el => {
+                  try { return src && el.src && src.includes(new URL(el.src).pathname); } catch { return false; }
+                });
+                if (!match) return null;
+                return { iframeId: match.id || null, iframeName: match.name || null, iframeSrc: match.src || src };
+              },
+              args: [frameSrc],
+            }).then(results => {
+              const attrs = results?.[0]?.result;
+              const frameInfo = { frameId: attrs?.iframeId || null, frameName: attrs?.iframeName || null, frameSrc: attrs?.iframeSrc || frameSrc };
+              chrome.tabs.sendMessage(tabId, { type: 'RECORDER_INIT', token: state.token, platformOrigin: state.platformOrigin, frameInfo }, { frameId: frame.frameId }).catch(() => {});
+            }).catch(() => {
+              chrome.tabs.sendMessage(tabId, { type: 'RECORDER_INIT', token: state.token, platformOrigin: state.platformOrigin, frameInfo: { frameId: null, frameName: null, frameSrc } }, { frameId: frame.frameId }).catch(() => {});
+            });
+          });
+        }) ?? chrome.tabs.sendMessage(tabId, { type: 'RECORDER_INIT', token: state.token, platformOrigin: state.platformOrigin, frameInfo: null }).catch(() => {});
     }).catch(() => {});
   });
 });

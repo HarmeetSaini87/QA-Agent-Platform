@@ -1,4 +1,4 @@
-/**
+﻿/**
  * recorderParser.ts — QA Agent Platform UI Recorder
  *
  * Receives a raw recorded event from recorder.js, resolves the locator
@@ -69,6 +69,7 @@ const EVENT_TO_KEYWORD: Record<string, string> = {
   SCROLL:          'SCROLL TO',
   CLICK_AT_COORDS: 'CLICK AT COORDS',
   SWITCH_FRAME:    'SWITCH FRAME',
+  SWITCH_MAIN:     'SWITCH MAIN',   // auto-emitted by recorder when returning to main frame
   CANVAS_DRAG:     'CANVAS DRAG',
   // ── React Flow semantic actions ───────────────────────────────────────────
   RF_NODE_DRAG:    'RF NODE DRAG',
@@ -148,6 +149,7 @@ function eventTypeToVerb(eventType: string): string {
     SCROLL:          'Scroll',
     CLICK_AT_COORDS: 'Click At Coordinates',
     SWITCH_FRAME:    'Switch Frame',
+    SWITCH_MAIN:     'Switch Main Frame',
     CANVAS_DRAG:     'Canvas Drag',
     RF_NODE_DRAG:    'RF Node Drag',
     RF_CONNECT:      'RF Connect Nodes',
@@ -276,7 +278,8 @@ function createLocator(
       lastHealedFrom: null,
       lastHealedBy:   null,
     },
-    pageKey: pageKey ?? null,
+    pageKey:    pageKey ?? null,
+    nameSource: 'auto',   // recorder-generated — user rename via UI flips this to 'user'
   };
   upsert(LOCATORS, loc);
   return { loc, created: true };
@@ -345,6 +348,7 @@ export function parseRecorderEvent(
     'PRESS KEY',    // chord string, not a DOM element
     'SCROLL TO',    // positional scroll — value carries {x,y}; locator is optional
     'SWITCH FRAME', // frame selector stored in value, not locator repo
+    'SWITCH MAIN',  // no locator — returns to top-level document
     'RF PAN',       // viewport pan — no element locator
     'RF DROP NODE', // drop target is the canvas pane, not a stable element locator
     // RF NODE DRAG: selector is nodeStableSel (data-testid/aria-label/text) — saved to locator repo
@@ -464,6 +468,7 @@ function buildDescription(event: RecorderEvent): string {
     case 'SCROLL':          return val  ? `Scroll to ${val}` : 'Scroll page';
     case 'CLICK_AT_COORDS': return val  ? `Click canvas at ${val}` : 'Click at coordinates';
     case 'SWITCH_FRAME':    return val  ? `Switch to frame: ${val}` : 'Switch frame';
+    case 'SWITCH_MAIN':     return 'Switch to main frame';
     case 'CANVAS_DRAG': {
       try {
         const cd = JSON.parse(val || '{}');
@@ -545,62 +550,82 @@ export function normalizeRecordedSteps(steps: ScriptStep[]): ScriptStep[] {
     return true;
   });
 
+  // Helper: case-insensitive keyword comparison (stored data is UPPERCASE)
+  const kw = (s: ScriptStep) => (s.keyword ?? '').toUpperCase().trim();
+
   // N3 — consecutive SCROLLs on same target → keep last
-  out = collapseConsecutive(out, (s) => s.keyword === 'SCROLL TO', (a, b) => locKey(a) === locKey(b));
+  out = collapseConsecutive(out, (s) => kw(s) === 'SCROLL TO', (a, b) => locKey(a) === locKey(b));
 
   // N4 — consecutive FILLs on same locator → keep last (final typed value)
-  out = collapseConsecutive(out, (s) => s.keyword === 'Fill', (a, b) => locKey(a) === locKey(b));
+  out = collapseConsecutive(out, (s) => kw(s) === 'FILL', (a, b) => locKey(a) === locKey(b));
 
-  // N5 — CLICK immediately before FILL/SELECT on same locator → drop the CLICK
-  //       (focusing a field before typing produces a spurious click)
-  out = filterWithContext(out, (prev, cur) => {
-    if (!prev) return true;
-    if (prev.keyword === 'Click' && (cur.keyword === 'Fill' || cur.keyword === 'Select') && locKey(prev) === locKey(cur)) return false;
+  // N5 — CLICK that precedes a FILL/SELECT on the same locator → drop the CLICK
+  //       Forward-look window of 3 steps: skips intervening CLICKs on other locators
+  //       (e.g. CLICK Username → CLICK Password → FILL Username removes Username click)
+  out = forwardLookFilter(out, (arr, i) => {
+    if (kw(arr[i]) !== 'CLICK') return true;
+    const lk = locKey(arr[i]);
+    for (let j = i + 1; j < arr.length && j <= i + 3; j++) {
+      const nx = arr[j];
+      if ((kw(nx) === 'FILL' || kw(nx) === 'SELECT') && locKey(nx) === lk) return false;
+      // Only stop scanning on steps that are clearly a different interaction boundary
+      // (navigations, assertions, frame switches) — keep scanning through CLICKs and FILLs
+      const nxk = kw(nx);
+      if (nxk !== 'CLICK' && nxk !== 'FILL' && nxk !== 'SELECT' && nxk !== 'PRESS KEY') break;
+    }
+    return true;
+  });
+
+  // N5b — empty-value CLICK cluster before SELECT on same locator
+  //        Pattern: CLICK combobox → CLICK Month → SELECT combobox → SELECT Month
+  out = forwardLookFilter(out, (arr, i) => {
+    if (kw(arr[i]) !== 'CLICK' || (arr[i].value ?? '') !== '') return true;
+    const lk = locKey(arr[i]);
+    for (let j = i + 1; j < arr.length && j <= i + 3; j++) {
+      if (kw(arr[j]) === 'SELECT' && locKey(arr[j]) === lk) return false;
+    }
     return true;
   });
 
   // N6 — CLICK immediately after SELECT on same locator → drop the CLICK
-  //       (browser fires a synthetic click on <select> after value chosen)
   out = filterWithContext(out, (prev, cur) => {
     if (!prev) return true;
-    if (cur.keyword === 'Click' && prev.keyword === 'Select' && locKey(prev) === locKey(cur)) return false;
+    if (kw(cur) === 'CLICK' && kw(prev) === 'SELECT' && locKey(prev) === locKey(cur)) return false;
     return true;
   });
 
   // N7 — consecutive exact duplicates (same keyword + locator + value) → keep first
-  out = collapseConsecutive(out, () => true, (a, b) => a.keyword === b.keyword && locKey(a) === locKey(b) && String(a.value ?? '') === String(b.value ?? ''));
+  out = collapseConsecutive(out, () => true, (a, b) => kw(a) === kw(b) && locKey(a) === locKey(b) && String(a.value ?? '') === String(b.value ?? ''));
 
-  // N8 — burst of consecutive ASSERT_TEXT / ASSERT_TOAST / ASSERT_VISIBLE with same text → keep first
-  const assertTypes = new Set(['Assert Text', 'Assert Toast', 'Assert Visible']);
+  // N8 — burst of consecutive ASSERTs with same text → keep first
+  const ASSERT_KWS = new Set(['ASSERT TEXT', 'ASSERT TOAST', 'ASSERT VISIBLE']);
   out = collapseConsecutive(
     out,
-    (s) => assertTypes.has(s.keyword),
-    (a, b) => a.keyword === b.keyword && String(a.value ?? '') === String(b.value ?? ''),
+    (s) => ASSERT_KWS.has(kw(s)),
+    (a, b) => kw(a) === kw(b) && String(a.value ?? '') === String(b.value ?? ''),
   );
 
   // N9 — dual-locator collapse: consecutive same-keyword + same-value on DIFFERENT locators
-  //       (recorder emits both XPath and role/label locator for the same physical element)
-  //       Keep the step with the "better" locator (non-XPath preferred over XPath).
   out = dualLocatorCollapse(out);
 
-  // N10 — drop ASSERT TOAST/TEXT whose value matches pagination/data-count patterns
-  //        e.g. "Showing 1 to 50 of 343 entries" — grid label, not a real assertion
+  // N10 — drop ASSERT TOAST/TEXT matching pagination pattern ("Showing X to Y of Z entries")
   const PAGINATION_RE = /^showing\s+\d+\s+to\s+\d+\s+of\s+\d+/i;
   out = out.filter(s => {
-    if (s.keyword !== 'Assert Toast' && s.keyword !== 'Assert Text') return true;
+    if (kw(s) !== 'ASSERT TOAST' && kw(s) !== 'ASSERT TEXT') return true;
     return !PAGINATION_RE.test((s.value ?? '').toString().trim());
   });
 
-  // N11 — extend dual-locator collapse to consecutive ASSERT steps with same value
-  //        (BM-01 pattern: XPath assert + alert:Error assert for same error message)
-  const assertKws = new Set(['Assert Toast', 'Assert Text', 'Assert Visible']);
-  out = dualLocatorCollapse(out, (s) => assertKws.has(s.keyword));
+  // N11 — dual-locator collapse for ASSERT steps (strips "Error " prefix injected by alert: locator)
+  out = dualLocatorCollapse(out, (s) => ASSERT_KWS.has(kw(s)));
 
-  // N12 — drop HOVER immediately before CLICK / FILL / SELECT on same locator
-  //        (mouse-over before click is navigation noise, not a test intent)
-  out = filterWithContext(out, (prev, cur) => {
-    if (!prev) return true;
-    if (prev.keyword === 'Hover' && ['Click', 'Fill', 'Select'].includes(cur.keyword ?? '') && locKey(prev) === locKey(cur)) return false;
+  // N12 — HOVER immediately before CLICK/FILL/SELECT on same locator → drop HOVER (not the action)
+  // Uses forwardLookFilter so the HOVER is dropped and the CLICK/FILL/SELECT is preserved.
+  out = forwardLookFilter(out, (arr, i) => {
+    if (kw(arr[i]) !== 'HOVER') return true;
+    const next = arr[i + 1];
+    if (!next) return true;
+    const nk = kw(next);
+    if ((nk === 'CLICK' || nk === 'FILL' || nk === 'SELECT') && locKey(arr[i]) === locKey(next)) return false;
     return true;
   });
 
@@ -656,6 +681,15 @@ function filterWithContext(
   return result;
 }
 
+// Forward-look filter: keep(steps, i) receives the FULL original array and current index.
+// Allows rules to peek ahead without being blocked by already-removed steps.
+function forwardLookFilter(
+  steps: ScriptStep[],
+  keep: (steps: ScriptStep[], i: number) => boolean,
+): ScriptStep[] {
+  return steps.filter((_, i) => keep(steps, i));
+}
+
 // N9 helper: collapse consecutive same-keyword + same-value pairs that differ only in locator.
 // Recorder emits both the XPath path and the label/role locator for the same element.
 // Keep whichever has the better locator (non-XPath wins); drop the other.
@@ -674,11 +708,26 @@ function dualLocatorCollapse(steps: ScriptStep[], predicate?: (s: ScriptStep) =>
     const cur  = steps[i];
     const prev = result.length > 0 ? result[result.length - 1] : null;
     const applies = !predicate || predicate(cur);
+    // Dual-emit guard for empty-value CLICKs only:
+    // The recorder emits two locators for one physical click (XPath + friendly CSS).
+    // But consecutive CLICKs with empty value can also be two DIFFERENT navigation clicks.
+    // Rule: if BOTH steps have distinct non-null locatorIds AND the value is empty (CLICK),
+    // treat them as different elements and do NOT collapse.
+    // For FILL / SELECT / HOVER (value present or locator-typed), same-element dual-emit
+    // is always safe to collapse by the XPath-vs-label heuristic regardless of locatorId.
+    const curVal  = normVal(cur);
+    const prevVal = prev != null ? normVal(prev) : '';
+    const bothEmptyValue = curVal === '' && prevVal === '';
+    const bothHaveDistinctLocatorIds =
+      bothEmptyValue &&
+      cur.locatorId != null && prev != null && prev.locatorId != null &&
+      cur.locatorId !== prev.locatorId;
     if (
       applies &&
       prev &&
       (!predicate || predicate(prev)) &&
-      prev.keyword === cur.keyword &&
+      !bothHaveDistinctLocatorIds &&
+      (prev.keyword ?? '').toUpperCase() === (cur.keyword ?? '').toUpperCase() &&
       normVal(prev) === normVal(cur) &&
       locKey(prev) !== locKey(cur)   // different locators — potential dual-emit
     ) {

@@ -65,9 +65,122 @@
   // frameName/frameSrc so codegenGenerator can wrap selectors in frameLocator().
   const _iframeContextMap = new WeakMap(); // document → { frameId, frameName, frameSrc }
 
+  // G1-AUTO: set when this content_script runs inside an iframe (self-registration path).
+  // _getFrameContext returns null for main-frame scripts (doc === document AND _selfFrameCtx === null).
+  // For iframe scripts: doc === document AND _selfFrameCtx is non-null → return it.
+  let _selfFrameCtx = null;
+
   function _getFrameContext(doc) {
-    if (doc === document) return null; // main frame — no wrapping needed
+    // OLD: if (doc === document) return null; // main frame — no wrapping needed
+    // NEW: doc === document is true for BOTH main frame AND iframe (each has its own `document`).
+    // Use _selfFrameCtx to distinguish: null = main frame, non-null = we ARE inside an iframe.
+    if (doc === document) return _selfFrameCtx; // null for main, frameCtx for iframe self
     return _iframeContextMap.get(doc) || null;
+  }
+
+  // ── G1-AUTO: Frame-boundary auto-emission ─────────────────────────────────────
+  // Tracks the last frame context key posted so we can detect boundary crossings
+  // and auto-inject SWITCH FRAME / SWITCH MAIN steps without user interaction.
+  // Enterprise pattern: one step per logical boundary crossing; same-frame
+  // consecutive steps never re-emit (debounced by key comparison).
+  //
+  // Key priority (matches Playwright frameLocator selector priority):
+  //   id (stable, non-dynamic) → name → src pathname → null (main frame)
+  let _lastPostedFrameKey = null; // null = main frame
+  let _didEnterFrame      = false; // true once we've emitted at least one SWITCH FRAME
+
+  // Returns a stable, human-readable key for the frame context (or null = main).
+  function _frameKey(frameCtx) {
+    if (!frameCtx) return null;
+    const id = frameCtx.frameId;
+    if (id && !isDynamicId(id)) return `id:${id}`;
+    if (frameCtx.frameName) return `name:${frameCtx.frameName}`;
+    if (frameCtx.frameSrc) {
+      try { return `src:${new URL(frameCtx.frameSrc).pathname}`; } catch { return `src:${frameCtx.frameSrc}`; }
+    }
+    return '__frame__';
+  }
+
+  // Best CSS selector for a same-origin iframe element — mirrors cross-origin _emitSwitchFrame.
+  // Priority: #id → [name] → [src*=pathname] → iframe (last resort).
+  function _iframeSelector(frameCtx) {
+    const id = frameCtx.frameId;
+    if (id && !isDynamicId(id)) return { sel: `#${id}`, type: 'css' };
+    if (frameCtx.frameName) return { sel: `iframe[name="${frameCtx.frameName}"]`, type: 'css' };
+    if (frameCtx.frameSrc) {
+      try {
+        const p = new URL(frameCtx.frameSrc).pathname;
+        return { sel: `iframe[src*="${p}"]`, type: 'css' };
+      } catch { return { sel: `iframe[src*="${frameCtx.frameSrc}"]`, type: 'css' }; }
+    }
+    return { sel: 'iframe', type: 'css' };
+  }
+
+  // Check if an iframe is visible and interactable (skip invisible/analytics frames).
+  function _iframeIsVisible(frameCtx) {
+    try {
+      // Find the iframe element in the top document using the same selector priority.
+      const loc = _iframeSelector(frameCtx);
+      const el = document.querySelector(loc.sel);
+      if (!el) return true; // can't find element — assume visible (fail-open)
+      const rect = el.getBoundingClientRect();
+      if (rect.width < 4 || rect.height < 4) return false; // pixel-tracker sized
+      const style = window.getComputedStyle(el);
+      if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+      return true;
+    } catch { return true; } // any access error — fail-open
+  }
+
+  // Auto-emit SWITCH FRAME for same-origin iframes (before the first step from that frame).
+  function _autoEmitSwitchFrame(frameCtx) {
+    if (!_iframeIsVisible(frameCtx)) return; // skip invisible/analytics iframes
+    const loc  = _iframeSelector(frameCtx);
+    const name = frameCtx.frameName || frameCtx.frameId || frameCtx.frameSrc || '';
+    // Use postStep directly with a synthetic payload — bypass shouldEmit (which guards user gestures).
+    // Guard against duplicate emission within same recording session.
+    const key = _frameKey(frameCtx);
+    if (key === _lastPostedFrameKey) return; // already in this frame
+    _didEnterFrame = true;
+    if (!chrome.runtime?.id) return;
+    try {
+      chrome.runtime.sendMessage({
+        type: 'POST_STEP',
+        platformOrigin: _platformOrigin,
+        token: _token,
+        payload: {
+          eventType:    'SWITCH_FRAME',
+          selector:     loc.sel,
+          selectorType: loc.type,
+          value:        name,
+          smartName:    `Switch to frame: ${name || loc.sel}`,
+          tagName:      'iframe',
+          url:          location.href,
+          frameContext: frameCtx,
+        },
+      }, () => { void chrome.runtime.lastError; });
+    } catch { /* extension context gone */ }
+  }
+
+  // Auto-emit SWITCH MAIN when returning from an iframe to the main document.
+  function _autoEmitSwitchMain() {
+    if (!_didEnterFrame) return; // never entered a frame — no SWITCH MAIN needed
+    if (!chrome.runtime?.id) return;
+    try {
+      chrome.runtime.sendMessage({
+        type: 'POST_STEP',
+        platformOrigin: _platformOrigin,
+        token: _token,
+        payload: {
+          eventType:    'SWITCH_MAIN',
+          selector:     '',
+          selectorType: 'css',
+          value:        '',
+          smartName:    'Switch to main frame',
+          tagName:      '',
+          url:          location.href,
+        },
+      }, () => { void chrome.runtime.lastError; });
+    } catch { /* extension context gone */ }
   }
 
   // ── G3: attachShadow monkey-patch request (main world) ────────────────────────
@@ -91,6 +204,22 @@
       _token          = state.token;
       _platformOrigin = state.platformOrigin;
       _active         = true;
+      // G1-AUTO: self-register if running inside an iframe (storage restore path)
+      try {
+        const fe = window.frameElement;
+        console.info('[QA Recorder][G1-AUTO] storage restore: frameElement=', fe ? fe.id || fe.src : 'null', 'href=', window.location.href);
+        if (fe) {
+          // OLD: _iframeContextMap.set(document, {...})
+          // NEW: also set _selfFrameCtx so _getFrameContext(document) returns it
+          _selfFrameCtx = {
+            frameId:   fe.id   || null,
+            frameName: fe.name || null,
+            frameSrc:  (() => { try { return window.location.href; } catch { return fe.src || null; } })(),
+          };
+          _iframeContextMap.set(document, _selfFrameCtx);
+          console.info('[QA Recorder][G1-AUTO] storage: registered _selfFrameCtx id=', fe.id, 'src=', window.location.href);
+        }
+      } catch(e) { console.warn('[QA Recorder][G1-AUTO] storage frameElement error:', e.message); }
       attachListeners();
       console.info('[QA Recorder] Active on', window.location.hostname);
       showToast('QA Recorder active — recording');
@@ -103,6 +232,34 @@
       _token          = msg.token;
       _platformOrigin = msg.platformOrigin;
       _active         = true;
+
+      // G1-AUTO: self-register on RECORDER_INIT regardless of frameInfo
+      // window.frameElement is non-null when this script runs inside an iframe (same-origin).
+      // This is the reliable path: runs synchronously on init, no async dependency.
+      console.info('[QA Recorder][G1-AUTO] RECORDER_INIT: frameInfo=', JSON.stringify(msg.frameInfo), 'frameElement=', window.frameElement ? (window.frameElement.id || window.frameElement.src) : 'null');
+      try {
+        const fe = window.frameElement;
+        if (fe) {
+          const frameId   = fe.id   || null;
+          const frameName = fe.name || null;
+          const frameSrc  = (() => { try { return window.location.href; } catch { return fe.src || null; } })();
+          // OLD: _iframeContextMap.set(document, { frameId, frameName, frameSrc });
+          // NEW: set _selfFrameCtx so _getFrameContext(document) returns it for THIS iframe script
+          _selfFrameCtx = { frameId, frameName, frameSrc };
+          _iframeContextMap.set(document, _selfFrameCtx); // keep map for parent-injected path compat
+          console.info('[QA Recorder][G1-AUTO] RECORDER_INIT: registered _selfFrameCtx id=', frameId, 'src=', frameSrc);
+        } else if (msg.frameInfo) {
+          // Fallback: cross-origin — use background-supplied frameInfo
+          _selfFrameCtx = {
+            frameId:   msg.frameInfo.frameId   || null,
+            frameName: msg.frameInfo.frameName || null,
+            frameSrc:  msg.frameInfo.frameSrc  || null,
+          };
+          _iframeContextMap.set(document, _selfFrameCtx); // keep map in sync
+          console.info('[QA Recorder][G1-AUTO] RECORDER_INIT: registered _selfFrameCtx from frameInfo=', JSON.stringify(msg.frameInfo));
+        }
+      } catch(e) { console.warn('[QA Recorder][G1-AUTO] RECORDER_INIT frameElement error:', e.message); }
+
       attachListeners();
       console.info('[QA Recorder] Active — recording started on', window.location.hostname);
       showToast('QA Recorder active — recording started');
@@ -125,6 +282,25 @@
     if (!_active || !_token || !_platformOrigin) return;
     const frameCtx = _getFrameContext(sourceDoc || document);
     if (frameCtx) Object.assign(payload, { frameContext: frameCtx });
+
+    // G1-AUTO: detect frame boundary crossing and auto-inject SWITCH FRAME / SWITCH MAIN
+    // Skip auto-emit for steps that ARE frame-switch steps (avoid recursion).
+    const evtType = payload.eventType;
+    if (evtType !== 'SWITCH_FRAME' && evtType !== 'SWITCH_MAIN') {
+      const currentKey = _frameKey(frameCtx);
+      console.info('[QA Recorder][G1-AUTO] postStep evt=', evtType, 'frameCtx=', JSON.stringify(frameCtx), 'currentKey=', currentKey, 'lastKey=', _lastPostedFrameKey);
+      if (currentKey !== _lastPostedFrameKey) {
+        if (currentKey !== null) {
+          // entering same-origin iframe — emit SWITCH FRAME before this step
+          _autoEmitSwitchFrame(frameCtx);
+        } else {
+          // returning to main frame — emit SWITCH MAIN before this step
+          _autoEmitSwitchMain();
+        }
+        _lastPostedFrameKey = currentKey;
+      }
+    }
+
     // Guard: chrome.runtime.id goes undefined when extension context is invalidated
     if (!chrome.runtime?.id) {
       _active = false;
@@ -534,11 +710,39 @@
       return buildSvgLocator(el);
     }
 
+    // G12: RF canvas node — el or any ancestor has rf__node-* testid (dynamic, not stable)
+    // Walk up to find the RF node wrapper, use scoped CSS :has-text() to avoid matching
+    // sidebar items that share the same label text (e.g. "Start" appears in both sidebar and canvas).
+    {
+      let rfAncestor = el;
+      while (rfAncestor && rfAncestor !== document.body) {
+        const tid = rfAncestor.getAttribute && rfAncestor.getAttribute('data-testid');
+        if (tid && /^rf__node-/.test(tid)) {
+          // OLD: return { sel: `text:${nodeText}`, type: 'text' };
+          // text:X is ambiguous — sidebar nodes share same label text as canvas nodes
+          const nodeText = (rfAncestor.innerText || rfAncestor.textContent || '').trim().replace(/\s+/g, ' ');
+          if (nodeText && nodeText.length >= 2 && nodeText.length <= 80)
+            return { sel: `.react-flow__node:has-text("${nodeText}")`, type: 'css' };
+          break; // found wrapper but no text — fall through
+        }
+        rfAncestor = rfAncestor.parentElement;
+      }
+    }
+
     // 1. data-* automation attributes — gold standard
     for (const attr of ['data-testid', 'data-qa', 'data-cy', 'data-id', 'data-automation']) {
       const v = el.getAttribute(attr);
       if (v && v.trim()) {
-        if (attr === 'data-testid') return { sel: `[data-testid="${v.trim()}"]`, type: 'testid' };
+        if (attr === 'data-testid') {
+          // OLD: return { sel: `[data-testid="${v.trim()}"]`, type: 'testid' };
+          // RF canvas nodes have dynamic IDs (rf__node-node_N) — not stable across sessions
+          if (/^rf__node-/.test(v.trim())) {
+            const nodeText = (el.innerText || el.textContent || '').trim().replace(/\s+/g, ' ');
+            if (nodeText && nodeText.length >= 2 && nodeText.length <= 80)
+              return { sel: `.react-flow__node:has-text("${nodeText}")`, type: 'css' };
+          }
+          return { sel: `[data-testid="${v.trim()}"]`, type: 'testid' };
+        }
         const css = `[${attr}="${v.trim()}"]`;
         if (countMatches(css, r) === 1) return { sel: css, type: 'css' };
       }
@@ -1087,7 +1291,7 @@
       tagName:      f.el.tagName.toLowerCase(),
       url:          location.href,
       ...buildStepMeta(f.el, f.loc.sel),
-    });
+    }, f.srcDoc || document);
   }
 
   // ── Event handlers ────────────────────────────────────────────────────────────
@@ -1124,6 +1328,8 @@
     const el = resolveClickTarget(e.target);
     if (!el || el.nodeType !== 1) return;
     if (el.type === 'file') return; // handled by change
+    // G1-AUTO: derive sourceDoc from element so iframe clicks carry frame context
+    const _srcDoc = el.ownerDocument || document;
 
     // Toast/validation click interception — emit ASSERT_TOAST instead of CLICK
     // when user explicitly clicks on a toast/alert container.
@@ -1191,7 +1397,7 @@
         tagName:      el.tagName.toLowerCase(),
         url:          location.href,
         ...buildStepMeta(el, loc.sel),
-      });
+      }, _srcDoc);
       return;
     }
 
@@ -1207,7 +1413,7 @@
       tagName:      el.tagName.toLowerCase(),
       url:          location.href,
       ...buildStepMeta(el, loc.sel),
-    });
+    }, _srcDoc);
 
     // ── G2: Post-submit / post-navigation landmark ASSERT VISIBLE ────────────
     // After clicking a submit/save/login button, wait briefly then look for a
@@ -1254,6 +1460,7 @@
     if (!_active) return;
     const el = e.target;
     if (!el || el.nodeType !== 1) return;
+    const _srcDoc = el.ownerDocument || document;
     const loc = bestSelector(el);
 
     // CR2: flush any pending fill before recording a change on a different element
@@ -1270,7 +1477,7 @@
         tagName:      el.tagName.toLowerCase(),
         url:          location.href,
         ...buildStepMeta(el, loc.sel),
-      });
+      }, _srcDoc);
       return;
     }
     if (el.tagName === 'SELECT') {
@@ -1289,7 +1496,7 @@
         tagName:      'select',
         url:          location.href,
         ...buildStepMeta(el, loc.sel),
-      });
+      }, _srcDoc);
     }
   }
 
@@ -1302,6 +1509,7 @@
     if (!_active) return;
     const el = e.target;
     if (!el || el.nodeType !== 1) return;
+    const _srcDoc = el.ownerDocument || document;
     const tag  = el.tagName.toLowerCase();
     const type = (el.type || '').toLowerCase();
     const isContentEditable = el.isContentEditable || el.getAttribute('contenteditable') === 'true' || el.getAttribute('contenteditable') === '';
@@ -1324,7 +1532,7 @@
     } else {
       // Different field — flush any existing pending fill first
       flushPendingFill();
-      _pendingFill = { el, loc, value };
+      _pendingFill = { el, loc, value, srcDoc: _srcDoc };
     }
 
     // Schedule the actual emit after FILL_MERGE_MS of inactivity
@@ -1337,6 +1545,7 @@
     const el = e.target;
     if (!el || el.nodeType !== 1) return;
     if (!isVisibleElement(el)) return;
+    const _srcDoc = el.ownerDocument || document;
     const loc = bestSelector(el);
     if (!shouldEmit('DBLCLICK', loc.sel, '')) return;
     recordEmit('DBLCLICK', loc.sel, '');
@@ -1349,7 +1558,7 @@
       tagName:      el.tagName.toLowerCase(),
       url:          location.href,
       ...buildStepMeta(el, loc.sel),
-    });
+    }, _srcDoc);
   }
 
   // ── G9: Right-click (context menu) handler ───────────────────────────────────
@@ -1358,6 +1567,7 @@
     const el = e.target;
     if (!el || el.nodeType !== 1) return;
     if (!isVisibleElement(el) || !isActionableClick(el)) return;
+    const _srcDoc = el.ownerDocument || document;
     const loc = bestSelector(el);
     if (!shouldEmit('RIGHT_CLICK', loc.sel, '')) return;
     recordEmit('RIGHT_CLICK', loc.sel, '');
@@ -1370,7 +1580,7 @@
       tagName:      el.tagName.toLowerCase(),
       url:          location.href,
       ...buildStepMeta(el, loc.sel),
-    });
+    }, _srcDoc);
   }
 
   // ── G4: Hover handler ─────────────────────────────────────────────────────────
@@ -1395,6 +1605,7 @@
     );
     if (!hasHoverSignal) return;
     clearTimeout(_hoverTimer);
+    const _srcDoc = el.ownerDocument || document;
     _hoverEl    = el;
     _hoverTimer = setTimeout(() => {
       if (!_active || _hoverEl !== el) return;
@@ -1410,7 +1621,7 @@
         tagName:      el.tagName.toLowerCase(),
         url:          location.href,
         ...buildStepMeta(el, loc.sel),
-      });
+      }, _srcDoc);
     }, 400);
   }
   function handleMouseLeave() {

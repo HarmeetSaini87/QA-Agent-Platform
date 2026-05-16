@@ -69,7 +69,7 @@ export function buildDefectDescription(input: DescriptionInput): ADFNode {
     `(project "${input.projectName}") on ${input.runTimestamp}.`
   ));
   content.push(paragraphText(`Run ID: ${input.runId}`));
-  content.push(paragraphText(`testId: ${input.testId}`));
+  // OLD: content.push(paragraphText(`testId: ${input.testId}`)); — removed from visible body; dedup uses JQL only
 
   content.push(heading(3, 'Precondition'));
   content.push(paragraphText(`Environment: ${input.envName} — ${input.envUrl}`));
@@ -91,7 +91,13 @@ export function buildDefectDescription(input: DescriptionInput): ADFNode {
   }
 
   content.push(heading(3, 'Expected Result'));
-  content.push(emptyParagraph());
+  // Parse "Expected: ..." line from errorDetail if present (e.g. toHaveURL / toHaveText assertions)
+  const expectedMatch = (input.errorDetailFirst5 || input.errorMessage || '').match(/Expected:\s*"?([^\n"]+)"?/);
+  if (expectedMatch) {
+    content.push(paragraphText(expectedMatch[1].trim()));
+  } else {
+    content.push(emptyParagraph());
+  }
 
   return { type: 'doc', version: 1, content };
 }

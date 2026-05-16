@@ -8,7 +8,8 @@ async function jiraConfigLoad() {
       document.getElementById('jira-status-badge').textContent = 'Not configured';
       return;
     }
-    document.getElementById('jira-project-key').value = cfg.projectKey || '';
+    // OLD: document.getElementById('jira-project-key').value = cfg.projectKey || '';
+    // projectKey is now per-project (Admin → Project Management → Jira Project Key)
     document.getElementById('jira-issue-type').value = cfg.issueType || 'Defect';
     document.getElementById('jira-default-priority').value = cfg.defaultPriority || 'Medium';
     document.getElementById('jira-close-transition').value = cfg.closeTransitionName || 'Closed';
@@ -57,7 +58,8 @@ async function jiraDiscoverFields() {
 
 async function jiraConfigSave() {
   const body = {
-    projectKey: document.getElementById('jira-project-key').value.trim(),
+    // OLD: projectKey: document.getElementById('jira-project-key').value.trim(),
+    // projectKey is now per-project — not sent in global config save
     issueType: document.getElementById('jira-issue-type').value.trim(),
     defaultPriority: document.getElementById('jira-default-priority').value,
     parentLinkFieldId: document.getElementById('jira-parent-field').value,

@@ -706,14 +706,17 @@ function _generateStepCode(
       // Semantic edge creation: drag from source handle to target handle.
       // Uses node label/id to find elements — stable across layout changes.
       let sourceNode = '', sourceHandle = 'source', targetNode = '', targetHandle = 'target';
+      let sourceNodeLabel = '', targetNodeLabel = '';
       let sourcePos  = '', targetPos = '';
       let fromFlow = { x: 0, y: 0 }, toFlow = { x: 0, y: 0 };
       try {
         const d    = JSON.parse(step.value || '{}');
         sourceNode = d.sourceNode   || '';
+        sourceNodeLabel = d.sourceNodeLabel || '';
         sourceHandle = d.sourceHandle || 'source';
         sourcePos  = d.sourcePosition || '';
         targetNode = d.targetNode   || '';
+        targetNodeLabel = d.targetNodeLabel || '';
         targetHandle = d.targetHandle || 'target';
         targetPos  = d.targetPosition || '';
         fromFlow   = d.fromFlow || { x: 0, y: 0 };
@@ -721,12 +724,14 @@ function _generateStepCode(
       } catch {}
       const i   = indent;
       const pfx = comment ? comment + '\n' : '';
-      // Build handle selectors — prefer semantic node label lookup
-      const srcNodeSel = sourceNode
-        ? `.react-flow__node:has(*[class*="label"]:text-is("${sourceNode.replace(/"/g, '\\"')}"), [data-id="${sourceNode.replace(/"/g, '\\"')}"]):first-of-type`
+      // Build handle selectors — use label (stable) not node ID (dynamic rf__node-node_N)
+      const srcLookup = sourceNodeLabel || sourceNode;
+      const tgtLookup = targetNodeLabel || targetNode;
+      const srcNodeSel = srcLookup
+        ? `.react-flow__node:has(*:text-is("${srcLookup.replace(/"/g, '\\"')}"), [data-id="${srcLookup.replace(/"/g, '\\"')}"]):first-of-type`
         : '.react-flow__node:first-of-type';
-      const tgtNodeSel = targetNode
-        ? `.react-flow__node:has(*[class*="label"]:text-is("${targetNode.replace(/"/g, '\\"')}"), [data-id="${targetNode.replace(/"/g, '\\"')}"]):first-of-type`
+      const tgtNodeSel = tgtLookup
+        ? `.react-flow__node:has(*:text-is("${tgtLookup.replace(/"/g, '\\"')}"), [data-id="${tgtLookup.replace(/"/g, '\\"')}"]):first-of-type`
         : '.react-flow__node:last-of-type';
       const srcHandleSel = sourcePos
         ? `[data-handlepos="${sourcePos}"][data-handletype="${sourceHandle}"]`
@@ -800,28 +805,41 @@ function _generateStepCode(
       } catch {}
       const i   = indent;
       const pfx = comment ? comment + '\n' : '';
+      // OLD: page.evaluate / page.locator — ran in top frame, missed iframe canvas entirely
+      // NEW: when frameContext set, scope all RF locators to frameLocator; use locator.evaluate for viewport transform
+      const rfRoot = fc ? `page.frameLocator('${fc}')` : `page`;
+      const fcExpr = fc ? `'${fc}'` : `null`;
       return pfx + [
         `${i}await (async () => {`,
-        `${i}  // RF DROP NODE: simulate HTML5 DnD from sidebar → canvas`,
-        `${i}  const __vp = await page.evaluate(() => {`,
-        `${i}    const vEl = document.querySelector('.react-flow__viewport');`,
+        `${i}  // RF DROP NODE: fire dragstart on sidebar node-box to populate dataTransfer,`,
+        `${i}  // then drop on pane — browser security allows getData() only in same-dt sequence`,
+        `${i}  const __rfRoot = ${rfRoot};`,
+        `${i}  const __vp = await __rfRoot.locator('.react-flow__viewport').evaluate((vEl: HTMLElement) => {`,
         `${i}    const raw = vEl?.style.transform || '';`,
         `${i}    const t = raw.match(/translate\\(([\\-\\d.]+)px,\\s*([\\-\\d.]+)px\\)\\s*scale\\(([\\-\\d.]+)\\)/);`,
         `${i}    return t ? { tx: +t[1], ty: +t[2], zoom: +t[3] } : { tx: 0, ty: 0, zoom: 1 };`,
         `${i}  });`,
-        `${i}  const __rfBox = await page.locator('.react-flow').boundingBox();`,
+        `${i}  const __rfBox = await __rfRoot.locator('.react-flow').boundingBox();`,
         `${i}  if (!__rfBox) throw new Error('RF DROP NODE: react-flow root not found');`,
         `${i}  const __dropX = __rfBox.x + ${dropFlow.x} * __vp.zoom + __vp.tx;`,
         `${i}  const __dropY = __rfBox.y + ${dropFlow.y} * __vp.zoom + __vp.ty;`,
-        `${i}  // Dispatch dataTransfer drag sequence — React Flow expects dragstart + drop`,
-        `${i}  await page.evaluate(([x, y, nt]) => {`,
-        `${i}    const pane = document.querySelector('.react-flow__pane');`,
-        `${i}    if (!pane) return;`,
-        `${i}    const dt = new DataTransfer();`,
-        `${i}    dt.setData('application/reactflow', nt);`,
-        `${i}    pane.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, clientX: x, clientY: y, dataTransfer: dt }));`,
-        `${i}    pane.dispatchEvent(new DragEvent('drop',     { bubbles: true, cancelable: true, clientX: x, clientY: y, dataTransfer: dt }));`,
-        `${i}  }, [__dropX, __dropY, '${nodeType.replace(/'/g, "\\'")}']);`,
+        `${i}  // OLD: new DataTransfer() + dispatchEvent — browser clears getData() outside trusted drag`,
+        `${i}  // NEW: dragstart on sidebar source populates dt, then drop on pane reads same dt object`,
+        `${i}  await __rfRoot.locator('.react-flow__pane').evaluate((pane, [x, y, nt]) => {`,
+        `${i}    const doc = pane.ownerDocument;`,
+        `${i}    const win = doc.defaultView as any;`,
+        `${i}    const srcBox = Array.from(doc.querySelectorAll<HTMLElement>('[draggable="true"]'))`,
+        `${i}      .find(el => (el.innerText || el.textContent || '').trim() === nt);`,
+        `${i}    if (!srcBox) return;`,
+        `${i}    const sr = srcBox.getBoundingClientRect();`,
+        `${i}    const sx = sr.left + sr.width / 2, sy = sr.top + sr.height / 2;`,
+        `${i}    const opts = (cx: number, cy: number) => ({ bubbles: true, cancelable: true, clientX: cx, clientY: cy, screenX: cx, screenY: cy });`,
+        `${i}    const dt = new win.DataTransfer();`,
+        `${i}    srcBox.dispatchEvent(new win.DragEvent('dragstart', { ...opts(sx, sy), dataTransfer: dt }));`,
+        `${i}    pane.dispatchEvent(new win.DragEvent('dragenter', { ...opts(x, y), dataTransfer: dt }));`,
+        `${i}    pane.dispatchEvent(new win.DragEvent('dragover',  { ...opts(x, y), dataTransfer: dt }));`,
+        `${i}    pane.dispatchEvent(new win.DragEvent('drop',      { ...opts(x, y), dataTransfer: dt }));`,
+        `${i}  }, [__dropX, __dropY, '${nodeType.replace(/'/g, "\\'")}'] as [number, number, string]);`,
         `${i}})();`,
       ].join('\n');
     }
@@ -1975,13 +1993,18 @@ export function generateCodegenSpec(input: CodegenInput): string {
         const kw       = (step.keyword || '').toUpperCase().trim();
 
         // Track frame context: SWITCH_FRAME updates active frame for all subsequent steps.
+        // SWITCH_MAIN (auto-emitted by recorder) resets to top frame — equivalent to empty selector.
         // "_top", "top", or empty value = return to top frame (page).
         if (kw === 'SWITCH_FRAME' || kw === 'SWITCH FRAME') {
           const frameSel = step.locator || step.value || '';
           __activeFrameCtx = (!frameSel || frameSel === '_top' || frameSel === 'top') ? null : frameSel;
+        } else if (kw === 'SWITCH_MAIN' || kw === 'SWITCH MAIN') {
+          __activeFrameCtx = null;
         }
         // Propagate active frame context to the step so _generateStepCode uses correct root
-        if (__activeFrameCtx && kw !== 'SWITCH_FRAME' && kw !== 'SWITCH FRAME') {
+        // Skip frame-switch steps themselves — they don't target elements
+        const isFrameSwitch = kw === 'SWITCH_FRAME' || kw === 'SWITCH FRAME' || kw === 'SWITCH_MAIN' || kw === 'SWITCH MAIN';
+        if (__activeFrameCtx && !isFrameSwitch) {
           (step as any).frameContext = __activeFrameCtx;
         }
         const needsDiff = !NO_DIFF_KW.has(kw);
@@ -2333,7 +2356,7 @@ export function generateDebugSpec(input: DebugCodegenInput): string {
   lines.push(`    : kw.startsWith('ASSERT')                                              ? '#22c55e'`);
   lines.push(`    : ['DRAG', 'CANVAS DRAG', 'CANVAS_DRAG', 'RF NODE DRAG', 'RF_NODE_DRAG', 'RF CONNECT', 'RF_CONNECT', 'RF DROP NODE', 'RF_DROP_NODE'].includes(kw) ? '#ec4899'`);
   lines.push(`    : ['RF PAN', 'RF_PAN', 'SCROLL TO', 'SCROLL_TO', 'SCROLL INTO VIEW'].includes(kw) ? '#06b6d4'`);
-  lines.push(`    : ['PRESS KEY', 'PRESS_KEY', 'SWITCH FRAME', 'SWITCH_FRAME', 'CLICK AT COORDS', 'CLICK_AT_COORDS'].includes(kw) ? '#a855f7'`);
+  lines.push(`    : ['PRESS KEY', 'PRESS_KEY', 'SWITCH FRAME', 'SWITCH_FRAME', 'SWITCH MAIN', 'SWITCH_MAIN', 'CLICK AT COORDS', 'CLICK_AT_COORDS'].includes(kw) ? '#a855f7'`);
   lines.push(`    : '#8b5cf6';`);
   lines.push(`  try {`);
   lines.push(`    let loc: any;`);
@@ -2411,6 +2434,8 @@ export function generateDebugSpec(input: DebugCodegenInput): string {
     if (kw === 'SWITCH_FRAME' || kw === 'SWITCH FRAME') {
       const frameSel = step.locator || step.value || '';
       __dbgActiveFrameCtx = (!frameSel || frameSel === '_top' || frameSel === 'top') ? null : frameSel;
+    } else if (kw === 'SWITCH_MAIN' || kw === 'SWITCH MAIN') {
+      __dbgActiveFrameCtx = null;
     }
     // frameContext for this step: use step's own value if set (from recorder), else active tracker
     const stepFc = (step as any).frameContext as string | null | undefined ?? __dbgActiveFrameCtx;
@@ -2737,6 +2762,9 @@ export function generateDebugSpec(input: DebugCodegenInput): string {
       lines.push(`              case 'SWITCH FRAME': case 'SWITCH_FRAME':`);
       lines.push(`                // page-level — value is frame selector/URL; nothing to retry meaningfully, just wait`);
       lines.push(`                await page.frameLocator(__patchedVal_${o}).locator('body').waitFor({ timeout: 10000 }).catch(() => {}); break;`);
+      lines.push(`              case 'SWITCH MAIN': case 'SWITCH_MAIN':`);
+      lines.push(`                // no-op — returning to main frame has no retry action`);
+      lines.push(`                break;`);
       lines.push(`              case 'CANVAS DRAG': case 'CANVAS_DRAG': {`);
       lines.push(`                // locator = canvas element; value = JSON {fromX,fromY,toX,toY}`);
       lines.push(`                await __retryLoc_${o}.waitFor({ state: 'visible', timeout: 10000 });`);
@@ -2767,12 +2795,42 @@ export function generateDebugSpec(input: DebugCodegenInput): string {
       lines.push(`                } catch { await __retryLoc_${o}.click(); } break; }`);
       lines.push(`              case 'RF CONNECT': case 'RF_CONNECT': {`);
       lines.push(`                // locator = RF container; value = JSON {sourceNode,sourceHandle,targetNode,targetHandle}`);
+      lines.push(`                // OLD: dragTo — React Flow handles don't use HTML5 drag, need page.mouse`);
       lines.push(`                await __retryLoc_${o}.waitFor({ state: 'attached', timeout: 10000 });`);
       lines.push(`                try {`);
       lines.push(`                  const __rc_${o} = JSON.parse(__patchedVal_${o});`);
-      lines.push(`                  const __srcH_${o} = __retryLoc_${o}.locator(\`[data-nodeid="\${__rc_${o}.sourceNode}"][data-handleid="\${__rc_${o}.sourceHandle}"]\`).first();`);
-      lines.push(`                  const __tgtH_${o} = __retryLoc_${o}.locator(\`[data-nodeid="\${__rc_${o}.targetNode}"][data-handleid="\${__rc_${o}.targetHandle}"]\`).first();`);
-      lines.push(`                  await __srcH_${o}.dragTo(__tgtH_${o});`);
+      lines.push(`                  // Use label-based node lookup; fall back to fromFlow/toFlow coords`);
+      lines.push(`                  const __srcLabel_${o} = __rc_${o}.sourceNodeLabel || __rc_${o}.sourceNode;`);
+      lines.push(`                  const __tgtLabel_${o} = __rc_${o}.targetNodeLabel || __rc_${o}.targetNode;`);
+      lines.push(`                  const __rfRoot_${o} = __patchedFc_${o} ? page.frameLocator(__patchedFc_${o}) : page;`);
+      lines.push(`                  const __rfBox_${o} = await __rfRoot_${o}.locator('.react-flow').boundingBox();`);
+      lines.push(`                  const __rfVp_${o} = await __rfRoot_${o}.locator('.react-flow__viewport').evaluate((vEl: HTMLElement) => { const raw = vEl?.style.transform || ''; const t = raw.match(/translate\\(([\\-\\d.]+)px,\\s*([\\-\\d.]+)px\\)\\s*scale\\(([\\-\\d.]+)\\)/); return t ? { tx: +t[1], ty: +t[2], zoom: +t[3] } : { tx: 0, ty: 0, zoom: 1 }; });`);
+      lines.push(`                  let __sx_${o} = 0, __sy_${o} = 0, __tx_${o} = 0, __ty_${o} = 0;`);
+      lines.push(`                  try {`);
+      lines.push(`                    const __srcNode_${o} = __rfRoot_${o}.locator(\`.react-flow__node:has(*:text-is("\${__srcLabel_${o}}"))\`).first();`);
+      lines.push(`                    const __tgtNode_${o} = __rfRoot_${o}.locator(\`.react-flow__node:has(*:text-is("\${__tgtLabel_${o}}"))\`).first();`);
+      lines.push(`                    const __srcH_${o} = __srcNode_${o}.locator(\`.react-flow__handle[data-handlepos="\${__rc_${o}.sourcePosition || 'bottom'}"]\`).first();`);
+      lines.push(`                    const __tgtH_${o} = __tgtNode_${o}.locator(\`.react-flow__handle[data-handlepos="\${__rc_${o}.targetPosition || 'top'}"]\`).first();`);
+      lines.push(`                    const __srcBox_${o} = await __srcH_${o}.boundingBox();`);
+      lines.push(`                    const __tgtBox_${o} = await __tgtH_${o}.boundingBox();`);
+      lines.push(`                    if (__srcBox_${o} && __tgtBox_${o}) {`);
+      lines.push(`                      __sx_${o} = __srcBox_${o}.x + __srcBox_${o}.width/2; __sy_${o} = __srcBox_${o}.y + __srcBox_${o}.height/2;`);
+      lines.push(`                      __tx_${o} = __tgtBox_${o}.x + __tgtBox_${o}.width/2; __ty_${o} = __tgtBox_${o}.y + __tgtBox_${o}.height/2;`);
+      lines.push(`                    }`);
+      lines.push(`                  } catch {}`);
+      lines.push(`                  if (!__sx_${o} && __rfBox_${o} && __rfVp_${o}) {`);
+      lines.push(`                    __sx_${o} = __rfBox_${o}.x + (__rc_${o}.fromFlow?.x ?? 0) * __rfVp_${o}.zoom + __rfVp_${o}.tx;`);
+      lines.push(`                    __sy_${o} = __rfBox_${o}.y + (__rc_${o}.fromFlow?.y ?? 0) * __rfVp_${o}.zoom + __rfVp_${o}.ty;`);
+      lines.push(`                    __tx_${o} = __rfBox_${o}.x + (__rc_${o}.toFlow?.x ?? 0) * __rfVp_${o}.zoom + __rfVp_${o}.tx;`);
+      lines.push(`                    __ty_${o} = __rfBox_${o}.y + (__rc_${o}.toFlow?.y ?? 0) * __rfVp_${o}.zoom + __rfVp_${o}.ty;`);
+      lines.push(`                  }`);
+      lines.push(`                  if (__sx_${o} && __tx_${o}) {`);
+      lines.push(`                    await page.mouse.move(__sx_${o}, __sy_${o});`);
+      lines.push(`                    await page.mouse.down();`);
+      lines.push(`                    await page.mouse.move(__sx_${o} + (__tx_${o}-__sx_${o})*0.3, __sy_${o} + (__ty_${o}-__sy_${o})*0.3, { steps: 5 });`);
+      lines.push(`                    await page.mouse.move(__tx_${o}, __ty_${o}, { steps: 10 });`);
+      lines.push(`                    await page.mouse.up();`);
+      lines.push(`                  }`);
       lines.push(`                } catch { await __retryLoc_${o}.click(); } break; }`);
       lines.push(`              case 'RF PAN': case 'RF_PAN': {`);
       lines.push(`                // page-level pan — value = JSON {deltaX,deltaY}; locator = RF pane`);
@@ -2787,18 +2845,27 @@ export function generateDebugSpec(input: DebugCodegenInput): string {
       lines.push(`                  }`);
       lines.push(`                } catch {} break; }`);
       lines.push(`              case 'RF DROP NODE': case 'RF_DROP_NODE': {`);
-      lines.push(`                // page-level drop — value = JSON {nodeType,flowX,flowY}; locator = RF pane`);
+      lines.push(`                // OLD: new DataTransfer() — browser clears getData() outside trusted drag`);
+      lines.push(`                // NEW: dragstart on sidebar source populates dt; drop on pane reads same dt`);
       lines.push(`                try {`);
       lines.push(`                  const __rdn_${o} = JSON.parse(__patchedVal_${o});`);
-      lines.push(`                  const __rdnBox_${o} = await __retryLoc_${o}.boundingBox();`);
-      lines.push(`                  const __rdnVp_${o} = await page.evaluate(() => { const t = document.querySelector('.react-flow__viewport'); const m = t ? (getComputedStyle(t).transform || '') : ''; const n = m.match(/matrix\\\\(([^)]+)\\\\)/); const p = n ? n[1].split(',').map(Number) : [1,0,0,1,0,0]; return { zoom: p[0], tx: p[4], ty: p[5] }; });`);
+      lines.push(`                  const __rdnRoot_${o} = __patchedFc_${o} ? page.frameLocator(__patchedFc_${o}) : page;`);
+      lines.push(`                  const __rdnVp_${o} = await __rdnRoot_${o}.locator('.react-flow__viewport').evaluate((vEl: HTMLElement) => { const raw = vEl?.style.transform || ''; const t = raw.match(/translate\\\\(([\\\\-\\\\d.]+)px,\\\\s*([\\\\-\\\\d.]+)px\\\\)\\\\s*scale\\\\(([\\\\-\\\\d.]+)\\\\)/); return t ? { tx: +t[1], ty: +t[2], zoom: +t[3] } : { tx: 0, ty: 0, zoom: 1 }; });`);
+      lines.push(`                  const __rdnBox_${o} = await __rdnRoot_${o}.locator('.react-flow').boundingBox();`);
       lines.push(`                  if (__rdnBox_${o} && __rdnVp_${o}) {`);
-      lines.push(`                    const __rdnSx_${o} = __rdnBox_${o}.x + 10; const __rdnSy_${o} = __rdnBox_${o}.y + 10;`);
-      lines.push(`                    const __rdnTx_${o} = __rdnBox_${o}.x + __rdn_${o}.flowX * __rdnVp_${o}.zoom + __rdnVp_${o}.tx;`);
-      lines.push(`                    const __rdnTy_${o} = __rdnBox_${o}.y + __rdn_${o}.flowY * __rdnVp_${o}.zoom + __rdnVp_${o}.ty;`);
-      lines.push(`                    await page.evaluate(([nt, tx, ty]: [string, number, number]) => {`);
-      lines.push(`                      const dt = new DataTransfer(); dt.setData('application/reactflow', nt);`);
-      lines.push(`                      document.querySelector('.react-flow__pane')?.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, clientX: tx, clientY: ty, dataTransfer: dt }));`);
+      lines.push(`                    const __rdnTx_${o} = __rdnBox_${o}.x + (__rdn_${o}.dropFlow?.x ?? __rdn_${o}.flowX ?? 0) * __rdnVp_${o}.zoom + __rdnVp_${o}.tx;`);
+      lines.push(`                    const __rdnTy_${o} = __rdnBox_${o}.y + (__rdn_${o}.dropFlow?.y ?? __rdn_${o}.flowY ?? 0) * __rdnVp_${o}.zoom + __rdnVp_${o}.ty;`);
+      lines.push(`                    await __rdnRoot_${o}.locator('.react-flow__pane').evaluate((pane, [nt, tx, ty]: [string, number, number]) => {`);
+      lines.push(`                      const doc = pane.ownerDocument; const win = doc.defaultView as any;`);
+      lines.push(`                      const srcBox = Array.from(doc.querySelectorAll<HTMLElement>('[draggable="true"]')).find(el => (el.innerText || el.textContent || '').trim() === nt);`);
+      lines.push(`                      if (!srcBox) return;`);
+      lines.push(`                      const sr = srcBox.getBoundingClientRect(); const sx = sr.left + sr.width/2, sy = sr.top + sr.height/2;`);
+      lines.push(`                      const opts = (cx: number, cy: number) => ({ bubbles: true, cancelable: true, clientX: cx, clientY: cy, screenX: cx, screenY: cy });`);
+      lines.push(`                      const dt = new win.DataTransfer();`);
+      lines.push(`                      srcBox.dispatchEvent(new win.DragEvent('dragstart', { ...opts(sx, sy), dataTransfer: dt }));`);
+      lines.push(`                      pane.dispatchEvent(new win.DragEvent('dragenter', { ...opts(tx, ty), dataTransfer: dt }));`);
+      lines.push(`                      pane.dispatchEvent(new win.DragEvent('dragover',  { ...opts(tx, ty), dataTransfer: dt }));`);
+      lines.push(`                      pane.dispatchEvent(new win.DragEvent('drop',      { ...opts(tx, ty), dataTransfer: dt }));`);
       lines.push(`                    }, [__rdn_${o}.nodeType, __rdnTx_${o}, __rdnTy_${o}]);`);
       lines.push(`                  }`);
       lines.push(`                } catch {} break; }`);

@@ -9,6 +9,13 @@ import { loadJiraConfig, saveJiraConfig, loadDefectsRegistry, saveDefectsRegistr
 import { buildDefectDescription, buildFailureCommentADF } from '../../utils/adfBuilder';
 import { runs, getRun } from '../helpers/state';
 import { sanitizeInput } from '../../auth/middleware';
+import { readAll, findById, SCRIPTS } from '../../data/store';
+import type { TestScript, Project } from '../../data/types';
+
+function resolveProjectKey(projectId: string, globalCfg: any): string | null {
+  const project = findById<Project>('projects', projectId);
+  return (project?.jiraProjectKey) || null;
+}
 
 export function registerJiraRoutes(app: express.Application): void {
   app.get('/api/jira/config', requireAuth, (_req: Request, res: Response) => {
@@ -20,7 +27,9 @@ export function registerJiraRoutes(app: express.Application): void {
 
   app.put('/api/jira/config', requireAdmin, (req: Request, res: Response) => {
     const b = req.body || {};
-    const required = ['projectKey', 'issueType', 'defaultPriority', 'closeTransitionName'];
+    // OLD: const required = ['projectKey', 'issueType', 'defaultPriority', 'closeTransitionName'];
+    // projectKey moved to per-project field — no longer required in global config
+    const required = ['issueType', 'defaultPriority', 'closeTransitionName'];
     for (const k of required) {
       if (!b[k] || typeof b[k] !== 'string') {
         res.status(400).json({ error: { code: 'BAD_REQUEST', message: `Missing field: ${k}` } });
@@ -29,7 +38,7 @@ export function registerJiraRoutes(app: express.Application): void {
     }
     const existing = loadJiraConfig();
     const cfg: any = {
-      projectKey: String(b.projectKey),
+      // OLD: projectKey: String(b.projectKey),  — moved to per-project jiraProjectKey field
       issueType: String(b.issueType),
       defaultPriority: String(b.defaultPriority),
       parentLinkFieldId: String(b.parentLinkFieldId || ''),
@@ -93,6 +102,23 @@ export function registerJiraRoutes(app: express.Application): void {
     const cfg = loadJiraConfig();
     const existing = findOpenDefect(testId, run.suiteId || '');
 
+    // Load keyword steps from the script definition (Test Script Builder steps),
+    // not from t.steps which are Playwright runtime steps {name, status, durationMs}
+    const allScripts = readAll<TestScript>(SCRIPTS);
+    const browser = t.browser || (run.browsers?.[0] || 'chromium');
+    const matchedScript = allScripts.find(s => {
+      const generatedName = (s.tcId ? `[${s.tcId}] ` : '') + s.title;
+      return generatedName === t.name || s.title === t.name;
+    });
+    const scriptSteps = matchedScript
+      ? matchedScript.steps
+          .slice().sort((a, b) => a.order - b.order)
+          .map(s => `${s.keyword}${s.locator ? ' ' + s.locator : ''}${s.value ? ' → ' + s.value : ''}${s.description ? ' (' + s.description + ')' : ''}`.trim())
+          .filter(Boolean)
+      // OLD: (t.steps || []).map((s: any) => `${s.keyword || ''} ${s.locator || s.value || ''}`.trim()).filter(Boolean)
+      // — t.steps are Playwright internal steps {name,status,durationMs}, not keyword steps
+      : [];
+
     const descriptionADF = buildDefectDescription({
       testName: t.name,
       testId,
@@ -102,14 +128,17 @@ export function registerJiraRoutes(app: express.Application): void {
       runId,
       envName: run.environmentName || '',
       envUrl: '',
-      browser: t.browser || (run.browsers?.[0] || 'chromium'),
+      browser,
       os: process.platform,
-      steps: (t.steps || []).map((s: any) => `${s.keyword || ''} ${s.locator || s.value || ''}`.trim()).filter(Boolean),
+      steps: scriptSteps,
       errorMessage: t.errorMessage || '',
       errorDetailFirst5: firstNLines(t.errorDetail || '', 5),
     });
 
-    const summary = `${t.name} failed in ${run.suiteName}`.slice(0, 255);
+    // OLD: const summary = `${t.name} failed in ${run.suiteName}`.slice(0, 255);
+    const envPart = run.environmentName ? `[${run.environmentName}] ` : '';
+    const browserPart = ` (${browser})`;
+    const summary = `${envPart}${t.name} failed in ${run.suiteName}${browserPart}`.slice(0, 255);
     const attachments: Array<{ kind: 'screenshot' | 'video' | 'trace'; path: string; sizeBytes: number; name: string; tooLarge: boolean }> = [];
     const max = (cfg?.maxAttachmentMB ?? 50) * 1024 * 1024;
     for (const [kind, p] of [['screenshot', t.screenshotPath], ['video', t.videoPath], ['trace', t.tracePath]] as const) {
@@ -123,6 +152,7 @@ export function registerJiraRoutes(app: express.Application): void {
       });
     }
 
+    const jiraProjectKey = resolveProjectKey(run.projectId || '', cfg);
     res.json({
       summary,
       descriptionADF,
@@ -130,6 +160,7 @@ export function registerJiraRoutes(app: express.Application): void {
       attachments,
       existingDefect: existing,
       config: cfg,
+      jiraProjectKey,  // project-scoped key for display + filing
     });
   });
 
@@ -151,8 +182,16 @@ export function registerJiraRoutes(app: express.Application): void {
     const t = run.tests.find(x => x.testId === testId);
     if (!t) { res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Test not found in run' } }); return; }
 
+    // Resolve Jira project key from project record (per-project hybrid model)
+    const jiraProjectKey = resolveProjectKey(run.projectId || '', cfg);
+    if (!jiraProjectKey) {
+      res.status(400).json({ error: { code: 'JIRA_PROJECT_KEY_MISSING', message: 'Jira Project Key is not configured for this project. Set it in Admin → Project Management.' } });
+      return;
+    }
+
     try {
-      const existingKey = await client.searchOpenDefectByTestId(testId, run.suiteId || '', cfg.projectKey);
+      // OLD: cfg.projectKey — now per-project
+      const existingKey = await client.searchOpenDefectByTestId(testId, run.suiteId || '', jiraProjectKey);
       if (existingKey) {
         res.status(409).json({
           error: { code: 'ALREADY_FILED', message: 'Open defect already exists', details: { defectKey: existingKey, jiraUrl: `${config.jira.baseUrl}/browse/${existingKey}` } },
@@ -167,7 +206,8 @@ export function registerJiraRoutes(app: express.Application): void {
     let created: { key: string; id: string; self: string };
     try {
       created = await client.createIssue({
-        projectKey: cfg.projectKey,
+        // OLD: projectKey: cfg.projectKey — now per-project
+        projectKey: jiraProjectKey,
         issueType: cfg.issueType,
         summary: String(summary).slice(0, 255),
         descriptionADF,
@@ -175,6 +215,7 @@ export function registerJiraRoutes(app: express.Application): void {
         parentStoryKey: String(parentStoryKey),
       });
     } catch (e: any) {
+      logger.error('[defect.file] createIssue failed', { code: e?.code, httpStatus: e?.httpStatus, details: e?.details });
       const status = e?.httpStatus && e.httpStatus >= 400 && e.httpStatus < 500 ? 400 : 502;
       res.status(status).json({ error: { code: e?.code || 'JIRA_ERROR', message: e?.message || 'Issue creation failed', details: e?.details } });
       return;

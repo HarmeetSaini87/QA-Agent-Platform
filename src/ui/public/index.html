@@ -1478,8 +1478,10 @@
                 <code>JIRA_API_TOKEN</code> in <code>.env</code>, then restart server.
               </div>
 
-              <div class="field"><label>Project Key *</label><input id="jira-project-key" type="text"
-                  placeholder="e.g. BSM" /></div>
+              <!-- OLD: Project Key field removed — now per-project in Admin → Project Management → Jira Project Key -->
+              <div style="background:#fffbeb;border:1px solid #f59e0b;border-radius:6px;padding:10px 14px;font-size:12.5px;color:#92400e;margin-bottom:12px">
+                ℹ️ <strong>Jira Project Key</strong> is now set per-project in <strong>Admin → Project Management</strong>. Each project can have its own Jira key (e.g. BANK, CRM, PAY).
+              </div>
               <div class="field"><label>Issue Type *</label><input id="jira-issue-type" type="text" value="Defect" />
               </div>
               <div class="field"><label>Default Priority *</label>
@@ -1889,6 +1891,8 @@
           </div>
           <div class="field"><label>Description</label><input id="pm-desc" class="fm-input"
               placeholder="Optional description" /></div>
+          <div class="field"><label>Jira Project Key <span style="font-size:11px;color:var(--neutral-400);font-weight:400">(optional — e.g. BANK, CRM)</span></label>
+            <input id="pm-jira-key" class="fm-input" placeholder="e.g. BSM" style="text-transform:uppercase" maxlength="20" /></div>
         </div>
 
         <!-- Tab: Environments -->
