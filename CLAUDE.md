@@ -286,6 +286,13 @@ Graph at `.code-review-graph/graph.db` — 11 communities, auto-updates on file 
 - `src/utils/jiraClient.ts` + `adfBuilder.ts` + `defectsStore.ts`
 - Editor role for filing; Admin for config; dedup uses JQL + local registry
 
+### Import Pipeline Integration (Phase D Step 3 — 2026-05-16)
+- `import-engine-adapter.ts` wraps both Postman and OpenAPI importers
+- Route responses now include `{ ...collection, warnings, compatibility, importHealthScore }`
+- Rollback: set `USE_LEGACY_POSTMAN_IMPORTER=true` in env → reverts Postman route to legacy util
+- Legacy `src/utils/postmanImport.ts` still in place — do not delete
+- `parity-validator.ts` — run `validatePostmanParity()` to diff legacy vs new importer outputs
+
 ---
 
 ## USER COMMANDS
