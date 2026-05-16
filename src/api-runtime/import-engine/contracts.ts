@@ -1,12 +1,15 @@
 /**
  * import-engine/contracts.ts
  * Phase D Step 1 — Import pipeline public contracts.
+ * Phase D Step 2 — Extended with Postman import contracts, ImportWarning model,
+ *                  NormalizationStage, UnsupportedScriptWarning, source metadata.
  *
  * INVARIANTS:
  *   - All importers produce ImportResult; never mutate existing collections.
  *   - WorkflowEnvelope produced here is backward-compatible with legacy-adapter.
  *   - Auth metadata is always detection-only; no secrets are written.
  *   - Dependency hints are metadata only; DAG synthesis deferred to Phase D Step 2+.
+ *   - Postman script parsing is metadata-only; no JS execution or pm API emulation.
  */
 
 import type { ApiCollection, ApiTestStep } from '../../data/types';
@@ -129,14 +132,106 @@ export interface DependencyDetectionResult {
   operationEntityMap: Record<string, string[]>;
 }
 
-// ── Import result ─────────────────────────────────────────────────────────────
+// ── Import warnings ───────────────────────────────────────────────────────────
+
+/**
+ * Warning severity levels — used in enterprise UX to triage import issues.
+ *   info     = cosmetic difference, no runtime impact
+ *   warning  = partial normalization, feature degrades gracefully
+ *   critical = assertion/auth/variable will not execute correctly
+ */
+export type ImportWarningSeverity = 'info' | 'warning' | 'critical';
+
+/**
+ * Warning codes — stable identifiers for UX filtering and telemetry.
+ * Phase D Step 1 codes (OpenAPI):
+ *   NO_SERVER_URL, NO_HOST, EXTERNAL_PARAM_REF, UNKNOWN_AUTH_TYPE
+ * Phase D Step 2 codes (Postman):
+ *   UNSUPPORTED_SCRIPT        — pm.test/pre-request script not parseable into assertions
+ *   UNSUPPORTED_AUTH          — PM auth type has no ApiAuthConfig mapping
+ *   PARTIAL_ASSERTION         — script pattern recognized but incompletely mapped
+ *   UNSUPPORTED_PRE_REQUEST   — pre-request script captured as metadata only
+ *   UNKNOWN_PM_FEATURE        — PM collection uses a feature not yet supported
+ *   PM_VARIABLE_UNRESOLVABLE  — PM variable reference present but no value in scope
+ *   FOLDER_DEPTH_EXCEEDED     — folder nesting depth > MAX_FOLDER_DEPTH (flattened)
+ */
+export type ImportWarningCode =
+  // OpenAPI (Phase D Step 1)
+  | 'NO_SERVER_URL'
+  | 'NO_HOST'
+  | 'EXTERNAL_PARAM_REF'
+  | 'UNKNOWN_AUTH_TYPE'
+  // Postman (Phase D Step 2)
+  | 'UNSUPPORTED_SCRIPT'
+  | 'UNSUPPORTED_AUTH'
+  | 'PARTIAL_ASSERTION'
+  | 'UNSUPPORTED_PRE_REQUEST'
+  | 'UNKNOWN_PM_FEATURE'
+  | 'PM_VARIABLE_UNRESOLVABLE'
+  | 'FOLDER_DEPTH_EXCEEDED';
 
 export interface ImportWarning {
-  code: string;
+  code: ImportWarningCode | string; // string fallback for forward-compat
+  severity: ImportWarningSeverity;
   message: string;
-  /** operationId or path that triggered the warning */
+  /** operationId, request name, or folder path that triggered the warning */
   context?: string;
 }
+
+/**
+ * Specialized warning for unsupported PM script content.
+ * Carries the raw script fragment for future AI-assisted normalization.
+ */
+export interface UnsupportedScriptWarning extends ImportWarning {
+  code: 'UNSUPPORTED_SCRIPT' | 'UNSUPPORTED_PRE_REQUEST' | 'PARTIAL_ASSERTION';
+  scriptType: 'test' | 'prerequest';
+  /** Raw script source — preserved for future AI/manual correction */
+  rawScript: string;
+  /** Patterns that were successfully extracted before giving up */
+  partiallyExtracted: string[];
+}
+
+// ── Normalization pipeline stage tracker ─────────────────────────────────────
+
+/**
+ * NormalizationStage — tracks which pipeline stages have completed.
+ * Used for debugging import issues, RCA, and future AI-assisted correction.
+ *
+ * Stages are additive — a result at 'CompatibilityValidated' has passed all prior stages.
+ */
+export type NormalizationStage =
+  | 'Raw'                   // raw bytes received
+  | 'Parsed'                // structure parsed into intermediate model
+  | 'Normalized'            // mapped to WorkflowEnvelope-compatible types
+  | 'WorkflowEnvelope'      // wrapped in WorkflowEnvelope with source metadata
+  | 'CompatibilityValidated'; // validated against all 4 engines
+
+export interface NormalizationTrace {
+  stages: NormalizationStage[];
+  completedAt: string; // ISO timestamp of last completed stage
+  /** Warnings emitted per stage */
+  stageWarnings: Partial<Record<NormalizationStage, ImportWarning[]>>;
+}
+
+// ── Stable source metadata ────────────────────────────────────────────────────
+
+export type ImportSourceType = 'openapi3' | 'swagger2' | 'postman_v2' | 'postman_v2_1' | 'curl';
+
+export interface ImportSourceMetadata {
+  type: ImportSourceType;
+  /** Postman schema URL (e.g. "https://schema.getpostman.com/json/collection/v2.1.0/collection.json") */
+  schemaUrl?: string;
+  /** Postman collection._postman_id */
+  originalCollectionId?: string;
+  /** Collection name as declared in source */
+  originalName?: string;
+  /** Number of folders in source (Postman only) */
+  folderCount?: number;
+  /** Total items including nested (Postman only) */
+  totalItemCount?: number;
+}
+
+// ── Import result ─────────────────────────────────────────────────────────────
 
 export interface ImportResult {
   /** Produced collection — always backward-compatible with existing runtime */
@@ -151,10 +246,14 @@ export interface ImportResult {
   warnings: ImportWarning[];
   /** Format detected from spec content */
   format: SpecFormat;
-  /** Number of endpoints successfully mapped */
+  /** Number of endpoints/requests successfully mapped */
   endpointCount: number;
-  /** Number of endpoints skipped (filtered by tag, unsupported method, etc.) */
+  /** Number of endpoints/requests skipped (filtered by tag, unsupported method, disabled, etc.) */
   skippedCount: number;
+  /** Stable source provenance — present for all importers */
+  sourceMetadata: ImportSourceMetadata;
+  /** Normalization pipeline trace — present after CompatibilityValidated stage */
+  normalizationTrace?: NormalizationTrace;
 }
 
 // ── Importer interface ────────────────────────────────────────────────────────
@@ -176,11 +275,44 @@ export interface ImportOptions {
   openapiSpecId?: string;
 }
 
+export interface PostmanImportOptions {
+  /** Target environment ID for the produced collection */
+  environmentId: string;
+  /** Project ID for the produced collection */
+  projectId?: string;
+  /** Override collection name */
+  collectionName?: string;
+  /** Execution mode for produced collection */
+  executionMode?: 'sequential' | 'parallel' | 'dag';
+  /**
+   * Include disabled items as steps with condition='false'.
+   * Default: true (preserves intent; scheduler skips them at runtime).
+   */
+  includeDisabled?: boolean;
+  /**
+   * Maximum folder nesting depth to flatten.
+   * Deeper nesting is flattened with a warning.
+   * Default: 10.
+   */
+  maxFolderDepth?: number;
+  /**
+   * Preserve folder hierarchy as group metadata on WorkflowNode.
+   * Default: true — always preserve for future graph/AI use.
+   */
+  preserveFolderHierarchy?: boolean;
+}
+
 export interface IImportEngine {
   /** Detect the format of raw spec content */
   detectFormat(content: string): SpecFormat;
   /** Import OpenAPI 3.x or Swagger 2.0 spec content */
   importOpenApi(specContent: string, options: ImportOptions): ImportResult;
+  /**
+   * Import Postman Collection v2.0 or v2.1 JSON.
+   * Produces the same ImportResult shape as importOpenApi — unified pipeline.
+   * DOES NOT execute or emulate PM scripts — unsupported scripts emit warnings only.
+   */
+  importPostman(collectionJson: string, options: PostmanImportOptions): ImportResult;
   /** Validate that an ImportResult collection is runtime-compatible */
   validateCompatibility(result: ImportResult): CompatibilityReport;
 }
@@ -205,4 +337,23 @@ export interface CompatibilityReport {
   workflowEngineCompatible: boolean;
   /** True if contract-engine can validate responses */
   contractEngineCompatible: boolean;
+  /**
+   * Unsupported script warnings — Postman only.
+   * Scripts captured here are metadata-only; they do NOT block execution.
+   * enterprise UX can surface these for manual review.
+   */
+  unsupportedScriptWarnings: UnsupportedScriptWarning[];
+  /** Count of PM test scripts that could NOT be mapped to any assertion */
+  unmappedScriptCount: number;
+  /** Count of PM test scripts fully mapped to ApiAssertion[] */
+  mappedAssertionCount: number;
 }
+
+// ── Phase D Step 4: Re-exports from workflow.contract for import-engine consumers ──
+export type {
+  FolderNode,
+  WorkflowGraphHints,
+  WorkflowAiReadiness,
+  WorkflowNormalizationSource,
+} from '../../shared-core/contracts/workflow.contract';
+export { DEFAULT_MAX_FOLDER_DEPTH } from '../../shared-core/contracts/workflow.contract';
