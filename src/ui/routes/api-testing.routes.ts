@@ -302,10 +302,10 @@ export function registerApiTestingRoutes(app: express.Application): void {
     if (!collectionJson || !environmentId) { res.status(400).json({ error: 'collectionJson and environmentId are required' }); return; }
     try {
       const adapted = adaptPostmanImport(collectionJson, environmentId, { projectId, executionMode });
-      const { collection, warnings, compatibility } = adapted;
+      const { collection, warnings, compatibility, importHealthScore } = adapted;
       logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'IMPORT_POSTMAN', resourceType: 'api-collection', resourceId: collection.id, details: `steps:${collection.steps.length} name:${collection.name} warnings:${warnings.length}`, ip: req.ip ?? null });
       // OLD: res.json({ ...collection, warnings, compatibility });
-      res.json({ ...collection, warnings, compatibility, importHealthScore: adapted.importHealthScore });
+      res.json({ ...collection, warnings, compatibility, importHealthScore });
     } catch (e) {
       res.status(400).json({ error: (e as Error).message });
     }
