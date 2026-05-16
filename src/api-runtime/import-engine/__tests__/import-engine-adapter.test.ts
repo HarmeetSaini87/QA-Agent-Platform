@@ -94,3 +94,26 @@ describe('adaptOpenApiImport', () => {
     expect(result.collection.projectId).toBe('proj-99');
   });
 });
+
+describe('adaptPostmanImport — rollback flag', () => {
+  it('USE_LEGACY_POSTMAN_IMPORTER=true returns collection without compatibility report', () => {
+    process.env.USE_LEGACY_POSTMAN_IMPORTER = 'true';
+    try {
+      const result = adaptPostmanImport(minimalPostmanJson, 'env-1');
+      expect(result.collection.steps.length).toBe(1);
+      expect(result.warnings).toEqual([]);
+    } finally {
+      delete process.env.USE_LEGACY_POSTMAN_IMPORTER;
+    }
+  });
+
+  it('USE_LEGACY_POSTMAN_IMPORTER=false uses new importer', () => {
+    process.env.USE_LEGACY_POSTMAN_IMPORTER = 'false';
+    try {
+      const result = adaptPostmanImport(minimalPostmanJson, 'env-1');
+      expect(result.collection.steps.length).toBe(1);
+    } finally {
+      delete process.env.USE_LEGACY_POSTMAN_IMPORTER;
+    }
+  });
+});

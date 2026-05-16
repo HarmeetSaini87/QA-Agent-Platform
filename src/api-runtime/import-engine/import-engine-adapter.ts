@@ -14,6 +14,7 @@ import type { ApiCollection } from '../../data/types';
 // OLD: routes called importFromOpenApi directly, returned plain ApiCollection
 // NEW: routes call adaptOpenApiImport — same collection, adds warnings + compat stub
 import { importFromOpenApi as legacyImportFromOpenApi } from '../../utils/openapiImport';
+import { importFromPostman as legacyImportFromPostman } from '../../utils/postmanImport';
 
 export interface AdaptedImportResult {
   collection: ApiCollection;
@@ -29,6 +30,29 @@ export function adaptPostmanImport(
   environmentId: string,
   opts?: { projectId?: string; collectionName?: string; executionMode?: 'sequential' | 'parallel' | 'dag' }
 ): AdaptedImportResult {
+  // Rollback flag: USE_LEGACY_POSTMAN_IMPORTER=true bypasses new import-engine
+  if (process.env.USE_LEGACY_POSTMAN_IMPORTER === 'true') {
+    const collection = legacyImportFromPostman(collectionJson, environmentId);
+    if (opts?.projectId) collection.projectId = opts.projectId;
+    return {
+      collection,
+      warnings: [],
+      compatibility: {
+        compatible: true,
+        issues: [],
+        variableEngineCompatible: true,
+        assertionEngineCompatible: true,
+        workflowEngineCompatible: true,
+        contractEngineCompatible: true,
+        unsupportedScriptWarnings: [],
+        unmappedScriptCount: 0,
+        mappedAssertionCount: 0,
+      },
+      endpointCount: collection.steps.length,
+      skippedCount: 0,
+    };
+  }
+
   const options: PostmanImportOptions = {
     environmentId,
     projectId: opts?.projectId,
