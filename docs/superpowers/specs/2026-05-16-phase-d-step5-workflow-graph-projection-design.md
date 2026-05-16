@@ -151,6 +151,8 @@ export interface GraphClusterProjection {
 
 Merge key: `source + label` — never merge `folder` and `hint` clusters with same label. Semantics preserved.
 
+Internal cluster accumulator arrays should use `readonly string[]` where possible — immutability hardening.
+
 ### ProjectionMeta
 
 ```ts
@@ -392,3 +394,11 @@ Frontend (ReactFlow-ready, treats projection as read-only view state)
 ```
 
 Runtime modules (`workflow-engine`, `execution-engine`, `scheduler-state`, `dag-builder`, `retry-engine`) are never imported by any file in `src/workflow-graph/`.
+
+---
+
+## Future Extension Points (not in scope now)
+
+- **`ILayoutStrategy` interface** — when dagre/elk/AI layout engines are needed, extract `computeAutoLayout` behind an interface. Current deterministic grid is correct for Phase D Step 5.
+- **`SLOW_GRAPH_PROJECTION_WARNING`** — emit when projection duration exceeds threshold (useful for AI-generated mega graphs and performance telemetry). Not needed now.
+- **Fixture migration tooling** — `_fixtureVersion` field on all golden fixtures enables future automated migration of test fixtures when projection contracts evolve.

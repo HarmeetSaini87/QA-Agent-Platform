@@ -1100,6 +1100,17 @@ Find the registration block (around line 223) where `registerApiTestingRoutes(ap
 registerWorkflowGraphRoutes(app);
 ```
 
+- [ ] **Step 3b: Add compatibility comment to route response**
+
+In `workflow-graph.routes.ts`, add above the `res.json(...)` call:
+
+```typescript
+// GraphProjection response shape is frontend compatibility-sensitive.
+// Field renames or removals are BREAKING CHANGES for ReactFlow, replay UI,
+// execution overlays, and graph editor consumers. Only add optional fields.
+res.json({ success: true, data: projection });
+```
+
 - [ ] **Step 4: Build TypeScript**
 
 ```bash
@@ -1129,6 +1140,7 @@ git commit -m "feat(graph): add workflow-graph route GET /api/workflows/:collect
 
 ```json
 {
+  "_fixtureVersion": 1,
   "schemaVersion": "1.0",
   "workflow": {
     "id": "postman-col-1",
@@ -1162,6 +1174,7 @@ Save to: `src/workflow-graph/__tests__/fixtures/postman-graph-fixture.json`
 
 ```json
 {
+  "_fixtureVersion": 1,
   "schemaVersion": "1.0",
   "workflow": {
     "id": "openapi-col-1",
@@ -1190,6 +1203,7 @@ Save to: `src/workflow-graph/__tests__/fixtures/openapi-graph-fixture.json`
 
 ```json
 {
+  "_fixtureVersion": 1,
   "schemaVersion": "1.0",
   "workflow": {
     "id": "legacy-col-1",
