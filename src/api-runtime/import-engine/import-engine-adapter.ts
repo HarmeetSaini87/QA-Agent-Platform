@@ -23,6 +23,15 @@ export interface AdaptedImportResult {
   /** Preserved for response envelope — step count for audit log */
   endpointCount: number;
   skippedCount: number;
+  /** 0–100. Lower = more skipped/critical-warning steps. 100 = fully clean import. */
+  importHealthScore: number;
+}
+
+function computeHealthScore(endpointCount: number, skippedCount: number, warnings: ImportWarning[]): number {
+  const criticalCount = warnings.filter(w => w.severity === 'critical').length;
+  const total = endpointCount + skippedCount + criticalCount;
+  if (total === 0) return 100;
+  return Math.round(Math.min(100, Math.max(0, (endpointCount / total) * 100)));
 }
 
 export function adaptPostmanImport(
@@ -50,6 +59,7 @@ export function adaptPostmanImport(
       },
       endpointCount: collection.steps.length,
       skippedCount: 0,
+      importHealthScore: 100,
     };
   }
 
@@ -69,6 +79,7 @@ export function adaptPostmanImport(
     compatibility,
     endpointCount: result.endpointCount,
     skippedCount: result.skippedCount,
+    importHealthScore: computeHealthScore(result.endpointCount, result.skippedCount, result.warnings),
   };
 }
 
@@ -109,5 +120,6 @@ export function adaptOpenApiImport(
     },
     endpointCount: collection.steps.length,
     skippedCount: 0,
+    importHealthScore: 100,
   };
 }

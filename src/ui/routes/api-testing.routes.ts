@@ -248,9 +248,10 @@ export function registerApiTestingRoutes(app: express.Application): void {
     if (!specContent || !environmentId) { res.status(400).json({ error: 'specContent and environmentId are required' }); return; }
     try {
       const adapted = adaptOpenApiImport(specContent, environmentId, { tag, includeExamples, projectId });
-      const { collection, warnings, compatibility } = adapted;
+      const { collection, warnings, compatibility, importHealthScore } = adapted;
       logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'IMPORT_OPENAPI', resourceType: 'api-collection', resourceId: collection.id, details: `steps:${collection.steps.length}${tag ? ` tag:${tag}` : ''} warnings:${warnings.length}`, ip: req.ip ?? null });
-      res.json({ ...collection, warnings, compatibility });
+      // OLD: res.json({ ...collection, warnings, compatibility });
+      res.json({ ...collection, warnings, compatibility, importHealthScore: adapted.importHealthScore });
     } catch (e) {
       res.status(400).json({ error: (e as Error).message });
     }
@@ -272,9 +273,10 @@ export function registerApiTestingRoutes(app: express.Application): void {
       // logAudit({ ..., details: `steps:${collection.steps.length} url:${url}...` });
       // res.json(collection);
       const adapted = adaptOpenApiImport(specContent, environmentId, { tag, includeExamples, projectId });
-      const { collection, warnings, compatibility } = adapted;
+      const { collection, warnings, compatibility, importHealthScore } = adapted;
       logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'IMPORT_OPENAPI_URL', resourceType: 'api-collection', resourceId: collection.id, details: `steps:${collection.steps.length} url:${url}${tag ? ` tag:${tag}` : ''} warnings:${warnings.length}`, ip: req.ip ?? null });
-      res.json({ ...collection, warnings, compatibility });
+      // OLD: res.json({ ...collection, warnings, compatibility });
+      res.json({ ...collection, warnings, compatibility, importHealthScore: adapted.importHealthScore });
     } catch (e) {
       res.status(500).json({ error: (e as Error).message });
     }
@@ -302,7 +304,8 @@ export function registerApiTestingRoutes(app: express.Application): void {
       const adapted = adaptPostmanImport(collectionJson, environmentId, { projectId, executionMode });
       const { collection, warnings, compatibility } = adapted;
       logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'IMPORT_POSTMAN', resourceType: 'api-collection', resourceId: collection.id, details: `steps:${collection.steps.length} name:${collection.name} warnings:${warnings.length}`, ip: req.ip ?? null });
-      res.json({ ...collection, warnings, compatibility });
+      // OLD: res.json({ ...collection, warnings, compatibility });
+      res.json({ ...collection, warnings, compatibility, importHealthScore: adapted.importHealthScore });
     } catch (e) {
       res.status(400).json({ error: (e as Error).message });
     }

@@ -95,6 +95,19 @@ describe('adaptOpenApiImport', () => {
   });
 });
 
+describe('importHealthScore', () => {
+  it('returns 100 for clean import with no warnings', () => {
+    const result = adaptPostmanImport(minimalPostmanJson, 'env-1');
+    expect(result.importHealthScore).toBe(100);
+  });
+
+  it('returns a number between 0 and 100', () => {
+    const result = adaptPostmanImport(minimalPostmanJson, 'env-1');
+    expect(result.importHealthScore).toBeGreaterThanOrEqual(0);
+    expect(result.importHealthScore).toBeLessThanOrEqual(100);
+  });
+});
+
 describe('adaptPostmanImport — rollback flag', () => {
   it('USE_LEGACY_POSTMAN_IMPORTER=true returns collection without compatibility report', () => {
     process.env.USE_LEGACY_POSTMAN_IMPORTER = 'true';
