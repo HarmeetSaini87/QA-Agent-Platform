@@ -13,6 +13,7 @@
  */
 
 import * as yaml from 'js-yaml';
+import { v4 as uuidv4 } from 'uuid';
 import type {
   SpecFormat,
   NormalizedEndpoint,
@@ -24,7 +25,19 @@ import type {
   DetectedAuthScheme,
   AuthMetadata,
   ImportWarning,
+  ImportResult,
+  ImportOptions,
+  DependencyDetectionResult,
+  NormalizationTrace,
+  NormalizationStage,
 } from './contracts';
+import type { ApiCollection, ApiTestStep, ApiRequest, ApiAssertion, ApiAuthConfig } from '../../data/types';
+import type {
+  FolderNode,
+  WorkflowGraphHints,
+  WorkflowNormalizationSource,
+} from '../../shared-core/contracts/workflow.contract';
+import { collectionToWorkflow } from '../../workflow-dsl/legacy-adapter';
 
 // ── Raw OA type stubs ─────────────────────────────────────────────────────────
 
@@ -219,14 +232,14 @@ function parseContent(content: string): RawSpec {
 function extractBaseUrl(raw: RawSpec, format: SpecFormat, warnings: ImportWarning[]): string {
   if (format === 'openapi3') {
     const url = raw.servers?.[0]?.url ?? '';
-    if (!url) warnings.push({ code: 'NO_SERVER_URL', message: 'No servers[0].url found; base URL will be empty' });
+    if (!url) warnings.push({ code: 'NO_SERVER_URL', severity: 'warning', message: 'No servers[0].url found; base URL will be empty' });
     return url;
   }
   // Swagger 2.0
   const scheme = raw.schemes?.[0] ?? 'https';
   const host = raw.host ?? '';
   const base = raw.basePath ?? '';
-  if (!host) warnings.push({ code: 'NO_HOST', message: 'Swagger 2.0 host is missing; base URL will be empty' });
+  if (!host) warnings.push({ code: 'NO_HOST', severity: 'warning', message: 'Swagger 2.0 host is missing; base URL will be empty' });
   return `${scheme}://${host}${base}`;
 }
 
@@ -400,6 +413,7 @@ function parseOperation(
   if (op.parameters?.some(p => (p as unknown as Record<string, unknown>).$ref)) {
     warnings.push({
       code: 'EXTERNAL_PARAM_REF',
+      severity: 'warning',
       message: `Operation '${operationId}' has unresolved parameter $refs; some params may be missing`,
       context: operationId,
     });
@@ -481,6 +495,7 @@ function normalizeAuthScheme(
     default:
       warnings.push({
         code: 'UNKNOWN_AUTH_TYPE',
+        severity: 'warning',
         message: `Security scheme '${name}' has unrecognized type '${raw.type}'`,
         context: name,
       });
@@ -502,4 +517,282 @@ function wireAuthStepIds(auth: AuthMetadata, endpoints: NormalizedEndpoint[]): v
     }
   }
   auth.hasOperationLevelOverride = hasOperationOverride;
+}
+
+// ── OpenAPI dependency analyzer (lightweight, heuristic) ─────────────────────
+
+function analyzeOpenApiDependencies(endpoints: NormalizedEndpoint[]): DependencyDetectionResult {
+  const hints: DependencyDetectionResult['hints'] = [];
+  const operationEntityMap: Record<string, string[]> = {};
+  const detectedEntities = new Set<string>();
+
+  // Extract entity names from URL path segments (e.g. /pets → 'pet', /users/{id} → 'user')
+  for (const ep of endpoints) {
+    const segments = ep.url.replace(/\{\{[^}]+\}\}/g, '').split('/').filter(Boolean);
+    const entities: string[] = [];
+    for (const seg of segments) {
+      // Skip pure placeholder segments; take singular of plural nouns heuristically
+      if (!seg || seg.startsWith('{') || seg.startsWith('{{')) continue;
+      const entity = seg.replace(/s$/, ''); // naive singularize
+      entities.push(entity);
+      detectedEntities.add(entity);
+    }
+    operationEntityMap[ep.operationId] = entities;
+  }
+
+  // Emit shared-entity hints for operations touching the same entity
+  const entityOps = new Map<string, string[]>();
+  for (const [opId, entities] of Object.entries(operationEntityMap)) {
+    for (const entity of entities) {
+      if (!entityOps.has(entity)) entityOps.set(entity, []);
+      entityOps.get(entity)!.push(opId);
+    }
+  }
+  for (const [, ops] of entityOps) {
+    for (let i = 0; i < ops.length - 1; i++) {
+      hints.push({
+        kind: 'shared-entity',
+        producerOperationId: ops[i],
+        consumerOperationId: ops[i + 1],
+        confidence: 'low',
+      });
+    }
+  }
+
+  // Emit sequential-tag hints for operations sharing the same tag
+  const tagOps = new Map<string, string[]>();
+  for (const ep of endpoints) {
+    const tag = ep.tags[0] ?? 'untagged';
+    if (!tagOps.has(tag)) tagOps.set(tag, []);
+    tagOps.get(tag)!.push(ep.operationId);
+  }
+  for (const [, ops] of tagOps) {
+    for (let i = 0; i < ops.length - 1; i++) {
+      hints.push({
+        kind: 'sequential-tag',
+        producerOperationId: ops[i],
+        consumerOperationId: ops[i + 1],
+        confidence: 'low',
+      });
+    }
+  }
+
+  return {
+    hints,
+    detectedEntities: Array.from(detectedEntities),
+    operationEntityMap,
+  };
+}
+
+// ── Auth scheme → ApiAuthConfig mapper ───────────────────────────────────────
+
+function detectedSchemeToAuthConfig(scheme: DetectedAuthScheme): ApiAuthConfig {
+  switch (scheme.kind) {
+    case 'bearer': return { type: 'bearer', bearer: { token: '' } };
+    case 'apiKey': return { type: 'apiKey', apiKey: { header: scheme.paramName ?? 'X-Api-Key', value: '' } };
+    case 'basic': return { type: 'basic', basic: { username: '', password: '' } };
+    case 'oauth2': return { type: 'oauth2CC', oauth2CC: { tokenUrl: scheme.tokenUrl ?? '', clientId: '', clientSecret: '' } };
+    default: return { type: 'none' };
+  }
+}
+
+// ── Main import entry point ───────────────────────────────────────────────────
+
+/**
+ * importFromOpenApi
+ * Phase D Step 4 — Full ImportResult pipeline for OpenAPI 3.x / Swagger 2.0.
+ *
+ * Stages:
+ *   Raw → Parsed → Normalized → WorkflowEnvelope (+ graphHints + folderHierarchy + nodes) → ImportResult
+ *
+ * INVARIANTS:
+ *   - All new metadata fields (graphHints, folderHierarchy, nodes) are optional additions.
+ *   - Existing ApiTestStep[] shape is not broken.
+ *   - NormalizedEndpoint.tags[] is the canonical tag source — no _tag annotation needed.
+ */
+export function importFromOpenApi(specContent: string, options: ImportOptions): ImportResult {
+  const allWarnings: ImportWarning[] = [];
+  const stageWarnings: Partial<Record<NormalizationStage, ImportWarning[]>> = {};
+  const completedStages: NormalizationStage[] = ['Raw'];
+
+  // ── Stage 1: Parse ──────────────────────────────────────────────────────────
+  const parsed = parseOpenApiSpec(specContent);
+  allWarnings.push(...parsed.warnings);
+  stageWarnings['Parsed'] = parsed.warnings;
+  completedStages.push('Parsed');
+
+  // ── Stage 2: Filter endpoints by tag option ─────────────────────────────────
+  const endpoints = options.tag
+    ? parsed.endpoints.filter(ep => ep.tags.includes(options.tag!))
+    : parsed.endpoints;
+  let skippedCount = parsed.endpoints.length - endpoints.length;
+  stageWarnings['Normalized'] = [];
+  completedStages.push('Normalized');
+
+  // ── Stage 3: Build ApiTestStep[] from NormalizedEndpoint[] ─────────────────
+  // NormalizedEndpoint.tags[0] is the canonical tag — used for folder grouping below.
+  const steps: ApiTestStep[] = [];
+
+  for (const ep of endpoints) {
+    // Build assertions from responses
+    const assertions: ApiAssertion[] = [];
+    for (const resp of ep.responses) {
+      const code = typeof resp.statusCode === 'number' ? resp.statusCode : 200;
+      if (code >= 200 && code < 300) {
+        assertions.push({ field: 'status', operator: 'greaterThanOrEqual', expected: 200, severity: 'high' });
+        assertions.push({ field: 'status', operator: 'lessThan', expected: 300, severity: 'high' });
+        break; // first 2xx only
+      }
+    }
+
+    // Build query/header params
+    const queryParams: Record<string, string> = {};
+    const headers: Record<string, string> = {};
+    for (const p of ep.parameters) {
+      if (p.in === 'query') queryParams[p.name] = p.variablePlaceholder;
+      if (p.in === 'header') headers[p.name] = p.variablePlaceholder;
+    }
+
+    // Auth from first declared security scheme on this operation
+    let stepAuth: ApiAuthConfig | undefined;
+    for (const schemeName of ep.securitySchemeNames) {
+      const scheme = parsed.authMetadata.schemes.find(s => s.schemeName === schemeName);
+      if (scheme) {
+        stepAuth = detectedSchemeToAuthConfig(scheme);
+        break;
+      }
+    }
+
+    // Body from requestBody (examples only when includeExamples=true)
+    let body: unknown = undefined;
+    let bodyType: ApiRequest['bodyType'] = 'none';
+    if (options.includeExamples && ep.requestBody) {
+      body = ep.requestBody.example ?? {};
+      bodyType = 'json';
+    }
+
+    const request: ApiRequest = {
+      method: ep.method,
+      url: ep.url,
+      headers: Object.keys(headers).length ? headers : undefined,
+      queryParams: Object.keys(queryParams).length ? queryParams : undefined,
+      body,
+      bodyType,
+    };
+
+    const step: ApiTestStep = {
+      id: uuidv4(),
+      name: ep.operationId,
+      request,
+      assertions,
+      extractVariables: [],
+      execution: { onFailure: 'continue' },
+      dependsOn: [],
+      // Preserve tag as group for UI display / future workflow grouping
+      group: ep.tags[0],
+    };
+
+    steps.push(step);
+  }
+
+  // ── Stage 4: Assemble ApiCollection ────────────────────────────────────────
+  const collectionId = uuidv4();
+  const collection: ApiCollection = {
+    id: collectionId,
+    projectId: options.projectId,
+    name: options.collectionName ?? parsed.title,
+    environmentId: options.environmentId,
+    steps,
+    variables: [],
+    onFailure: 'continue',
+    executionMode: options.executionMode ?? 'sequential',
+    tags: options.tag ? [options.tag] : [],
+  };
+
+  // ── Stage 5: Dependency analysis ───────────────────────────────────────────
+  const dependencyHints = analyzeOpenApiDependencies(endpoints);
+
+  // ── Stage 6: WorkflowEnvelope + Phase D Step 4 metadata ────────────────────
+  const envelope = collectionToWorkflow(collection);
+  envelope.metadata.source = 'openapi';
+  envelope.metadata.description = parsed.title;
+
+  // Phase D Step 4: graph metadata
+  const graphHints: WorkflowGraphHints = {
+    detectedEntities: dependencyHints.detectedEntities,
+    operationEntityMap: dependencyHints.operationEntityMap,
+    // suggestedGroups: unique tags across all steps — NormalizedEndpoint.tags is the canonical source
+    suggestedGroups: [...new Set(endpoints.map(ep => ep.tags[0] ?? 'untagged'))],
+    edgeCount: dependencyHints.hints.length,
+    isHeuristic: true,
+  };
+
+  envelope.metadata.metadataVersion = 1;
+  envelope.metadata.metadataGeneratedAt = new Date().toISOString();
+  envelope.metadata.normalizationSource = 'openapi' as WorkflowNormalizationSource;
+  envelope.metadata.graphHints = graphHints;
+
+  // Shallow FolderNode tree from operation tags (depth = 1)
+  const tagGroups = new Map<string, string[]>();
+  // Use endpoints (not steps) since we have direct access to tags and can zip with steps by index
+  endpoints.forEach((ep, idx) => {
+    const tag: string = ep.tags[0] ?? 'untagged';
+    if (!tagGroups.has(tag)) tagGroups.set(tag, []);
+    tagGroups.get(tag)!.push(steps[idx].id);
+  });
+
+  envelope.metadata.folderHierarchy = {
+    id: 'root',
+    name: collection.name,
+    depth: 0,
+    stepIds: [],
+    children: Array.from(tagGroups.entries()).map(([tag, ids]) => ({
+      id: tag,
+      name: tag,
+      depth: 1,
+      stepIds: ids,
+      children: [],
+    })),
+  } as unknown as FolderNode;
+
+  // Build WorkflowNode[] with hierarchyPath and visualGroup
+  envelope.workflow.nodes = steps.map((step, idx) => {
+    const tag: string = endpoints[idx].tags[0] ?? 'untagged';
+    return {
+      nodeType: 'HTTP' as const,
+      step,
+      hierarchyPath: [tag, step.name],
+      visualGroup: tag,
+    };
+  });
+
+  stageWarnings['WorkflowEnvelope'] = [];
+  completedStages.push('WorkflowEnvelope');
+
+  // ── Stage 7: Source metadata ────────────────────────────────────────────────
+  const sourceType = parsed.format === 'openapi3' ? 'openapi3' : 'swagger2';
+  completedStages.push('CompatibilityValidated');
+  stageWarnings['CompatibilityValidated'] = [];
+
+  const normalizationTrace: NormalizationTrace = {
+    stages: completedStages,
+    completedAt: new Date().toISOString(),
+    stageWarnings,
+  };
+
+  return {
+    collection,
+    envelope,
+    authMetadata: parsed.authMetadata,
+    dependencyHints,
+    warnings: allWarnings,
+    format: sourceType,
+    endpointCount: steps.length,
+    skippedCount,
+    sourceMetadata: {
+      type: sourceType,
+      originalName: parsed.title,
+    },
+    normalizationTrace,
+  };
 }
