@@ -79,9 +79,9 @@ describe('stripExecutionMetadata', () => {
   });
 
   it('handles empty nodes array safely', () => {
-    const env = makeEnvelope();
-    env.workflow.nodes = [];
-    const result = stripExecutionMetadata(env);
+    const result = stripExecutionMetadata(makeEnvelope({
+      workflow: { id: 'test-id', name: 'Test', legacyNodes: [], nodes: [] },
+    }));
     expect(result.workflow.nodes).toEqual([]);
   });
 
@@ -92,5 +92,19 @@ describe('stripExecutionMetadata', () => {
     delete (env.metadata as any).aiReadiness;
     env.workflow.nodes = [];
     expect(() => stripExecutionMetadata(env)).not.toThrow();
+  });
+
+  it('removes folderHierarchy, graphHints, aiReadiness from metadata output', () => {
+    const result = stripExecutionMetadata(makeEnvelope());
+    expect(result.metadata.folderHierarchy).toBeUndefined();
+    expect(result.metadata.graphHints).toBeUndefined();
+    expect(result.metadata.aiReadiness).toBeUndefined();
+  });
+
+  it('handles nodes: undefined safely', () => {
+    const env = makeEnvelope();
+    (env.workflow as any).nodes = undefined;
+    const result = stripExecutionMetadata(env);
+    expect(result.workflow.nodes).toBeUndefined();
   });
 });

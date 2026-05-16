@@ -33,6 +33,10 @@ export function stripExecutionMetadata(envelope: WorkflowEnvelope): WorkflowEnve
     ...restMetadata
   } = envelope.metadata;
 
+  // NOTE: orderedMetadata must be updated when WorkflowMetadata gains new required fields.
+  // TypeScript will flag missing required fields at compile time, but ordering won't be
+  // automatically correct — add new required fields explicitly in the block below.
+
   // Explicit field ordering — deterministic for snapshot diff and replay debugging
   const orderedMetadata: typeof restMetadata = {
     createdAt: restMetadata.createdAt,
@@ -51,6 +55,7 @@ export function stripExecutionMetadata(envelope: WorkflowEnvelope): WorkflowEnve
     schemaVersion: envelope.schemaVersion,
     workflow: {
       ...envelope.workflow,
+      legacyNodes: envelope.workflow.legacyNodes ? [...envelope.workflow.legacyNodes] : envelope.workflow.legacyNodes,
       nodes: envelope.workflow.nodes?.map(stripNodeMetadata),
     },
     execution: envelope.execution,
