@@ -12,6 +12,7 @@ export interface VisualNode {
   readonly id: string;
   readonly label: string;
   readonly nodeType: WorkflowNode['nodeType'];
+  // Always populated — auto-layout fills this when no stored position exists.
   readonly position: {
     readonly x: number;
     readonly y: number;
@@ -19,7 +20,8 @@ export interface VisualNode {
   };
   readonly isAutoPositioned?: boolean;
   readonly layer: number;
-  readonly indexWithinLayer?: number;
+  /** Index of this node within its DAG layer — enables stable relayout and replay. */
+  readonly indexWithinLayer: number;
   readonly group?: string;
   readonly visualGroup?: string;
   readonly hierarchyPath?: readonly string[];
@@ -49,7 +51,11 @@ export interface HierarchyProjection {
 }
 
 export interface GraphClusterProjection {
-  readonly clusterId: string; // `${source}:${label}`
+  /**
+   * Composite key: `${source}:${label}`.
+   * @example "folder:Pets API" | "hint:CRUD" | "tag:pets"
+   */
+  readonly clusterId: string;
   readonly label: string;
   readonly nodeIds: readonly string[];
   readonly source: 'folder' | 'tag' | 'hint';
@@ -66,11 +72,13 @@ export interface ProjectionWarning {
   readonly detail?: string;
 }
 
+export type ProjectionStrategy = 'stored' | 'auto-layout' | 'hybrid';
+
 export interface ProjectionMeta {
   readonly collectionId: string;
   readonly projectedAt: string;
   readonly projectionVersion: number;
-  readonly projectionStrategy: 'stored' | 'auto-layout' | 'hybrid';
+  readonly projectionStrategy: ProjectionStrategy;
   readonly metadataVersion?: number;
   readonly normalizationSource?: WorkflowNormalizationSource;
   readonly isHeuristic: boolean;
