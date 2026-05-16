@@ -52,6 +52,16 @@ describe('adaptPostmanImport', () => {
   it('throws on invalid JSON', () => {
     expect(() => adaptPostmanImport('not json', 'env-1')).toThrow();
   });
+
+  it('forwards collectionName when provided', () => {
+    const result = adaptPostmanImport(minimalPostmanJson, 'env-1', { collectionName: 'My Override' });
+    expect(result.collection.name).toBe('My Override');
+  });
+
+  it('forwards executionMode when provided', () => {
+    const result = adaptPostmanImport(minimalPostmanJson, 'env-1', { executionMode: 'parallel' });
+    expect(result.collection.executionMode).toBe('parallel');
+  });
 });
 
 describe('adaptOpenApiImport', () => {
@@ -72,5 +82,15 @@ describe('adaptOpenApiImport', () => {
 
   it('throws on invalid JSON', () => {
     expect(() => adaptOpenApiImport('not json', 'env-1')).toThrow();
+  });
+
+  it('sets environmentId on collection', () => {
+    const result = adaptOpenApiImport(minimalOpenApiJson, 'env-77');
+    expect(result.collection.environmentId).toBe('env-77');
+  });
+
+  it('forwards projectId when provided', () => {
+    const result = adaptOpenApiImport(minimalOpenApiJson, 'env-1', { projectId: 'proj-99' });
+    expect(result.collection.projectId).toBe('proj-99');
   });
 });
