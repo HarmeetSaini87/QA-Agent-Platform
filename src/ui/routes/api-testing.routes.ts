@@ -10,7 +10,9 @@ import { encryptSensitiveVars, decryptSensitiveVars } from '../../utils/apiSecre
 import { runCollection } from '../../utils/apiRunner';
 import { resolveAuthHeaders } from '../../utils/apiAuth';
 import { importFromOpenApi } from '../../utils/openapiImport';
-import { importFromPostman } from '../../utils/postmanImport';
+// OLD: direct legacy import — replaced by import-engine adapter in Phase D Step 3
+// import { importFromPostman } from '../../utils/postmanImport';
+import { adaptPostmanImport } from '../../api-runtime/import-engine/import-engine-adapter';
 import { importFromCurl } from '../../utils/curlImport';
 import { substituteVars, snapshotContext } from '../../utils/apiVariables';
 import { evaluateAssertions } from '../../utils/apiAssertions';
@@ -260,13 +262,29 @@ export function registerApiTestingRoutes(app: express.Application): void {
     }
   });
 
+  // OLD: called legacy importFromPostman directly, returned bare ApiCollection with no warnings
+  // app.post('/api/api-collections/import/postman', requireAuth, requireEditor, (req: Request, res: Response) => {
+  //   const { collectionJson, environmentId } = req.body as { collectionJson?: string; environmentId?: string };
+  //   if (!collectionJson || !environmentId) { res.status(400).json({ error: 'collectionJson and environmentId are required' }); return; }
+  //   try {
+  //     const collection = importFromPostman(collectionJson, environmentId);
+  //     logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'IMPORT_POSTMAN', resourceType: 'api-collection', resourceId: collection.id, details: `steps:${collection.steps.length} name:${collection.name}`, ip: req.ip ?? null });
+  //     res.json(collection);
+  //   } catch (e) {
+  //     res.status(400).json({ error: (e as Error).message });
+  //   }
+  // });
+
   app.post('/api/api-collections/import/postman', requireAuth, requireEditor, (req: Request, res: Response) => {
-    const { collectionJson, environmentId } = req.body as { collectionJson?: string; environmentId?: string };
+    const { collectionJson, environmentId, projectId, executionMode } = req.body as {
+      collectionJson?: string; environmentId?: string; projectId?: string; executionMode?: 'sequential' | 'parallel' | 'dag';
+    };
     if (!collectionJson || !environmentId) { res.status(400).json({ error: 'collectionJson and environmentId are required' }); return; }
     try {
-      const collection = importFromPostman(collectionJson, environmentId);
-      logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'IMPORT_POSTMAN', resourceType: 'api-collection', resourceId: collection.id, details: `steps:${collection.steps.length} name:${collection.name}`, ip: req.ip ?? null });
-      res.json(collection);
+      const adapted = adaptPostmanImport(collectionJson, environmentId, { projectId, executionMode });
+      const { collection, warnings, compatibility } = adapted;
+      logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'IMPORT_POSTMAN', resourceType: 'api-collection', resourceId: collection.id, details: `steps:${collection.steps.length} name:${collection.name} warnings:${warnings.length}`, ip: req.ip ?? null });
+      res.json({ ...collection, warnings, compatibility });
     } catch (e) {
       res.status(400).json({ error: (e as Error).message });
     }

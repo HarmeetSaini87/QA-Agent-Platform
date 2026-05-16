@@ -517,6 +517,44 @@ it('GET /api/api-collections — returns collections filtered by projectId', asy
         .send({ environmentId: 'env-test' });
       expect(res.status).toBe(400);
     });
+
+    it('POST /api/api-collections/import/postman — response includes warnings array', async () => {
+      const app = createTestApp();
+      const minimalPM = JSON.stringify({
+        info: { name: 'Warn Test', schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json' },
+        item: [{
+          name: 'GET /test',
+          request: { method: 'GET', url: { raw: 'https://api.example.com/test' } }
+        }]
+      });
+
+      const res = await request(app)
+        .post('/api/api-collections/import/postman')
+        .send({ collectionJson: minimalPM, environmentId: 'env-test' });
+
+      expect(res.status).toBe(200);
+      expect(Array.isArray(res.body.warnings)).toBe(true);
+      expect(res.body.id).toBeDefined();
+      expect(res.body.steps).toBeDefined();
+    });
+
+    it('POST /api/api-collections/import/postman — response includes compatibility report', async () => {
+      const app = createTestApp();
+      const minimalPM = JSON.stringify({
+        info: { name: 'Compat Test', schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json' },
+        item: [{
+          name: 'POST /items',
+          request: { method: 'POST', url: { raw: 'https://api.example.com/items' } }
+        }]
+      });
+
+      const res = await request(app)
+        .post('/api/api-collections/import/postman')
+        .send({ collectionJson: minimalPM, environmentId: 'env-test' });
+
+      expect(res.status).toBe(200);
+      expect(typeof res.body.compatibility?.compatible).toBe('boolean');
+    });
   });
 
   // ═══════════════════════════════════════════════════════════════
