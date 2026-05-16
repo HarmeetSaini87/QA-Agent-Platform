@@ -70,6 +70,7 @@ export function buildAdjacency(steps: ApiTestStep[]): Map<string, Set<string>> {
   }
 
   const deps = new Map<string, Set<string>>();
+  // INVARIANT: metadata fields (position, visualGroup, hierarchyPath) must never influence DAG construction. Read step.dependsOn only. See workflow.contract.ts.
   for (const s of steps) {
     const d = new Set(s.dependsOn ?? []);
     for (const ref of extractVarRefs(s)) {

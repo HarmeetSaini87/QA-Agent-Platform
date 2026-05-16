@@ -131,6 +131,7 @@ export class WorkflowEngine {
 
     const state = createWorkflowRunState(initialContext);
 
+    // INVARIANT: metadata fields (position, visualGroup, hierarchyPath) must never influence execution ordering. Read legacyNodes/step only. See workflow.contract.ts.
     // Build execution waves based on mode
     const mode = collection.executionMode ?? 'auto';
     const deps = buildAdjacency(testSteps);

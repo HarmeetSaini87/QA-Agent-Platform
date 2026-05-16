@@ -70,6 +70,7 @@ export class SchedulerStateTracker {
     }
   }
 
+  // INVARIANT: metadata fields (position, visualGroup, hierarchyPath) must never influence scheduler state transitions. See workflow.contract.ts.
   /** Transition node to 'blocked' â€” has unmet dependencies. */
   markBlocked(nodeId: string): void {
     this._transition(nodeId, 'blocked');
