@@ -90,6 +90,8 @@ export interface VisualNode {
   readonly hierarchyPath?: readonly string[];
   readonly disabled?: boolean;
   readonly status?: WorkflowNodeStatus;
+  /** Index of this node within its DAG layer — enables stable relayout, replay, AI grouping */
+  readonly indexWithinLayer?: number;
 }
 ```
 
@@ -112,6 +114,8 @@ export interface VisualEdge {
 ```
 
 Duplicate suppression key: `source:target:edgeType` — preserves both `depends_on` and `inferred` edges between same node pair.
+
+**Edge ordering rule:** when sorting by `id`, `depends_on` edges must appear before `inferred` edges for the same source:target pair. Sort key: `edgeType` secondary sort (`depends_on` < `inferred` < `group`).
 
 **Inferred edge guard:** only emit when both `source` and `target` node IDs exist in the projected `VisualNode[]`.
 
@@ -167,6 +171,8 @@ export interface ProjectionMeta {
 
 `projectionVersion` = `1` for Phase D Step 5. Bumped independently of `WorkflowEnvelope.metadata.version`.
 
+> **⚠️ Compatibility contract:** `ProjectionMeta` is frontend-compatibility-sensitive. Future graph UI, replay UI, and execution overlays will depend on its shape. Field renames or removals are breaking changes. Additions must be optional.
+
 `projectionStrategy`:
 - `'stored'` = all nodes had stored positions
 - `'auto-layout'` = no stored positions, all computed
@@ -178,7 +184,8 @@ export interface ProjectionMeta {
 export type ProjectionWarningCode =
   | 'LEGACY_NODE_PROJECTION'    // legacyNodes mapped via shim
   | 'MISSING_LAYER_FALLBACK'    // node.layer absent, DAG layer computed or defaulted to 0
-  | 'INFERRED_EDGE_DROPPED';    // inferred edge skipped (dangling node ref)
+  | 'INFERRED_EDGE_DROPPED'     // inferred edge skipped (dangling node ref)
+  | 'LARGE_GRAPH_WARNING';      // nodeCount > MAX_GRAPH_NODE_COUNT (500) — projection completes
 
 export interface ProjectionWarning {
   readonly code: ProjectionWarningCode;
@@ -193,6 +200,8 @@ export interface ProjectionWarning {
 **File:** `src/workflow-graph/projection/graph-projection-builder.ts`
 
 **Contract:** `buildGraphProjection(envelope: WorkflowEnvelope, opts: { projectedAt: string }): GraphProjection`
+
+**Size safeguard:** if `nodes.length > MAX_GRAPH_NODE_COUNT` (default `500`), emit `ProjectionWarning` with code `LARGE_GRAPH_WARNING` — projection still completes, no hard fail.
 
 **Purity invariants (must never be violated):**
 - No I/O, no async, no storage reads
@@ -338,6 +347,20 @@ Registered into existing Express router. Does not go into collection CRUD route 
 - Assert: `success: true`, `data.meta.nodeCount` matches fixture node count
 - Assert: `Cache-Control: no-store, no-cache, must-revalidate` header present
 - Assert: no runtime fields (scheduler, DAG, retry) present in response
+
+### graph-projection.snapshot.test.ts (golden snapshots)
+
+Three golden fixtures persisted under `src/workflow-graph/__tests__/fixtures/`:
+
+| Fixture | Source | Purpose |
+|---------|--------|---------|
+| `postman-graph-snapshot.json` | Postman-imported envelope | Projection drift, cluster stability, hierarchy |
+| `openapi-graph-snapshot.json` | OpenAPI-imported envelope | Tag-based clusters, inferred edges |
+| `legacy-graph-snapshot.json` | `legacyNodes`-only envelope | Shim path, LEGACY_NODE_PROJECTION warning |
+
+Each test: `buildGraphProjection(fixture, { projectedAt: FIXED_ISO })` → `toMatchSnapshot()`.
+
+**Snapshot update policy:** snapshots are updated intentionally only (never silently). Any projection shape change requires explicit snapshot regeneration and review.
 
 ---
 
