@@ -69,4 +69,28 @@ describe('clusterFailures', () => {
     const c = clusters.find(c => c.dimension === 'http_status')!;
     expect(c.avgFlakinessScore).toBeCloseTo(0.6);
   });
+
+  it('clusters dependency_propagation into dependency_chain dimension', () => {
+    const records = [
+      makeRecord({ stepId: 's1', dominantSignature: { signatureKey: 'dependency_propagation:skipped', category: 'dependency_propagation' } }),
+      makeRecord({ stepId: 's2', dominantSignature: { signatureKey: 'dependency_propagation:skipped', category: 'dependency_propagation' } }),
+    ];
+    const clusters = clusterFailures(records);
+    const dc = clusters.find(c => c.dimension === 'dependency_chain');
+    expect(dc).toBeDefined();
+    expect(dc!.dimensionKey).toBe('propagation');
+    expect(dc!.stepIds).toHaveLength(2);
+  });
+
+  it('clusters timeout category into transport_error dimension', () => {
+    const records = [
+      makeRecord({ stepId: 's1', dominantSignature: { signatureKey: 'timeout:ETIMEDOUT', category: 'timeout', transportError: 'ETIMEDOUT' } }),
+      makeRecord({ stepId: 's2', dominantSignature: { signatureKey: 'timeout:ETIMEDOUT', category: 'timeout', transportError: 'ETIMEDOUT' } }),
+    ];
+    const clusters = clusterFailures(records);
+    const tc = clusters.find(c => c.dimension === 'transport_error');
+    expect(tc).toBeDefined();
+    expect(tc!.dimensionKey).toBe('ETIMEDOUT');
+    expect(tc!.stepIds).toHaveLength(2);
+  });
 });
