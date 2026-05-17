@@ -1109,7 +1109,12 @@
           <div class="card">
             <div class="card-title">
               API Collections
-              <div style="display:flex;gap:8px;margin-left:auto">
+              <div style="display:flex;gap:8px;margin-left:auto;align-items:center">
+                <!-- List / Graph view toggle -->
+                <div class="api-col-view-toggle" id="api-col-view-toggle">
+                  <button class="api-col-view-btn active" id="api-col-view-list-btn" onclick="apiColViewSwitch('list')" title="List view">&#9776; List</button>
+                  <button class="api-col-view-btn" id="api-col-view-graph-btn" onclick="apiColViewSwitch('graph')" title="Graph view">&#9645; Graph</button>
+                </div>
                 <button class="btn btn-secondary btn-sm" onclick="apiColImportOpenApiModal()">Import OpenAPI</button>
                 <button class="btn btn-secondary btn-sm" onclick="apiColImportSwaggerUrlModal()">Import Swagger URL</button>
                 <button class="btn btn-secondary btn-sm" onclick="apiColImportPostmanModal()">Import Postman</button>
@@ -1118,12 +1123,72 @@
               </div>
             </div>
             <div id="api-col-list-alert"></div>
-            <table class="data-table">
-              <thead><tr><th>Name</th><th>Environment</th><th>Steps</th><th>Execution Mode</th><th>Actions</th></tr></thead>
-              <tbody id="api-col-tbody"></tbody>
-            </table>
+
+            <!-- List view (default) -->
+            <div id="api-col-list-view">
+              <table class="data-table">
+                <thead><tr><th>Name</th><th>Environment</th><th>Steps</th><th>Execution Mode</th><th>Actions</th></tr></thead>
+                <tbody id="api-col-tbody"></tbody>
+              </table>
+            </div>
+
+            <!-- Graph view -->
+            <div id="api-col-graph-view" style="display:none">
+              <div class="api-col-graph-toolbar">
+                <label style="font-size:12px;font-weight:600;color:var(--neutral-700)">Collection:</label>
+                <select class="fm-input" id="api-col-graph-select" style="max-width:280px" onchange="apiColGraphLoad(this.value)">
+                  <option value="">— select a collection —</option>
+                </select>
+                <button class="btn btn-secondary btn-sm" onclick="apiColGraphFit()" id="api-col-graph-fit-btn" disabled title="Fit graph to viewport">&#9654; Fit</button>
+                <button class="btn btn-secondary btn-sm" onclick="apiColGraphReset()" id="api-col-graph-reset-btn" disabled title="Reset zoom">&#8634; Reset</button>
+                <span id="api-col-graph-meta" class="api-col-graph-meta-badge"></span>
+                <span id="api-col-graph-strategy-badge" class="api-col-graph-strategy-badge"></span>
+              </div>
+
+              <!-- Warnings banner (LARGE_GRAPH_WARNING etc.) -->
+              <div id="api-col-graph-warnings" class="api-col-graph-warnings" style="display:none"></div>
+
+              <!-- Graph + hierarchy sidebar layout -->
+              <div class="api-col-graph-layout">
+                <!-- Hierarchy sidebar -->
+                <div class="api-col-graph-sidebar" id="api-col-graph-sidebar" style="display:none">
+                  <div class="api-col-graph-sidebar-title">
+                    Folder Hierarchy
+                    <button class="api-col-graph-sidebar-close" onclick="apiColGraphSidebarToggle(false)" title="Hide sidebar">&#10005;</button>
+                  </div>
+                  <div id="api-col-graph-hierarchy-tree"></div>
+                </div>
+
+                <!-- Main canvas area -->
+                <div class="api-col-graph-canvas-wrap">
+                  <!-- Loading / empty / error states -->
+                  <div id="api-col-graph-state" class="api-col-graph-state">
+                    <span style="color:var(--neutral-700);font-size:13px">Select a collection to visualize its workflow graph.</span>
+                  </div>
+                  <!-- Cytoscape canvas -->
+                  <div id="api-col-graph-cy" class="api-col-graph-cy" style="display:none"></div>
+                </div>
+              </div>
+
+              <!-- Node detail panel (hover/click) -->
+              <div id="api-col-graph-node-detail" class="api-col-graph-node-detail" style="display:none"></div>
+            </div>
           </div>
         </div><!-- /panel-api-collections -->
+
+        <!-- Graph view: workflow graph modal (fullscreen) -->
+        <div class="modal-overlay" id="modal-api-col-graph" style="display:none" onclick="if(event.target===this)apiColGraphModalClose()">
+          <div class="modal" style="width:95vw;max-width:1400px;height:90vh;display:flex;flex-direction:column;padding:0;overflow:hidden">
+            <div style="display:flex;align-items:center;padding:12px 16px;border-bottom:1px solid var(--neutral-300);flex-shrink:0">
+              <span style="font-weight:700;font-size:15px" id="api-col-graph-modal-title">Workflow Graph</span>
+              <div style="display:flex;gap:8px;margin-left:auto">
+                <button class="btn btn-secondary btn-sm" onclick="apiColGraphModalFit()">Fit</button>
+                <button class="btn btn-secondary btn-sm" onclick="apiColGraphModalClose()">&#10005; Close</button>
+              </div>
+            </div>
+            <div id="api-col-graph-modal-cy" style="flex:1;min-height:0"></div>
+          </div>
+        </div>
 
         <!-- ── Tab: API Runs ───────────────────────────────────────────────── -->
         <div class="panel" id="panel-api-runs">
@@ -2937,6 +3002,9 @@
     </div>
   </div>
 
+  <!-- Cytoscape.js — graph visualization library (vanilla JS, no React dependency) -->
+  <!-- Cytoscape.js 3.29.2 — vanilla graph visualization, no React dependency -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.29.2/cytoscape.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
   <script src="app.js"></script>
   <script src="modules.js"></script>
 </body>

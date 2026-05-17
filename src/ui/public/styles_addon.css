@@ -2088,3 +2088,195 @@ body[data-theme="light"] [style*="background:#fef3c7"] { background: #fffdf7 !im
 body[data-theme="light"] ::-webkit-scrollbar-thumb { background: #d4c8b8; }
 body[data-theme="light"] ::-webkit-scrollbar-thumb:hover { background: #9c8b72; }
 body[data-theme="light"] ::-webkit-scrollbar-track { background: #f5f0e8; }
+
+/* ── API Collections — Graph View ────────────────────────────────────────── */
+
+/* View toggle pill */
+.api-col-view-toggle {
+  display: flex;
+  border: 1px solid var(--neutral-300);
+  border-radius: 6px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.api-col-view-btn {
+  background: none;
+  border: none;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--neutral-500);
+  cursor: pointer;
+  transition: background .15s, color .15s;
+  white-space: nowrap;
+}
+.api-col-view-btn:hover  { color: var(--neutral-900); background: var(--neutral-200); }
+.api-col-view-btn.active { color: var(--brand); background: var(--neutral-200); }
+
+/* Graph toolbar */
+.api-col-graph-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0 10px;
+  flex-wrap: wrap;
+}
+
+/* Meta / strategy badges */
+.api-col-graph-meta-badge {
+  font-size: 11px;
+  color: var(--neutral-500);
+  margin-left: 4px;
+}
+.api-col-graph-strategy-badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: var(--neutral-200);
+  color: var(--neutral-700);
+}
+
+/* Warnings banner */
+.api-col-graph-warnings {
+  margin-bottom: 8px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: var(--warning-bg);
+  border: 1px solid var(--warning);
+  color: var(--warning);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* Layout: sidebar + canvas */
+.api-col-graph-layout {
+  display: flex;
+  gap: 0;
+  height: 580px;
+  border: 1px solid var(--neutral-300);
+  border-radius: 8px;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Hierarchy sidebar */
+.api-col-graph-sidebar {
+  width: 220px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--neutral-300);
+  overflow-y: auto;
+  background: var(--neutral-100);
+  padding: 8px 0;
+}
+.api-col-graph-sidebar-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  color: var(--neutral-500);
+  padding: 4px 10px 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.api-col-graph-sidebar-close {
+  background: none;
+  border: none;
+  color: var(--neutral-500);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0 2px;
+}
+.api-col-graph-sidebar-close:hover { color: var(--neutral-900); }
+.api-col-graph-hier-node {
+  padding: 3px 10px 3px 0;
+  font-size: 12px;
+  color: var(--neutral-700);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.api-col-graph-hier-node:hover { color: var(--brand); }
+.api-col-graph-hier-node.active { color: var(--brand); font-weight: 600; }
+
+/* Canvas area */
+.api-col-graph-canvas-wrap {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  background: var(--neutral-50);
+}
+
+/* State display (loading / empty / error) */
+.api-col-graph-state {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 2;
+  background: var(--neutral-50);
+}
+
+/* Cytoscape canvas container */
+.api-col-graph-cy {
+  position: absolute;
+  inset: 0;
+}
+
+/* Node detail panel */
+.api-col-graph-node-detail {
+  position: absolute;
+  bottom: 12px;
+  right: 12px;
+  width: 260px;
+  background: var(--neutral-100);
+  border: 1px solid var(--neutral-300);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 12px;
+  z-index: 10;
+  box-shadow: var(--shadow-md);
+}
+.api-col-graph-node-detail-title {
+  font-weight: 700;
+  font-size: 13px;
+  margin-bottom: 6px;
+  color: var(--neutral-900);
+  word-break: break-all;
+}
+.api-col-graph-node-detail-row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 3px;
+  align-items: flex-start;
+}
+.api-col-graph-node-detail-label {
+  font-weight: 600;
+  color: var(--neutral-500);
+  min-width: 70px;
+  flex-shrink: 0;
+}
+
+/* Minimap hint */
+.api-col-graph-minimap-hint {
+  position: absolute;
+  bottom: 8px;
+  left: 8px;
+  font-size: 10px;
+  color: var(--neutral-400);
+  z-index: 5;
+  pointer-events: none;
+}
+
+/* Light theme overrides */
+body[data-theme="light"] .api-col-view-btn.active { background: #f5f0e8; }
+body[data-theme="light"] .api-col-graph-layout { border-color: #d4c8b8; }
+body[data-theme="light"] .api-col-graph-sidebar { background: #faf6ef; border-color: #d4c8b8; }
+body[data-theme="light"] .api-col-graph-canvas-wrap { background: #fffdf7; }
+body[data-theme="light"] .api-col-graph-state { background: #fffdf7; }
+body[data-theme="light"] .api-col-graph-node-detail { background: #faf6ef; border-color: #d4c8b8; }

@@ -10148,6 +10148,7 @@ function _apiColRenderList() {
         <button class="tbl-btn" onclick="apiColEdit('${col.id}')">Edit</button>
         <button class="tbl-btn run-btn" onclick="apiColRun('${col.id}')">▶ Run</button>
         <button class="tbl-btn" onclick="apiColPrescan('${col.id}')">Pre-scan</button>
+        <button class="tbl-btn" onclick="apiColGraphOpenModal('${col.id}')" title="View workflow graph">&#9645; Graph</button>
         <button class="tbl-btn del" onclick="apiColDelete('${col.id}','${escHtml(col.name)}')">Delete</button>
       </td>`;
     tbody.appendChild(tr);
@@ -10975,6 +10976,435 @@ async function _apiColImportConfirm(col, modalId, alertId) {
 
 function apiColCloseModal() { closeModal('modal-api-col'); _editingApiColId = null; }
 function apiPrescanCloseModal() { closeModal('modal-api-prescan'); }
+
+// ── API Collections — Graph View (Phase D Step 6) ────────────────────────────
+// Read-only workflow visualization using Cytoscape.js.
+// GraphProjection is a derived view — WorkflowEnvelope remains authoritative.
+// NEVER persist graph positions. NEVER mutate the projection from the UI.
+
+let _apiColCurrentView = 'list';
+let _apiColGraphCy = null;
+let _apiColGraphModalCy = null;
+let _apiColGraphProjection = null;
+let _apiColGraphColId = null;
+
+const _GRAPH_NODE_TYPE_COLOR = {
+  HTTP:      '#f59e0b',
+  ASSERTION: '#10b981',
+  EXTRACT:   '#6366f1',
+  CONDITION: '#f472b6',
+  TRANSFORM: '#38bdf8',
+  PARALLEL:  '#a78bfa',
+  CONTRACT:  '#fb923c',
+  AI:        '#e879f9',
+  LOOP:      '#34d399',
+  default:   '#6b7280',
+};
+
+// ── View toggle ───────────────────────────────────────────────────────────────
+function apiColViewSwitch(view) {
+  _apiColCurrentView = view;
+  const listView  = document.getElementById('api-col-list-view');
+  const graphView = document.getElementById('api-col-graph-view');
+  const listBtn   = document.getElementById('api-col-view-list-btn');
+  const graphBtn  = document.getElementById('api-col-view-graph-btn');
+  const newColBtn = document.getElementById('btn-new-api-col');
+
+  if (view === 'list') {
+    if (listView)  listView.style.display  = '';
+    if (graphView) graphView.style.display = 'none';
+    if (listBtn)   listBtn.classList.add('active');
+    if (graphBtn)  graphBtn.classList.remove('active');
+    if (newColBtn) newColBtn.style.display = '';
+  } else {
+    if (listView)  listView.style.display  = 'none';
+    if (graphView) graphView.style.display = '';
+    if (listBtn)   listBtn.classList.remove('active');
+    if (graphBtn)  graphBtn.classList.add('active');
+    if (newColBtn) newColBtn.style.display = 'none';
+    _apiColGraphPopulateSelect();
+    const sel = document.getElementById('api-col-graph-select');
+    if (sel && _apiCols.length === 1) {
+      sel.value = _apiCols[0].id;
+      apiColGraphLoad(_apiCols[0].id);
+    }
+  }
+}
+
+function _apiColGraphPopulateSelect() {
+  const sel = document.getElementById('api-col-graph-select');
+  if (!sel) return;
+  const opts = _apiCols.map(c =>
+    '<option value="' + c.id + '">' + escHtml(c.name) + ' (' + (c.steps ?? []).length + ' steps)</option>'
+  ).join('');
+  sel.innerHTML = '<option value="">— select a collection —</option>' + opts;
+}
+
+// ── Load projection ───────────────────────────────────────────────────────────
+async function apiColGraphLoad(collectionId) {
+  if (!collectionId) {
+    _apiColGraphSetState('Select a collection to visualize its workflow graph.');
+    _apiColGraphClearMeta();
+    return;
+  }
+  _apiColGraphColId = collectionId;
+  _apiColGraphSetState('Loading graph…', true);
+  _apiColGraphClearWarnings();
+
+  try {
+    const res = await fetch('/api/workflows/' + encodeURIComponent(collectionId) + '/graph');
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ message: res.statusText }));
+      _apiColGraphSetState('Graph projection failed: ' + (err.message || err.error || res.statusText));
+      _apiColGraphClearMeta();
+      return;
+    }
+    const projection = await res.json();
+    _apiColGraphProjection = projection;
+    _apiColGraphRender(projection, false);
+  } catch (e) {
+    _apiColGraphSetState('Network error: ' + e.message);
+    _apiColGraphClearMeta();
+  }
+}
+
+// ── Render ─────────────────────────────────────────────────────────────────────
+function _apiColGraphRender(projection, isModal) {
+  const containerId = isModal ? 'api-col-graph-modal-cy' : 'api-col-graph-cy';
+  const container   = document.getElementById(containerId);
+  if (!container) return;
+
+  if (!isModal) _apiColGraphShowWarnings(projection.warnings);
+
+  if (!projection.nodes || projection.nodes.length === 0) {
+    if (!isModal) _apiColGraphSetState('This collection has no steps to visualize.');
+    return;
+  }
+
+  const isLarge = (projection.warnings || []).some(function(w) { return w.code === 'LARGE_GRAPH_WARNING'; });
+  const elements = _apiColGraphBuildElements(projection);
+
+  if (!isModal && _apiColGraphCy) { _apiColGraphCy.destroy(); _apiColGraphCy = null; }
+  if (isModal  && _apiColGraphModalCy) { _apiColGraphModalCy.destroy(); _apiColGraphModalCy = null; }
+
+  if (!isModal) {
+    const stateEl = document.getElementById('api-col-graph-state');
+    if (stateEl) stateEl.style.display = 'none';
+    container.style.display = '';
+  }
+
+  /* global cytoscape */
+  const cy = cytoscape({
+    container:            container,
+    elements:             elements,
+    style:                _apiColGraphCyStyles(),
+    layout:               _apiColGraphCyLayout(projection, isLarge),
+    zoom:                 1,
+    minZoom:              0.1,
+    maxZoom:              4,
+    userZoomingEnabled:   true,
+    userPanningEnabled:   true,
+    boxSelectionEnabled:  false,
+  });
+
+  cy.on('layoutstop', function() { cy.fit(undefined, 40); });
+
+  if (!isModal) {
+    cy.on('tap', 'node', function(evt) { _apiColGraphShowNodeDetail(evt.target.data()); });
+    cy.on('tap', function(evt) { if (evt.target === cy) _apiColGraphHideNodeDetail(); });
+    _apiColGraphCy = cy;
+    _apiColGraphUpdateMeta(projection);
+    _apiColGraphRenderHierarchy(projection);
+    _apiColGraphEnableToolbarBtns(true);
+  } else {
+    _apiColGraphModalCy = cy;
+  }
+}
+
+function _apiColGraphBuildElements(projection) {
+  const elements = [];
+
+  const clusterNodeIds = new Set();
+  for (const cluster of (projection.clusters || [])) {
+    if (cluster.source !== 'hint' && cluster.nodeIds.length > 1) {
+      elements.push({
+        data: { id: 'cluster-' + cluster.clusterId, label: cluster.label, clusterSource: cluster.source, isCluster: true },
+        classes: 'cluster-node',
+      });
+      clusterNodeIds.add(cluster.clusterId);
+    }
+  }
+
+  for (const node of projection.nodes) {
+    let parent;
+    for (const cluster of (projection.clusters || [])) {
+      if (cluster.source !== 'hint' && cluster.nodeIds.includes(node.id) && clusterNodeIds.has(cluster.clusterId)) {
+        parent = 'cluster-' + cluster.clusterId;
+        break;
+      }
+    }
+    const classes = ['workflow-node'];
+    if (node.disabled) classes.push('node-disabled');
+    classes.push(node.isAutoPositioned ? 'node-auto' : 'node-stored');
+    classes.push('nodetype-' + (node.nodeType || 'HTTP').toLowerCase());
+
+    elements.push({
+      data: {
+        id:               node.id,
+        label:            node.label || node.id,
+        nodeType:         node.nodeType,
+        layer:            node.layer,
+        indexWithinLayer: node.indexWithinLayer,
+        visualGroup:      node.visualGroup,
+        hierarchyPath:    node.hierarchyPath ? node.hierarchyPath.join(' › ') : '',
+        disabled:         node.disabled,
+        isAutoPositioned: node.isAutoPositioned,
+        posX:             node.position && node.position.x,
+        posY:             node.position && node.position.y,
+        parent:           parent,
+      },
+      position: { x: node.position ? node.position.x : 0, y: node.position ? node.position.y : 0 },
+      classes:  classes.join(' '),
+    });
+  }
+
+  for (const edge of (projection.edges || [])) {
+    const eClasses = ['workflow-edge', 'edge-' + edge.edgeType];
+    if (edge.isHeuristic) eClasses.push('edge-heuristic');
+    elements.push({
+      data: { id: edge.id, source: edge.source, target: edge.target, edgeType: edge.edgeType, isHeuristic: edge.isHeuristic || false },
+      classes: eClasses.join(' '),
+    });
+  }
+
+  return elements;
+}
+
+function _apiColGraphCyStyles() {
+  return [
+    { selector: 'node.workflow-node', style: {
+      shape: 'round-rectangle', width: 'label', height: 28, padding: '6px 10px',
+      'background-color': '#2a2a30', 'border-color': '#f59e0b', 'border-width': 1.5,
+      label: 'data(label)', 'font-size': 11, color: '#e2e8f0',
+      'text-valign': 'center', 'text-halign': 'center',
+      'text-wrap': 'ellipsis', 'text-max-width': 160, 'min-width': 80, cursor: 'pointer',
+    }},
+    { selector: 'node.nodetype-http',      style: { 'border-color': '#f59e0b' }},
+    { selector: 'node.nodetype-assertion', style: { 'border-color': '#10b981' }},
+    { selector: 'node.nodetype-extract',   style: { 'border-color': '#6366f1' }},
+    { selector: 'node.nodetype-condition', style: { 'border-color': '#f472b6' }},
+    { selector: 'node.nodetype-ai',        style: { 'border-color': '#e879f9' }},
+    { selector: 'node.node-disabled',      style: { opacity: 0.4, 'border-style': 'dashed' }},
+    { selector: 'node.node-auto',          style: { 'border-style': 'dashed', 'border-width': 1 }},
+    { selector: 'node:selected',           style: { 'border-color': '#ffffff', 'border-width': 2.5, 'background-color': '#3a3a44' }},
+    { selector: 'node:active',             style: { 'overlay-opacity': 0.1 }},
+    { selector: 'node.cluster-node',       style: {
+      'background-color': 'rgba(245,158,11,.06)', 'border-color': 'rgba(245,158,11,.3)',
+      'border-width': 1, 'border-style': 'dashed', label: 'data(label)',
+      'font-size': 10, color: '#6b7280', 'text-valign': 'top', 'text-halign': 'center', padding: 16,
+    }},
+    { selector: 'edge.workflow-edge',  style: {
+      width: 1.5, 'line-color': '#555968', 'target-arrow-color': '#555968',
+      'target-arrow-shape': 'triangle', 'curve-style': 'bezier', 'arrow-scale': 0.8,
+    }},
+    { selector: 'edge.edge-depends_on',    style: { 'line-color': '#f59e0b', 'target-arrow-color': '#f59e0b', width: 2 }},
+    { selector: 'edge.edge-inferred',      style: { 'line-style': 'dashed', 'line-color': '#555968', 'target-arrow-color': '#555968', width: 1.5 }},
+    { selector: 'edge.edge-heuristic',     style: { 'line-style': 'dotted', opacity: 0.6 }},
+    { selector: 'edge:selected',           style: { 'line-color': '#ffffff', 'target-arrow-color': '#ffffff' }},
+  ];
+}
+
+function _apiColGraphCyLayout(projection, isLarge) {
+  const strategy = projection.meta && projection.meta.projectionStrategy;
+  if (strategy === 'stored') {
+    return { name: 'preset', animate: false, fit: true, padding: 40 };
+  }
+  return {
+    name: 'breadthfirst', directed: true,
+    spacingFactor: isLarge ? 1.2 : 1.5,
+    animate: false, padding: 40, avoidOverlap: true,
+    nodeDimensionsIncludeLabels: true,
+  };
+}
+
+// ── Toolbar ────────────────────────────────────────────────────────────────────
+function apiColGraphFit()   { if (_apiColGraphCy) _apiColGraphCy.fit(undefined, 40); }
+function apiColGraphReset() { if (_apiColGraphCy) { _apiColGraphCy.reset(); _apiColGraphCy.fit(undefined, 40); } }
+
+function _apiColGraphEnableToolbarBtns(enabled) {
+  var fitBtn   = document.getElementById('api-col-graph-fit-btn');
+  var resetBtn = document.getElementById('api-col-graph-reset-btn');
+  if (fitBtn)   fitBtn.disabled   = !enabled;
+  if (resetBtn) resetBtn.disabled = !enabled;
+}
+
+// ── State display ─────────────────────────────────────────────────────────────
+function _apiColGraphSetState(msg, loading) {
+  var stateEl = document.getElementById('api-col-graph-state');
+  var cyEl    = document.getElementById('api-col-graph-cy');
+  if (stateEl) {
+    stateEl.style.display = '';
+    if (loading) {
+      stateEl.innerHTML = '<div class="spinner" style="width:28px;height:28px"></div><span style="color:var(--neutral-700);font-size:13px">' + escHtml(msg) + '</span>';
+    } else {
+      stateEl.innerHTML = '<span style="color:var(--neutral-700);font-size:13px">' + escHtml(msg) + '</span>';
+    }
+  }
+  if (cyEl) cyEl.style.display = 'none';
+  _apiColGraphHideNodeDetail();
+  _apiColGraphEnableToolbarBtns(false);
+}
+
+function _apiColGraphClearMeta() {
+  var metaEl    = document.getElementById('api-col-graph-meta');
+  var stratEl   = document.getElementById('api-col-graph-strategy-badge');
+  var sidebarEl = document.getElementById('api-col-graph-sidebar');
+  if (metaEl)    metaEl.textContent    = '';
+  if (stratEl)   stratEl.textContent   = '';
+  if (sidebarEl) sidebarEl.style.display = 'none';
+}
+
+function _apiColGraphUpdateMeta(projection) {
+  var metaEl  = document.getElementById('api-col-graph-meta');
+  var stratEl = document.getElementById('api-col-graph-strategy-badge');
+  if (metaEl)  metaEl.textContent  = projection.meta.nodeCount + ' nodes · ' + projection.meta.edgeCount + ' edges';
+  if (stratEl) stratEl.textContent = projection.meta.projectionStrategy || '';
+}
+
+// ── Warnings ──────────────────────────────────────────────────────────────────
+function _apiColGraphShowWarnings(warnings) {
+  var el = document.getElementById('api-col-graph-warnings');
+  if (!el) return;
+  if (!warnings || warnings.length === 0) { el.style.display = 'none'; return; }
+  el.style.display = '';
+  el.innerHTML = warnings.map(function(w) {
+    return '<span>⚠ ' + escHtml(w.code) + (w.detail ? ': ' + escHtml(w.detail) : '') + '</span>';
+  }).join('<br>');
+}
+
+function _apiColGraphClearWarnings() {
+  var el = document.getElementById('api-col-graph-warnings');
+  if (el) el.style.display = 'none';
+}
+
+// ── Node detail panel ─────────────────────────────────────────────────────────
+function _apiColGraphShowNodeDetail(data) {
+  var panel = document.getElementById('api-col-graph-node-detail');
+  if (!panel) return;
+  var rows = [
+    ['Type',     data.nodeType || '—'],
+    ['Group',    data.visualGroup || '—'],
+    ['Path',     data.hierarchyPath || '—'],
+    ['Layer',    data.layer != null ? String(data.layer) : '—'],
+    ['Position', data.isAutoPositioned ? 'auto-layout' : 'stored (' + Math.round(data.posX || 0) + ', ' + Math.round(data.posY || 0) + ')'],
+    ['Disabled', data.disabled ? 'yes' : 'no'],
+  ].map(function(pair) {
+    return '<div class="api-col-graph-node-detail-row">' +
+      '<span class="api-col-graph-node-detail-label">' + escHtml(pair[0]) + '</span>' +
+      '<span style="color:var(--neutral-900)">' + escHtml(String(pair[1])) + '</span>' +
+      '</div>';
+  }).join('');
+
+  panel.style.display = '';
+  panel.innerHTML =
+    '<div style="display:flex;justify-content:space-between;align-items:flex-start">' +
+    '<div class="api-col-graph-node-detail-title">' + escHtml(data.label || data.id) + '</div>' +
+    '<button onclick="_apiColGraphHideNodeDetail()" style="background:none;border:none;color:var(--neutral-500);cursor:pointer;padding:0;font-size:14px;line-height:1">×</button>' +
+    '</div>' + rows;
+}
+
+function _apiColGraphHideNodeDetail() {
+  var panel = document.getElementById('api-col-graph-node-detail');
+  if (panel) panel.style.display = 'none';
+}
+
+// ── Hierarchy sidebar ─────────────────────────────────────────────────────────
+function _apiColGraphRenderHierarchy(projection) {
+  var sidebar = document.getElementById('api-col-graph-sidebar');
+  var treeEl  = document.getElementById('api-col-graph-hierarchy-tree');
+  if (!sidebar || !treeEl) return;
+
+  var hier = projection.hierarchy;
+  if (!hier || hier.rootId === null || hier.nodes.length === 0) {
+    sidebar.style.display = 'none';
+    return;
+  }
+
+  sidebar.style.display = '';
+
+  function renderNode(nodeId, depth) {
+    var h = hier.nodes.find(function(n) { return n.id === nodeId; });
+    if (!h) return '';
+    var indent = depth * 14;
+    var children = hier.nodes.filter(function(n) { return n.parentId === nodeId; });
+    var stepCount = h.stepIds.length;
+    var label = (depth > 0 ? '└ ' : '') + escHtml(h.name) + (stepCount > 0 ? ' <span style="color:var(--neutral-500);font-size:10px">(' + stepCount + ')</span>' : '');
+    return '<div class="api-col-graph-hier-node" style="padding-left:' + (10 + indent) + 'px" onclick="_apiColGraphHierNodeClick(' + JSON.stringify(nodeId) + ')" title="' + escHtml(h.name) + '">' +
+      label + '</div>' +
+      children.map(function(c) { return renderNode(c.id, depth + 1); }).join('');
+  }
+
+  treeEl.innerHTML = renderNode(hier.rootId, 0) || '<div style="color:var(--neutral-500);font-size:12px;padding:4px 10px">No hierarchy</div>';
+}
+
+function _apiColGraphHierNodeClick(nodeId) {
+  if (!_apiColGraphCy || !_apiColGraphProjection) return;
+  var hier  = _apiColGraphProjection.hierarchy;
+  var hNode = hier && hier.nodes.find(function(n) { return n.id === nodeId; });
+  if (!hNode || !hNode.stepIds.length) return;
+
+  _apiColGraphCy.nodes().forEach(function(n) {
+    n.style('opacity', hNode.stepIds.indexOf(n.id()) > -1 ? 1 : 0.3);
+  });
+  _apiColGraphCy.edges().forEach(function(e) {
+    var inGroup = hNode.stepIds.indexOf(e.data('source')) > -1 || hNode.stepIds.indexOf(e.data('target')) > -1;
+    e.style('opacity', inGroup ? 1 : 0.2);
+  });
+
+  _apiColGraphCy.once('tap', function(evt) {
+    if (evt.target === _apiColGraphCy) {
+      _apiColGraphCy.nodes().forEach(function(n) { n.style('opacity', 1); });
+      _apiColGraphCy.edges().forEach(function(e) { e.style('opacity', 1); });
+    }
+  });
+}
+
+function apiColGraphSidebarToggle(show) {
+  var sidebar = document.getElementById('api-col-graph-sidebar');
+  if (!sidebar) return;
+  sidebar.style.display = show ? '' : 'none';
+  if (_apiColGraphCy) setTimeout(function() { _apiColGraphCy.resize(); }, 50);
+}
+
+// ── Fullscreen modal ──────────────────────────────────────────────────────────
+function apiColGraphOpenModal(collectionId) {
+  var col = _apiCols.find(function(c) { return c.id === collectionId; });
+  var titleEl = document.getElementById('api-col-graph-modal-title');
+  if (titleEl) titleEl.textContent = (col ? col.name : 'Workflow') + ' — Graph';
+  document.getElementById('modal-api-col-graph').style.display = '';
+
+  if (_apiColGraphProjection && _apiColGraphColId === collectionId) {
+    setTimeout(function() { _apiColGraphRender(_apiColGraphProjection, true); }, 50);
+  } else {
+    fetch('/api/workflows/' + encodeURIComponent(collectionId) + '/graph')
+      .then(function(r) { return r.json(); })
+      .then(function(p) {
+        _apiColGraphProjection = p;
+        _apiColGraphColId = collectionId;
+        setTimeout(function() { _apiColGraphRender(p, true); }, 50);
+      })
+      .catch(function(e) { console.error('Graph modal load error', e); });
+  }
+}
+
+function apiColGraphModalClose() {
+  document.getElementById('modal-api-col-graph').style.display = 'none';
+  if (_apiColGraphModalCy) { _apiColGraphModalCy.destroy(); _apiColGraphModalCy = null; }
+}
+
+function apiColGraphModalFit() {
+  if (_apiColGraphModalCy) _apiColGraphModalCy.fit(undefined, 40);
+}
 // API RUN RESULTS MODULE
 // ══════════════════════════════════════════════════════════════════════════════
 
