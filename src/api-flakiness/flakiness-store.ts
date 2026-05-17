@@ -26,5 +26,5 @@ export function listReportIds(): string[] {
   if (!fs.existsSync(FLAKINESS_DIR)) return [];
   return fs.readdirSync(FLAKINESS_DIR)
     .filter(f => f.endsWith('.json'))
-    .map(f => f.replace('.json', ''));
+    .map(f => path.basename(f, '.json'));
 }
