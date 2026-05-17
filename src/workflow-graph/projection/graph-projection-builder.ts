@@ -72,7 +72,7 @@ export function buildGraphProjection(
       layer,
       indexWithinLayer,
       group: node.group,
-      visualGroup: node.visualGroup ?? step.visualGroup,
+      visualGroup: node.visualGroup,
       hierarchyPath: node.hierarchyPath ? [...node.hierarchyPath] : undefined,
       disabled: node.disabled,
       status: undefined,

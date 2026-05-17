@@ -24,6 +24,7 @@ function onModuleTabSwitch(tab) {
   if (tab === 'api-envs') apiEnvLoad();
   if (tab === 'api-collections') apiColLoad();
   if (tab === 'api-runs') apiRunsLoad();
+  if (tab === 'api-flakiness') flakinessLoad();
   if (tab === 'admin' && !_panelLoaded.has('admin')) adminSubTab('users', document.querySelector('.sub-tab'));
   _panelLoaded.add(tab);
 
@@ -85,7 +86,7 @@ async function projDropdownLoad() {
 }
 
 // Panels that require a project to be selected before any interaction
-const PROJECT_SCOPED_TABS = new Set(['scripts', 'suites', 'locators', 'functions', 'commondata', 'history', 'flaky', 'analytics', 'visual', 'locator-health', 'api-envs', 'api-collections', 'api-runs']);
+const PROJECT_SCOPED_TABS = new Set(['scripts', 'suites', 'locators', 'functions', 'commondata', 'history', 'flaky', 'analytics', 'visual', 'locator-health', 'api-envs', 'api-collections', 'api-runs', 'api-flakiness']);
 
 const _PROJ_BANNER_ID = 'proj-required-banner';
 

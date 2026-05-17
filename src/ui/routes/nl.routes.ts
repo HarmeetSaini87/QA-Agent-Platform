@@ -8,7 +8,8 @@ import { requireAuth, requireAdmin, requireAuthOrApiKey } from '../../auth/middl
 import { nlSuggest, NL_PROVIDERS } from '../../utils/nlProvider';
 import type { NlProviderConfig } from '../../utils/nlProvider';
 import { splitSentences, ruleMatchSentence } from '../../utils/nlRuleEngine';
-import { loadNlConfig, saveNlConfig, loadAliasMap, saveAliasMap, DEFAULT_NL_CONFIG } from '../../utils/nlStore';
+import { loadNlConfig, saveNlConfig, loadAliasMap, loadAliasMapRaw, saveAliasMap, DEFAULT_NL_CONFIG } from '../../utils/nlStore';
+import { logAudit } from '../../auth/audit';
 import { _nlCache, NL_CACHE_TTL_MS, nlRateCheck, logNL, nlValidateStep } from '../helpers/nl-cache';
 
 function _nlCryptoKey(): Buffer {
@@ -111,6 +112,30 @@ export function registerNlRoutes(app: express.Application): void {
   });
 
   app.get('/api/nl/aliases', requireAdmin, (_req, res) => { res.json(loadAliasMap()); });
-  app.put('/api/nl/aliases', requireAdmin, (req: Request, res: Response) => { const body = req.body as Record<string, string[]>; if (typeof body !== 'object' || Array.isArray(body)) { res.status(400).json({ error: 'body must be an object' }); return; } saveAliasMap(body); res.json({ ok: true }); });
+  app.put('/api/nl/aliases', requireAdmin, (req: Request, res: Response) => {
+    const body = req.body as Record<string, string[]>;
+    if (typeof body !== 'object' || Array.isArray(body)) { res.status(400).json({ error: 'body must be an object' }); return; }
+    const before = loadAliasMap();
+    saveAliasMap(body);
+    const afterCount  = Object.keys(body).length;
+    const beforeCount = Object.keys(before).length;
+    logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'NL_ALIAS_MAP_SAVED', resourceType: 'nl-aliases', resourceId: 'global', details: JSON.stringify({ beforeCount, afterCount, delta: afterCount - beforeCount }), ip: req.ip ?? null });
+    res.json({ ok: true });
+  });
+
+  // PATCH /api/nl/aliases — merge-only: adds/updates supplied keys, never deletes existing ones.
+  // Safe for agent use — cannot wipe entries not present in the request body.
+  app.patch('/api/nl/aliases', requireAdmin, (req: Request, res: Response) => {
+    const body = req.body as Record<string, string[]>;
+    if (typeof body !== 'object' || Array.isArray(body)) { res.status(400).json({ error: 'body must be an object' }); return; }
+    const existing = loadAliasMapRaw();
+    const beforeCount = Object.keys(existing).length;
+    // Merge: body entries added/overwrite matching keys; all other existing keys preserved
+    const merged = { ...existing, ...body };
+    saveAliasMap(merged);
+    const afterCount = Object.keys(merged).length;
+    logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'NL_ALIAS_MAP_PATCHED', resourceType: 'nl-aliases', resourceId: 'global', details: JSON.stringify({ beforeCount, afterCount, added: afterCount - beforeCount }), ip: req.ip ?? null });
+    res.json({ ok: true, beforeCount, afterCount });
+  });
   app.get('/api/nl-providers', requireAdmin, (_req, res) => { res.json(NL_PROVIDERS); });
 }

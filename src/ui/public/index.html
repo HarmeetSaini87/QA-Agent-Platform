@@ -155,6 +155,7 @@
           </svg>
           <span>API Runs</span>
         </div>
+        <div class="nav-item" data-tab="api-flakiness">API Flakiness</div>
 
         <div class="nav-section-label admin-only" id="admin-section-label">Admin</div>
         <div class="nav-item admin-only" data-tab="projects" id="nav-projects">
@@ -1201,6 +1202,31 @@
             </table>
           </div>
         </div><!-- /panel-api-runs -->
+        <div class="panel" id="panel-api-flakiness">
+          <div class="panel-header">
+            <h2>API Flakiness Analytics</h2>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <button class="btn btn-sm" onclick="flakinessRecompute()">↺ Recompute</button>
+            </div>
+          </div>
+          <div id="flakiness-alert"></div>
+          <div id="flakiness-empty" style="display:none;color:var(--text-muted);padding:20px;">Select a collection to view flakiness analytics.</div>
+          <div id="flakiness-loading" style="display:none;color:var(--text-muted);padding:8px;">Computing…</div>
+          <div id="flakiness-content" style="display:none;">
+            <div id="flakiness-summary" style="margin-bottom:16px;"></div>
+            <h3 style="font-size:13px;margin:0 0 8px 0;color:var(--text-muted);">⚡ Flaky Hotspots</h3>
+            <div id="flakiness-hotspots" style="margin-bottom:16px;"></div>
+            <h3 style="font-size:13px;margin:0 0 8px 0;color:var(--text-muted);">🗂 Failure Clusters</h3>
+            <div id="flakiness-clusters" style="margin-bottom:16px;"></div>
+            <h3 style="font-size:13px;margin:0 0 8px 0;color:var(--text-muted);">Step Breakdown</h3>
+            <table class="data-table" style="width:100%;">
+              <thead><tr>
+                <th>Step</th><th>Fail Rate</th><th>Flakiness</th><th>Signature</th><th>Runs</th>
+              </tr></thead>
+              <tbody id="flakiness-step-tbody"></tbody>
+            </table>
+          </div>
+        </div><!-- /panel-api-flakiness -->
 
         <!-- ── Tab: Projects ──────────────────────────────────────────────── -->
         <div class="panel admin-only" id="panel-projects">

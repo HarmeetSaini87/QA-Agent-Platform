@@ -2210,6 +2210,7 @@ function onModuleTabSwitch(tab) {
   if (tab === 'api-envs') apiEnvLoad();
   if (tab === 'api-collections') apiColLoad();
   if (tab === 'api-runs') apiRunsLoad();
+  if (tab === 'api-flakiness') flakinessLoad();
   if (tab === 'admin' && !_panelLoaded.has('admin')) adminSubTab('users', document.querySelector('.sub-tab'));
   _panelLoaded.add(tab);
 
@@ -2271,7 +2272,7 @@ async function projDropdownLoad() {
 }
 
 // Panels that require a project to be selected before any interaction
-const PROJECT_SCOPED_TABS = new Set(['scripts', 'suites', 'locators', 'functions', 'commondata', 'history', 'flaky', 'analytics', 'visual', 'locator-health', 'api-envs', 'api-collections', 'api-runs']);
+const PROJECT_SCOPED_TABS = new Set(['scripts', 'suites', 'locators', 'functions', 'commondata', 'history', 'flaky', 'analytics', 'visual', 'locator-health', 'api-envs', 'api-collections', 'api-runs', 'api-flakiness']);
 
 const _PROJ_BANNER_ID = 'proj-required-banner';
 
@@ -11422,6 +11423,9 @@ async function apiRunsLoad(collectionId, focusRunId) {
   try {
     const res = await fetch(url);
     _apiRunsList = await res.json();
+    if (_apiRunsCollectionId) {
+      await _apiRunsFetchFlakiness(_apiRunsCollectionId);
+    }
     _apiRunsRenderList();
     if (focusRunId) {
       setTimeout(() => apiRunsViewDetail(focusRunId), 800);
@@ -11439,11 +11443,13 @@ function _apiRunsRenderList() {
     tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted)">No runs yet</td></tr>';
     return;
   }
+  const hotspotSet = new Set(_apiRunsFlakinessReport ? (_apiRunsFlakinessReport.hotspots || []) : []);
+
   for (const run of _apiRunsList) {
-    const passed = run.stepResults?.filter(s => s.status === 'passed').length ?? 0;
-    const failed = run.stepResults?.filter(s => s.status === 'failed' || s.status === 'error').length ?? 0;
+    const passed  = run.stepResults?.filter(s => s.status === 'passed').length ?? 0;
+    const failed  = run.stepResults?.filter(s => s.status === 'failed' || s.status === 'error').length ?? 0;
     const skipped = run.stepResults?.filter(s => s.status === 'skipped').length ?? 0;
-    const total = run.stepResults?.length ?? 0;
+    const total   = run.stepResults?.length ?? 0;
     const dur = run.startedAt && run.completedAt
       ? Math.round((new Date(run.completedAt) - new Date(run.startedAt)) / 1000) + 's'
       : '—';
@@ -11451,11 +11457,17 @@ function _apiRunsRenderList() {
     const badge = run.status === 'running'
       ? `<span class="badge" style="background:${badgeColor};color:#fff">⟳ running</span>`
       : `<span class="badge" style="background:${badgeColor};color:#fff">${run.status}</span>`;
+
+    // Flaky indicator: mark run if any failed step is a known hotspot
+    const hasFlaky = run.stepResults?.some(s => hotspotSet.has(s.stepId) && s.status !== 'passed');
+    const flakyBadge = hasFlaky ? ' <span class="api-run-flaky-badge">⚡ flaky</span>' : '';
+
     const tr = document.createElement('tr');
     tr.style.cursor = 'pointer';
+    if (hasFlaky) tr.classList.add('api-run-hotspot-row');
     tr.onclick = () => apiRunsViewDetail(run.id);
     tr.innerHTML = `
-      <td>${badge}</td>
+      <td>${badge}${flakyBadge}</td>
       <td style="font-size:12px">${run.startedAt ? new Date(run.startedAt).toLocaleString() : '—'}</td>
       <td>${dur}</td>
       <td>${total}</td>
@@ -11721,23 +11733,35 @@ let _execGraphFsCy       = null;   // fullscreen Cytoscape instance
 let _execGraphProjection = null;   // cached GraphProjection
 let _execGraphColId      = null;   // collection ID of cached projection
 let _execGraphRun        = null;   // run whose results are overlaid
+// Phase D Step 8: cache flakiness report per collection
+var _apiRunsFlakinessReport = null;
+var _apiRunsFlakinessColId  = null;
+// Phase D Step 7 full: cache the full RunGraphProjection (graph + nodeResults merged)
+let _execGraphRunGraph   = null;   // cached RunGraphProjection for current run
+let _execGraphRunId      = null;   // runId of cached RunGraphProjection
 
 // Status → border/glow color
 const _EXEC_STATUS_COLOR = {
-  passed:   '#22c55e',
-  failed:   '#ef4444',
-  error:    '#fb923c',
-  skipped:  '#6b7280',
-  running:  '#3b82f6',
-  degraded: '#f59e0b',
-  pending:  '#555968',
+  passed:    '#22c55e',
+  failed:    '#ef4444',
+  error:     '#fb923c',
+  skipped:   '#6b7280',
+  running:   '#3b82f6',
+  degraded:  '#f59e0b',
+  pending:   '#555968',
+  queued:    '#a78bfa',
+  retrying:  '#facc15',
+  timed_out: '#f97316',
 };
 
 function _execGraphStatusColor(status) {
   return _EXEC_STATUS_COLOR[status] || _EXEC_STATUS_COLOR.pending;
 }
 
-// Called when Graph tab is activated for a run
+// Called when Graph tab is activated for a run.
+// Phase D Step 7 full: uses /api/api-runs/:runId/graph which returns RunGraphProjection
+// (graph + nodeResults merged with retry history from ExecutionSnapshot).
+// Falls back to legacy /api/workflows/:colId/graph if run graph endpoint fails.
 async function _execGraphEnsureLoaded(run) {
   _execGraphRun = run;
   const colId = run.collectionId;
@@ -11746,27 +11770,126 @@ async function _execGraphEnsureLoaded(run) {
     return;
   }
 
-  // Reuse cached projection if same collection
-  if (_execGraphProjection && _execGraphColId === colId) {
-    _execGraphRenderOverlay(run, _execGraphProjection);
+  // For live runs: always re-fetch to get latest step results
+  const isLive = run.status === 'running';
+
+  // Reuse cached RunGraphProjection for same completed run
+  if (!isLive && _execGraphRunGraph && _execGraphRunId === run.id) {
+    _execGraphRenderRunGraph(_execGraphRunGraph);
     return;
   }
 
   _execGraphSetState('Loading execution graph…', true);
 
   try {
-    const res = await fetch('/api/workflows/' + encodeURIComponent(colId) + '/graph');
-    if (!res.ok) {
-      const err = await res.json().catch(function() { return {}; });
-      _execGraphSetState('Graph unavailable: ' + (err.message || err.error || res.statusText));
+    const res = await fetch('/api/api-runs/' + encodeURIComponent(run.id) + '/graph');
+    if (res.ok) {
+      const runGraph = await res.json();
+      _execGraphRunGraph = runGraph;
+      _execGraphRunId    = run.id;
+      // Also cache the projection for fallback compatibility
+      _execGraphProjection = runGraph.graph;
+      _execGraphColId      = colId;
+      _execGraphRenderRunGraph(runGraph);
       return;
     }
-    _execGraphProjection = await res.json();
+    // Non-fatal fallthrough: log and try legacy endpoint
+    console.warn('[exec-graph] run graph endpoint failed (' + res.status + '), falling back to collection projection');
+  } catch (e) {
+    console.warn('[exec-graph] run graph fetch error:', e.message);
+  }
+
+  // Legacy fallback: collection-level projection only (no retry data)
+  try {
+    if (_execGraphProjection && _execGraphColId === colId) {
+      _execGraphRenderOverlay(run, _execGraphProjection);
+      return;
+    }
+    const res2 = await fetch('/api/workflows/' + encodeURIComponent(colId) + '/graph');
+    if (!res2.ok) {
+      const err = await res2.json().catch(function() { return {}; });
+      _execGraphSetState('Graph unavailable: ' + (err.message || err.error || res2.statusText));
+      return;
+    }
+    _execGraphProjection = await res2.json();
     _execGraphColId = colId;
     _execGraphRenderOverlay(run, _execGraphProjection);
-  } catch (e) {
-    _execGraphSetState('Network error: ' + e.message);
+  } catch (e2) {
+    _execGraphSetState('Network error: ' + e2.message);
   }
+}
+
+// Render using the rich RunGraphProjection (nodeResults keyed by stepId)
+function _execGraphRenderRunGraph(runGraph) {
+  var container = document.getElementById('exec-graph-cy');
+  if (!container) return;
+
+  var projection = runGraph.graph;
+  if (!projection.nodes || projection.nodes.length === 0) {
+    _execGraphSetState('No graph nodes for this collection.');
+    return;
+  }
+
+  var nodeResults = runGraph.nodeResults || {};
+  var isLive = runGraph.runStatus === 'running';
+
+  // Build element map using nodeResults (richer than plain stepResults)
+  var elements = _execGraphBuildElementsFromNodeResults(projection, nodeResults);
+
+  if (_execGraphCy) { _execGraphCy.destroy(); _execGraphCy = null; }
+
+  var stateEl = document.getElementById('exec-graph-state');
+  if (stateEl) stateEl.style.display = 'none';
+  container.style.display = '';
+
+  /* global cytoscape */
+  _execGraphCy = cytoscape({
+    container:           container,
+    elements:            elements,
+    style:               _execGraphCyStyles(),
+    layout:              _execGraphCyLayout(projection),
+    zoom:                1,
+    minZoom:             0.1,
+    maxZoom:             4,
+    userZoomingEnabled:  true,
+    userPanningEnabled:  true,
+    boxSelectionEnabled: false,
+  });
+
+  _execGraphCy.on('layoutstop', function() { _execGraphCy.fit(undefined, 32); });
+
+  _execGraphCy.on('tap', 'node', function(evt) {
+    var d = evt.target.data();
+    if (!d.isCluster) {
+      var nr = nodeResults[d.id];
+      _execGraphShowNodeDetailRich(d, nr);
+    }
+  });
+  _execGraphCy.on('tap', function(evt) {
+    if (evt.target === _execGraphCy) _execGraphHideNodeDetail();
+  });
+
+  _execGraphRenderTimelineFromNodeResults(runGraph);
+
+  if (isLive) {
+    setTimeout(function() {
+      if (_apiRunsCurrentRun && _apiRunsCurrentRun.id === runGraph.runId && _apiRunsCurrentRun.status === 'running') {
+        _execGraphEnsureLoaded(_apiRunsCurrentRun);
+      }
+    }, 2500);
+  }
+}
+
+async function _apiRunsFetchFlakiness(collectionId) {
+  if (_apiRunsFlakinessColId === collectionId && _apiRunsFlakinessReport) return _apiRunsFlakinessReport;
+  try {
+    const res = await fetch('/api/flakiness/' + encodeURIComponent(collectionId));
+    if (res.ok) {
+      _apiRunsFlakinessReport = await res.json();
+      _apiRunsFlakinessColId  = collectionId;
+    }
+  } catch (_) { /* non-fatal */ }
+  return _apiRunsFlakinessReport;
 }
 
 // Build a stepId→result lookup from run.stepResults
@@ -11909,6 +12032,191 @@ function _execGraphBuildElements(projection, resultMap) {
   }
 
   return elements;
+}
+
+// Phase D Step 7 full: build elements from RunGraphProjection.nodeResults
+// nodeResults is keyed by stepId (same as node.id in projection)
+function _execGraphBuildElementsFromNodeResults(projection, nodeResults) {
+  var elements = [];
+
+  var clusterNodeIds = {};
+  for (var ci = 0; ci < (projection.clusters || []).length; ci++) {
+    var cluster = projection.clusters[ci];
+    if (cluster.source !== 'hint' && cluster.nodeIds.length > 1) {
+      elements.push({
+        data: { id: 'cluster-' + cluster.clusterId, label: cluster.label, isCluster: true },
+        classes: 'exec-cluster-node',
+      });
+      clusterNodeIds[cluster.clusterId] = true;
+    }
+  }
+
+  for (var ni = 0; ni < projection.nodes.length; ni++) {
+    var node = projection.nodes[ni];
+    var nr   = nodeResults[node.id];
+    var status = nr ? nr.status : 'pending';
+    var dur    = nr ? nr.durationMs : null;
+
+    var parent;
+    for (var pci = 0; pci < (projection.clusters || []).length; pci++) {
+      var pc = projection.clusters[pci];
+      if (pc.source !== 'hint' && pc.nodeIds.indexOf(node.id) > -1 && clusterNodeIds[pc.clusterId]) {
+        parent = 'cluster-' + pc.clusterId;
+        break;
+      }
+    }
+
+    var retryBadge = nr && nr.retryCount > 0 ? ' ↺' + nr.retryCount : '';
+    var classes = ['exec-node', 'exec-status-' + status];
+    if (node.disabled) classes.push('exec-node-disabled');
+    if (nr && nr.retryCount > 0) classes.push('exec-node-retried');
+
+    elements.push({
+      data: {
+        id:            node.id,
+        label:         (node.label || node.id) + retryBadge,
+        nodeType:      node.nodeType,
+        status:        status,
+        dur:           dur,
+        retryCount:    nr ? nr.retryCount : 0,
+        layer:         node.layer,
+        visualGroup:   node.visualGroup,
+        hierarchyPath: node.hierarchyPath ? node.hierarchyPath.join(' › ') : '',
+        isCluster:     false,
+        parent:        parent,
+      },
+      position: { x: node.position ? node.position.x : 0, y: node.position ? node.position.y : 0 },
+      classes: classes.join(' '),
+    });
+  }
+
+  for (var ei = 0; ei < (projection.edges || []).length; ei++) {
+    var edge = projection.edges[ei];
+    var srcNr = nodeResults[edge.source];
+    var tgtNr = nodeResults[edge.target];
+    var edgeClasses = ['exec-edge', 'exec-edge-' + edge.edgeType];
+    if (srcNr && tgtNr && srcNr.status !== 'pending' && tgtNr.status !== 'pending') {
+      edgeClasses.push('exec-edge-active');
+    }
+    if (edge.isHeuristic) edgeClasses.push('exec-edge-heuristic');
+    elements.push({
+      data: { id: edge.id, source: edge.source, target: edge.target, edgeType: edge.edgeType },
+      classes: edgeClasses.join(' '),
+    });
+  }
+
+  return elements;
+}
+
+// Rich node detail panel with retry history from ExecutionSnapshot
+function _execGraphShowNodeDetailRich(nodeData, nr) {
+  var panel = document.getElementById('exec-graph-node-detail');
+  if (!panel) { _execGraphShowNodeDetail(nodeData, null); return; }
+
+  var status = nr ? nr.status : 'pending';
+  var color  = _execGraphStatusColor(status);
+
+  var html = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">'
+    + '<strong style="font-size:13px;word-break:break-word;">' + _escHtml(nodeData.label) + '</strong>'
+    + '<button onclick="_execGraphHideNodeDetail()" style="background:none;border:none;color:#9ca3af;cursor:pointer;font-size:16px;padding:0 4px;">✕</button>'
+    + '</div>';
+
+  html += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">'
+    + '<span style="background:' + color + '22;color:' + color + ';border:1px solid ' + color + '55;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:600;">'
+    + status.toUpperCase() + '</span>';
+  if (nr && nr.durationMs != null) {
+    html += '<span style="color:#9ca3af;font-size:11px;padding:2px 6px;">' + nr.durationMs + 'ms</span>';
+  }
+  if (nr && nr.retryCount > 0) {
+    html += '<span style="background:#facc1522;color:#facc15;border:1px solid #facc1555;border-radius:4px;padding:2px 8px;font-size:11px;">↺ ' + nr.retryCount + ' retr' + (nr.retryCount === 1 ? 'y' : 'ies') + '</span>';
+  }
+  html += '</div>';
+
+  if (nodeData.hierarchyPath) {
+    html += '<div style="color:#6b7280;font-size:10px;margin-bottom:6px;">' + _escHtml(nodeData.hierarchyPath) + '</div>';
+  }
+
+  if (nr && nr.error) {
+    html += '<div style="background:#ef444415;border:1px solid #ef444440;border-radius:4px;padding:6px 8px;margin-bottom:8px;font-size:11px;color:#fca5a5;">'
+      + _escHtml(nr.error) + '</div>';
+  }
+
+  if (nr && nr.assertionFailures && nr.assertionFailures.length > 0) {
+    html += '<div style="font-size:11px;color:#9ca3af;margin-bottom:4px;">Assertion failures:</div><ul style="margin:0 0 8px 0;padding-left:16px;font-size:11px;color:#fca5a5;">';
+    for (var i = 0; i < nr.assertionFailures.length; i++) {
+      html += '<li>' + _escHtml(nr.assertionFailures[i]) + '</li>';
+    }
+    html += '</ul>';
+  }
+
+  if (nr && nr.retryHistory && nr.retryHistory.length > 0) {
+    html += '<div style="font-size:11px;color:#9ca3af;margin-bottom:4px;">Retry history:</div>';
+    html += '<div style="display:flex;flex-direction:column;gap:4px;">';
+    for (var ri = 0; ri < nr.retryHistory.length; ri++) {
+      var rh = nr.retryHistory[ri];
+      var rhColor = _execGraphStatusColor(rh.resultStatus);
+      html += '<div style="background:#1e2130;border-radius:4px;padding:4px 8px;font-size:11px;">'
+        + '<span style="color:' + rhColor + ';font-weight:600;">Attempt ' + (rh.attempt + 1) + '</span>'
+        + ' <span style="color:#9ca3af;">' + rh.durationMs + 'ms</span>'
+        + (rh.httpStatus ? ' <span style="color:#6b7280;">HTTP ' + rh.httpStatus + '</span>' : '')
+        + (rh.error ? '<div style="color:#fca5a5;margin-top:2px;">' + _escHtml(rh.error) + '</div>' : '')
+        + '</div>';
+    }
+    html += '</div>';
+  }
+
+  panel.innerHTML = html;
+  panel.style.display = 'block';
+}
+
+function _escHtml(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// Render timeline bar chart from RunGraphProjection (uses nodeResults timing)
+function _execGraphRenderTimelineFromNodeResults(runGraph) {
+  var el = document.getElementById('exec-graph-timeline');
+  if (!el) return;
+
+  var nodeResults = runGraph.nodeResults || {};
+  var entries = Object.values(nodeResults).filter(function(nr) {
+    return nr.startedAt && nr.completedAt;
+  });
+
+  if (entries.length === 0) {
+    // Fall back to old timeline using run.stepResults if no timing data
+    if (_execGraphRun) _execGraphRenderTimeline(_execGraphRun, runGraph.graph);
+    return;
+  }
+
+  var runStart = new Date(runGraph.startedAt).getTime();
+  var runEnd   = new Date(runGraph.completedAt).getTime() || Date.now();
+  var totalMs  = Math.max(runEnd - runStart, 1);
+
+  var html = '<div style="font-size:11px;color:#6b7280;margin-bottom:6px;">Timeline</div>';
+  html += '<div style="display:flex;flex-direction:column;gap:3px;">';
+
+  entries.sort(function(a, b) { return new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime(); });
+
+  for (var i = 0; i < entries.length; i++) {
+    var nr = entries[i];
+    var start = new Date(nr.startedAt).getTime() - runStart;
+    var dur   = nr.durationMs || 0;
+    var left  = Math.max(0, (start / totalMs) * 100);
+    var width = Math.max(0.5, (dur / totalMs) * 100);
+    var color = _execGraphStatusColor(nr.status);
+    var retryTip = nr.retryCount > 0 ? ' ↺' + nr.retryCount : '';
+    html += '<div style="display:flex;align-items:center;gap:6px;">'
+      + '<div style="width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;color:#9ca3af;flex-shrink:0;" title="' + _escHtml(nr.stepName) + '">' + _escHtml(nr.stepName) + '</div>'
+      + '<div style="flex:1;position:relative;height:12px;background:#1e2130;border-radius:2px;">'
+      + '<div style="position:absolute;left:' + left.toFixed(1) + '%;width:' + width.toFixed(1) + '%;height:100%;background:' + color + ';border-radius:2px;" title="' + nr.durationMs + 'ms' + retryTip + '"></div>'
+      + '</div>'
+      + '<div style="width:40px;text-align:right;font-size:10px;color:#6b7280;flex-shrink:0;">' + dur + 'ms</div>'
+      + '</div>';
+  }
+  html += '</div>';
+  el.innerHTML = html;
 }
 
 function _execGraphCyStyles() {
@@ -12108,4 +12416,149 @@ function apiRunsGraphFullscreenClose() {
 
 function apiRunsGraphFullscreenFit() {
   if (_execGraphFsCy) _execGraphFsCy.fit(undefined, 40);
+}
+// API FLAKINESS ANALYTICS MODULE
+// Collection-level flakiness report: hotspots, clusters, step breakdown
+// ══════════════════════════════════════════════════════════════════════════════
+
+var _flakinessColId   = null;
+var _flakinessReport  = null;
+
+async function flakinessLoad(collectionId) {
+  _flakinessColId = collectionId || _flakinessColId;
+  if (!_flakinessColId) {
+    document.getElementById('flakiness-empty').style.display = '';
+    document.getElementById('flakiness-content').style.display = 'none';
+    return;
+  }
+  document.getElementById('flakiness-empty').style.display = 'none';
+  document.getElementById('flakiness-content').style.display = '';
+  document.getElementById('flakiness-loading').style.display = '';
+
+  try {
+    const res = await fetch('/api/flakiness/' + encodeURIComponent(_flakinessColId));
+    _flakinessReport = await res.json();
+    _flakinessRender();
+  } catch (e) {
+    document.getElementById('flakiness-loading').style.display = 'none';
+    modAlert('flakiness-alert', 'error', 'Load failed: ' + e.message);
+  }
+}
+
+async function flakinessRecompute() {
+  if (!_flakinessColId) return;
+  document.getElementById('flakiness-loading').style.display = '';
+  try {
+    const res = await fetch('/api/flakiness/' + encodeURIComponent(_flakinessColId) + '/recompute', { method: 'POST' });
+    _flakinessReport = await res.json();
+    _flakinessRender();
+  } catch (e) {
+    modAlert('flakiness-alert', 'error', 'Recompute failed: ' + e.message);
+  } finally {
+    document.getElementById('flakiness-loading').style.display = 'none';
+  }
+}
+
+function _flakinessRender() {
+  document.getElementById('flakiness-loading').style.display = 'none';
+  if (!_flakinessReport) return;
+  _flakinessRenderSummary();
+  _flakinessRenderHotspots();
+  _flakinessRenderClusters();
+  _flakinessRenderStepTable();
+}
+
+function _flakinessRenderSummary() {
+  const r = _flakinessReport;
+  const el = document.getElementById('flakiness-summary');
+  if (!el) return;
+  const stability = Math.round(r.stabilityScore * 100);
+  const stabColor = stability >= 90 ? '#22c55e' : stability >= 70 ? '#f59e0b' : '#ef4444';
+  el.innerHTML = `
+    <div style="display:flex;gap:20px;flex-wrap:wrap;margin-bottom:12px;">
+      <div style="text-align:center;">
+        <div style="font-size:28px;font-weight:700;color:${stabColor}">${stability}%</div>
+        <div style="font-size:11px;color:var(--text-muted)">Stability Score</div>
+      </div>
+      <div style="text-align:center;">
+        <div style="font-size:28px;font-weight:700;color:var(--text-main)">${r.runsAnalyzed}</div>
+        <div style="font-size:11px;color:var(--text-muted)">Runs Analyzed</div>
+      </div>
+      <div style="text-align:center;">
+        <div style="font-size:28px;font-weight:700;color:#facc15">${r.hotspots.length}</div>
+        <div style="font-size:11px;color:var(--text-muted)">Flaky Steps</div>
+      </div>
+      <div style="text-align:center;">
+        <div style="font-size:28px;font-weight:700;color:#a78bfa">${r.clusters.length}</div>
+        <div style="font-size:11px;color:var(--text-muted)">Clusters</div>
+      </div>
+    </div>
+    <div style="font-size:10px;color:var(--text-muted)">Computed: ${new Date(r.computedAt).toLocaleString()}</div>`;
+}
+
+function _flakinessRenderHotspots() {
+  const el = document.getElementById('flakiness-hotspots');
+  if (!el || !_flakinessReport) return;
+  const hotspotIds = new Set(_flakinessReport.hotspots);
+  const flaky = _flakinessReport.stepRecords.filter(r => hotspotIds.has(r.stepId))
+    .sort((a, b) => b.flakinessScore - a.flakinessScore);
+  if (flaky.length === 0) {
+    el.innerHTML = '<div style="color:var(--text-muted);font-size:12px;">No flaky steps detected.</div>';
+    return;
+  }
+  el.innerHTML = flaky.map(function(r) {
+    var pct = Math.round(r.flakinessScore * 100);
+    var barColor = pct >= 70 ? '#ef4444' : pct >= 40 ? '#f59e0b' : '#facc15';
+    return '<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid #374151;">'
+      + '<div style="flex:1;font-size:12px;">' + _flakinessEscHtml(r.stepName) + '</div>'
+      + '<div style="width:100px;background:#1e2130;border-radius:4px;height:8px;">'
+      + '<div style="width:' + pct + '%;background:' + barColor + ';border-radius:4px;height:100%;"></div></div>'
+      + '<div style="width:36px;text-align:right;font-size:11px;color:' + barColor + ';">' + pct + '%</div>'
+      + '<div style="width:60px;text-align:right;font-size:10px;color:var(--text-muted);">' + Math.round(r.failRate * 100) + '% fail</div>'
+      + '</div>';
+  }).join('');
+}
+
+function _flakinessRenderClusters() {
+  const el = document.getElementById('flakiness-clusters');
+  if (!el || !_flakinessReport) return;
+  if (_flakinessReport.clusters.length === 0) {
+    el.innerHTML = '<div style="color:var(--text-muted);font-size:12px;">No failure clusters detected.</div>';
+    return;
+  }
+  el.innerHTML = _flakinessReport.clusters.map(function(c) {
+    var dimLabel = { http_status: 'HTTP Status', assertion_type: 'Assertion', transport_error: 'Transport Error', dependency_chain: 'Dependency Chain', endpoint: 'Endpoint' }[c.dimension] || c.dimension;
+    return '<div class="flakiness-cluster-card">'
+      + '<h4>' + dimLabel + ': ' + _flakinessEscHtml(c.dimensionKey) + '</h4>'
+      + '<div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">' + c.stepIds.length + ' step(s) · ' + c.totalFailures + ' total failures · avg score ' + Math.round(c.avgFlakinessScore * 100) + '%</div>'
+      + '<div style="font-size:11px;color:#9ca3af;">' + c.stepNames.map(function(n) { return _flakinessEscHtml(n); }).join(', ') + '</div>'
+      + '</div>';
+  }).join('');
+}
+
+function _flakinessRenderStepTable() {
+  const el = document.getElementById('flakiness-step-tbody');
+  if (!el || !_flakinessReport) return;
+  const records = [..._flakinessReport.stepRecords].sort((a, b) => b.flakinessScore - a.flakinessScore);
+  el.innerHTML = records.map(function(r) {
+    var pct = Math.round(r.flakinessScore * 100);
+    var color = r.isFlaky ? '#facc15' : '#22c55e';
+    var flakyLabel = r.isFlaky ? '<span class="api-run-flaky-badge">⚡ flaky</span>' : '<span style="color:#22c55e;font-size:10px;">stable</span>';
+    var sig = r.dominantSignature ? r.dominantSignature.category : '—';
+    return '<tr>'
+      + '<td style="font-size:12px;">' + _flakinessEscHtml(r.stepName) + ' ' + flakyLabel + '</td>'
+      + '<td style="text-align:center;font-size:11px;">' + Math.round(r.failRate * 100) + '%</td>'
+      + '<td><div style="display:flex;align-items:center;gap:4px;">'
+      + '<div style="width:60px;background:#1e2130;border-radius:3px;height:6px;">'
+      + '<div style="width:' + pct + '%;background:' + color + ';border-radius:3px;height:100%;"></div></div>'
+      + '<span style="font-size:10px;color:' + color + ';">' + pct + '%</span></div></td>'
+      + '<td style="font-size:11px;color:var(--text-muted);">' + _flakinessEscHtml(sig) + '</td>'
+      + '<td style="text-align:center;font-size:11px;">' + r.totalRuns + '</td>'
+      + '</tr>';
+  }).join('');
+}
+
+function _flakinessEscHtml(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }

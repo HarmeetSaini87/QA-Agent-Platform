@@ -692,3 +692,37 @@ export interface ApiCollectionRunResult {
   stepResults: ApiStepResult[];
   variableContext: Record<string, string>;
 }
+
+// Phase D Step 7 — per-node execution data merged into graph for run overlay
+export interface RunGraphNodeResult {
+  stepId: string;
+  stepName: string;
+  status: 'passed' | 'failed' | 'error' | 'skipped' | 'degraded' | 'running' | 'queued' | 'retrying' | 'timed_out' | 'pending';
+  durationMs: number | null;
+  retryCount: number;
+  retryHistory: Array<{
+    attempt: number;
+    startedAt: string;
+    completedAt: string;
+    durationMs: number;
+    httpStatus?: number;
+    error?: string;
+    resultStatus: string;
+    retriedAfter: boolean;
+  }>;
+  startedAt?: string;
+  completedAt?: string;
+  error?: string;
+  contractViolations?: string[];
+  assertionFailures?: string[];
+}
+
+export interface RunGraphProjection {
+  runId: string;
+  collectionId: string;
+  runStatus: 'passed' | 'failed' | 'error' | 'running';
+  startedAt: string;
+  completedAt: string;
+  graph: import('../workflow-graph/contracts/graph.contracts').GraphProjection;
+  nodeResults: Record<string, RunGraphNodeResult>;
+}
