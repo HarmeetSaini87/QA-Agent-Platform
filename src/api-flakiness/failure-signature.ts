@@ -13,10 +13,7 @@ function detectTransportError(error: string): string | undefined {
   return undefined;
 }
 
-export function buildFailureSignature(
-  step: ApiStepResult,
-  retryHistory?: Array<{ httpStatus?: number; error?: string }>
-): FailureSignature {
+export function buildFailureSignature(step: ApiStepResult): FailureSignature {
   const error = step.error ?? '';
   const httpStatus = step.response?.status;
 
@@ -51,10 +48,11 @@ export function buildFailureSignature(
 
   // 4. timeout
   if (TIMEOUT_PATTERNS.test(error)) {
+    const isEtimedout = error.includes('ETIMEDOUT');
     return {
-      signatureKey: 'timeout:ETIMEDOUT',
+      signatureKey: isEtimedout ? 'timeout:ETIMEDOUT' : 'timeout',
       category: 'timeout',
-      transportError: 'ETIMEDOUT',
+      ...(isEtimedout ? { transportError: 'ETIMEDOUT' } : {}),
     };
   }
 

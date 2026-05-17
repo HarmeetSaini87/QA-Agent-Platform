@@ -43,7 +43,15 @@ describe('buildFailureSignature', () => {
     const step = makeStep({ status: 'error', error: 'Request timed out after 30000ms', assertionResults: [] });
     const sig = buildFailureSignature(step);
     expect(sig.category).toBe('timeout');
+    expect(sig.signatureKey).toBe('timeout');
+  });
+
+  it('categorizes timeout with ETIMEDOUT error code', () => {
+    const step = makeStep({ status: 'error', error: 'ETIMEDOUT: request timeout', assertionResults: [] });
+    const sig = buildFailureSignature(step);
+    expect(sig.category).toBe('timeout');
     expect(sig.signatureKey).toBe('timeout:ETIMEDOUT');
+    expect(sig.transportError).toBe('ETIMEDOUT');
   });
 
   it('categorizes network error ECONNREFUSED', () => {
