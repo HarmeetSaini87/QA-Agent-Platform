@@ -55,6 +55,7 @@ import { registerSchedulesRoutes } from './routes/schedules.routes';
 import { registerLicenseRoutes } from './routes/license.routes';
 import { registerApiTestingRoutes } from './routes/api-testing.routes';
 import { registerWorkflowGraphRoutes } from '../workflow-graph/routes/workflow-graph.routes';
+import { registerFlakinessRoutes } from '../api-flakiness/routes/api-flakiness.routes';
 
 dotenv.config();
 
@@ -223,6 +224,7 @@ registerSchedulesRoutes(app);
 registerLicenseRoutes(app, sessionStore);
 registerApiTestingRoutes(app);
 registerWorkflowGraphRoutes(app);
+registerFlakinessRoutes(app);
 
 // ── SPA fallback (requires auth) — MUST be after all API routes ──────────────
 app.get('*', requireAuth, (_req: Request, res: Response) => {
