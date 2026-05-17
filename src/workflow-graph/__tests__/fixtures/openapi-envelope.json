@@ -1,0 +1,42 @@
+{
+  "_fixtureVersion": "1.0",
+  "schemaVersion": "1.0",
+  "workflow": {
+    "id": "col-openapi-1",
+    "name": "Petstore OpenAPI",
+    "legacyNodes": [],
+    "nodes": [
+      {
+        "nodeType": "HTTP",
+        "step": { "id": "op-1", "name": "listPets", "method": "GET", "url": "https://petstore.example.com/pets", "headers": [], "assertions": [], "dependsOn": [] },
+        "dependsOn": [],
+        "hierarchyPath": ["pets", "listPets"],
+        "visualGroup": "pets",
+        "layer": 0
+      },
+      {
+        "nodeType": "HTTP",
+        "step": { "id": "op-2", "name": "createPets", "method": "POST", "url": "https://petstore.example.com/pets", "headers": [], "assertions": [], "dependsOn": [] },
+        "dependsOn": [],
+        "hierarchyPath": ["pets", "createPets"],
+        "visualGroup": "pets",
+        "layer": 0
+      }
+    ]
+  },
+  "execution": { "mode": "dag" },
+  "metadata": {
+    "createdAt": "2026-05-16T00:00:00.000Z",
+    "source": "openapi",
+    "collectionId": "col-openapi-1",
+    "normalizationSource": "openapi",
+    "metadataVersion": 1,
+    "graphHints": {
+      "detectedEntities": ["pet"],
+      "operationEntityMap": { "op-1": ["pet"], "op-2": ["pet"] },
+      "suggestedGroups": ["pets"],
+      "edgeCount": 0,
+      "isHeuristic": true
+    }
+  }
+}
