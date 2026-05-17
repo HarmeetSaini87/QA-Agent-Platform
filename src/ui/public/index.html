@@ -2970,7 +2970,7 @@
 
   <!-- ── Modal: API Run Detail ─────────────────────────────────────────────── -->
   <div class="modal-backdrop" id="modal-api-run-detail" style="display:none">
-    <div class="modal" style="max-width:900px">
+    <div class="modal" style="max-width:1000px">
       <div class="modal-header">
         <span>API Run Detail</span>
         <button class="modal-close" onclick="apiRunsCloseDetail()">✕</button>
@@ -2981,6 +2981,7 @@
         <div id="api-run-clusters"></div>
         <div class="sub-tabs" style="margin-bottom:8px">
           <button class="api-run-tab-btn sub-tab active" data-tab="steps" onclick="apiRunsTabSwitch('steps')">Steps</button>
+          <button class="api-run-tab-btn sub-tab" data-tab="graph" onclick="apiRunsTabSwitch('graph')">&#9645; Execution Graph</button>
           <button class="api-run-tab-btn sub-tab" data-tab="har" onclick="apiRunsTabSwitch('har')">HAR / Network</button>
         </div>
         <div class="api-run-tab-panel" data-tab="steps">
@@ -2988,6 +2989,33 @@
             <thead><tr><th>Step</th><th>Status</th><th>Duration</th><th>Assertions</th><th></th></tr></thead>
             <tbody id="api-run-steps-tbody"></tbody>
           </table>
+        </div>
+        <!-- Execution Graph tab -->
+        <div class="api-run-tab-panel" data-tab="graph" style="display:none">
+          <div class="exec-graph-toolbar">
+            <div class="exec-graph-legend">
+              <span class="exec-graph-legend-item exec-graph-legend-passed">passed</span>
+              <span class="exec-graph-legend-item exec-graph-legend-failed">failed</span>
+              <span class="exec-graph-legend-item exec-graph-legend-skipped">skipped</span>
+              <span class="exec-graph-legend-item exec-graph-legend-running">running</span>
+              <span class="exec-graph-legend-item exec-graph-legend-error">error</span>
+            </div>
+            <div style="display:flex;gap:6px;margin-left:auto">
+              <button class="btn btn-secondary btn-sm" onclick="apiRunsGraphFit()" id="exec-graph-fit-btn">Fit</button>
+              <button class="btn btn-secondary btn-sm" id="exec-graph-fullscreen-btn" onclick="apiRunsGraphFullscreen()" title="Expand">&#11020;</button>
+            </div>
+          </div>
+          <div class="exec-graph-state" id="exec-graph-state">
+            <span style="color:var(--neutral-700);font-size:13px">Loading execution graph…</span>
+          </div>
+          <div id="exec-graph-cy" class="exec-graph-cy" style="display:none"></div>
+          <!-- Node detail tooltip -->
+          <div id="exec-graph-node-detail" class="exec-graph-node-detail" style="display:none"></div>
+          <!-- Timeline bar (sequential step timeline) -->
+          <div id="exec-graph-timeline" class="exec-graph-timeline" style="display:none">
+            <div class="exec-graph-timeline-title">Execution Timeline</div>
+            <div id="exec-graph-timeline-bars"></div>
+          </div>
         </div>
         <div class="api-run-tab-panel" data-tab="har" style="display:none">
           <table class="data-table">
@@ -2999,6 +3027,20 @@
       <div class="modal-footer">
         <button class="btn btn-secondary" onclick="apiRunsCloseDetail()">Close</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Execution graph fullscreen overlay -->
+  <div class="modal-overlay" id="modal-exec-graph-fullscreen" style="display:none" onclick="if(event.target===this)apiRunsGraphFullscreenClose()">
+    <div class="modal" style="width:96vw;max-width:1600px;height:92vh;display:flex;flex-direction:column;padding:0;overflow:hidden">
+      <div style="display:flex;align-items:center;padding:10px 16px;border-bottom:1px solid var(--neutral-300);flex-shrink:0">
+        <span style="font-weight:700;font-size:14px" id="exec-graph-fs-title">Execution Graph</span>
+        <div style="display:flex;gap:8px;margin-left:auto">
+          <button class="btn btn-secondary btn-sm" onclick="apiRunsGraphFullscreenFit()">Fit</button>
+          <button class="btn btn-secondary btn-sm" onclick="apiRunsGraphFullscreenClose()">&#10005; Close</button>
+        </div>
+      </div>
+      <div id="exec-graph-fs-cy" style="flex:1;min-height:0"></div>
     </div>
   </div>
 

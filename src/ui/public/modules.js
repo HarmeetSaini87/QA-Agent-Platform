@@ -11499,7 +11499,11 @@ async function _apiRunsFetchAndRender(runId, _retries = 5) {
   }
 }
 
+let _apiRunsCurrentRun = null;
+
 function _apiRunsRenderDetail(run) {
+  _apiRunsCurrentRun = run;
+  _execGraphReset(); // clear stale graph when new run loads
   const statusColor = run.status === 'passed' ? '#22c55e' : run.status === 'failed' ? '#ef4444' : run.status === 'running' ? '#3b82f6' : '#f59e0b';
   const dur = run.startedAt && run.completedAt
     ? Math.round((new Date(run.completedAt) - new Date(run.startedAt)) / 1000) + 's'
@@ -11698,9 +11702,410 @@ function apiRunsCloseDetail() {
   clearInterval(_apiRunsPollTimer);
   closeModal('modal-api-run-detail');
   _apiRunsExpandedSteps.clear();
+  _apiRunsCurrentRun = null;
+  _execGraphDestroy();
 }
 
 function apiRunsTabSwitch(tab) {
   document.querySelectorAll('.api-run-tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   document.querySelectorAll('.api-run-tab-panel').forEach(p => p.style.display = p.dataset.tab === tab ? '' : 'none');
+  if (tab === 'graph' && _apiRunsCurrentRun) _execGraphEnsureLoaded(_apiRunsCurrentRun);
+}
+
+// ── Execution Graph Overlay (Phase D Step 7) ─────────────────────────────────
+// Fetches GraphProjection for the run's collection, then overlays step result
+// status/duration onto each node. Read-only — projection never mutated.
+
+let _execGraphCy         = null;   // inline Cytoscape instance
+let _execGraphFsCy       = null;   // fullscreen Cytoscape instance
+let _execGraphProjection = null;   // cached GraphProjection
+let _execGraphColId      = null;   // collection ID of cached projection
+let _execGraphRun        = null;   // run whose results are overlaid
+
+// Status → border/glow color
+const _EXEC_STATUS_COLOR = {
+  passed:   '#22c55e',
+  failed:   '#ef4444',
+  error:    '#fb923c',
+  skipped:  '#6b7280',
+  running:  '#3b82f6',
+  degraded: '#f59e0b',
+  pending:  '#555968',
+};
+
+function _execGraphStatusColor(status) {
+  return _EXEC_STATUS_COLOR[status] || _EXEC_STATUS_COLOR.pending;
+}
+
+// Called when Graph tab is activated for a run
+async function _execGraphEnsureLoaded(run) {
+  _execGraphRun = run;
+  const colId = run.collectionId;
+  if (!colId) {
+    _execGraphSetState('No collectionId on this run — cannot load graph.');
+    return;
+  }
+
+  // Reuse cached projection if same collection
+  if (_execGraphProjection && _execGraphColId === colId) {
+    _execGraphRenderOverlay(run, _execGraphProjection);
+    return;
+  }
+
+  _execGraphSetState('Loading execution graph…', true);
+
+  try {
+    const res = await fetch('/api/workflows/' + encodeURIComponent(colId) + '/graph');
+    if (!res.ok) {
+      const err = await res.json().catch(function() { return {}; });
+      _execGraphSetState('Graph unavailable: ' + (err.message || err.error || res.statusText));
+      return;
+    }
+    _execGraphProjection = await res.json();
+    _execGraphColId = colId;
+    _execGraphRenderOverlay(run, _execGraphProjection);
+  } catch (e) {
+    _execGraphSetState('Network error: ' + e.message);
+  }
+}
+
+// Build a stepId→result lookup from run.stepResults
+function _execGraphBuildResultMap(run) {
+  var map = {};
+  for (var i = 0; i < (run.stepResults || []).length; i++) {
+    var sr = run.stepResults[i];
+    map[sr.stepId] = sr;
+  }
+  return map;
+}
+
+function _execGraphRenderOverlay(run, projection) {
+  var container = document.getElementById('exec-graph-cy');
+  if (!container) return;
+
+  if (!projection.nodes || projection.nodes.length === 0) {
+    _execGraphSetState('No graph nodes for this collection.');
+    return;
+  }
+
+  var resultMap = _execGraphBuildResultMap(run);
+  var isLive    = run.status === 'running';
+
+  // Build Cytoscape elements with execution status overlay
+  var elements = _execGraphBuildElements(projection, resultMap);
+
+  // Destroy previous
+  if (_execGraphCy) { _execGraphCy.destroy(); _execGraphCy = null; }
+
+  var stateEl = document.getElementById('exec-graph-state');
+  if (stateEl) stateEl.style.display = 'none';
+  container.style.display = '';
+
+  /* global cytoscape */
+  _execGraphCy = cytoscape({
+    container:           container,
+    elements:            elements,
+    style:               _execGraphCyStyles(),
+    layout:              _execGraphCyLayout(projection),
+    zoom:                1,
+    minZoom:             0.1,
+    maxZoom:             4,
+    userZoomingEnabled:  true,
+    userPanningEnabled:  true,
+    boxSelectionEnabled: false,
+  });
+
+  _execGraphCy.on('layoutstop', function() { _execGraphCy.fit(undefined, 32); });
+
+  _execGraphCy.on('tap', 'node', function(evt) {
+    var d = evt.target.data();
+    if (!d.isCluster) _execGraphShowNodeDetail(d, resultMap[d.id]);
+  });
+  _execGraphCy.on('tap', function(evt) {
+    if (evt.target === _execGraphCy) _execGraphHideNodeDetail();
+  });
+
+  _execGraphRenderTimeline(run, projection);
+
+  // If run is live, keep refreshing overlay (no full re-fetch — reuse projection)
+  if (isLive) {
+    setTimeout(function() {
+      if (_apiRunsCurrentRun && _apiRunsCurrentRun.id === run.id && _apiRunsCurrentRun.status === 'running') {
+        _execGraphEnsureLoaded(_apiRunsCurrentRun);
+      }
+    }, 2500);
+  }
+}
+
+function _execGraphBuildElements(projection, resultMap) {
+  var elements = [];
+
+  // Cluster compound nodes (same logic as collection graph)
+  var clusterNodeIds = {};
+  for (var ci = 0; ci < (projection.clusters || []).length; ci++) {
+    var cluster = projection.clusters[ci];
+    if (cluster.source !== 'hint' && cluster.nodeIds.length > 1) {
+      elements.push({
+        data: { id: 'cluster-' + cluster.clusterId, label: cluster.label, isCluster: true },
+        classes: 'exec-cluster-node',
+      });
+      clusterNodeIds[cluster.clusterId] = true;
+    }
+  }
+
+  // Nodes with execution status overlay
+  for (var ni = 0; ni < projection.nodes.length; ni++) {
+    var node = projection.nodes[ni];
+    var result = resultMap[node.id];
+    var status = result ? result.status : 'pending';
+    var dur    = result ? result.durationMs : null;
+
+    var parent;
+    for (var pci = 0; pci < (projection.clusters || []).length; pci++) {
+      var pc = projection.clusters[pci];
+      if (pc.source !== 'hint' && pc.nodeIds.indexOf(node.id) > -1 && clusterNodeIds[pc.clusterId]) {
+        parent = 'cluster-' + pc.clusterId;
+        break;
+      }
+    }
+
+    var classes = ['exec-node', 'exec-status-' + status];
+    if (node.disabled) classes.push('exec-node-disabled');
+
+    elements.push({
+      data: {
+        id:       node.id,
+        label:    node.label || node.id,
+        nodeType: node.nodeType,
+        status:   status,
+        dur:      dur,
+        layer:    node.layer,
+        visualGroup: node.visualGroup,
+        hierarchyPath: node.hierarchyPath ? node.hierarchyPath.join(' › ') : '',
+        isCluster: false,
+        parent:   parent,
+      },
+      position: { x: node.position ? node.position.x : 0, y: node.position ? node.position.y : 0 },
+      classes: classes.join(' '),
+    });
+  }
+
+  // Edges
+  for (var ei = 0; ei < (projection.edges || []).length; ei++) {
+    var edge = projection.edges[ei];
+    var srcResult = resultMap[edge.source];
+    var tgtResult = resultMap[edge.target];
+    var edgeClasses = ['exec-edge', 'exec-edge-' + edge.edgeType];
+    // Highlight path if both nodes executed
+    if (srcResult && tgtResult && srcResult.status !== 'pending' && tgtResult.status !== 'pending') {
+      edgeClasses.push('exec-edge-active');
+    }
+    if (edge.isHeuristic) edgeClasses.push('exec-edge-heuristic');
+
+    elements.push({
+      data: { id: edge.id, source: edge.source, target: edge.target, edgeType: edge.edgeType },
+      classes: edgeClasses.join(' '),
+    });
+  }
+
+  return elements;
+}
+
+function _execGraphCyStyles() {
+  return [
+    // Base node
+    { selector: 'node.exec-node', style: {
+      shape: 'round-rectangle', width: 'label', height: 30, padding: '6px 12px',
+      'background-color': '#1c1c20', 'border-width': 2, 'border-color': '#555968',
+      label: 'data(label)', 'font-size': 11, color: '#e2e8f0',
+      'text-valign': 'center', 'text-halign': 'center',
+      'text-wrap': 'ellipsis', 'text-max-width': 150, 'min-width': 80, cursor: 'pointer',
+    }},
+    // Status border colors
+    { selector: 'node.exec-status-passed',  style: { 'border-color': '#22c55e', 'background-color': 'rgba(34,197,94,.12)' }},
+    { selector: 'node.exec-status-failed',  style: { 'border-color': '#ef4444', 'background-color': 'rgba(239,68,68,.15)', 'border-width': 2.5 }},
+    { selector: 'node.exec-status-error',   style: { 'border-color': '#fb923c', 'background-color': 'rgba(251,146,60,.12)', 'border-width': 2.5 }},
+    { selector: 'node.exec-status-skipped', style: { 'border-color': '#6b7280', 'background-color': 'rgba(107,114,128,.08)', opacity: 0.6 }},
+    { selector: 'node.exec-status-running', style: { 'border-color': '#3b82f6', 'background-color': 'rgba(59,130,246,.15)', 'border-style': 'dashed' }},
+    { selector: 'node.exec-status-degraded',style: { 'border-color': '#f59e0b', 'background-color': 'rgba(245,158,11,.12)' }},
+    { selector: 'node.exec-status-pending', style: { 'border-color': '#2a2a30', 'background-color': '#1c1c20', opacity: 0.5 }},
+    { selector: 'node.exec-node-disabled',  style: { opacity: 0.35 }},
+    { selector: 'node:selected',            style: { 'border-width': 3, 'overlay-opacity': 0.08 }},
+    { selector: 'node.exec-cluster-node',   style: {
+      'background-color': 'rgba(245,158,11,.05)', 'border-color': 'rgba(245,158,11,.2)',
+      'border-width': 1, 'border-style': 'dashed', label: 'data(label)',
+      'font-size': 10, color: '#6b7280', 'text-valign': 'top', 'text-halign': 'center', padding: 14,
+    }},
+    // Edges
+    { selector: 'edge.exec-edge', style: {
+      width: 1.5, 'line-color': '#2a2a30', 'target-arrow-color': '#2a2a30',
+      'target-arrow-shape': 'triangle', 'curve-style': 'bezier', 'arrow-scale': 0.8,
+    }},
+    { selector: 'edge.exec-edge-active',    style: { 'line-color': '#555968', 'target-arrow-color': '#555968' }},
+    { selector: 'edge.exec-edge-depends_on',style: { 'line-color': '#f59e0b', 'target-arrow-color': '#f59e0b', width: 2 }},
+    { selector: 'edge.exec-edge-inferred',  style: { 'line-style': 'dashed', width: 1.5 }},
+    { selector: 'edge.exec-edge-heuristic', style: { 'line-style': 'dotted', opacity: 0.5 }},
+    { selector: 'edge:selected',            style: { 'line-color': '#fff', 'target-arrow-color': '#fff' }},
+  ];
+}
+
+function _execGraphCyLayout(projection) {
+  var strategy = projection.meta && projection.meta.projectionStrategy;
+  if (strategy === 'stored') return { name: 'preset', animate: false, fit: true, padding: 32 };
+  return { name: 'breadthfirst', directed: true, spacingFactor: 1.4, animate: false, padding: 32, avoidOverlap: true };
+}
+
+// ── Timeline bar chart ────────────────────────────────────────────────────────
+function _execGraphRenderTimeline(run, projection) {
+  var tlEl   = document.getElementById('exec-graph-timeline');
+  var barsEl = document.getElementById('exec-graph-timeline-bars');
+  if (!tlEl || !barsEl) return;
+
+  var results = run.stepResults || [];
+  if (results.length === 0) { tlEl.style.display = 'none'; return; }
+
+  var maxDur = 1;
+  for (var i = 0; i < results.length; i++) {
+    if ((results[i].durationMs || 0) > maxDur) maxDur = results[i].durationMs;
+  }
+
+  var html = '';
+  for (var j = 0; j < results.length; j++) {
+    var sr    = results[j];
+    var pct   = Math.max(2, Math.round(((sr.durationMs || 0) / maxDur) * 100));
+    var cls   = 'exec-tl-' + (sr.status || 'pending');
+    var label = sr.stepName || sr.stepId;
+    if (label.length > 28) label = label.slice(0, 26) + '…';
+    html += '<div class="exec-graph-timeline-row">' +
+      '<div class="exec-graph-timeline-label" title="' + escHtml(sr.stepName || '') + '">' + escHtml(label) + '</div>' +
+      '<div class="exec-graph-timeline-bar-wrap">' +
+        '<div class="exec-graph-timeline-bar ' + cls + '" style="width:' + pct + '%"></div>' +
+      '</div>' +
+      '<div class="exec-graph-timeline-dur">' + (sr.durationMs != null ? sr.durationMs + 'ms' : '—') + '</div>' +
+      '</div>';
+  }
+
+  barsEl.innerHTML = html;
+  tlEl.style.display = '';
+}
+
+// ── Node detail panel ─────────────────────────────────────────────────────────
+function _execGraphShowNodeDetail(nodeData, stepResult) {
+  var panel = document.getElementById('exec-graph-node-detail');
+  if (!panel) return;
+
+  var statusColor = _execGraphStatusColor(nodeData.status);
+  var rows = [
+    ['Status',   '<span style="color:' + statusColor + ';font-weight:700">' + escHtml(nodeData.status || '—') + '</span>'],
+    ['Duration', stepResult ? stepResult.durationMs + 'ms' : '—'],
+    ['Type',     nodeData.nodeType || '—'],
+    ['Group',    nodeData.visualGroup || '—'],
+    ['Path',     nodeData.hierarchyPath || '—'],
+  ];
+
+  var assertSummary = '';
+  if (stepResult && stepResult.assertionResults && stepResult.assertionResults.length) {
+    var passed = stepResult.assertionResults.filter(function(a) { return a.passed; }).length;
+    assertSummary = passed + '/' + stepResult.assertionResults.length + ' passed';
+    rows.push(['Assertions', assertSummary]);
+  }
+  if (stepResult && stepResult.error) {
+    rows.push(['Error', '<span style="color:#ef4444">' + escHtml(stepResult.error) + '</span>']);
+  }
+
+  var rowsHtml = rows.map(function(r) {
+    return '<div class="exec-graph-node-detail-row">' +
+      '<span class="exec-graph-node-detail-label">' + escHtml(r[0]) + '</span>' +
+      '<span style="color:var(--neutral-900)">' + r[1] + '</span>' +
+      '</div>';
+  }).join('');
+
+  panel.style.display = '';
+  panel.innerHTML =
+    '<div class="exec-graph-node-detail-title" style="color:' + statusColor + '">' +
+      escHtml(nodeData.label || nodeData.id) +
+    '</div>' + rowsHtml;
+}
+
+function _execGraphHideNodeDetail() {
+  var panel = document.getElementById('exec-graph-node-detail');
+  if (panel) panel.style.display = 'none';
+}
+
+// ── State helpers ─────────────────────────────────────────────────────────────
+function _execGraphSetState(msg, loading) {
+  var stateEl = document.getElementById('exec-graph-state');
+  var cyEl    = document.getElementById('exec-graph-cy');
+  var tlEl    = document.getElementById('exec-graph-timeline');
+  if (stateEl) {
+    stateEl.style.display = '';
+    stateEl.innerHTML = loading
+      ? '<div class="spinner" style="width:24px;height:24px"></div><span>' + escHtml(msg) + '</span>'
+      : '<span>' + escHtml(msg) + '</span>';
+  }
+  if (cyEl) cyEl.style.display = 'none';
+  if (tlEl) tlEl.style.display = 'none';
+  _execGraphHideNodeDetail();
+}
+
+function _execGraphReset() {
+  _execGraphSetState('Loading execution graph…');
+  // Switch tabs without triggering graph load (pass internal flag)
+  document.querySelectorAll('.api-run-tab-btn').forEach(function(b) { b.classList.toggle('active', b.dataset.tab === 'steps'); });
+  document.querySelectorAll('.api-run-tab-panel').forEach(function(p) { p.style.display = p.dataset.tab === 'steps' ? '' : 'none'; });
+  if (_execGraphCy) { _execGraphCy.destroy(); _execGraphCy = null; }
+}
+
+function _execGraphDestroy() {
+  if (_execGraphCy) { _execGraphCy.destroy(); _execGraphCy = null; }
+  if (_execGraphFsCy) { _execGraphFsCy.destroy(); _execGraphFsCy = null; }
+  _execGraphRun = null;
+}
+
+// ── Toolbar buttons ───────────────────────────────────────────────────────────
+function apiRunsGraphFit() {
+  if (_execGraphCy) _execGraphCy.fit(undefined, 32);
+}
+
+// ── Fullscreen modal ──────────────────────────────────────────────────────────
+function apiRunsGraphFullscreen() {
+  if (!_execGraphRun || !_execGraphProjection) return;
+  var col = null;
+  // Try to get collection name from cached data
+  if (typeof _apiCols !== 'undefined') {
+    col = _apiCols.find(function(c) { return c.id === _execGraphRun.collectionId; });
+  }
+  var titleEl = document.getElementById('exec-graph-fs-title');
+  if (titleEl) titleEl.textContent = (col ? col.name : 'Execution') + ' — Run Graph';
+  document.getElementById('modal-exec-graph-fullscreen').style.display = '';
+
+  var fsContainer = document.getElementById('exec-graph-fs-cy');
+  if (!fsContainer) return;
+  if (_execGraphFsCy) { _execGraphFsCy.destroy(); _execGraphFsCy = null; }
+
+  var resultMap = _execGraphBuildResultMap(_execGraphRun);
+  var elements  = _execGraphBuildElements(_execGraphProjection, resultMap);
+
+  _execGraphFsCy = cytoscape({
+    container:           fsContainer,
+    elements:            elements,
+    style:               _execGraphCyStyles(),
+    layout:              _execGraphCyLayout(_execGraphProjection),
+    zoom:                1,
+    minZoom:             0.05,
+    maxZoom:             4,
+    userZoomingEnabled:  true,
+    userPanningEnabled:  true,
+    boxSelectionEnabled: false,
+  });
+  _execGraphFsCy.on('layoutstop', function() { _execGraphFsCy.fit(undefined, 40); });
+}
+
+function apiRunsGraphFullscreenClose() {
+  document.getElementById('modal-exec-graph-fullscreen').style.display = 'none';
+  if (_execGraphFsCy) { _execGraphFsCy.destroy(); _execGraphFsCy = null; }
+}
+
+function apiRunsGraphFullscreenFit() {
+  if (_execGraphFsCy) _execGraphFsCy.fit(undefined, 40);
 }

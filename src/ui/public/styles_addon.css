@@ -2280,3 +2280,153 @@ body[data-theme="light"] .api-col-graph-sidebar { background: #faf6ef; border-co
 body[data-theme="light"] .api-col-graph-canvas-wrap { background: #fffdf7; }
 body[data-theme="light"] .api-col-graph-state { background: #fffdf7; }
 body[data-theme="light"] .api-col-graph-node-detail { background: #faf6ef; border-color: #d4c8b8; }
+
+/* ── API Runs — Execution Graph Overlay (Phase D Step 7) ─────────────────── */
+
+/* Toolbar */
+.exec-graph-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0 8px;
+  flex-wrap: wrap;
+}
+
+/* Legend */
+.exec-graph-legend {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.exec-graph-legend-item {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+}
+.exec-graph-legend-passed  { background: rgba(34,197,94,.15);  border-color: #22c55e; color: #22c55e; }
+.exec-graph-legend-failed  { background: rgba(239,68,68,.15);  border-color: #ef4444; color: #ef4444; }
+.exec-graph-legend-skipped { background: rgba(107,114,128,.15); border-color: #6b7280; color: #9ca3af; }
+.exec-graph-legend-running { background: rgba(59,130,246,.15); border-color: #3b82f6; color: #3b82f6; }
+.exec-graph-legend-error   { background: rgba(251,146,60,.15); border-color: #fb923c; color: #fb923c; }
+
+/* Graph canvas */
+.exec-graph-cy {
+  width:  100%;
+  height: 420px;
+  border: 1px solid var(--neutral-300);
+  border-radius: 8px;
+  background: var(--neutral-50);
+  position: relative;
+}
+
+/* State panel */
+.exec-graph-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 200px;
+  gap: 10px;
+  color: var(--neutral-500);
+  font-size: 13px;
+}
+
+/* Node detail tooltip */
+.exec-graph-node-detail {
+  position: absolute;
+  bottom: 68px;
+  right: 12px;
+  width: 260px;
+  background: var(--neutral-100);
+  border: 1px solid var(--neutral-300);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 12px;
+  z-index: 20;
+  box-shadow: var(--shadow-md);
+  pointer-events: none;
+}
+.exec-graph-node-detail-title {
+  font-weight: 700;
+  font-size: 13px;
+  margin-bottom: 6px;
+  word-break: break-all;
+}
+.exec-graph-node-detail-row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 3px;
+}
+.exec-graph-node-detail-label {
+  font-weight: 600;
+  color: var(--neutral-500);
+  min-width: 68px;
+  flex-shrink: 0;
+}
+
+/* Timeline bar chart */
+.exec-graph-timeline {
+  margin-top: 10px;
+  border: 1px solid var(--neutral-300);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.exec-graph-timeline-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  color: var(--neutral-500);
+  margin-bottom: 8px;
+}
+.exec-graph-timeline-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+  font-size: 11px;
+}
+.exec-graph-timeline-label {
+  width: 160px;
+  flex-shrink: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--neutral-700);
+}
+.exec-graph-timeline-bar-wrap {
+  flex: 1;
+  height: 14px;
+  background: var(--neutral-200);
+  border-radius: 3px;
+  overflow: hidden;
+  position: relative;
+}
+.exec-graph-timeline-bar {
+  height: 100%;
+  border-radius: 3px;
+  min-width: 3px;
+  transition: width .3s ease;
+}
+.exec-graph-timeline-dur {
+  width: 54px;
+  flex-shrink: 0;
+  text-align: right;
+  color: var(--neutral-500);
+}
+
+/* Status colors for timeline */
+.exec-tl-passed  { background: #22c55e; }
+.exec-tl-failed  { background: #ef4444; }
+.exec-tl-error   { background: #fb923c; }
+.exec-tl-skipped { background: #6b7280; }
+.exec-tl-running { background: #3b82f6; }
+.exec-tl-degraded{ background: #f59e0b; }
+
+/* Light theme */
+body[data-theme="light"] .exec-graph-cy      { background: #fffdf7; border-color: #d4c8b8; }
+body[data-theme="light"] .exec-graph-node-detail { background: #faf6ef; border-color: #d4c8b8; }
+body[data-theme="light"] .exec-graph-timeline    { border-color: #d4c8b8; }
+body[data-theme="light"] .exec-graph-timeline-bar-wrap { background: #e8e0d0; }
