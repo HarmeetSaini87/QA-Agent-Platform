@@ -2418,12 +2418,57 @@ body[data-theme="light"] .api-col-graph-node-detail { background: #faf6ef; borde
 }
 
 /* Status colors for timeline */
-.exec-tl-passed  { background: #22c55e; }
-.exec-tl-failed  { background: #ef4444; }
-.exec-tl-error   { background: #fb923c; }
-.exec-tl-skipped { background: #6b7280; }
-.exec-tl-running { background: #3b82f6; }
-.exec-tl-degraded{ background: #f59e0b; }
+.exec-tl-passed   { background: #22c55e; }
+.exec-tl-failed   { background: #ef4444; }
+.exec-tl-error    { background: #fb923c; }
+.exec-tl-skipped  { background: #6b7280; }
+.exec-tl-running  { background: #3b82f6; }
+.exec-tl-degraded { background: #f59e0b; }
+/* Phase D Step 7 full: extended execution states */
+.exec-tl-queued    { background: #a78bfa; }
+.exec-tl-retrying  { background: #facc15; }
+.exec-tl-timed_out { background: #f97316; }
+/* Retry badge indicator on retried nodes */
+.exec-graph-legend-retried { background: rgba(250,204,21,.15); border-color: #facc15; color: #facc15; }
+
+/* Phase D Step 8: Flakiness indicators in run list */
+.api-run-flaky-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: rgba(250,204,21,.15);
+  border: 1px solid rgba(250,204,21,.4);
+  color: #facc15;
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: 600;
+  vertical-align: middle;
+}
+.api-run-hotspot-row td:first-child {
+  border-left: 3px solid #facc15;
+}
+.flakiness-score-bar {
+  display: inline-block;
+  height: 6px;
+  border-radius: 3px;
+  vertical-align: middle;
+  margin-left: 4px;
+}
+.flakiness-cluster-card {
+  background: #1e2130;
+  border: 1px solid #374151;
+  border-radius: 6px;
+  padding: 10px 14px;
+  margin-bottom: 8px;
+}
+.flakiness-cluster-card h4 {
+  margin: 0 0 6px 0;
+  font-size: 12px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
 
 /* Light theme */
 body[data-theme="light"] .exec-graph-cy      { background: #fffdf7; border-color: #d4c8b8; }
