@@ -122,3 +122,33 @@ export function escHtml(str: string): string {
 export function sanitizeInput(str: string): string {
   return str.replace(/<[^>]*>/g, '').trim();
 }
+
+/**
+ * requireBrowserOrigin — blocks non-browser callers (agents, curl, node-fetch, scripts).
+ * Checks that Origin or Referer header matches the server's own host.
+ * Apply to any write route that must only be triggered by a human in the browser UI.
+ */
+export function requireBrowserOrigin(req: Request, res: Response, next: NextFunction): void {
+  const origin  = req.headers['origin']  as string | undefined;
+  const referer = req.headers['referer'] as string | undefined;
+  const host    = req.headers['host']    as string | undefined;
+
+  const source = origin || referer || '';
+  if (!host || !source) {
+    res.status(403).json({ error: 'Forbidden: request must originate from the browser UI' });
+    return;
+  }
+
+  try {
+    const sourceHost = new URL(source).host;
+    if (sourceHost !== host) {
+      res.status(403).json({ error: 'Forbidden: cross-origin write not allowed' });
+      return;
+    }
+  } catch {
+    res.status(403).json({ error: 'Forbidden: invalid origin header' });
+    return;
+  }
+
+  next();
+}

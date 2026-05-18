@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { readAll } from '../../data/store';
 import type { Locator, NlSuggestResponse, SuggestedStep, NlConfig } from '../../data/types';
-import { requireAuth, requireAdmin, requireAuthOrApiKey } from '../../auth/middleware';
+import { requireAuth, requireAdmin, requireAuthOrApiKey, requireBrowserOrigin } from '../../auth/middleware';
 import { nlSuggest, NL_PROVIDERS } from '../../utils/nlProvider';
 import type { NlProviderConfig } from '../../utils/nlProvider';
 import { splitSentences, ruleMatchSentence } from '../../utils/nlRuleEngine';
@@ -112,20 +112,20 @@ export function registerNlRoutes(app: express.Application): void {
   });
 
   app.get('/api/nl/aliases', requireAdmin, (_req, res) => { res.json(loadAliasMap()); });
-  app.put('/api/nl/aliases', requireAdmin, (req: Request, res: Response) => {
+  app.put('/api/nl/aliases', requireAdmin, requireBrowserOrigin, (req: Request, res: Response) => {
     const body = req.body as Record<string, string[]>;
     if (typeof body !== 'object' || Array.isArray(body)) { res.status(400).json({ error: 'body must be an object' }); return; }
     const before = loadAliasMap();
     saveAliasMap(body);
     const afterCount  = Object.keys(body).length;
     const beforeCount = Object.keys(before).length;
-    logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'NL_ALIAS_MAP_SAVED', resourceType: 'nl-aliases', resourceId: 'global', details: JSON.stringify({ beforeCount, afterCount, delta: afterCount - beforeCount }), ip: req.ip ?? null });
+    logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'NL_ALIAS_MAP_SAVED', resourceType: 'nl-aliases', resourceId: 'global', details: JSON.stringify({ beforeCount, afterCount, delta: afterCount - beforeCount, userAgent: req.headers['user-agent'] ?? null, origin: req.headers['origin'] ?? null, referer: req.headers['referer'] ?? null, ip: req.ip ?? null }), ip: req.ip ?? null });
     res.json({ ok: true });
   });
 
   // PATCH /api/nl/aliases — merge-only: adds/updates supplied keys, never deletes existing ones.
   // Safe for agent use — cannot wipe entries not present in the request body.
-  app.patch('/api/nl/aliases', requireAdmin, (req: Request, res: Response) => {
+  app.patch('/api/nl/aliases', requireAdmin, requireBrowserOrigin, (req: Request, res: Response) => {
     const body = req.body as Record<string, string[]>;
     if (typeof body !== 'object' || Array.isArray(body)) { res.status(400).json({ error: 'body must be an object' }); return; }
     const existing = loadAliasMapRaw();
@@ -134,7 +134,7 @@ export function registerNlRoutes(app: express.Application): void {
     const merged = { ...existing, ...body };
     saveAliasMap(merged);
     const afterCount = Object.keys(merged).length;
-    logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'NL_ALIAS_MAP_PATCHED', resourceType: 'nl-aliases', resourceId: 'global', details: JSON.stringify({ beforeCount, afterCount, added: afterCount - beforeCount }), ip: req.ip ?? null });
+    logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'NL_ALIAS_MAP_PATCHED', resourceType: 'nl-aliases', resourceId: 'global', details: JSON.stringify({ beforeCount, afterCount, added: afterCount - beforeCount, userAgent: req.headers['user-agent'] ?? null, origin: req.headers['origin'] ?? null, referer: req.headers['referer'] ?? null, ip: req.ip ?? null }), ip: req.ip ?? null });
     res.json({ ok: true, beforeCount, afterCount });
   });
   app.get('/api/nl-providers', requireAdmin, (_req, res) => { res.json(NL_PROVIDERS); });
