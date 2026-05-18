@@ -646,6 +646,7 @@ function _execGraphBuildElementsFromNodeResults(projection, nodeResults) {
   for (var ni = 0; ni < projection.nodes.length; ni++) {
     var node = projection.nodes[ni];
     var nr   = nodeResults[node.id];
+    var isHotspot = _apiRunsFlakinessReport && (_apiRunsFlakinessReport.hotspots || []).indexOf(node.id) > -1;
     var status = nr ? nr.status : 'pending';
     var dur    = nr ? nr.durationMs : null;
 
@@ -662,11 +663,12 @@ function _execGraphBuildElementsFromNodeResults(projection, nodeResults) {
     var classes = ['exec-node', 'exec-status-' + status];
     if (node.disabled) classes.push('exec-node-disabled');
     if (nr && nr.retryCount > 0) classes.push('exec-node-retried');
+    if (isHotspot) classes.push('exec-node-flaky');
 
     elements.push({
       data: {
         id:            node.id,
-        label:         (node.label || node.id) + retryBadge,
+        label:         (isHotspot ? '⚡ ' : '') + (node.label || node.id) + retryBadge,
         nodeType:      node.nodeType,
         status:        status,
         dur:           dur,
@@ -830,6 +832,11 @@ function _execGraphCyStyles() {
     { selector: 'node.exec-status-degraded',style: { 'border-color': '#f59e0b', 'background-color': 'rgba(245,158,11,.12)' }},
     { selector: 'node.exec-status-pending', style: { 'border-color': '#2a2a30', 'background-color': '#1c1c20', opacity: 0.5 }},
     { selector: 'node.exec-node-disabled',  style: { opacity: 0.35 }},
+    { selector: 'node.exec-node-flaky', style: {
+        'border-color': '#facc15',
+        'border-width': 3,
+        'border-style': 'dashed',
+    }},
     { selector: 'node:selected',            style: { 'border-width': 3, 'overlay-opacity': 0.08 }},
     { selector: 'node.exec-cluster-node',   style: {
       'background-color': 'rgba(245,158,11,.05)', 'border-color': 'rgba(245,158,11,.2)',
