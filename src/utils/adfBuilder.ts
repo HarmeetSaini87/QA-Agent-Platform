@@ -131,6 +131,7 @@ export function buildFailureCommentADF(input: FailureCommentInput): ADFNode {
 }
 
 import type { ApiStepResult, ApiCollection, ApiEnvironment } from '../data/types';
+import type { ApiDefectPayload } from '../api-defects/contracts/api-defect.contracts';
 
 export function buildApiDefectAdf(
   step: ApiStepResult,
@@ -175,6 +176,74 @@ export function buildApiDefectAdf(
       ? step.response.body.slice(0, 500)
       : JSON.stringify(step.response.body).slice(0, 500);
     content.push(codeBlock(`Status: ${step.response.status}\n${bodyStr}${step.response.bodyTruncated ? '\n[truncated]' : ''}`));
+  }
+
+  return { type: 'doc', version: 1, content };
+}
+
+// ─── Phase D Step 9: Enriched API Defect ADF ────────────────────────────────
+
+export function buildEnrichedApiDefectAdf(payload: ApiDefectPayload): ADFNode {
+  const content: ADFNode[] = [];
+
+  content.push(heading(2, 'Collection'));
+  content.push(paragraphText(`${payload.collectionName} — Environment: ${payload.environmentName} (${payload.environmentBaseUrl})`));
+  content.push(paragraphText(`Run ID: ${payload.runId}`));
+
+  content.push(heading(2, 'Failed Step'));
+  content.push(paragraphText(`${payload.stepName} — ${payload.method} ${payload.url}`));
+  content.push(paragraphText(`Status: ${payload.httpStatus ?? 'N/A'} | Duration: ${payload.durationMs}ms | Retries: ${payload.retryCount}`));
+
+  if (payload.flakinessScore !== undefined) {
+    const flakyTag = payload.isFlaky ? '⚡ FLAKY' : 'stable';
+    content.push(paragraphText(`Flakiness: ${flakyTag} | Score: ${Math.round(payload.flakinessScore * 100)}% | Fail Rate: ${Math.round((payload.failRate ?? 0) * 100)}%`));
+  }
+
+  if (payload.failedAssertions.length > 0) {
+    content.push(heading(2, 'Failed Assertions'));
+    content.push(orderedList(
+      payload.failedAssertions.map(a =>
+        `${a.field} ${a.operator} ${JSON.stringify(a.expected)} — got ${JSON.stringify(a.actual)}`
+      )
+    ));
+  }
+
+  if (payload.retryHistory.length > 0) {
+    content.push(heading(2, 'Retry History'));
+    content.push(orderedList(
+      payload.retryHistory.map(h =>
+        `Attempt ${h.attempt}: HTTP ${h.httpStatus ?? 'N/A'} — ${h.durationMs}ms${h.error ? ' | ' + h.error.slice(0, 80) : ''}`
+      )
+    ));
+  }
+
+  if (payload.dependencyChain.length > 0) {
+    content.push(heading(2, 'Dependency Chain'));
+    content.push(paragraphText(`This step depends on: ${payload.dependencyChain.join(', ')}`));
+  }
+
+  if (payload.healingSuggestions.length > 0) {
+    content.push(heading(2, 'Healing Suggestions'));
+    content.push(orderedList(
+      payload.healingSuggestions.map(s =>
+        `[${s.type}] ${s.reason} (confidence: ${Math.round(s.confidence * 100)}%)${s.suggestedUrl !== s.currentUrl ? ' → ' + s.suggestedUrl : ''}`
+      )
+    ));
+  }
+
+  if (payload.requestBody) {
+    content.push(heading(2, 'Request Sent'));
+    content.push(codeBlock(`${payload.method} ${payload.url}\n\n${payload.requestBody}`));
+  }
+
+  if (payload.responseBody) {
+    content.push(heading(2, 'Response Received'));
+    content.push(codeBlock(`Status: ${payload.httpStatus ?? 'N/A'}\n${payload.responseBody}`));
+  }
+
+  if (payload.errorMessage) {
+    content.push(heading(2, 'Error'));
+    content.push(codeBlock(payload.errorMessage));
   }
 
   return { type: 'doc', version: 1, content };
