@@ -257,7 +257,7 @@ function _buildStepDetailHtml(step) {
         ${extractedRows ? `<div data-steppanel="vars" style="display:none"><table class="data-table"><thead><tr><th>Name</th><th>Value</th></tr></thead><tbody>${extractedRows}</tbody></table></div>` : ''}
         <div data-steppanel="jira" style="display:none;padding:10px;">
           ${step.status !== 'passed'
-            ? `<button class="btn btn-sm" style="margin-bottom:8px;" onclick="_apiRunsFileDefect('${_apiRunsCurrentRun && _apiRunsCurrentRun.id}','${step.stepId}')">🐛 File Defect in Jira</button>`
+            ? `<button class="btn btn-sm" style="margin-bottom:8px;" onclick="_apiRunsFileDefect(_apiRunsCurrentRun&&_apiRunsCurrentRun.id,'${step.stepId}')">🐛 File Defect in Jira</button>`
             : '<div style="color:var(--text-muted);font-size:12px;">Step passed — no defect to file.</div>'}
           <div id="jira-defect-ref-${step.stepId}" style="margin-top:6px;"></div>
           <div id="jira-heal-panel-${step.stepId}" style="margin-top:10px;"></div>
@@ -408,7 +408,9 @@ async function _apiRunsFileDefect(runId, stepId) {
     }
     var result = await fileRes.json();
     delete _apiRunsApiDefectCache[stepId];
-    modAlert('api-runs-alert', 'success', 'Defect filed: <a href="' + result.jiraUrl + '" target="_blank">' + result.defectKey + '</a>');
+    modAlert('api-runs-alert', 'success', 'Defect filed: ' + result.defectKey);
+    var refEl = document.getElementById('jira-defect-ref-' + stepId);
+    if (refEl) refEl.innerHTML = '<span class="api-defect-pill">🔗 <a href="' + escHtml(result.jiraUrl) + '" target="_blank">' + escHtml(result.defectKey) + '</a></span>';
   } catch (e) {
     modAlert('api-runs-alert', 'error', 'File error: ' + e.message);
   }
