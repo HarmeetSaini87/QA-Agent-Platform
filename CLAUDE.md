@@ -122,6 +122,7 @@ All code changes, experiments, and new features are developed here FIRST.
 > **📋 See [docs/superpowers/specs/2026-05-16-phase-d-step5-workflow-graph-projection-design.md](docs/superpowers/specs/2026-05-16-phase-d-step5-workflow-graph-projection-design.md) — Phase D Step 5: Workflow Graph Projection design spec (approved, pending implementation). Read-only graph projection contracts, builder, service, GET /api/workflows/:collectionId/graph endpoint.**
 > **📋 See [docs/superpowers/plans/2026-05-16-phase-d-step5-workflow-graph-projection.md](docs/superpowers/plans/2026-05-16-phase-d-step5-workflow-graph-projection.md) — Phase D Step 5 implementation plan (11 tasks). **COMPLETE as of 2026-05-17.**
 > **📋 See [docs/superpowers/plans/2026-05-17-phase-d-step8-api-flakiness-analytics.md](docs/superpowers/plans/2026-05-17-phase-d-step8-api-flakiness-analytics.md) — Phase D Step 8 implementation plan (12 tasks). **COMPLETE as of 2026-05-17.**
+> **📋 See [docs/superpowers/plans/2026-05-19-phase-d-step9-api-defect-intelligence.md](docs/superpowers/plans/2026-05-19-phase-d-step9-api-defect-intelligence.md) — Phase D Step 9 implementation plan (11 tasks). **COMPLETE as of 2026-05-19.**
 
 ---
 
@@ -275,6 +276,15 @@ Graph at `.code-review-graph/graph.db` — 11 communities, auto-updates on file 
 ### Auto-File Jira Defect (shipped 2026-04-28)
 - `src/utils/jiraClient.ts` + `adfBuilder.ts` + `defectsStore.ts`
 - Editor role for filing; Admin for config; dedup uses JQL + local registry
+
+### API Defect Intelligence (shipped 2026-05-19)
+- Module: `src/api-defects/` — enricher, heal-advisor, store, routes
+- `buildEnrichedApiDefectAdf` added to `src/utils/adfBuilder.ts`
+- Routes: `POST /api/api-defects/draft`, `POST /api/api-defects/file`, `GET /api/api-defects/by-step/:stepId`
+- Dedup registry: `data/api-defects.json` (atomic write, `appendApiDefectRecord`)
+- UI: "Jira & Heal" tab in `25-api-runs.js` per step — File Defect button, healing suggestions panel
+- ADVISORY ONLY — heal advisor never auto-modifies collections or runtime state
+- Existing UI-test defect flows (`jira.routes.ts`, `defectsStore.ts`, `healingEngine.ts`) untouched
 
 ### Import Pipeline Integration (Phase D Step 3 — 2026-05-16)
 - `import-engine-adapter.ts` wraps both Postman and OpenAPI importers
