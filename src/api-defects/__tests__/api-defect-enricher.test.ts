@@ -192,7 +192,7 @@ describe('enrichDefectPayload', () => {
     expect(result.failedAssertions[0].field).toBe('status');
   });
 
-  it('redacts Authorization header in requestBody context', () => {
+  it('requestBody contains serialized body only, not headers', () => {
     const step = makeStep({
       request: {
         method: 'POST',
@@ -202,22 +202,39 @@ describe('enrichDefectPayload', () => {
         queryParams: {},
       },
     });
+    const ctx: ApiDefectEnrichmentContext = { step, run: makeRun(), collection: makeCollection(), environment: makeEnv() };
+    const result = enrichDefectPayload(ctx);
+    expect(result.requestBody).toContain('test');
+    expect(result.requestBody).not.toContain('secret-token');
+  });
+
+  it('healingSuggestions comes from proposeUrlFixes result', () => {
     const ctx: ApiDefectEnrichmentContext = {
-      step,
+      step: makeStep(),
       run: makeRun(),
       collection: makeCollection(),
       environment: makeEnv(),
     };
     const result = enrichDefectPayload(ctx);
-    // requestBody contains the request body, not headers — so it should NOT contain 'secret-token'
-    expect(result.requestBody).not.toContain('secret-token');
+    expect(result.healingSuggestions).toEqual([]); // mock returns []
   });
 
-  it('healingSuggestions is non-empty for a 404 step (uses real advisor)', async () => {
-    const { proposeUrlFixes } = await import('../api-heal-advisor');
-    const step = makeStep({ request: { method: 'GET', url: 'https://api.example.com/v1/users', headers: {}, body: undefined, queryParams: {} } });
-    const suggestions = proposeUrlFixes(step);
-    // stub returns [] — test just verifies it doesn't throw
-    expect(Array.isArray(suggestions)).toBe(true);
+  it('truncates requestBody to 500 chars', () => {
+    const longBody = { data: 'x'.repeat(600) };
+    const step = makeStep({ request: { method: 'POST', url: 'https://api.example.com/v1/users', headers: {}, body: longBody, queryParams: {} } });
+    const ctx: ApiDefectEnrichmentContext = { step, run: makeRun(), collection: makeCollection(), environment: makeEnv() };
+    const result = enrichDefectPayload(ctx);
+    expect(result.requestBody).toHaveLength(500);
+  });
+
+  it('dependencyChain is empty when stepId not found in collection.steps', () => {
+    const ctx: ApiDefectEnrichmentContext = {
+      step: makeStep({ stepId: 'unknown-step' }),
+      run: makeRun(),
+      collection: makeCollection({ steps: [{ id: 'step-1', dependsOn: ['step-0'] } as any] }),
+      environment: makeEnv(),
+    };
+    const result = enrichDefectPayload(ctx);
+    expect(result.dependencyChain).toEqual([]);
   });
 });
