@@ -239,6 +239,7 @@ function _buildStepDetailHtml(step) {
         <button class="tbl-btn" onclick="_apiRunsStepTab(this,'${detailId}','request')" data-steptab="request">Request</button>
         <button class="tbl-btn" onclick="_apiRunsStepTab(this,'${detailId}','response')" data-steptab="response">Response</button>
         ${extractedRows ? `<button class="tbl-btn" onclick="_apiRunsStepTab(this,'${detailId}','vars')" data-steptab="vars">Vars</button>` : ''}
+        <button class="tbl-btn" onclick="_apiRunsStepTab(this,'${detailId}','jira');_apiRunsLoadJiraPanel('${step.stepId}')" data-steptab="jira">Jira &amp; Heal</button>
       </div>
       <div id="${detailId}">
         <div data-steppanel="assertions">
@@ -254,6 +255,13 @@ function _buildStepDetailHtml(step) {
           ${step.response.bodyTruncated ? '<span style="color:#f59e0b;font-size:11px">[body truncated at 50KB]</span>' : ''}` : 'No response'}
         </div>
         ${extractedRows ? `<div data-steppanel="vars" style="display:none"><table class="data-table"><thead><tr><th>Name</th><th>Value</th></tr></thead><tbody>${extractedRows}</tbody></table></div>` : ''}
+        <div data-steppanel="jira" style="display:none;padding:10px;">
+          ${step.status !== 'passed'
+            ? `<button class="btn btn-sm" style="margin-bottom:8px;" onclick="_apiRunsFileDefect('${_apiRunsCurrentRun && _apiRunsCurrentRun.id}','${step.stepId}')">🐛 File Defect in Jira</button>`
+            : '<div style="color:var(--text-muted);font-size:12px;">Step passed — no defect to file.</div>'}
+          <div id="jira-defect-ref-${step.stepId}" style="margin-top:6px;"></div>
+          <div id="jira-heal-panel-${step.stepId}" style="margin-top:10px;"></div>
+        </div>
       </div>
     </div>`;
 }
@@ -328,6 +336,119 @@ let _execGraphRun        = null;   // run whose results are overlaid
 // Phase D Step 8: cache flakiness report per collection
 var _apiRunsFlakinessReport = null;
 var _apiRunsFlakinessColId  = null;
+var _apiRunsApiDefectCache = {};
+
+async function _apiRunsFetchStepDefect(stepId) {
+  if (Object.prototype.hasOwnProperty.call(_apiRunsApiDefectCache, stepId)) {
+    return _apiRunsApiDefectCache[stepId];
+  }
+  try {
+    var res = await fetch('/api/api-defects/by-step/' + encodeURIComponent(stepId));
+    if (!res.ok) { _apiRunsApiDefectCache[stepId] = null; return null; }
+    var data = await res.json();
+    var open = (data.defects || []).find(function(d) { return d.status === 'open'; }) || null;
+    _apiRunsApiDefectCache[stepId] = open ? { defectKey: open.defectKey, jiraUrl: open.jiraUrl } : null;
+    return _apiRunsApiDefectCache[stepId];
+  } catch (e) {
+    _apiRunsApiDefectCache[stepId] = null;
+    return null;
+  }
+}
+
+async function _apiRunsFileDefect(runId, stepId) {
+  var parentStoryKey = prompt('Enter parent story key (e.g. PROJ-123):');
+  if (!parentStoryKey || !/^[A-Z][A-Z0-9]*-\d+$/.test(parentStoryKey.trim())) {
+    if (parentStoryKey !== null) modAlert('api-runs-alert', 'error', 'Invalid story key format. Use ABC-123.');
+    return;
+  }
+
+  var draft;
+  try {
+    var draftRes = await fetch('/api/api-defects/draft', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ runId: runId, stepId: stepId }),
+    });
+    if (draftRes.status === 409) {
+      var d409 = await draftRes.json();
+      modAlert('api-runs-alert', 'info', 'Defect already filed: ' + (d409.error && d409.error.details ? d409.error.details.defectKey : 'existing'));
+      return;
+    }
+    if (!draftRes.ok) {
+      var derr = await draftRes.json();
+      throw new Error((derr.error && derr.error.message) || 'Draft failed');
+    }
+    draft = await draftRes.json();
+  } catch (e) {
+    modAlert('api-runs-alert', 'error', 'Draft error: ' + e.message);
+    return;
+  }
+
+  try {
+    var fileRes = await fetch('/api/api-defects/file', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        runId: runId,
+        stepId: stepId,
+        summary: draft.summary,
+        descriptionADF: draft.descriptionADF,
+        priority: draft.suggestedPriority,
+        parentStoryKey: parentStoryKey.trim(),
+      }),
+    });
+    if (fileRes.status === 409) {
+      var f409 = await fileRes.json();
+      modAlert('api-runs-alert', 'info', 'Defect already filed: ' + (f409.error && f409.error.details ? f409.error.details.defectKey : ''));
+      return;
+    }
+    if (!fileRes.ok) {
+      var ferr = await fileRes.json();
+      throw new Error((ferr.error && ferr.error.message) || 'File failed');
+    }
+    var result = await fileRes.json();
+    delete _apiRunsApiDefectCache[stepId];
+    modAlert('api-runs-alert', 'success', 'Defect filed: <a href="' + result.jiraUrl + '" target="_blank">' + result.defectKey + '</a>');
+  } catch (e) {
+    modAlert('api-runs-alert', 'error', 'File error: ' + e.message);
+  }
+}
+
+async function _apiRunsLoadJiraPanel(stepId) {
+  var defectEl = document.getElementById('jira-defect-ref-' + stepId);
+  var healEl   = document.getElementById('jira-heal-panel-' + stepId);
+  if (!defectEl) return;
+
+  var defect = await _apiRunsFetchStepDefect(stepId);
+  if (defect) {
+    defectEl.innerHTML = '<span class="api-defect-pill">🔗 <a href="' + escHtml(defect.jiraUrl) + '" target="_blank">' + escHtml(defect.defectKey) + '</a></span>';
+  }
+
+  var currentRunId = _apiRunsCurrentRun && _apiRunsCurrentRun.id;
+  if (!currentRunId || !healEl) return;
+  try {
+    var r = await fetch('/api/api-defects/draft', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ runId: currentRunId, stepId: stepId }),
+    });
+    if (!r.ok) return;
+    var data = await r.json();
+    var suggestions = (data.payload && data.payload.healingSuggestions) ? data.payload.healingSuggestions : [];
+    if (suggestions.length === 0) {
+      healEl.innerHTML = '<div style="font-size:11px;color:var(--text-muted);">No healing suggestions.</div>';
+      return;
+    }
+    healEl.innerHTML = '<div style="font-size:12px;font-weight:600;margin-bottom:6px;color:var(--text-muted);">💡 Healing Suggestions</div>'
+      + suggestions.map(function(s) {
+        return '<div class="api-heal-card">'
+          + '<div style="font-size:11px;font-weight:600;color:#a78bfa;">' + escHtml(s.type.replace(/_/g, ' ').toUpperCase()) + ' \xB7 ' + Math.round(s.confidence * 100) + '% confidence</div>'
+          + '<div style="font-size:11px;margin-top:2px;">' + escHtml(s.reason) + '</div>'
+          + (s.suggestedUrl !== s.currentUrl ? '<div style="font-size:10px;color:var(--text-muted);margin-top:2px;">→ ' + escHtml(s.suggestedUrl) + '</div>' : '')
+          + '</div>';
+      }).join('');
+  } catch (e) { /* non-fatal */ }
+}
 // Phase D Step 7 full: cache the full RunGraphProjection (graph + nodeResults merged)
 let _execGraphRunGraph   = null;   // cached RunGraphProjection for current run
 let _execGraphRunId      = null;   // runId of cached RunGraphProjection
