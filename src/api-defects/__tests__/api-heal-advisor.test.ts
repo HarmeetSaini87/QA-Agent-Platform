@@ -1,4 +1,3 @@
-// src/api-defects/__tests__/api-heal-advisor.test.ts
 import { describe, it, expect } from 'vitest';
 import { proposeUrlFixes } from '../api-heal-advisor';
 import type { ApiStepResult } from '../../data/types';
@@ -82,6 +81,15 @@ describe('proposeUrlFixes', () => {
     const step = makeStep({
       response: undefined,
       error: 'ENOTFOUND api.example.com',
+    });
+    const suggestions = proposeUrlFixes(step);
+    expect(suggestions.find(s => s.type === 'base_url_drift')).toBeDefined();
+  });
+
+  it('suggests base_url_drift for ETIMEDOUT', () => {
+    const step = makeStep({
+      response: undefined,
+      error: 'ETIMEDOUT api.example.com',
     });
     const suggestions = proposeUrlFixes(step);
     expect(suggestions.find(s => s.type === 'base_url_drift')).toBeDefined();
