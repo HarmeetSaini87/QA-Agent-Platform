@@ -11,7 +11,7 @@ import { enrichDefectPayload } from '../api-defect-enricher';
 import { findOpenApiDefect, appendApiDefectRecord, loadApiDefectsRegistry } from '../api-defect-store';
 import { getReport } from '../../api-flakiness/flakiness-service';
 import { readAll, API_COLLECTIONS, API_ENVS } from '../../data/store';
-import type { ApiCollection, ApiEnvironment, ApiCollectionRunResult } from '../../data/types';
+import type { ApiCollection, ApiEnvironment, ApiCollectionRunResult, Project } from '../../data/types';
 import type { ApiDefectRecord } from '../contracts/api-defect.contracts';
 
 const RUNS_DIR = path.resolve(process.env.DATA_DIR || 'data', 'api-runs');
@@ -23,6 +23,21 @@ function loadRun(runId: string): ApiCollectionRunResult | null {
   catch { return null; }
 }
 
+function loadRunContext(runId: string, res: Response): { run: ApiCollectionRunResult; collection: ApiCollection; environment: ApiEnvironment } | null {
+  const run = loadRun(runId);
+  if (!run) { res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Run not found' } }); return null; }
+
+  const collections = readAll<ApiCollection>(API_COLLECTIONS);
+  const collection = collections.find(c => c.id === run.collectionId);
+  if (!collection) { res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Collection not found' } }); return null; }
+
+  const environments = readAll<ApiEnvironment>(API_ENVS);
+  const environment = environments.find(e => e.id === collection.environmentId);
+  if (!environment) { res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Environment not found' } }); return null; }
+
+  return { run, collection, environment };
+}
+
 export function registerApiDefectsRoutes(app: Express): void {
   app.post('/api/api-defects/draft', requireAuth, async (req: Request, res: Response) => {
     const { runId, stepId } = req.body || {};
@@ -30,19 +45,12 @@ export function registerApiDefectsRoutes(app: Express): void {
       return res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'runId and stepId required' } });
     }
 
-    const run = loadRun(runId);
-    if (!run) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Run not found' } });
+    const ctx = loadRunContext(runId, res);
+    if (!ctx) return;
+    const { run, collection, environment } = ctx;
 
     const step = run.stepResults.find(s => s.stepId === stepId);
     if (!step) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Step not found in run' } });
-
-    const collections = readAll<ApiCollection>(API_COLLECTIONS);
-    const collection = collections.find(c => c.id === run.collectionId);
-    if (!collection) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Collection not found' } });
-
-    const environments = readAll<ApiEnvironment>(API_ENVS);
-    const environment = environments.find(e => e.id === collection.environmentId);
-    if (!environment) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Environment not found' } });
 
     let flakinessReport;
     try { flakinessReport = getReport(run.collectionId); } catch { /* non-fatal */ }
@@ -52,8 +60,8 @@ export function registerApiDefectsRoutes(app: Express): void {
     const cfg = loadJiraConfig();
     const existingDefect = findOpenApiDefect(stepId, run.collectionId);
 
-    const projects = readAll<any>('projects');
-    const project = projects.find((p: any) => p.id === (collection as any).projectId);
+    const projects = readAll<Project>('projects');
+    const project = projects.find(p => p.id === collection.projectId);
     const jiraProjectKey = project?.jiraProjectKey || null;
 
     const summary = `[API] ${payload.stepName} failed — ${payload.method} ${payload.url}`.slice(0, 255);
@@ -74,7 +82,7 @@ export function registerApiDefectsRoutes(app: Express): void {
     if (!runId || !stepId || !summary || !descriptionADF || !priority || !parentStoryKey) {
       return res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'Missing required field' } });
     }
-    if (!/^[A-Z][A-Z0-9_]+-\d+$/.test(String(parentStoryKey))) {
+    if (!/^[A-Z][A-Z0-9]*-\d+$/.test(String(parentStoryKey))) {
       return res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'parentStoryKey must look like ABC-123' } });
     }
 
@@ -83,19 +91,12 @@ export function registerApiDefectsRoutes(app: Express): void {
     const client = getJiraClient();
     if (!client) return res.status(400).json({ error: { code: 'JIRA_NOT_CONFIGURED', message: 'Set Jira credentials in .env' } });
 
-    const run = loadRun(runId);
-    if (!run) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Run not found' } });
+    const ctx = loadRunContext(runId, res);
+    if (!ctx) return;
+    const { run, collection, environment } = ctx;
 
     const step = run.stepResults.find(s => s.stepId === stepId);
     if (!step) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Step not found in run' } });
-
-    const collections = readAll<ApiCollection>(API_COLLECTIONS);
-    const collection = collections.find(c => c.id === run.collectionId);
-    if (!collection) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Collection not found' } });
-
-    const environments = readAll<ApiEnvironment>(API_ENVS);
-    const environment = environments.find(e => e.id === collection.environmentId);
-    if (!environment) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Environment not found' } });
 
     const existingLocal = findOpenApiDefect(stepId, run.collectionId);
     if (existingLocal) {
@@ -104,8 +105,8 @@ export function registerApiDefectsRoutes(app: Express): void {
       });
     }
 
-    const projects = readAll<any>('projects');
-    const project = projects.find((p: any) => p.id === (collection as any).projectId);
+    const projects = readAll<Project>('projects');
+    const project = projects.find(p => p.id === collection.projectId);
     const jiraProjectKey = project?.jiraProjectKey;
     if (!jiraProjectKey) {
       return res.status(400).json({ error: { code: 'JIRA_PROJECT_KEY_MISSING', message: 'Jira Project Key not configured for this project' } });
@@ -127,7 +128,7 @@ export function registerApiDefectsRoutes(app: Express): void {
       return res.status(httpStatus).json({ error: { code: e?.code || 'JIRA_ERROR', message: e?.message || 'Issue creation failed' } });
     }
 
-    const baseUrl = (cfg as any).baseUrl || '';
+    const baseUrl = cfg.baseUrl ?? '';
     const jiraUrl = `${baseUrl.replace(/\/$/, '')}/browse/${created.key}`;
     const record: ApiDefectRecord = {
       defectKey: created.key,
@@ -139,10 +140,10 @@ export function registerApiDefectsRoutes(app: Express): void {
       runId,
       environmentId: collection.environmentId,
       environmentName: environment.name,
-      projectId: (collection as any).projectId,
+      projectId: collection.projectId,
       status: 'open',
       createdAt: new Date().toISOString(),
-      createdBy: (req.session as any)?.username || 'unknown',
+      createdBy: req.session.username ?? 'unknown',
       jiraUrl,
     };
     appendApiDefectRecord(record);
