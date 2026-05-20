@@ -119,16 +119,20 @@ async function apiReplayShowTab(tab) {
     }
 
   } else if (tab === 'snapshot') {
-    var res3 = await fetch('/api/api-runs/' + encodeURIComponent(_apiReplayCurrentRunId) + '/observability');
-    var obs = res3.ok ? await res3.json() : null;
-    var snap = obs && obs.snapshotSummary;
-    if (!snap) { el.innerHTML = '<div style="color:var(--text-muted);font-size:12px;">No snapshot available.</div>'; return; }
-    el.innerHTML = '<div style="font-size:12px;padding:8px;">'
-      + '<div><b>Captured:</b> ' + escHtml(snap.capturedAt.replace('T',' ').slice(0,19)) + '</div>'
-      + '<div><b>Completed nodes:</b> ' + snap.completedNodeIds + '</div>'
-      + '<div><b>Failed nodes:</b> ' + snap.failedNodeIds + '</div>'
-      + '<div><b>Skipped nodes:</b> ' + snap.skippedNodeIds + '</div>'
-      + '</div>';
+    try {
+      var res3 = await fetch('/api/api-runs/' + encodeURIComponent(_apiReplayCurrentRunId) + '/observability');
+      var obs = res3.ok ? await res3.json() : null;
+      var snap = obs && obs.snapshotSummary;
+      if (!snap) { el.innerHTML = '<div style="color:var(--text-muted);font-size:12px;">No snapshot available.</div>'; return; }
+      el.innerHTML = '<div style="font-size:12px;padding:8px;">'
+        + '<div><b>Captured:</b> ' + escHtml(snap.capturedAt.replace('T',' ').slice(0,19)) + '</div>'
+        + '<div><b>Completed nodes:</b> ' + snap.completedNodeIds + '</div>'
+        + '<div><b>Failed nodes:</b> ' + snap.failedNodeIds + '</div>'
+        + '<div><b>Skipped nodes:</b> ' + snap.skippedNodeIds + '</div>'
+        + '</div>';
+    } catch (e3) {
+      el.innerHTML = '<div style="color:#f87171;">Error: ' + escHtml(e3.message) + '</div>';
+    }
   }
 }
 

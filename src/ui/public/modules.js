@@ -2968,10 +2968,21 @@ function scriptAddStep(step = {}, insertBeforeRow = null, _skipReorder = false) 
   const isDyn = valMode === 'dynamic';
   const isCd = valMode === 'commondata';
   const isTd = valMode === 'testdata';
-  const tokenOpts = `<option value="">— choose token —</option>` +
-    scriptKeywords.dynamicTokens.map(t =>
-      `<option value="${escHtml(t.token)}"${isDyn && step.value === t.token ? ' selected' : ''}>${escHtml(t.label)}</option>`
-    ).join('');
+  const tokenOpts = (() => {
+    let html = `<option value="">— choose token —</option>`;
+    let currentGroup = null;
+    for (const t of scriptKeywords.dynamicTokens) {
+      const grp = t.group || '';
+      if (grp && grp !== currentGroup) {
+        if (currentGroup !== null) html += `</optgroup>`;
+        html += `<optgroup label="${escHtml(grp)}">`;
+        currentGroup = grp;
+      }
+      html += `<option value="${escHtml(t.token)}"${isDyn && step.value === t.token ? ' selected' : ''}>${escHtml(t.label)}</option>`;
+    }
+    if (currentGroup !== null) html += `</optgroup>`;
+    return html;
+  })();
 
   const curKw = _seKwGet(step.keyword);
   const needsLoc = curKw ? curKw.needsLocator : true;
@@ -11647,6 +11658,7 @@ function _buildStepDetailHtml(step) {
         <button class="tbl-btn" onclick="_apiRunsStepTab(this,'${detailId}','request')" data-steptab="request">Request</button>
         <button class="tbl-btn" onclick="_apiRunsStepTab(this,'${detailId}','response')" data-steptab="response">Response</button>
         ${extractedRows ? `<button class="tbl-btn" onclick="_apiRunsStepTab(this,'${detailId}','vars')" data-steptab="vars">Vars</button>` : ''}
+        <button class="tbl-btn" onclick="_apiRunsStepTab(this,'${detailId}','jira');_apiRunsLoadJiraPanel('${step.stepId}')" data-steptab="jira">Jira &amp; Heal</button>
       </div>
       <div id="${detailId}">
         <div data-steppanel="assertions">
@@ -11662,6 +11674,13 @@ function _buildStepDetailHtml(step) {
           ${step.response.bodyTruncated ? '<span style="color:#f59e0b;font-size:11px">[body truncated at 50KB]</span>' : ''}` : 'No response'}
         </div>
         ${extractedRows ? `<div data-steppanel="vars" style="display:none"><table class="data-table"><thead><tr><th>Name</th><th>Value</th></tr></thead><tbody>${extractedRows}</tbody></table></div>` : ''}
+        <div data-steppanel="jira" style="display:none;padding:10px;">
+          ${step.status !== 'passed'
+            ? `<button class="btn btn-sm" style="margin-bottom:8px;" onclick="_apiRunsFileDefect(_apiRunsCurrentRun&&_apiRunsCurrentRun.id,'${step.stepId}')">🐛 File Defect in Jira</button>`
+            : '<div style="color:var(--text-muted);font-size:12px;">Step passed — no defect to file.</div>'}
+          <div id="jira-defect-ref-${step.stepId}" style="margin-top:6px;"></div>
+          <div id="jira-heal-panel-${step.stepId}" style="margin-top:10px;"></div>
+        </div>
       </div>
     </div>`;
 }
@@ -11688,7 +11707,7 @@ function _apiRunsRenderHar(run) {
     if (!step.response) continue;
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td>${escHtml(step.stepName)}</td>
+      <td>${escHtml(step.stepName)}${step.isTeardown ? '<span class="teardown-badge">teardown</span>' : ''}</td>
       <td><span class="badge badge-blue" style="font-size:11px">${step.request?.method ?? ''}</span></td>
       <td style="font-family:monospace;font-size:12px;max-width:220px;overflow:hidden;text-overflow:ellipsis">${escHtml(step.request?.url ?? '')}</td>
       <td style="color:${step.response.status < 300 ? '#22c55e' : step.response.status < 500 ? '#f59e0b' : '#ef4444'}">${step.response.status}</td>
@@ -11736,6 +11755,121 @@ let _execGraphRun        = null;   // run whose results are overlaid
 // Phase D Step 8: cache flakiness report per collection
 var _apiRunsFlakinessReport = null;
 var _apiRunsFlakinessColId  = null;
+var _apiRunsApiDefectCache = {};
+
+async function _apiRunsFetchStepDefect(stepId) {
+  if (Object.prototype.hasOwnProperty.call(_apiRunsApiDefectCache, stepId)) {
+    return _apiRunsApiDefectCache[stepId];
+  }
+  try {
+    var res = await fetch('/api/api-defects/by-step/' + encodeURIComponent(stepId));
+    if (!res.ok) { _apiRunsApiDefectCache[stepId] = null; return null; }
+    var data = await res.json();
+    var open = (data.defects || []).find(function(d) { return d.status === 'open'; }) || null;
+    _apiRunsApiDefectCache[stepId] = open ? { defectKey: open.defectKey, jiraUrl: open.jiraUrl } : null;
+    return _apiRunsApiDefectCache[stepId];
+  } catch (e) {
+    _apiRunsApiDefectCache[stepId] = null;
+    return null;
+  }
+}
+
+async function _apiRunsFileDefect(runId, stepId) {
+  var parentStoryKey = prompt('Enter parent story key (e.g. PROJ-123):');
+  if (!parentStoryKey || !/^[A-Z][A-Z0-9]*-\d+$/.test(parentStoryKey.trim())) {
+    if (parentStoryKey !== null) modAlert('api-runs-alert', 'error', 'Invalid story key format. Use ABC-123.');
+    return;
+  }
+
+  var draft;
+  try {
+    var draftRes = await fetch('/api/api-defects/draft', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ runId: runId, stepId: stepId }),
+    });
+    if (draftRes.status === 409) {
+      var d409 = await draftRes.json();
+      modAlert('api-runs-alert', 'info', 'Defect already filed: ' + (d409.error && d409.error.details ? d409.error.details.defectKey : 'existing'));
+      return;
+    }
+    if (!draftRes.ok) {
+      var derr = await draftRes.json();
+      throw new Error((derr.error && derr.error.message) || 'Draft failed');
+    }
+    draft = await draftRes.json();
+  } catch (e) {
+    modAlert('api-runs-alert', 'error', 'Draft error: ' + e.message);
+    return;
+  }
+
+  try {
+    var fileRes = await fetch('/api/api-defects/file', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        runId: runId,
+        stepId: stepId,
+        summary: draft.summary,
+        descriptionADF: draft.descriptionADF,
+        priority: draft.suggestedPriority,
+        parentStoryKey: parentStoryKey.trim(),
+      }),
+    });
+    if (fileRes.status === 409) {
+      var f409 = await fileRes.json();
+      modAlert('api-runs-alert', 'info', 'Defect already filed: ' + (f409.error && f409.error.details ? f409.error.details.defectKey : ''));
+      return;
+    }
+    if (!fileRes.ok) {
+      var ferr = await fileRes.json();
+      throw new Error((ferr.error && ferr.error.message) || 'File failed');
+    }
+    var result = await fileRes.json();
+    delete _apiRunsApiDefectCache[stepId];
+    modAlert('api-runs-alert', 'success', 'Defect filed: ' + result.defectKey);
+    var refEl = document.getElementById('jira-defect-ref-' + stepId);
+    if (refEl) refEl.innerHTML = '<span class="api-defect-pill">🔗 <a href="' + escHtml(result.jiraUrl) + '" target="_blank">' + escHtml(result.defectKey) + '</a></span>';
+  } catch (e) {
+    modAlert('api-runs-alert', 'error', 'File error: ' + e.message);
+  }
+}
+
+async function _apiRunsLoadJiraPanel(stepId) {
+  var defectEl = document.getElementById('jira-defect-ref-' + stepId);
+  var healEl   = document.getElementById('jira-heal-panel-' + stepId);
+  if (!defectEl) return;
+
+  var defect = await _apiRunsFetchStepDefect(stepId);
+  if (defect) {
+    defectEl.innerHTML = '<span class="api-defect-pill">🔗 <a href="' + escHtml(defect.jiraUrl) + '" target="_blank">' + escHtml(defect.defectKey) + '</a></span>';
+  }
+
+  var currentRunId = _apiRunsCurrentRun && _apiRunsCurrentRun.id;
+  if (!currentRunId || !healEl) return;
+  try {
+    var r = await fetch('/api/api-defects/draft', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ runId: currentRunId, stepId: stepId }),
+    });
+    if (!r.ok) return;
+    var data = await r.json();
+    var suggestions = (data.payload && data.payload.healingSuggestions) ? data.payload.healingSuggestions : [];
+    if (suggestions.length === 0) {
+      healEl.innerHTML = '<div style="font-size:11px;color:var(--text-muted);">No healing suggestions.</div>';
+      return;
+    }
+    healEl.innerHTML = '<div style="font-size:12px;font-weight:600;margin-bottom:6px;color:var(--text-muted);">💡 Healing Suggestions</div>'
+      + suggestions.map(function(s) {
+        return '<div class="api-heal-card">'
+          + '<div style="font-size:11px;font-weight:600;color:#a78bfa;">' + escHtml(s.type.replace(/_/g, ' ').toUpperCase()) + ' \xB7 ' + Math.round(s.confidence * 100) + '% confidence</div>'
+          + '<div style="font-size:11px;margin-top:2px;">' + escHtml(s.reason) + '</div>'
+          + (s.suggestedUrl !== s.currentUrl ? '<div style="font-size:10px;color:var(--text-muted);margin-top:2px;">→ ' + escHtml(s.suggestedUrl) + '</div>' : '')
+          + '</div>';
+      }).join('');
+  } catch (e) { /* non-fatal */ }
+}
 // Phase D Step 7 full: cache the full RunGraphProjection (graph + nodeResults merged)
 let _execGraphRunGraph   = null;   // cached RunGraphProjection for current run
 let _execGraphRunId      = null;   // runId of cached RunGraphProjection
@@ -12054,6 +12188,7 @@ function _execGraphBuildElementsFromNodeResults(projection, nodeResults) {
   for (var ni = 0; ni < projection.nodes.length; ni++) {
     var node = projection.nodes[ni];
     var nr   = nodeResults[node.id];
+    var isHotspot = _apiRunsFlakinessReport && (_apiRunsFlakinessReport.hotspots || []).indexOf(node.id) > -1;
     var status = nr ? nr.status : 'pending';
     var dur    = nr ? nr.durationMs : null;
 
@@ -12070,11 +12205,12 @@ function _execGraphBuildElementsFromNodeResults(projection, nodeResults) {
     var classes = ['exec-node', 'exec-status-' + status];
     if (node.disabled) classes.push('exec-node-disabled');
     if (nr && nr.retryCount > 0) classes.push('exec-node-retried');
+    if (isHotspot) classes.push('exec-node-flaky');
 
     elements.push({
       data: {
         id:            node.id,
-        label:         (node.label || node.id) + retryBadge,
+        label:         (isHotspot ? '⚡ ' : '') + (node.label || node.id) + retryBadge,
         nodeType:      node.nodeType,
         status:        status,
         dur:           dur,
@@ -12238,6 +12374,11 @@ function _execGraphCyStyles() {
     { selector: 'node.exec-status-degraded',style: { 'border-color': '#f59e0b', 'background-color': 'rgba(245,158,11,.12)' }},
     { selector: 'node.exec-status-pending', style: { 'border-color': '#2a2a30', 'background-color': '#1c1c20', opacity: 0.5 }},
     { selector: 'node.exec-node-disabled',  style: { opacity: 0.35 }},
+    { selector: 'node.exec-node-flaky', style: {
+        'border-color': '#facc15',
+        'border-width': 3,
+        'border-style': 'dashed',
+    }},
     { selector: 'node:selected',            style: { 'border-width': 3, 'overlay-opacity': 0.08 }},
     { selector: 'node.exec-cluster-node',   style: {
       'background-color': 'rgba(245,158,11,.05)', 'border-color': 'rgba(245,158,11,.2)',
@@ -12561,4 +12702,392 @@ function _flakinessRenderStepTable() {
 function _flakinessEscHtml(str) {
   if (!str) return '';
   return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+// Module: API Suite Orchestration
+// Page: api-suites
+
+var _apiSuitesList = [];
+var _apiSuitesCurrentSuiteId = null;
+
+function apiSuitesInit() {
+  if (typeof window._apiSuitesLoaded === 'undefined') {
+    window._apiSuitesLoaded = true;
+  }
+  apiSuitesLoad();
+}
+
+async function apiSuitesLoad() {
+  try {
+    var res = await fetch('/api/api-suites');
+    if (!res.ok) { modAlert('api-suites-alert', 'error', 'Failed to load suites.'); return; }
+    _apiSuitesList = await res.json();
+    apiSuitesRender();
+  } catch (e) {
+    modAlert('api-suites-alert', 'error', 'Error loading suites: ' + e.message);
+  }
+}
+
+function apiSuitesRender() {
+  var el = document.getElementById('api-suites-content');
+  if (!el) return;
+  if (_apiSuitesList.length === 0) {
+    el.innerHTML = '<div style="color:var(--text-muted);padding:20px;">No API suites yet. <button class="btn btn-sm" onclick="apiSuitesShowCreate()">+ New Suite</button></div>';
+    return;
+  }
+  el.innerHTML = '<div style="margin-bottom:12px;"><button class="btn btn-sm" onclick="apiSuitesShowCreate()">+ New Suite</button></div>'
+    + '<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Name</th><th>Collections</th><th>Environment</th><th>Actions</th></tr></thead><tbody>'
+    + _apiSuitesList.map(function(s) {
+      return '<tr>'
+        + '<td><a href="#" onclick="apiSuitesShowDetail(\'' + escHtml(s.id) + '\');return false;">' + escHtml(s.name) + '</a></td>'
+        + '<td>' + (s.collectionIds ? s.collectionIds.length : 0) + ' collections</td>'
+        + '<td>' + escHtml(s.environmentId || '') + '</td>'
+        + '<td>'
+        + '<button class="tbl-btn" onclick="apiSuitesRunSuite(\'' + escHtml(s.id) + '\')">&#9654; Run</button> '
+        + '<button class="tbl-btn" onclick="apiSuitesDelete(\'' + escHtml(s.id) + '\')">Delete</button>'
+        + '</td>'
+        + '</tr>';
+    }).join('')
+    + '</tbody></table></div>';
+}
+
+async function apiSuitesShowDetail(suiteId) {
+  _apiSuitesCurrentSuiteId = suiteId;
+  var el = document.getElementById('api-suites-content');
+  if (!el) return;
+  el.innerHTML = '<div style="color:var(--text-muted);font-size:12px;">Loading...</div>';
+  try {
+    var suiteRes = await fetch('/api/api-suites/' + encodeURIComponent(suiteId));
+    var runsRes = await fetch('/api/api-suites/' + encodeURIComponent(suiteId) + '/runs');
+    if (!suiteRes.ok) { modAlert('api-suites-alert', 'error', 'Suite not found'); return; }
+    var suite = await suiteRes.json();
+    var runs = runsRes.ok ? await runsRes.json() : [];
+    el.innerHTML = apiSuitesDetailHtml(suite, runs);
+  } catch (e) {
+    modAlert('api-suites-alert', 'error', 'Error: ' + e.message);
+  }
+}
+
+function apiSuitesDetailHtml(suite, runs) {
+  var html = '<div style="margin-bottom:12px;">'
+    + '<button class="btn btn-sm" onclick="apiSuitesLoad()">&#8592; Back</button> '
+    + '<button class="btn btn-sm" onclick="apiSuitesRunSuite(\'' + escHtml(suite.id) + '\')">&#9654; Run Suite</button>'
+    + '</div>'
+    + '<div style="font-size:16px;font-weight:600;margin-bottom:8px;">' + escHtml(suite.name) + '</div>'
+    + '<div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">'
+    + 'Collections: ' + (suite.collectionIds || []).length
+    + (suite.beforeAllCollectionId ? ' | beforeAll: ' + escHtml(suite.beforeAllCollectionId) : '')
+    + (suite.afterAllCollectionId ? ' | afterAll: ' + escHtml(suite.afterAllCollectionId) : '')
+    + '</div>';
+
+  if (runs.length === 0) {
+    html += '<div style="color:var(--text-muted);font-size:12px;">No runs yet.</div>';
+    return html;
+  }
+
+  html += '<div style="font-weight:600;font-size:13px;margin-bottom:8px;">Recent Runs</div>'
+    + runs.slice(0, 10).map(function(r) {
+      var statusClass = r.status === 'passed' ? 'suite-run-passed' : 'suite-run-failed';
+      return '<div style="border:1px solid #374151;border-radius:4px;padding:8px;margin-bottom:6px;cursor:pointer;" onclick="apiSuitesShowRun(\'' + escHtml(r.id) + '\')">'
+        + '<span class="' + statusClass + '">' + escHtml(r.status.toUpperCase()) + '</span> '
+        + '<span style="font-size:11px;color:var(--text-muted);">' + escHtml(r.startedAt.replace('T',' ').slice(0,19)) + '</span> '
+        + '<span style="font-size:11px;">' + r.phaseResults.length + ' phases</span>'
+        + '</div>';
+    }).join('');
+
+  return html;
+}
+
+async function apiSuitesShowRun(runId) {
+  var el = document.getElementById('api-suites-content');
+  if (!el) return;
+  try {
+    var res = await fetch('/api/api-suite-runs/' + encodeURIComponent(runId));
+    if (!res.ok) { modAlert('api-suites-alert', 'error', 'Run not found'); return; }
+    var run = await res.json();
+    el.innerHTML = apiSuitesRunHtml(run);
+  } catch (e) {
+    modAlert('api-suites-alert', 'error', 'Error: ' + e.message);
+  }
+}
+
+function apiSuitesRunHtml(run) {
+  var statusClass = run.status === 'passed' ? 'suite-run-passed' : 'suite-run-failed';
+  var html = '<div style="margin-bottom:12px;">'
+    + '<button class="btn btn-sm" onclick="apiSuitesShowDetail(\'' + escHtml(run.suiteId) + '\')">&#8592; Back</button>'
+    + '</div>'
+    + '<div style="font-size:16px;font-weight:600;margin-bottom:4px;">' + escHtml(run.suiteName) + ' &#8212; <span class="' + statusClass + '">' + escHtml(run.status.toUpperCase()) + '</span></div>'
+    + '<div style="font-size:11px;color:var(--text-muted);margin-bottom:12px;">'
+    + escHtml(run.startedAt.replace('T',' ').slice(0,19)) + ' &middot; ' + Math.round(run.durationMs / 1000) + 's'
+    + '</div>'
+    + '<div style="font-weight:600;font-size:13px;margin-bottom:8px;">Lifecycle Timeline</div>'
+    + (run.phaseResults || []).map(function(p) {
+      var phaseStatus = p.status === 'passed' ? '&#9989;' : p.status === 'failed' ? '&#10060;' : '&#9888;&#65039;';
+      var hookBadge = p.isLifecycleHook
+        ? '<span style="font-size:10px;background:#1f2937;border:1px solid #374151;border-radius:3px;padding:1px 5px;margin-left:4px;color:#9ca3af;">'
+          + escHtml(p.phase.replace(/_/g,' ').toUpperCase()) + '</span>'
+        : '';
+      return '<div class="suite-lifecycle-phase phase-' + escHtml(p.phase) + '">'
+        + phaseStatus + ' '
+        + '<a href="#" onclick="typeof apiRunsLoadByRunId===\'function\'&&apiRunsLoadByRunId(\'' + escHtml(p.runId) + '\');return false;">' + escHtml(p.collectionName) + '</a>'
+        + hookBadge
+        + ' <span style="font-size:10px;color:var(--text-muted);">' + p.durationMs + 'ms</span>'
+        + '</div>';
+    }).join('');
+
+  return html;
+}
+
+async function apiSuitesRunSuite(suiteId) {
+  try {
+    var res = await fetch('/api/api-suites/' + encodeURIComponent(suiteId) + '/run', { method: 'POST' });
+    if (!res.ok) {
+      var err = await res.json();
+      modAlert('api-suites-alert', 'error', (err.error && err.error.message) || 'Run failed');
+      return;
+    }
+    modAlert('api-suites-alert', 'success', 'Suite run started &#8212; refresh Runs tab shortly.');
+  } catch (e) {
+    modAlert('api-suites-alert', 'error', 'Error: ' + e.message);
+  }
+}
+
+async function apiSuitesDelete(suiteId) {
+  if (!confirm('Delete this suite?')) return;
+  try {
+    var res = await fetch('/api/api-suites/' + encodeURIComponent(suiteId), { method: 'DELETE' });
+    if (!res.ok) { modAlert('api-suites-alert', 'error', 'Delete failed'); return; }
+    apiSuitesLoad();
+  } catch (e) {
+    modAlert('api-suites-alert', 'error', 'Error: ' + e.message);
+  }
+}
+
+function apiSuitesShowCreate() {
+  modAlert('api-suites-alert', 'info', 'Suite creation UI &#8212; enter suite config below, then submit.');
+  var el = document.getElementById('api-suites-content');
+  if (!el) return;
+  el.innerHTML = '<div style="margin-bottom:12px;"><button class="btn btn-sm" onclick="apiSuitesLoad()">&#8592; Cancel</button></div>'
+    + '<form onsubmit="apiSuitesCreate(event)">'
+    + '<div class="form-group"><label>Suite Name</label><input name="name" class="form-control" required /></div>'
+    + '<div class="form-group"><label>Collection IDs (comma-separated)</label><input name="collectionIds" class="form-control" required /></div>'
+    + '<div class="form-group"><label>Environment ID</label><input name="environmentId" class="form-control" required /></div>'
+    + '<div class="form-group"><label>On Failure</label><select name="onFailure" class="form-control"><option value="continue">continue</option><option value="stop">stop</option></select></div>'
+    + '<div class="form-group"><label>Before All Collection ID (optional)</label><input name="beforeAllCollectionId" class="form-control" /></div>'
+    + '<div class="form-group"><label>After All Collection ID (optional)</label><input name="afterAllCollectionId" class="form-control" /></div>'
+    + '<button type="submit" class="btn btn-primary">Create Suite</button>'
+    + '</form>';
+}
+
+async function apiSuitesCreate(event) {
+  event.preventDefault();
+  var form = event.target;
+  var body = {
+    name: form.name.value.trim(),
+    collectionIds: form.collectionIds.value.split(',').map(function(s) { return s.trim(); }).filter(Boolean),
+    environmentId: form.environmentId.value.trim(),
+    onFailure: form.onFailure.value,
+    beforeAllCollectionId: form.beforeAllCollectionId.value.trim() || undefined,
+    afterAllCollectionId: form.afterAllCollectionId.value.trim() || undefined,
+  };
+  try {
+    var res = await fetch('/api/api-suites', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      var err = await res.json();
+      modAlert('api-suites-alert', 'error', (err.error && err.error.message) || 'Create failed');
+      return;
+    }
+    modAlert('api-suites-alert', 'success', 'Suite created.');
+    apiSuitesLoad();
+  } catch (e) {
+    modAlert('api-suites-alert', 'error', 'Error: ' + e.message);
+  }
+}
+
+// Page load hook — called by router when page becomes active
+if (typeof registerPageModule === 'function') {
+  registerPageModule('api-suites', apiSuitesInit);
+}
+// Module: Observability & Replay Engine UI
+// Page: api-replay
+
+var _apiReplayCurrentRunId = null;
+
+function apiReplayInit() {
+  apiReplayRenderLanding();
+}
+
+function apiReplayRenderLanding() {
+  var el = document.getElementById('api-replay-content');
+  if (!el) return;
+  el.innerHTML = '<div style="padding:20px;color:var(--text-muted);font-size:13px;">'
+    + '<div style="font-size:16px;font-weight:600;margin-bottom:12px;color:#e5e7eb;">🔍 Execution Replay &amp; Observability</div>'
+    + '<p>Enter a Run ID to inspect its replay events, timeline, and observability summary.</p>'
+    + '<div style="display:flex;gap:8px;margin-top:12px;">'
+    + '<input id="api-replay-run-input" class="form-control" style="max-width:320px;" placeholder="Run ID (e.g. abc123)" />'
+    + '<button class="btn btn-sm" onclick="apiReplayLoad()">Load</button>'
+    + '</div>'
+    + '<div style="margin-top:16px;font-size:11px;color:#4b5563;">Tip: copy the Run ID from the API Runs tab.</div>'
+    + '</div>';
+}
+
+async function apiReplayLoad(runId) {
+  runId = runId || (document.getElementById('api-replay-run-input') || {}).value || '';
+  runId = runId.trim();
+  if (!runId) { modAlert('api-replay-alert', 'error', 'Enter a Run ID.'); return; }
+  _apiReplayCurrentRunId = runId;
+
+  var el = document.getElementById('api-replay-content');
+  if (el) el.innerHTML = '<div style="color:var(--text-muted);padding:16px;">Loading observability data...</div>';
+
+  try {
+    var res = await fetch('/api/api-runs/' + encodeURIComponent(runId) + '/observability');
+    if (!res.ok) {
+      var err = await res.json();
+      modAlert('api-replay-alert', 'error', (err.error && err.error.message) || 'Run not found.');
+      apiReplayRenderLanding();
+      return;
+    }
+    var summary = await res.json();
+    apiReplayRenderSummary(summary);
+  } catch (e) {
+    modAlert('api-replay-alert', 'error', 'Error: ' + e.message);
+  }
+}
+
+function apiReplayRenderSummary(summary) {
+  var el = document.getElementById('api-replay-content');
+  if (!el) return;
+
+  var statusColor = summary.status === 'passed' ? '#4ade80' : '#f87171';
+  var replay = summary.replay || {};
+  var stats = replay.stats || {};
+
+  el.innerHTML = '<div style="margin-bottom:12px;">'
+    + '<button class="btn btn-sm" onclick="apiReplayRenderLanding()">&#8592; Back</button>'
+    + '</div>'
+    + '<div style="font-size:15px;font-weight:600;margin-bottom:4px;">'
+    + 'Run: <span style="font-family:monospace;font-size:13px;">' + escHtml(summary.runId) + '</span>'
+    + ' <span style="color:' + statusColor + ';margin-left:8px;">' + escHtml(summary.status.toUpperCase()) + '</span>'
+    + '</div>'
+    + '<div style="font-size:11px;color:var(--text-muted);margin-bottom:16px;">'
+    + escHtml(summary.startedAt.replace('T',' ').slice(0,19))
+    + ' &middot; ' + summary.stepCount + ' steps'
+    + (summary.hasSnapshot ? ' &middot; <span style="color:#a78bfa;">snapshot</span>' : '')
+    + (summary.hasTimeline ? ' &middot; <span style="color:#60a5fa;">timeline</span>' : '')
+    + '</div>'
+
+    // Stats cards
+    + '<div style="margin-bottom:16px;">'
+    + _obsStatCard(stats.requestsSent || 0, 'Requests')
+    + _obsStatCard(stats.assertionsPassed || 0, 'Assertions Passed')
+    + _obsStatCard(stats.assertionsFailed || 0, 'Assertions Failed')
+    + _obsStatCard(stats.retriesTriggered || 0, 'Retries')
+    + _obsStatCard(stats.teardownEvents || 0, 'Teardowns')
+    + _obsStatCard(stats.failuresPropagated || 0, 'Failures')
+    + '</div>'
+
+    // Tab bar
+    + '<div style="display:flex;gap:8px;margin-bottom:12px;border-bottom:1px solid #374151;padding-bottom:8px;">'
+    + '<button class="tbl-btn" onclick="apiReplayShowTab(\'events\')">Replay Events (' + (replay.eventCount || 0) + ')</button>'
+    + '<button class="tbl-btn" onclick="apiReplayShowTab(\'timeline\')">Timeline</button>'
+    + (summary.snapshotSummary ? '<button class="tbl-btn" onclick="apiReplayShowTab(\'snapshot\')">Snapshot</button>' : '')
+    + '</div>'
+    + '<div id="api-replay-tab-content"></div>';
+
+  apiReplayShowTab('events');
+}
+
+function _obsStatCard(value, label) {
+  return '<div class="obs-stat-card"><span class="obs-stat-value">' + value + '</span><span class="obs-stat-label">' + escHtml(label) + '</span></div>';
+}
+
+async function apiReplayShowTab(tab) {
+  var el = document.getElementById('api-replay-tab-content');
+  if (!el) return;
+
+  if (tab === 'events') {
+    el.innerHTML = '<div style="color:var(--text-muted);font-size:11px;">Loading replay events...</div>';
+    try {
+      var res = await fetch('/api/api-runs/' + encodeURIComponent(_apiReplayCurrentRunId) + '/replay-events');
+      if (!res.ok) { el.innerHTML = '<div style="color:#f87171;">Failed to load replay events.</div>'; return; }
+      var session = await res.json();
+      el.innerHTML = apiReplayEventsHtml(session.events || []);
+    } catch (e) {
+      el.innerHTML = '<div style="color:#f87171;">Error: ' + escHtml(e.message) + '</div>';
+    }
+
+  } else if (tab === 'timeline') {
+    el.innerHTML = '<div style="color:var(--text-muted);font-size:11px;">Loading timeline...</div>';
+    try {
+      var res2 = await fetch('/api/api-runs/' + encodeURIComponent(_apiReplayCurrentRunId) + '/timeline');
+      if (!res2.ok) { el.innerHTML = '<div style="color:var(--text-muted);font-size:12px;">No timeline recorded for this run.</div>'; return; }
+      var timeline = await res2.json();
+      el.innerHTML = apiReplayTimelineHtml(timeline.events || []);
+    } catch (e2) {
+      el.innerHTML = '<div style="color:#f87171;">Error: ' + escHtml(e2.message) + '</div>';
+    }
+
+  } else if (tab === 'snapshot') {
+    try {
+      var res3 = await fetch('/api/api-runs/' + encodeURIComponent(_apiReplayCurrentRunId) + '/observability');
+      var obs = res3.ok ? await res3.json() : null;
+      var snap = obs && obs.snapshotSummary;
+      if (!snap) { el.innerHTML = '<div style="color:var(--text-muted);font-size:12px;">No snapshot available.</div>'; return; }
+      el.innerHTML = '<div style="font-size:12px;padding:8px;">'
+        + '<div><b>Captured:</b> ' + escHtml(snap.capturedAt.replace('T',' ').slice(0,19)) + '</div>'
+        + '<div><b>Completed nodes:</b> ' + snap.completedNodeIds + '</div>'
+        + '<div><b>Failed nodes:</b> ' + snap.failedNodeIds + '</div>'
+        + '<div><b>Skipped nodes:</b> ' + snap.skippedNodeIds + '</div>'
+        + '</div>';
+    } catch (e3) {
+      el.innerHTML = '<div style="color:#f87171;">Error: ' + escHtml(e3.message) + '</div>';
+    }
+  }
+}
+
+function apiReplayEventsHtml(events) {
+  if (!events.length) return '<div style="color:var(--text-muted);font-size:12px;padding:8px;">No replay events.</div>';
+  return '<div style="max-height:480px;overflow-y:auto;">'
+    + events.map(function(e) {
+      var kindClass = 'kind-' + e.kind;
+      var detail = '';
+      if (e.request) detail = e.request.method + ' ' + escHtml(e.request.url);
+      else if (e.response) detail = 'HTTP ' + e.response.status + ' (' + e.response.durationMs + 'ms)';
+      else if (e.assertion) detail = (e.assertion.passed ? '✓ ' : '✗ ') + escHtml(e.assertion.type) + (e.assertion.message ? ': ' + escHtml(e.assertion.message) : '');
+      else if (e.variable) detail = e.variable.key + ' = ' + escHtml(e.variable.maskedValue);
+      else if (e.failure) detail = escHtml(e.failure.reason);
+      else if (e.skipReason) detail = escHtml(e.skipReason);
+      return '<div class="replay-event-row">'
+        + '<span style="color:#4b5563;min-width:32px;">' + e.seq + '</span>'
+        + '<span class="replay-event-kind ' + kindClass + '">' + escHtml(e.kind.replace(/-/g,' ')) + '</span>'
+        + '<span style="color:#9ca3af;min-width:120px;">' + escHtml(e.stepName) + '</span>'
+        + '<span>' + detail + '</span>'
+        + (e.durationMs != null ? '<span style="color:#4b5563;margin-left:auto;">' + e.durationMs + 'ms</span>' : '')
+        + '</div>';
+    }).join('')
+    + '</div>';
+}
+
+function apiReplayTimelineHtml(events) {
+  if (!events.length) return '<div style="color:var(--text-muted);font-size:12px;padding:8px;">No timeline events.</div>';
+  return '<div style="max-height:480px;overflow-y:auto;">'
+    + events.map(function(e) {
+      var typeClass = 'evt-' + e.eventType;
+      return '<div class="timeline-event-row">'
+        + '<span class="timeline-event-type ' + typeClass + '">' + escHtml(e.eventType) + '</span>'
+        + '<span style="color:#9ca3af;">' + escHtml(e.nodeName) + '</span>'
+        + (e.durationMs != null ? '<span style="color:#4b5563;margin-left:auto;">' + e.durationMs + 'ms</span>' : '')
+        + (e.detail ? '<span style="color:#6b7280;">' + escHtml(e.detail) + '</span>' : '')
+        + '</div>';
+    }).join('')
+    + '</div>';
+}
+
+// Page load hook
+if (typeof registerPageModule === 'function') {
+  registerPageModule('api-replay', apiReplayInit);
 }
