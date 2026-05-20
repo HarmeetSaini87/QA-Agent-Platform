@@ -125,6 +125,7 @@ All code changes, experiments, and new features are developed here FIRST.
 > **📋 See [docs/superpowers/plans/2026-05-19-phase-d-step9-api-defect-intelligence.md](docs/superpowers/plans/2026-05-19-phase-d-step9-api-defect-intelligence.md) — Phase D Step 9 implementation plan (11 tasks). **COMPLETE as of 2026-05-19.**
 > **📋 See [docs/superpowers/plans/2026-05-19-phase-d-step10-suite-orchestration.md](docs/superpowers/plans/2026-05-19-phase-d-step10-suite-orchestration.md) — Phase D Step 10 implementation plan (10 tasks). **COMPLETE as of 2026-05-19.**
 > **📋 See [docs/superpowers/plans/2026-05-19-phase-d-step11-observability-replay.md](docs/superpowers/plans/2026-05-19-phase-d-step11-observability-replay.md) — Phase D Step 11 implementation plan (8 tasks). **COMPLETE as of 2026-05-19.**
+> **📋 See [docs/superpowers/plans/2026-05-20-phase-d-step12-distributed-execution-readiness.md](docs/superpowers/plans/2026-05-20-phase-d-step12-distributed-execution-readiness.md) — Phase D Step 12 implementation plan (8 tasks). **COMPLETE as of 2026-05-20.**
 
 ---
 
@@ -316,6 +317,17 @@ Graph at `.code-review-graph/graph.db` — 11 communities, auto-updates on file 
 - Rollback: set `USE_LEGACY_POSTMAN_IMPORTER=true` in env → reverts Postman route to legacy util
 - Legacy `src/utils/postmanImport.ts` still in place — do not delete
 - `parity-validator.ts` — run `validatePostmanParity()` to diff legacy vs new importer outputs
+
+### Distributed Execution Readiness (Phase D Step 12 — shipped 2026-05-20)
+- Worker Pool: `src/api-runtime/worker-pool/` — `IWorkerPool`, `SimpleWorkerPool` (round-robin, dispose-aware)
+- Execution Leasing: `src/api-runtime/execution-leasing/` — `ILeaseRegistry`, `InMemoryLeaseRegistry` (TTL, expire/release)
+- Environment Isolation: `src/api-runtime/environment-isolation/` — `IEnvironmentLockRegistry` (exclusive/shared locks)
+- Worker Health: `src/api-runtime/worker-health/` — `aggregatePoolHealth()`, singleton, routes `GET /api/worker-pool/health`, `/stuck-runs`
+- Queue Abstraction: `src/api-runtime/orchestration/` — `IExecutionQueue`, `InMemoryExecutionQueue` (priority FIFO)
+- Distributed Replay: `src/api-observability/contracts/distributed-replay.contracts.ts` — `IReplayMergeEngine`, `SingleWorkerReplayMerger`
+- Cloud Extension: `src/api-runtime/cloud-extension/` — `IWorkerProvider`, `NoOpWorkerProvider` (K8s stub, no-op today)
+- UI: `29-worker-health.js` — worker pool health dashboard, `GET /api/worker-pool/health`
+- Single-node default unchanged; all contracts IPC-ready (JSON-serialisable)
 
 ---
 

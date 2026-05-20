@@ -59,6 +59,7 @@ import { registerFlakinessRoutes } from '../api-flakiness/routes/api-flakiness.r
 import { registerApiDefectsRoutes } from '../api-defects/routes/api-defects.routes';
 import { registerApiSuiteRoutes } from '../api-suite/routes/api-suites.routes';
 import { registerObservabilityRoutes } from '../api-observability/routes/observability.routes';
+import { registerWorkerHealthRoutes } from '../api-runtime/worker-health/routes/worker-health.routes';
 
 dotenv.config();
 
@@ -231,6 +232,7 @@ registerFlakinessRoutes(app);
 registerApiDefectsRoutes(app);
 registerApiSuiteRoutes(app);
 registerObservabilityRoutes(app);
+registerWorkerHealthRoutes(app);
 
 // ── SPA fallback (requires auth) — MUST be after all API routes ──────────────
 app.get('*', requireAuth, (_req: Request, res: Response) => {
