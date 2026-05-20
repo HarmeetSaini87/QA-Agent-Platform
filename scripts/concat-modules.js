@@ -37,6 +37,7 @@ const MANIFEST = [
   '26-api-flakiness.js',
   '27-api-suites.js',
   '28-api-replay.js',
+  '29-worker-health.js',
 ];
 
 function build() {
