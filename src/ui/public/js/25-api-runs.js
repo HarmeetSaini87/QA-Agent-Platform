@@ -288,7 +288,7 @@ function _apiRunsRenderHar(run) {
     if (!step.response) continue;
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td>${escHtml(step.stepName)}</td>
+      <td>${escHtml(step.stepName)}${step.isTeardown ? '<span class="teardown-badge">teardown</span>' : ''}</td>
       <td><span class="badge badge-blue" style="font-size:11px">${step.request?.method ?? ''}</span></td>
       <td style="font-family:monospace;font-size:12px;max-width:220px;overflow:hidden;text-overflow:ellipsis">${escHtml(step.request?.url ?? '')}</td>
       <td style="color:${step.response.status < 300 ? '#22c55e' : step.response.status < 500 ? '#f59e0b' : '#ef4444'}">${step.response.status}</td>
