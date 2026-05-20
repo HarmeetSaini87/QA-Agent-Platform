@@ -163,7 +163,8 @@ async function executeStepWithRetry(
 export async function runCollection(
   collection: ApiCollection,
   environment: ApiEnvironment,
-  runId: string
+  runId: string,
+  inheritedContext?: Record<string, string>,
 ): Promise<ApiCollectionRunResult> {
   // Phase B Step 5: orchestration delegated to WorkflowEngine.
   // Phase B Step 10: this function = context init + engine wiring + Jira side-effect only.
@@ -175,6 +176,11 @@ export async function runCollection(
   const initialContext: VariableContext = {};
   for (const v of decryptedEnvVars) initialContext[v.key] = v.value;
   for (const v of collection.variables ?? []) initialContext[v.key] = v.value;
+
+  // Merge inherited context from suite lifecycle (beforeAll/beforeEach extracted variables)
+  if (inheritedContext) {
+    for (const [k, v] of Object.entries(inheritedContext)) initialContext[k] = v;
+  }
 
   // Phase B Step 8: partial write delegated to artifact-engine
   // OLD: const writePartialToFs = (status, partial) => { fs.existsSync / mkdirSync / writeFileSync }
