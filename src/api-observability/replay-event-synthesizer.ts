@@ -19,6 +19,7 @@ function bodySizeBytes(body: unknown): number {
 
 export function synthesizeReplaySession(
   run: ApiCollectionRunResult,
+  // _snapshot reserved: future enrichment with retry-triggered + dependency-wait events
   _snapshot?: ExecutionSnapshot,
 ): ReplaySession {
   const events: ReplayEvent[] = [];
@@ -70,7 +71,7 @@ export function synthesizeReplaySession(
     for (const ar of step.assertionResults ?? []) {
       events.push({
         seq: seq++, kind: 'assertion-evaluated', stepId: step.stepId, stepName: step.stepName, timestamp: ts,
-        assertion: { type: ((ar as unknown as Record<string, unknown>)['type'] as string) ?? ar.field ?? ar.operator ?? 'unknown', passed: ar.passed, message: ar.message },
+        assertion: { type: ar.field ?? ar.operator ?? 'unknown', passed: ar.passed, message: ar.message },
       });
       if (ar.passed) stats.assertionsPassed++; else stats.assertionsFailed++;
     }

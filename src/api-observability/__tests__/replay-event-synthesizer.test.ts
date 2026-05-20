@@ -114,7 +114,7 @@ describe('synthesizeReplaySession', () => {
     }
   });
 
-  it('stats.requestsSent equals number of steps with a response', () => {
+  it('stats.requestsSent equals number of steps with a request', () => {
     const run = makeRunResult([makeStepResult(), makeStepResult({ stepId: 's2', stepName: 's2' })]);
     const session = synthesizeReplaySession(run);
     expect(session.stats.requestsSent).toBe(2);
