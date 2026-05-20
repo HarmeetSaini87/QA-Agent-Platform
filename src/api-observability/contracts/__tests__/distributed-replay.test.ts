@@ -7,12 +7,12 @@ import {
   type DistributedReplayManifest,
   type WorkerReplayFragment,
 } from '../distributed-replay.contracts';
-import type { ReplayEvent } from '../replay-event.contracts';
+import type { ReplayEvent, ReplayEventKind } from '../replay-event.contracts';
 
 describe('SingleWorkerReplayMerger', () => {
-  const createMockEvent = (seq: number, kind: string = 'request-sent'): ReplayEvent => ({
+  const createMockEvent = (seq: number, kind: ReplayEventKind = 'request-sent'): ReplayEvent => ({
     seq,
-    kind: kind as any,
+    kind,
     stepId: `step-${seq}`,
     stepName: `Step ${seq}`,
     timestamp: new Date(Date.now() + seq * 1000).toISOString(),
