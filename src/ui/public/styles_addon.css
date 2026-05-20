@@ -2530,3 +2530,50 @@ body[data-theme="light"] .exec-graph-timeline-bar-wrap { background: #e8e0d0; }
 }
 .suite-run-failed { color: #f87171; }
 .suite-run-passed { color: #4ade80; }
+
+/* ── Phase D Step 11: Observability & Replay ──────────────────────────────── */
+.replay-event-row {
+  display: flex;
+  align-items: flex-start;
+  padding: 4px 8px;
+  border-bottom: 1px solid #1f2937;
+  font-size: 11px;
+  gap: 8px;
+}
+.replay-event-row:hover { background: #111827; }
+.replay-event-kind {
+  min-width: 140px;
+  font-weight: 600;
+  color: #6b7280;
+}
+.replay-event-kind.kind-request-sent { color: #60a5fa; }
+.replay-event-kind.kind-response-received { color: #34d399; }
+.replay-event-kind.kind-assertion-evaluated { color: #a78bfa; }
+.replay-event-kind.kind-failure-propagated { color: #f87171; }
+.replay-event-kind.kind-retry-triggered { color: #fbbf24; }
+.replay-event-kind.kind-teardown-executed { color: #9ca3af; }
+.replay-event-kind.kind-variable-extracted { color: #818cf8; }
+.replay-event-kind.kind-step-skipped { color: #6b7280; }
+.replay-event-kind.kind-step-completed { color: #4ade80; }
+.obs-stat-card {
+  display: inline-block;
+  background: #111827;
+  border: 1px solid #374151;
+  border-radius: 4px;
+  padding: 6px 12px;
+  margin: 4px;
+  font-size: 12px;
+}
+.obs-stat-card .obs-stat-value { font-size: 20px; font-weight: 700; display: block; }
+.obs-stat-card .obs-stat-label { color: #6b7280; }
+.timeline-event-row {
+  padding: 3px 8px;
+  font-size: 11px;
+  border-bottom: 1px solid #1f2937;
+  display: flex;
+  gap: 8px;
+}
+.timeline-event-type { min-width: 120px; color: #6b7280; font-weight: 600; }
+.timeline-event-type.evt-node-failed { color: #f87171; }
+.timeline-event-type.evt-node-completed { color: #4ade80; }
+.timeline-event-type.evt-node-retrying { color: #fbbf24; }

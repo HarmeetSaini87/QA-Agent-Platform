@@ -36,6 +36,7 @@ const MANIFEST = [
   '25-api-runs.js',
   '26-api-flakiness.js',
   '27-api-suites.js',
+  '28-api-replay.js',
 ];
 
 function build() {
