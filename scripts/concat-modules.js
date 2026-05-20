@@ -35,6 +35,7 @@ const MANIFEST = [
   '24-api-collections.js',
   '25-api-runs.js',
   '26-api-flakiness.js',
+  '27-api-suites.js',
 ];
 
 function build() {
