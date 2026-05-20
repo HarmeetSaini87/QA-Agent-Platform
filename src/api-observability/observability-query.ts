@@ -36,8 +36,12 @@ export async function getObservabilitySummary(runId: string): Promise<Observabil
   if (replaySessionExists(runId)) {
     replay = loadReplaySession(runId);
   } else {
-    replay = synthesizeReplaySession(run, snapshot);
-    await saveReplaySession(replay);
+    try {
+      replay = synthesizeReplaySession(run, snapshot);
+      await saveReplaySession(replay);
+    } catch {
+      replay = null;
+    }
   }
 
   return {

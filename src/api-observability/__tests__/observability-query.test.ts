@@ -61,7 +61,7 @@ describe('getObservabilitySummary', () => {
     mockLoadTimeline.mockResolvedValue(undefined);
     mockReplaySessionExists.mockReturnValue(false);
     mockLoadReplaySession.mockReturnValue(null);
-    mockSaveReplaySession.mockReturnValue(undefined);
+    mockSaveReplaySession.mockResolvedValue(undefined);
 
     const summary = await getObservabilitySummary('run-1');
     expect(summary).not.toBeNull();
@@ -75,7 +75,7 @@ describe('getObservabilitySummary', () => {
     mockLoadTimeline.mockResolvedValue(undefined);
     mockReplaySessionExists.mockReturnValue(false);
     mockLoadReplaySession.mockReturnValue(null);
-    mockSaveReplaySession.mockReturnValue(undefined);
+    mockSaveReplaySession.mockResolvedValue(undefined);
 
     await getObservabilitySummary('run-1');
     expect(mockSaveReplaySession).toHaveBeenCalledOnce();
@@ -103,7 +103,7 @@ describe('getObservabilitySummary', () => {
     mockLoadTimeline.mockResolvedValue({ runId: 'run-1', events: [] } as any);
     mockReplaySessionExists.mockReturnValue(false);
     mockLoadReplaySession.mockReturnValue(null);
-    mockSaveReplaySession.mockReturnValue(undefined);
+    mockSaveReplaySession.mockResolvedValue(undefined);
 
     const summary = await getObservabilitySummary('run-1');
     expect(summary!.hasSnapshot).toBe(true);
