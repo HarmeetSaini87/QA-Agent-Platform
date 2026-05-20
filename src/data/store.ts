@@ -72,3 +72,4 @@ export const COMPONENTS  = 'components';
 
 export const API_ENVS        = 'api-envs';
 export const API_COLLECTIONS = 'api-collections';
+export const API_SUITES      = 'api-suites';
