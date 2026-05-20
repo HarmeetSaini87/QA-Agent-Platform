@@ -71,6 +71,7 @@ export function registerWorkflowGraphRoutes(app: Express): void {
         assertionFailures: sr.assertionResults
           .filter(a => !a.passed)
           .map(a => a.message ?? `${a.field} ${a.operator} ${a.expected}`),
+        isTeardown: sr.isTeardown ?? false,
       };
     }
 
@@ -108,6 +109,7 @@ export function registerWorkflowGraphRoutes(app: Express): void {
             startedAt: rec.startedAt,
             completedAt: rec.completedAt,
             error: rec.error,
+            isTeardown: false,
           };
         }
       }

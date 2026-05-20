@@ -716,6 +716,7 @@ export interface RunGraphNodeResult {
   error?: string;
   contractViolations?: string[];
   assertionFailures?: string[];
+  isTeardown?: boolean;
 }
 
 export interface RunGraphProjection {
