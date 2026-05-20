@@ -459,7 +459,8 @@ export class WorkflowEngine {
         state.sharedContext
       ).catch(() => ({}));
       const result = await executeStep(step, state.sharedContext, authHeaders, environment.baseUrl ?? '');
-      state.stepResults.push(result);
+      // OLD: state.stepResults.push(result); -- Phase D Step 10: tag teardown results for observability
+      state.stepResults.push({ ...result, isTeardown: true });
     }
 
     // â”€â”€ Final result â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

@@ -680,6 +680,7 @@ export interface ApiStepResult {
   contractViolations?: string[];
   error?: string;
   healingProposal?: string;
+  isTeardown?: boolean;
 }
 
 export interface ApiCollectionRunResult {
