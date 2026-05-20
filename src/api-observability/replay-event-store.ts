@@ -18,7 +18,7 @@ function atomicWrite(file: string, data: string): void {
   fs.renameSync(tmp, file);
 }
 
-export function saveReplaySession(session: ReplaySession): void {
+export async function saveReplaySession(session: ReplaySession): Promise<void> {
   atomicWrite(sessionPath(session.runId), JSON.stringify(session, null, 2));
 }
 
