@@ -58,6 +58,7 @@ import { registerWorkflowGraphRoutes } from '../workflow-graph/routes/workflow-g
 import { registerFlakinessRoutes } from '../api-flakiness/routes/api-flakiness.routes';
 import { registerApiDefectsRoutes } from '../api-defects/routes/api-defects.routes';
 import { registerApiSuiteRoutes } from '../api-suite/routes/api-suites.routes';
+import { registerObservabilityRoutes } from '../api-observability/routes/observability.routes';
 
 dotenv.config();
 
@@ -229,6 +230,7 @@ registerWorkflowGraphRoutes(app);
 registerFlakinessRoutes(app);
 registerApiDefectsRoutes(app);
 registerApiSuiteRoutes(app);
+registerObservabilityRoutes(app);
 
 // ── SPA fallback (requires auth) — MUST be after all API routes ──────────────
 app.get('*', requireAuth, (_req: Request, res: Response) => {
