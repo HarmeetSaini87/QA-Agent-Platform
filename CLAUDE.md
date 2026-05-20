@@ -124,6 +124,7 @@ All code changes, experiments, and new features are developed here FIRST.
 > **📋 See [docs/superpowers/plans/2026-05-17-phase-d-step8-api-flakiness-analytics.md](docs/superpowers/plans/2026-05-17-phase-d-step8-api-flakiness-analytics.md) — Phase D Step 8 implementation plan (12 tasks). **COMPLETE as of 2026-05-17.**
 > **📋 See [docs/superpowers/plans/2026-05-19-phase-d-step9-api-defect-intelligence.md](docs/superpowers/plans/2026-05-19-phase-d-step9-api-defect-intelligence.md) — Phase D Step 9 implementation plan (11 tasks). **COMPLETE as of 2026-05-19.**
 > **📋 See [docs/superpowers/plans/2026-05-19-phase-d-step10-suite-orchestration.md](docs/superpowers/plans/2026-05-19-phase-d-step10-suite-orchestration.md) — Phase D Step 10 implementation plan (10 tasks). **COMPLETE as of 2026-05-19.**
+> **📋 See [docs/superpowers/plans/2026-05-19-phase-d-step11-observability-replay.md](docs/superpowers/plans/2026-05-19-phase-d-step11-observability-replay.md) — Phase D Step 11 implementation plan (8 tasks). **COMPLETE as of 2026-05-19.**
 
 ---
 
@@ -289,6 +290,16 @@ Graph at `.code-review-graph/graph.db` — 11 communities, auto-updates on file 
 - UI: `27-api-suites.js` — suite management, lifecycle timeline, run history
 - teardown badge in `25-api-runs.js` step table
 - Backward compatible: `runCollection` unchanged API (optional 4th param)
+
+### Observability, Replay Engine & Execution Intelligence (shipped 2026-05-19)
+- Module: `src/api-observability/` — contracts, synthesizer, store, query, routes
+- `synthesizeReplaySession()` — post-hoc, runtime-isolated: converts `ApiCollectionRunResult + ExecutionSnapshot` → `ReplaySession` (immutable, deterministic)
+- Replay event store: `data/replay-sessions/<runId>.replay.json` (atomic write, lazy-cached on first GET)
+- `getObservabilitySummary()` — aggregates run + timeline + snapshot + replay in one query; try/catch on synthesis (graceful degradation to `replay: null`)
+- Routes: `GET /api/api-runs/:runId/observability`, `/replay-events`, `/timeline`
+- Contracts: `ReplayEvent`, `ReplaySession`, `RunDiffSummary`, `RcaExtensionPoint` (AI RCA hook — no-op today)
+- UI: `28-api-replay.js` — observability summary, replay event list, timeline list, snapshot summary
+- Runtime isolation: synthesizer imports ONLY from `data/types`, `shared-core/contracts`, own contracts — zero runtime calls
 
 ### API Defect Intelligence (shipped 2026-05-19)
 - Module: `src/api-defects/` — enricher, heal-advisor, store, routes
