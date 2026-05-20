@@ -123,6 +123,7 @@ All code changes, experiments, and new features are developed here FIRST.
 > **📋 See [docs/superpowers/plans/2026-05-16-phase-d-step5-workflow-graph-projection.md](docs/superpowers/plans/2026-05-16-phase-d-step5-workflow-graph-projection.md) — Phase D Step 5 implementation plan (11 tasks). **COMPLETE as of 2026-05-17.**
 > **📋 See [docs/superpowers/plans/2026-05-17-phase-d-step8-api-flakiness-analytics.md](docs/superpowers/plans/2026-05-17-phase-d-step8-api-flakiness-analytics.md) — Phase D Step 8 implementation plan (12 tasks). **COMPLETE as of 2026-05-17.**
 > **📋 See [docs/superpowers/plans/2026-05-19-phase-d-step9-api-defect-intelligence.md](docs/superpowers/plans/2026-05-19-phase-d-step9-api-defect-intelligence.md) — Phase D Step 9 implementation plan (11 tasks). **COMPLETE as of 2026-05-19.**
+> **📋 See [docs/superpowers/plans/2026-05-19-phase-d-step10-suite-orchestration.md](docs/superpowers/plans/2026-05-19-phase-d-step10-suite-orchestration.md) — Phase D Step 10 implementation plan (10 tasks). **COMPLETE as of 2026-05-19.**
 
 ---
 
@@ -276,6 +277,18 @@ Graph at `.code-review-graph/graph.db` — 11 communities, auto-updates on file 
 ### Auto-File Jira Defect (shipped 2026-04-28)
 - `src/utils/jiraClient.ts` + `adfBuilder.ts` + `defectsStore.ts`
 - Editor role for filing; Admin for config; dedup uses JQL + local registry
+
+### API Suite Orchestration (shipped 2026-05-19)
+- Module: `src/api-suite/` — contracts, orchestrator, run-store, routes
+- `runSuite()` composes `runCollection` with lifecycle order: beforeAll → beforeEach → main → afterEach → afterAll
+- afterAll and afterEach guaranteed via try/finally — run even on failure
+- Shared context propagation: beforeAll extracted variables flow into each main collection
+- `ApiStepResult.isTeardown` — step-level teardown observability (tagged by engine)
+- Store: `data/api-suite-runs/<runId>.json` (atomic write)
+- Routes: `GET/POST/PUT/DELETE /api/api-suites`, `POST /api/api-suites/:id/run`, `GET /api/api-suite-runs/:runId`
+- UI: `27-api-suites.js` — suite management, lifecycle timeline, run history
+- teardown badge in `25-api-runs.js` step table
+- Backward compatible: `runCollection` unchanged API (optional 4th param)
 
 ### API Defect Intelligence (shipped 2026-05-19)
 - Module: `src/api-defects/` — enricher, heal-advisor, store, routes
