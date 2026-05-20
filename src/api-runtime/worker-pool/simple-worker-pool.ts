@@ -33,7 +33,7 @@ export class SimpleWorkerPool implements IWorkerPool {
       .map(r => r.worker);
     if (!available.length) return null;
     const idx = this._roundRobinIndex % available.length;
-    this._roundRobinIndex++;
+    this._roundRobinIndex = (idx + 1) % available.length;
     return available[idx];
   }
 
@@ -51,6 +51,9 @@ export class SimpleWorkerPool implements IWorkerPool {
   }
 
   get isAcceptingWork(): boolean {
-    return [...this._workers.values()].some(r => !r.worker.isDisposed);
+    for (const reg of this._workers.values()) {
+      if (!reg.worker.isDisposed) return true;
+    }
+    return false;
   }
 }
