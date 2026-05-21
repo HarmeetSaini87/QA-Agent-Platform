@@ -1,11 +1,10 @@
+// src/api-intelligence/engines/dependency-analyzer.ts
+
 import { nanoid } from 'nanoid';
 import { ApiTestStep } from '../../data/types';
-import { AiRecommendation, RecommendationProvenance } from '../contracts/recommendation.contracts';
+import { AiRecommendation } from '../contracts/recommendation.contracts';
 import { AiGraphAnnotation } from '../contracts/graph-overlay-ai.contracts';
-
-function provenance(evidenceRefs: string[]): RecommendationProvenance {
-  return { source: 'dependency-analyzer', basis: 'heuristic', evidenceRefs, generatedAt: new Date().toISOString() };
-}
+import { makeProvenance } from './engine-helpers';
 
 export interface DependencyAnalysisResult {
   recommendations: AiRecommendation[];
@@ -35,9 +34,10 @@ export function analyzeDependencies(steps: ApiTestStep[], collectionId: string):
           severity: 'warning',
           title: `Step "${step.name}" has stale dependency reference`,
           detail: `dependsOn entry "${dep}" does not match any step id in this collection. It is silently ignored at runtime but indicates a stale or copy-paste reference.`,
+          // 95: deterministic — stale ref is always a bug
           confidence: 95,
           actionHint: 'Remove or correct the stale dependsOn entry.',
-          provenance: provenance([step.id, dep]),
+          provenance: makeProvenance('dependency-analyzer', [step.id, dep]),
           collectionId,
           stepId: step.id,
         });
@@ -45,10 +45,14 @@ export function analyzeDependencies(steps: ApiTestStep[], collectionId: string):
     }
   }
 
+  // Pre-build step map for O(1) lookups in bottleneck loop
+  const stepMap = new Map(steps.map(s => [s.id, s]));
+
   // Bottleneck: step depended on by 3+ others
   for (const [stepId, count] of Object.entries(fanIn)) {
+    // 3+ dependents = single point of failure risk
     if (count >= 3) {
-      const step = steps.find(s => s.id === stepId);
+      const step = stepMap.get(stepId);
       if (!step) continue;
       recommendations.push({
         id: nanoid(8),
@@ -56,9 +60,10 @@ export function analyzeDependencies(steps: ApiTestStep[], collectionId: string):
         severity: 'warning',
         title: `Step "${step.name}" is a dependency bottleneck (${count} dependents)`,
         detail: `${count} other steps depend on this step. A single failure here causes all dependents to be skipped. Consider splitting setup responsibilities to reduce blast radius.`,
+        // 80: high confidence in bottleneck risk (but not deterministic like stale refs)
         confidence: 80,
         actionHint: 'Break this step into smaller independent setup steps, or use onFailure: "continue" on dependents that can safely proceed.',
-        provenance: provenance([stepId]),
+        provenance: makeProvenance('dependency-analyzer', [stepId]),
         collectionId,
         stepId,
       });
@@ -79,9 +84,10 @@ export function analyzeDependencies(steps: ApiTestStep[], collectionId: string):
       severity: 'info',
       title: 'No teardown steps defined in this collection',
       detail: 'Without teardown steps, each run may accumulate server-side state (created records, auth sessions). This causes assertion drift in later runs as state builds up.',
+      // 65: heuristic — some workflows intentionally skip teardown
       confidence: 65,
       actionHint: 'Add cleanup steps (e.g. DELETE /resource/{id}) and mark them with execution.teardown = true.',
-      provenance: provenance([collectionId]),
+      provenance: makeProvenance('dependency-analyzer', [collectionId]),
       collectionId,
     });
   }
