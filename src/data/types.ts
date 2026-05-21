@@ -622,6 +622,7 @@ export interface ApiTestStep {
 export interface ApiCollection {
   id: string;
   projectId?: string;
+  tenantId?: string;          // governance: optional tenant scoping (Phase D Step 13)
   name: string;
   environmentId: string;
   steps: ApiTestStep[];

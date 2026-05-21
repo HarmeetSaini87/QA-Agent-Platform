@@ -126,6 +126,7 @@ All code changes, experiments, and new features are developed here FIRST.
 > **📋 See [docs/superpowers/plans/2026-05-19-phase-d-step10-suite-orchestration.md](docs/superpowers/plans/2026-05-19-phase-d-step10-suite-orchestration.md) — Phase D Step 10 implementation plan (10 tasks). **COMPLETE as of 2026-05-19.**
 > **📋 See [docs/superpowers/plans/2026-05-19-phase-d-step11-observability-replay.md](docs/superpowers/plans/2026-05-19-phase-d-step11-observability-replay.md) — Phase D Step 11 implementation plan (8 tasks). **COMPLETE as of 2026-05-19.**
 > **📋 See [docs/superpowers/plans/2026-05-20-phase-d-step12-distributed-execution-readiness.md](docs/superpowers/plans/2026-05-20-phase-d-step12-distributed-execution-readiness.md) — Phase D Step 12 implementation plan (8 tasks). **COMPLETE as of 2026-05-20.**
+> **📋 See [docs/superpowers/plans/2026-05-20-phase-d-step13-enterprise-governance.md](docs/superpowers/plans/2026-05-20-phase-d-step13-enterprise-governance.md) — Phase D Step 13 implementation plan (8 tasks). **COMPLETE as of 2026-05-20.**
 
 ---
 
@@ -328,6 +329,19 @@ Graph at `.code-review-graph/graph.db` — 11 communities, auto-updates on file 
 - Cloud Extension: `src/api-runtime/cloud-extension/` — `IWorkerProvider`, `NoOpWorkerProvider` (K8s stub, no-op today)
 - UI: `29-worker-health.js` — worker pool health dashboard, `GET /api/worker-pool/health`
 - Single-node default unchanged; all contracts IPC-ready (JSON-serialisable)
+
+### Enterprise Governance, RBAC & Auditability (shipped 2026-05-20)
+- Module: `src/api-governance/` — rbac.contracts, rbac.middleware, audit.contracts, audit.helper, tenant.contracts, tenant.helper, policy.contracts, policy.registry, environment.governance, routes/governance.routes
+- `Role` extended with `'editor'` — all existing role checks valid; `'tester'` unchanged
+- `ApiResourcePermission` type + `hasPermission()` + `requirePermission()` factory middleware
+- `ApiAuditAction` typed enum + `logApiAudit()` wraps existing `logAudit` — original unchanged
+- `TenantContext` + `getTenantContext(req)` — returns null in single-tenant mode
+- `InMemoryGovernancePolicyRegistry` — role + restricted-env policy checks; `globalPolicyRegistry` singleton
+- `EnvironmentGovernancePolicy` + `maskSensitiveVariables()` — masks variable values in sensitive envs
+- Routes: `GET/POST /api/governance/policies`, `GET /api/governance/audit`, `GET /api/governance/tenant`
+- UI: `30-governance.js` — tenant card, filterable audit log, policy list + register form
+- `ApiCollection.tenantId?: string` — optional, backward-compatible
+- All contracts additive, JSON-serialisable; no runtime execution modified
 
 ---
 
