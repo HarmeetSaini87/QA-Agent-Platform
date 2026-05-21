@@ -61,6 +61,7 @@ import { registerApiSuiteRoutes } from '../api-suite/routes/api-suites.routes';
 import { registerObservabilityRoutes } from '../api-observability/routes/observability.routes';
 import { registerWorkerHealthRoutes } from '../api-runtime/worker-health/routes/worker-health.routes';
 import governanceRouter from '../api-governance/routes/governance.routes';
+import { registerAiIntelligenceRoutes } from '../api-intelligence/routes/ai-intelligence.routes';
 
 dotenv.config();
 
@@ -235,6 +236,7 @@ registerApiSuiteRoutes(app);
 registerObservabilityRoutes(app);
 registerWorkerHealthRoutes(app);
 app.use('/api/governance', governanceRouter);
+registerAiIntelligenceRoutes(app);
 
 // ── SPA fallback (requires auth) — MUST be after all API routes ──────────────
 app.get('*', requireAuth, (_req: Request, res: Response) => {
