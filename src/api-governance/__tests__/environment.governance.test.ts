@@ -5,14 +5,13 @@ import {
   getEnvironmentPolicy,
   removeEnvironmentPolicy,
   maskSensitiveVariables,
+  _clearEnvironmentPolicies,
 } from '../environment.governance';
 
 describe('Environment Governance', () => {
 
   beforeEach(() => {
-    removeEnvironmentPolicy('env-prod');
-    removeEnvironmentPolicy('env-staging');
-    removeEnvironmentPolicy('env-test');
+    _clearEnvironmentPolicies();
   });
 
   it('getEnvironmentPolicy returns permissive default for unregistered environment', () => {

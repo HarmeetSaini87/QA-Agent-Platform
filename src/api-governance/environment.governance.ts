@@ -44,6 +44,11 @@ export function listEnvironmentPolicies(): EnvironmentGovernancePolicy[] {
   return Array.from(environmentPolicies.values());
 }
 
+/** Clear all registered environment policies — for test isolation only. */
+export function _clearEnvironmentPolicies(): void {
+  environmentPolicies.clear();
+}
+
 export function maskSensitiveVariables(
   variables: Array<{ name: string; value: string }>,
   policy: EnvironmentGovernancePolicy,
