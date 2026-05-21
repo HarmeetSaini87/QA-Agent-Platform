@@ -37,8 +37,9 @@ router.get('/audit', requireAdmin, (req: Request, res: Response) => {
       entries = entries.filter(e => e.resourceId === resourceIdFilter);
     }
 
+    const total  = entries.length;
     const result = entries.slice(-limit).reverse();
-    void res.json({ entries: result, total: result.length });
+    void res.json({ entries: result, total });
   } catch (err) {
     void res.status(500).json({ error: 'Failed to read audit log', detail: String(err) });
   }
