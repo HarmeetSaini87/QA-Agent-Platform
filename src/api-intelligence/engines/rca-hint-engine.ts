@@ -6,15 +6,14 @@ const ADVISORY = 'AI RCA hints are advisory only — heuristic suggestions based
 
 export function generateRcaHints(session: ReplaySession): RcaHintBundle {
   const hints: RcaHint[] = [];
-  const events = [...session.events];
+  const events = session.events;
 
   // Hint: First assertion failure
   const firstAssertionFail = events.find(e => e.kind === 'assertion-evaluated' && e.assertion?.passed === false);
   if (firstAssertionFail) {
-    const priorRequest = [...events]
-      .slice(0, firstAssertionFail.seq - 1)
-      .reverse()
-      .find(e => e.kind === 'request-sent' && e.stepId === firstAssertionFail.stepId);
+    const priorRequest = events
+      .filter(e => e.seq < firstAssertionFail.seq && e.kind === 'request-sent' && e.stepId === firstAssertionFail.stepId)
+      .at(-1);
     hints.push({
       id: nanoid(8),
       runId: session.runId,
@@ -39,6 +38,8 @@ export function generateRcaHints(session: ReplaySession): RcaHintBundle {
   // Hint: Failure propagation cascade
   const propagationEvents = events.filter(e => e.kind === 'failure-propagated');
   if (propagationEvents.length > 0) {
+    // Uses only the first propagation root; additional independent cascade chains are not separately reported.
+    // For advisory hints, a single chain hint is sufficient to direct investigation.
     const root = propagationEvents[0];
     const affectedCount = root.failure?.propagatedToStepIds?.length ?? 0;
     hints.push({
