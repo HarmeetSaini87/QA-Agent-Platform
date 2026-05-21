@@ -16,7 +16,9 @@ export type ApiAuditAction =
   | 'api:suite:execute'
   | 'api:teardown:execute'
   | 'api:environment:accessed'
-  | 'api:variable:accessed';
+  | 'api:variable:accessed'
+  | 'api:intelligence:recommendations:generated'
+  | 'api:intelligence:rca:accessed';
 
 export interface ExtendedAuditEntry extends AuditEntry {
   tenantId?:         string;
