@@ -2,7 +2,8 @@
  * types.ts — shared data model types
  */
 
-export type Role = 'admin' | 'tester' | 'viewer';
+// OLD: type Role = 'admin' | 'tester' | 'viewer';
+export type Role = 'admin' | 'editor' | 'tester' | 'viewer';
 
 export interface User {
   id:                   string;
