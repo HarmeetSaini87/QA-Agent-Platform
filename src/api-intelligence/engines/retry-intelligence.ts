@@ -11,7 +11,7 @@ export interface RetryAnalysisResult {
 
 export function analyzeRetryIntelligence(
   steps: ApiTestStep[],
-  _runs: ApiCollectionRunResult[],
+  _runs: ApiCollectionRunResult[], // reserved — future: per-step retry frequency from run history
   collectionId: string,
 ): RetryAnalysisResult {
   const recommendations: AiRecommendation[] = [];
@@ -31,7 +31,7 @@ export function analyzeRetryIntelligence(
         detail: `Teardown steps are cleanup operations and should not retry. Retrying a teardown can cause duplicate deletes or leave partially-cleaned state.`,
         confidence: 85,
         actionHint: 'Set retryPolicy.maxRetries = 0 for all teardown steps.',
-        provenance: makeProvenance('retry-intelligence', [step.id]),
+        provenance: makeProvenance('retry-intelligence', [step.id], 'deterministic'),
         collectionId,
         stepId: step.id,
       });
@@ -43,7 +43,7 @@ export function analyzeRetryIntelligence(
     }
 
     // Over-retry: maxRetries > 2 with no assertions
-    if (maxRetries > 2 && step.assertions.length === 0) {
+    if (maxRetries > 2 && step.assertions.length === 0 && !step.execution?.teardown) {
       recommendations.push({
         id: nanoid(8),
         category: 'retry',
@@ -52,7 +52,7 @@ export function analyzeRetryIntelligence(
         detail: `Without assertions, retrying ${maxRetries} times provides no additional validation guarantee and significantly increases run duration on failure.`,
         confidence: 60,
         actionHint: `Reduce maxRetries to 1 or add status/body assertions to validate the retry outcome.`,
-        provenance: makeProvenance('retry-intelligence', [step.id]),
+        provenance: makeProvenance('retry-intelligence', [step.id], 'deterministic'),
         collectionId,
         stepId: step.id,
       });
