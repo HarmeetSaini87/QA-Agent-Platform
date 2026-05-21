@@ -172,6 +172,14 @@ async function main() {
   if (srcDiff.changed.length) { info(`Changed (${srcDiff.changed.length}):`); srcDiff.changed.slice(0,20).forEach(f => console.log(`      ~ src/${f}`)); }
   if (srcDiff.removed.length) { info(`Removed (${srcDiff.removed.length}):`); srcDiff.removed.slice(0,20).forEach(f => console.log(`      - src/${f}`)); }
 
+  // Also diff recorder-extension — it is in DIRS_TO_COPY but was previously excluded from the
+  // diff check, causing the script to exit early (totalChanges=0) when only extension files changed.
+  const extDiff = diffDir(path.join(DEV_ROOT, 'recorder-extension'), path.join(PROD_ROOT, 'recorder-extension'));
+  totalChanges += extDiff.added.length + extDiff.changed.length + extDiff.removed.length;
+  if (extDiff.added.length)   { info(`Added   (${extDiff.added.length}):`);   extDiff.added.slice(0,20).forEach(f => console.log(`      + recorder-extension/${f}`)); }
+  if (extDiff.changed.length) { info(`Changed (${extDiff.changed.length}):`); extDiff.changed.slice(0,20).forEach(f => console.log(`      ~ recorder-extension/${f}`)); }
+  if (extDiff.removed.length) { info(`Removed (${extDiff.removed.length}):`); extDiff.removed.slice(0,20).forEach(f => console.log(`      - recorder-extension/${f}`)); }
+
   for (const f of FILES_TO_COPY) {
     const devFile  = path.join(DEV_ROOT,  f);
     const prodFile = path.join(PROD_ROOT, f);

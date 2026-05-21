@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import type { AiRecommendation, RecommendationBundle, RecommendationBasis } from '../contracts/recommendation.contracts';
+import type { AiRecommendation, RecommendationBundle, RecommendationBasis, AiGraphOverlayBundle } from '../contracts/recommendation.contracts';
 import type { RcaHint, RcaHintBundle } from '../contracts/rca-hints.contracts';
-import type { AiGraphAnnotation, AiGraphOverlayBundle } from '../contracts/graph-overlay-ai.contracts';
+import type { AiGraphAnnotation } from '../contracts/graph-overlay-ai.contracts';
 
 describe('recommendation.contracts', () => {
   it('AiRecommendation has required fields', () => {
@@ -50,5 +50,15 @@ describe('recommendation.contracts', () => {
       badges: [{ type: 'retry-hotspot', label: 'hotspot', confidence: 70, detail: 'retries' }],
     };
     expect(ann.badges[0].type).toBe('retry-hotspot');
+  });
+
+  it('AiGraphOverlayBundle has advisoryNote', () => {
+    const overlay: AiGraphOverlayBundle = {
+      collectionId: 'col-1',
+      generatedAt: '2026-01-01T00:00:00Z',
+      annotations: [],
+      advisoryNote: 'advisory only',
+    };
+    expect(overlay.advisoryNote).toBeTruthy();
   });
 });

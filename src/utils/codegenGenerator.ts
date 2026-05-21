@@ -114,9 +114,181 @@ function resolveToken(token: string): string {
   if (/^random\.email$/.test(inner)) {
     return '`test_${Math.random().toString(36).substring(2, 10)}@qa.local`';
   }
+  if (/^random\.firstName$/.test(inner)) {
+    return `(['James','John','Robert','Michael','William','David','Richard','Joseph','Thomas','Charles','Mary','Patricia','Jennifer','Linda','Barbara','Elizabeth','Susan','Jessica','Sarah','Karen'][Math.floor(Math.random()*20)])`;
+  }
   if (/^date\.today$/.test(inner)) {
     return 'new Date().toISOString().split("T")[0]';
   }
+
+  // ── Fix existing tokens that had no handler (emitted as literals) ──────────────
+  if (inner === 'random.uuid') {
+    return 'crypto.randomUUID()';
+  }
+  if (inner === 'random.phone') {
+    return '`+1-${Math.floor(Math.random()*900+100)}-${Math.floor(Math.random()*900+100)}-${Math.floor(Math.random()*9000+1000)}`';
+  }
+  if (inner === 'timestamp') {
+    return 'Date.now().toString()';
+  }
+  if (inner === 'datetime') {
+    return 'new Date().toISOString()';
+  }
+  if (inner === 'date') {
+    return "new Date().toISOString().split('T')[0]";
+  }
+  if (inner === 'random.number') {
+    return 'String(Math.floor(Math.random()*10000))';
+  }
+
+  // ── Person ─────────────────────────────────────────────────────────────────────
+  if (inner === 'random.lastName') {
+    return `(['Smith','Johnson','Williams','Brown','Jones','Garcia','Miller','Davis','Rodriguez','Martinez','Hernandez','Lopez','Gonzalez','Wilson','Anderson','Thomas','Taylor','Moore','Jackson','Martin'][Math.floor(Math.random()*20)])`;
+  }
+  if (inner === 'random.jobTitle') {
+    return `(['Software Engineer','QA Engineer','Product Manager','DevOps Engineer','Data Analyst','UX Designer','Business Analyst','Scrum Master','Technical Lead','Project Manager'][Math.floor(Math.random()*10)])`;
+  }
+  if (inner === 'random.jobType') {
+    return `(['Full-time','Part-time','Contract','Freelance','Internship','Remote','Hybrid'][Math.floor(Math.random()*7)])`;
+  }
+  if (inner === 'random.zodiacSign') {
+    return `(['Aries','Taurus','Gemini','Cancer','Leo','Virgo','Libra','Scorpio','Sagittarius','Capricorn','Aquarius','Pisces'][Math.floor(Math.random()*12)])`;
+  }
+  if (inner === 'random.avatar') {
+    return '`https://i.pravatar.cc/150?u=${Math.random().toString(36).substring(2,10)}`';
+  }
+
+  // ── Address ────────────────────────────────────────────────────────────────────
+  if (inner === 'random.address') {
+    return '`${Math.floor(Math.random()*9000+1000)} ${[\'Oak\',\'Maple\',\'Pine\',\'Cedar\',\'Elm\',\'Birch\',\'Walnut\',\'Ash\',\'Willow\',\'Spruce\'][Math.floor(Math.random()*10)]} ${[\'St\',\'Ave\',\'Blvd\',\'Dr\',\'Ln\',\'Rd\',\'Way\',\'Ct\'][Math.floor(Math.random()*8)]}`';
+  }
+  if (inner === 'random.city') {
+    return `(['New York','Los Angeles','Chicago','Houston','Phoenix','Philadelphia','San Antonio','San Diego','Dallas','San Jose','Austin','Jacksonville','Fort Worth','Columbus','Charlotte'][Math.floor(Math.random()*15)])`;
+  }
+  if (inner === 'random.state') {
+    return `(['California','Texas','Florida','New York','Pennsylvania','Illinois','Ohio','Georgia','North Carolina','Michigan','New Jersey','Virginia','Washington','Arizona','Massachusetts'][Math.floor(Math.random()*15)])`;
+  }
+  if (inner === 'random.country') {
+    return `(['United States','United Kingdom','Canada','Australia','Germany','France','India','Japan','Brazil','Mexico','Italy','Spain','Netherlands','Sweden','Norway'][Math.floor(Math.random()*15)])`;
+  }
+  if (inner === 'random.zipCode') {
+    return 'String(Math.floor(Math.random()*90000)+10000)';
+  }
+
+  // ── Internet ───────────────────────────────────────────────────────────────────
+  if (inner === 'random.url') {
+    return '`https://${[\'example\',\'test\',\'demo\',\'sample\',\'mysite\',\'webtest\'][Math.floor(Math.random()*6)]}.${[\'com\',\'org\',\'net\',\'io\',\'co\'][Math.floor(Math.random()*5)]}`';
+  }
+  if (inner === 'random.domainName') {
+    return '`${[\'example\',\'testsite\',\'demoapp\',\'sampleco\',\'webapp\',\'qatest\'][Math.floor(Math.random()*6)]}.${[\'com\',\'org\',\'net\',\'io\',\'co\'][Math.floor(Math.random()*5)]}`';
+  }
+  if (inner === 'random.ipv4') {
+    return '`${Math.floor(Math.random()*256)}.${Math.floor(Math.random()*256)}.${Math.floor(Math.random()*256)}.${Math.floor(Math.random()*256)}`';
+  }
+  if (inner === 'random.ipv6') {
+    return `Array.from({length:8},()=>Math.floor(Math.random()*65536).toString(16).padStart(4,'0')).join(':')`;
+  }
+  if (inner === 'random.mac') {
+    return `Array.from({length:6},()=>Math.floor(Math.random()*256).toString(16).padStart(2,'0')).join(':')`;
+  }
+  if (inner === 'random.userAgent') {
+    return `(['Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0 Safari/537.36','Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/119.0 Safari/537.36','Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/118.0 Safari/537.36','Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 Safari/604.1'][Math.floor(Math.random()*4)])`;
+  }
+
+  // ── Finance ────────────────────────────────────────────────────────────────────
+  if (inner === 'random.accountName') {
+    return `((['James','John','Robert','Michael','William','David','Mary','Patricia','Jennifer','Linda'][Math.floor(Math.random()*10)]+' '+['Smith','Johnson','Williams','Brown','Jones','Garcia','Miller','Davis','Rodriguez','Martinez'][Math.floor(Math.random()*10)]))`;
+  }
+  if (inner === 'random.accountNumber') {
+    return 'String(Math.floor(Math.random()*9000000000)+1000000000)';
+  }
+  if (/^random\.creditCardNumber\(visa\)$/.test(inner)) {
+    return `('4'+Array.from({length:15},()=>Math.floor(Math.random()*10)).join(''))`;
+  }
+  if (/^random\.creditCardNumber\(mastercard\)$/.test(inner)) {
+    return `('5'+String(Math.floor(Math.random()*5)+1)+Array.from({length:14},()=>Math.floor(Math.random()*10)).join(''))`;
+  }
+  if (/^random\.creditCardNumber\(\w+\)$/.test(inner)) {
+    return `('6'+Array.from({length:15},()=>Math.floor(Math.random()*10)).join(''))`;
+  }
+  if (inner === 'random.creditCardCVV') {
+    return 'String(Math.floor(Math.random()*900)+100)';
+  }
+  if (inner === 'random.creditCardIssuer') {
+    return `(['Visa','Mastercard','American Express','Discover','JCB','UnionPay'][Math.floor(Math.random()*6)])`;
+  }
+
+  // ── Travel ─────────────────────────────────────────────────────────────────────
+  if (inner === 'random.airline') {
+    return `(['American Airlines','Delta Air Lines','United Airlines','Southwest Airlines','British Airways','Emirates','Air France','Lufthansa','Singapore Airlines','Qantas'][Math.floor(Math.random()*10)])`;
+  }
+  if (inner === 'random.airplane') {
+    return `(['Boeing 737','Boeing 747','Boeing 777','Airbus A320','Airbus A330','Airbus A380','Embraer E175','Bombardier CRJ-900'][Math.floor(Math.random()*8)])`;
+  }
+  if (inner === 'random.flightNumber') {
+    return '`${[\'AA\',\'DL\',\'UA\',\'SW\',\'BA\',\'EK\',\'AF\',\'LH\'][Math.floor(Math.random()*8)]}${Math.floor(Math.random()*9000+1000)}`';
+  }
+
+  // ── Vehicle ────────────────────────────────────────────────────────────────────
+  if (inner === 'random.vehicle') {
+    return `(['Toyota Camry','Honda Civic','Ford Mustang','Chevrolet Silverado','BMW 3 Series','Mercedes C-Class','Audi A4','Tesla Model 3','Volkswagen Golf','Nissan Altima'][Math.floor(Math.random()*10)])`;
+  }
+  if (inner === 'random.bicycle') {
+    return `(['Trek','Specialized','Giant','Cannondale','Scott','Bianchi','Cervelo','Pinarello','Raleigh','Fuji'][Math.floor(Math.random()*10)])`;
+  }
+  if (inner === 'random.color') {
+    return `(['Red','Blue','Green','Yellow','Orange','Purple','Pink','Brown','Black','White','Grey','Cyan','Magenta','Teal','Navy'][Math.floor(Math.random()*15)])`;
+  }
+  if (inner === 'random.fuel') {
+    return `(['Petrol','Diesel','Electric','Hybrid','LPG','CNG','Hydrogen'][Math.floor(Math.random()*7)])`;
+  }
+  if (inner === 'random.model') {
+    return `(['Camry','Civic','Mustang','Silverado','3 Series','C-Class','A4','Model 3','Golf','Altima','Corolla','F-150','Accord','Escape','Explorer'][Math.floor(Math.random()*15)])`;
+  }
+  if (inner === 'random.vin') {
+    return `Array.from({length:17},()=>'ABCDEFGHJKLMNPRSTUVWXYZ0123456789'[Math.floor(Math.random()*33)]).join('')`;
+  }
+  if (inner === 'random.vrm') {
+    return `(()=>{const l='ABCDEFGHJKLMNPRSTUVWXYZ';const r=()=>l[Math.floor(Math.random()*l.length)];return r()+r()+String(Math.floor(Math.random()*90)+10)+' '+r()+r()+r()})()`;
+  }
+
+  // ── Commerce ───────────────────────────────────────────────────────────────────
+  if (inner === 'random.product' || inner === 'random.productName') {
+    return `(['Wireless Headphones','Leather Wallet','Running Shoes','Coffee Maker','Yoga Mat','Bluetooth Speaker','Sunglasses','Smart Watch','Backpack','Water Bottle'][Math.floor(Math.random()*10)])`;
+  }
+  if (inner === 'random.productDescription') {
+    return `(['High quality product for everyday use','Premium grade material with excellent durability','Lightweight and portable design','Energy efficient and eco-friendly','Advanced technology for superior performance'][Math.floor(Math.random()*5)])`;
+  }
+  if (inner === 'random.productMaterial') {
+    return `(['Cotton','Polyester','Leather','Steel','Aluminum','Wood','Plastic','Rubber','Glass','Ceramic'][Math.floor(Math.random()*10)])`;
+  }
+  if (inner === 'random.department') {
+    return `(['Engineering','Marketing','Sales','Finance','Human Resources','Operations','Legal','Customer Support','Product','Research & Development'][Math.floor(Math.random()*10)])`;
+  }
+
+  // ── Strings ────────────────────────────────────────────────────────────────────
+  if (/^random\.word\((\d+)\)$/.test(inner)) {
+    const len = inner.match(/\d+/)![0];
+    return `Math.random().toString(36).substring(2).replace(/[^a-z]/g,'').substring(0,${len}).padEnd(${len},'a')`;
+  }
+  if (/^random\.string\((\d+)\)$/.test(inner)) {
+    const len = inner.match(/\d+/)![0];
+    return `Array.from({length:${len}},()=>'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'[Math.floor(Math.random()*62)]).join('')`;
+  }
+
+  // ── Numbers ────────────────────────────────────────────────────────────────────
+  if (inner === 'random.phoneimei') {
+    return 'String(Math.floor(Math.random()*9e14)+1e14)';
+  }
+
+  // ── Date with offset (runtime) ─────────────────────────────────────────────────
+  if (/^date\.offset\((-?\d+),([^)]+)\)$/.test(inner)) {
+    const mo = inner.match(/^date\.offset\((-?\d+),([^)]+)\)$/)!;
+    const days = mo[1];
+    const fmt = mo[2];
+    return `(()=>{const d=new Date();d.setDate(d.getDate()+(${days}));const Y=String(d.getFullYear()),Mo=String(d.getMonth()+1).padStart(2,'0'),D=String(d.getDate()).padStart(2,'0');return '${fmt}'.replace('YYYY',Y).replace('MM',Mo).replace('DD',D)})()`;
+  }
+
   // Unknown token — emit as literal string
   return `'${t.replace(/'/g, "\\'")}'`;
 }

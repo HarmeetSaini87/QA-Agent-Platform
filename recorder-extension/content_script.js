@@ -449,6 +449,24 @@
     } catch { return true; }
   }
 
+  // ── Interactive-target guard ─────────────────────────────────────────────────
+  // Used by toast interception: if the clicked element IS an interactive control
+  // (button, link, role=button, etc.) inside a toast/dialog container, do NOT
+  // treat it as a toast assertion — let it fall through to normal CLICK recording.
+  // WHY: [role="alertdialog"] covers both notifications (inert text) and confirmation
+  // dialogs (Yes/No buttons). stopPropagation on button clicks silently swallows them.
+  function _isInteractiveTarget(el) {
+    if (!el) return false;
+    const tag  = (el.tagName || '').toUpperCase();
+    if (tag === 'BUTTON' || tag === 'A') return true;
+    if (tag === 'INPUT') {
+      const t = (el.type || '').toLowerCase();
+      if (t === 'button' || t === 'submit' || t === 'reset') return true;
+    }
+    const role = (el.getAttribute('role') || '').toLowerCase();
+    return ['button', 'link', 'menuitem', 'option', 'tab', 'checkbox', 'radio', 'switch'].includes(role);
+  }
+
   // ── CR1: Actionable click guard ───────────────────────────────────────────────
   function isActionableClick(el) {
     if (!el || el.nodeType !== 1) return false;
@@ -1333,15 +1351,22 @@
 
     // Toast/validation click interception — emit ASSERT_TOAST instead of CLICK
     // when user explicitly clicks on a toast/alert container.
+    // INTERACTIVE GUARD: if the click target is a button/link inside the toast/dialog
+    // (e.g. Yes/No in [role="alertdialog"]), fall through to normal CLICK recording
+    // so the step is captured in the platform UI. Do NOT stopPropagation on those.
     const toastAncestor = el.closest && (el.closest(TOAST_SEL));
     if (toastAncestor && !_isRecorderOwnToast(toastAncestor) && _isToastVisible(toastAncestor)) {
-      const text = _getVisibleText(toastAncestor);
-      if (text && text.length >= 2) {
-        const loc2 = bestSelector(toastAncestor);
-        _emitToastAssert(text, loc2.sel, loc2.type);
-        e.stopPropagation();
-        return;
+      if (!_isInteractiveTarget(el)) {
+        // Inert content click (text body, container) — record as toast assertion
+        const text = _getVisibleText(toastAncestor);
+        if (text && text.length >= 2) {
+          const loc2 = bestSelector(toastAncestor);
+          _emitToastAssert(text, loc2.sel, loc2.type);
+          e.stopPropagation();
+          return;
+        }
       }
+      // Interactive target (button/link) — fall through to normal CLICK recording below
     }
 
     // Cross-origin iframe click — emit SWITCH_FRAME instead of CLICK

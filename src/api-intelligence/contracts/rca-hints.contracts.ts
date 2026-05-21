@@ -1,3 +1,5 @@
+import type { RecommendationBasis } from './recommendation.contracts';
+
 export type RcaHintSource = 'replay' | 'flakiness' | 'graph' | 'retry-history';
 
 export interface RcaHintEvidence {
@@ -16,7 +18,7 @@ export interface RcaHint {
   probableCause: string;
   /** 0–100 */
   confidence: number;
-  basis: 'heuristic' | 'deterministic' | 'replay-evidence';
+  basis: RecommendationBasis;
   evidences: RcaHintEvidence[];
   generatedAt: string;
 }

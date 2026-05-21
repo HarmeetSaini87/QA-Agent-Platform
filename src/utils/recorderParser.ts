@@ -629,6 +629,21 @@ export function normalizeRecordedSteps(steps: ScriptStep[]): ScriptStep[] {
     return true;
   });
 
+  // N14 — immediately-repeated sub-sequence collapse (double-submit / recorder noise)
+  //
+  // Detects when a block of 2–5 steps is recorded twice in a row with identical
+  // keyword + locatorId + value fingerprints on every step.
+  //
+  // Barriers (ALL must pass for collapse to fire):
+  //   B1. Repetition must be immediately adjacent — zero steps between block 1 and block 2
+  //   B2. No NAVIGATE / GOTO step inside the sub-sequence — navigation = intentional boundary
+  //   B3. No ASSERT step inside the sub-sequence — assertion = deliberate checkpoint
+  //   B4. All value fields must match exactly (null === null) — different values = retry, not noise
+  //
+  // Runs AFTER N9/N11 so canonical locators are resolved before fingerprinting.
+  // Runs BEFORE N13 so re-numbering happens on the cleaned array.
+  out = collapseRepeatedSubsequence(out);
+
   // N13 — re-number
   out = out.map((s, i) => ({ ...s, order: i + 1 }));
 
@@ -745,6 +760,47 @@ function dualLocatorCollapse(steps: ScriptStep[], predicate?: (s: ScriptStep) =>
     result.push(cur);
   }
   return result;
+}
+
+// N14 helper: detect and drop immediately-repeated sub-sequences (double-submit noise).
+// Window size: 2–5 steps. Barriers: no NAVIGATE/GOTO, no ASSERT, exact value match, adjacent only.
+function collapseRepeatedSubsequence(steps: ScriptStep[]): ScriptStep[] {
+  const NAVIGATE_KWS = new Set(['NAVIGATE TO', 'GOTO', 'NAVIGATE']);
+  const ASSERT_KWS   = new Set(['ASSERT TEXT', 'ASSERT TOAST', 'ASSERT VISIBLE', 'ASSERT URL', 'ASSERT']);
+
+  function stepFp(s: ScriptStep): string {
+    return `${(s.keyword ?? '').toUpperCase()}|${locKey(s)}|${String(s.value ?? '')}`;
+  }
+
+  function hasBarrierStep(block: ScriptStep[]): boolean {
+    return block.some(s => {
+      const k = (s.keyword ?? '').toUpperCase().trim();
+      return NAVIGATE_KWS.has(k) || ASSERT_KWS.has(k);
+    });
+  }
+
+  let out = [...steps];
+  let changed = true;
+  // Loop until no more collapses — a collapse can reveal a new repeated sub-sequence
+  while (changed) {
+    changed = false;
+    outer: for (let w = 2; w <= 5; w++) {
+      for (let i = 0; i <= out.length - w * 2; i++) {
+        const blockA = out.slice(i, i + w);
+        const blockB = out.slice(i + w, i + w * 2);
+        // B2/B3 — barrier steps inside either block
+        if (hasBarrierStep(blockA) || hasBarrierStep(blockB)) continue;
+        // B4 + B1 — all fingerprints match exactly (ensures adjacency by slice construction)
+        const match = blockA.every((s, idx) => stepFp(s) === stepFp(blockB[idx]));
+        if (!match) continue;
+        // Collapse: keep blockA, drop blockB
+        out = [...out.slice(0, i + w), ...out.slice(i + w * 2)];
+        changed = true;
+        break outer;
+      }
+    }
+  }
+  return out;
 }
 
 // ── Login boilerplate detector ────────────────────────────────────────────────

@@ -1013,17 +1013,71 @@
     { "value": "last",        "label": "Last Element" }
   ],
   "dynamicTokens": [
-    { "token": "{{random.text(8)}}",       "label": "Random Text (8 chars)" },
-    { "token": "{{random.text(16)}}",      "label": "Random Text (16 chars)" },
-    { "token": "{{random.number}}",        "label": "Random Number" },
-    { "token": "{{random.number(1,100)}}", "label": "Random Number (range)" },
-    { "token": "{{random.email}}",         "label": "Random Email" },
-    { "token": "{{random.phone}}",         "label": "Random Phone" },
-    { "token": "{{random.uuid}}",          "label": "Random UUID" },
-    { "token": "{{timestamp}}",            "label": "Current Timestamp (ms)" },
-    { "token": "{{datetime}}",             "label": "Current DateTime (ISO)" },
-    { "token": "{{date}}",                 "label": "Current Date (YYYY-MM-DD)" },
-    { "token": "{{env.USERNAME}}",         "label": "Env: Username (from project)" },
-    { "token": "{{env.PASSWORD}}",         "label": "Env: Password (from project)" }
+    { "group": "Date & Time",  "token": "{{date}}",                               "label": "Current Date (YYYY-MM-DD)" },
+    { "group": "Date & Time",  "token": "{{datetime}}",                           "label": "Current DateTime (ISO)" },
+    { "group": "Date & Time",  "token": "{{timestamp}}",                          "label": "Current Timestamp (ms)" },
+    { "group": "Date & Time",  "token": "{{date.offset(0,DD-MM-YYYY)}}",          "label": "Date with Offset & Format" },
+
+    { "group": "Person",       "token": "{{random.firstName}}",                   "label": "First Name" },
+    { "group": "Person",       "token": "{{random.lastName}}",                    "label": "Last Name" },
+    { "group": "Person",       "token": "{{random.email}}",                       "label": "Email Address" },
+    { "group": "Person",       "token": "{{random.phone}}",                       "label": "Phone Number" },
+    { "group": "Person",       "token": "{{random.jobTitle}}",                    "label": "Job Title" },
+    { "group": "Person",       "token": "{{random.jobType}}",                     "label": "Job Type" },
+    { "group": "Person",       "token": "{{random.zodiacSign}}",                  "label": "Zodiac Sign" },
+    { "group": "Person",       "token": "{{random.avatar}}",                      "label": "Avatar URL" },
+
+    { "group": "Address",      "token": "{{random.address}}",                     "label": "Street Address" },
+    { "group": "Address",      "token": "{{random.city}}",                        "label": "City" },
+    { "group": "Address",      "token": "{{random.state}}",                       "label": "State / Province" },
+    { "group": "Address",      "token": "{{random.country}}",                     "label": "Country" },
+    { "group": "Address",      "token": "{{random.zipCode}}",                     "label": "ZIP / Postal Code" },
+
+    { "group": "Internet",     "token": "{{random.url}}",                         "label": "Random URL" },
+    { "group": "Internet",     "token": "{{random.domainName}}",                  "label": "Domain Name" },
+    { "group": "Internet",     "token": "{{random.ipv4}}",                        "label": "IPv4 Address" },
+    { "group": "Internet",     "token": "{{random.ipv6}}",                        "label": "IPv6 Address" },
+    { "group": "Internet",     "token": "{{random.mac}}",                         "label": "MAC Address" },
+    { "group": "Internet",     "token": "{{random.userAgent}}",                   "label": "User Agent" },
+
+    { "group": "Finance",      "token": "{{random.accountName}}",                 "label": "Account Name" },
+    { "group": "Finance",      "token": "{{random.accountNumber}}",               "label": "Account Number" },
+    { "group": "Finance",      "token": "{{random.creditCardNumber(visa)}}",      "label": "Credit Card Number (Visa)" },
+    { "group": "Finance",      "token": "{{random.creditCardNumber(mastercard)}}", "label": "Credit Card Number (Mastercard)" },
+    { "group": "Finance",      "token": "{{random.creditCardCVV}}",               "label": "Credit Card CVV" },
+    { "group": "Finance",      "token": "{{random.creditCardIssuer}}",            "label": "Credit Card Issuer" },
+
+    { "group": "Travel",       "token": "{{random.airline}}",                     "label": "Airline Name" },
+    { "group": "Travel",       "token": "{{random.airplane}}",                    "label": "Airplane Model" },
+    { "group": "Travel",       "token": "{{random.flightNumber}}",                "label": "Flight Number" },
+
+    { "group": "Vehicle",      "token": "{{random.vehicle}}",                     "label": "Vehicle Name" },
+    { "group": "Vehicle",      "token": "{{random.bicycle}}",                     "label": "Bicycle Brand" },
+    { "group": "Vehicle",      "token": "{{random.color}}",                       "label": "Color" },
+    { "group": "Vehicle",      "token": "{{random.fuel}}",                        "label": "Fuel Type" },
+    { "group": "Vehicle",      "token": "{{random.model}}",                       "label": "Vehicle Model" },
+    { "group": "Vehicle",      "token": "{{random.vin}}",                         "label": "VIN (Vehicle ID Number)" },
+    { "group": "Vehicle",      "token": "{{random.vrm}}",                         "label": "VRM (Registration Number)" },
+
+    { "group": "Commerce",     "token": "{{random.product}}",                     "label": "Product Name" },
+    { "group": "Commerce",     "token": "{{random.productName}}",                 "label": "Product Title" },
+    { "group": "Commerce",     "token": "{{random.productDescription}}",          "label": "Product Description" },
+    { "group": "Commerce",     "token": "{{random.productMaterial}}",             "label": "Product Material" },
+    { "group": "Commerce",     "token": "{{random.department}}",                  "label": "Department Name" },
+
+    { "group": "Strings",      "token": "{{random.text(8)}}",                     "label": "Random Text (8 chars)" },
+    { "group": "Strings",      "token": "{{random.text(16)}}",                    "label": "Random Text (16 chars)" },
+    { "group": "Strings",      "token": "{{random.word(10)}}",                    "label": "Random Word (10 chars)" },
+    { "group": "Strings",      "token": "{{random.string(8)}}",                   "label": "Alphanumeric String (8 chars)" },
+    { "group": "Strings",      "token": "{{random.string(10)}}",                  "label": "Alphanumeric String (10 chars)" },
+    { "group": "Strings",      "token": "{{random.uuid}}",                        "label": "UUID / GUID" },
+
+    { "group": "Numbers",      "token": "{{random.number}}",                      "label": "Random Number" },
+    { "group": "Numbers",      "token": "{{random.number(1,100)}}",               "label": "Random Number (1–100)" },
+    { "group": "Numbers",      "token": "{{random.number(1,99999)}}",             "label": "Random Number (1–99999)" },
+    { "group": "Numbers",      "token": "{{random.phoneimei}}",                   "label": "Phone IMEI" },
+
+    { "group": "Environment",  "token": "{{env.USERNAME}}",                       "label": "Env: Username (from project)" },
+    { "group": "Environment",  "token": "{{env.PASSWORD}}",                       "label": "Env: Password (from project)" }
   ]
 }

@@ -620,10 +620,21 @@ function scriptAddStep(step = {}, insertBeforeRow = null, _skipReorder = false) 
   const isDyn = valMode === 'dynamic';
   const isCd = valMode === 'commondata';
   const isTd = valMode === 'testdata';
-  const tokenOpts = `<option value="">— choose token —</option>` +
-    scriptKeywords.dynamicTokens.map(t =>
-      `<option value="${escHtml(t.token)}"${isDyn && step.value === t.token ? ' selected' : ''}>${escHtml(t.label)}</option>`
-    ).join('');
+  const tokenOpts = (() => {
+    let html = `<option value="">— choose token —</option>`;
+    let currentGroup = null;
+    for (const t of scriptKeywords.dynamicTokens) {
+      const grp = t.group || '';
+      if (grp && grp !== currentGroup) {
+        if (currentGroup !== null) html += `</optgroup>`;
+        html += `<optgroup label="${escHtml(grp)}">`;
+        currentGroup = grp;
+      }
+      html += `<option value="${escHtml(t.token)}"${isDyn && step.value === t.token ? ' selected' : ''}>${escHtml(t.label)}</option>`;
+    }
+    if (currentGroup !== null) html += `</optgroup>`;
+    return html;
+  })();
 
   const curKw = _seKwGet(step.keyword);
   const needsLoc = curKw ? curKw.needsLocator : true;
