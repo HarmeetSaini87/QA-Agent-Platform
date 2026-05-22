@@ -24,19 +24,23 @@ export class RemediationPolicyRegistry {
 
     for (const policy of all) {
       if (!policy.allowProposalGeneration) {
-        return { canPropose: false, canApprove: false, reason: `Policy '${policy.name}' disables proposal generation.` };
+        return {
+          canPropose: false,
+          canApprove: policy.approverRoles.includes(role),
+          reason: `Policy '${policy.name}' disables proposal generation.`,
+        };
       }
       if (confidence < policy.confidenceThreshold) {
         return {
           canPropose: false,
-          canApprove: false,
+          canApprove: policy.approverRoles.includes(role),
           reason: `Confidence ${confidence} is below threshold ${policy.confidenceThreshold} set by policy '${policy.name}'.`,
         };
       }
       if (environmentId && policy.restrictedEnvironmentIds.includes(environmentId)) {
         return {
           canPropose: false,
-          canApprove: false,
+          canApprove: policy.approverRoles.includes(role),
           reason: `Policy '${policy.name}' restricts remediation in environment '${environmentId}'.`,
         };
       }
