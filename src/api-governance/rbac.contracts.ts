@@ -17,7 +17,9 @@ export type ApiResourcePermission =
   | 'api:run-teardown'
   | 'api:apply-healing'
   | 'api:manage-policies'
-  | 'api:view-audit';
+  | 'api:view-audit'
+  | 'api:propose-remediation'
+  | 'api:approve-remediation';
 
 /**
  * Maps each ApiResourcePermission to the minimum roles that may exercise it.
@@ -32,6 +34,8 @@ export const PERMISSION_ROLE_MAP: Record<ApiResourcePermission, Role[]> = {
   'api:apply-healing':  ['admin', 'editor'],
   'api:manage-policies':['admin'],
   'api:view-audit':     ['admin'],
+  'api:propose-remediation': ['admin', 'editor', 'tester'],
+  'api:approve-remediation': ['admin', 'editor'],
 };
 
 /**
