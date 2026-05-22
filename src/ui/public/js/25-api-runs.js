@@ -1227,14 +1227,14 @@ async function _apiRunsRenderAiInsights(runId, collectionId, container) {
           <div class="ai-prop-header">
             <span class="ai-prop-type-badge">${_aiEscHtml(prop.type)}</span>
             <span class="ai-prop-title">${_aiEscHtml(prop.title)}</span>
-            <span class="ai-conf-badge">${prop.confidence}%</span>
+            <span class="ai-conf-badge">${_aiEscHtml(String(prop.confidence))}%</span>
             <span class="ai-prop-status-badge">${_aiEscHtml(prop.status)}</span>
           </div>
           <div class="ai-prop-rationale">${_aiEscHtml(prop.rationale)}</div>
           ${diffRows ? '<table class="ai-prop-diff-table"><thead><tr><th>Field</th><th>Before</th><th>After</th></tr></thead><tbody>' + diffRows + '</tbody></table>' : ''}
           ${canAct ? '<div class="ai-prop-actions">' +
-            '<button class="ai-prop-approve-btn" onclick="_apiRunsApproveProposal(\'' + safeId + '\')">Approve</button>' +
-            '<button class="ai-prop-reject-btn" onclick="_apiRunsRejectProposal(\'' + safeId + '\')">Reject</button>' +
+            '<button class="ai-prop-approve-btn" onclick="_apiRunsApproveProposal(' + JSON.stringify(prop.id) + ', this)">Approve</button>' +
+            '<button class="ai-prop-reject-btn" onclick="_apiRunsRejectProposal(' + JSON.stringify(prop.id) + ', this)">Reject</button>' +
             '</div>' : ''}
         </li>`;
       }
@@ -1278,7 +1278,8 @@ async function _apiRunsGenerateProposals(collectionId, btn) {
   }
 }
 
-async function _apiRunsApproveProposal(proposalId) {
+async function _apiRunsApproveProposal(proposalId, btn) {
+  btn.disabled = true;
   try {
     var res = await fetch('/api/remediation/proposals/' + encodeURIComponent(proposalId) + '/approve', { method: 'POST' });
     if (!res.ok) throw new Error(await res.text());
@@ -1288,12 +1289,14 @@ async function _apiRunsApproveProposal(proposalId) {
       _apiRunsRenderAiInsights(_apiRunsCurrentRun.id, _apiRunsCurrentRun.collectionId, panel);
     }
   } catch (err) {
+    btn.disabled = false;
     alert('Approval failed: ' + String(err));
   }
 }
 
-async function _apiRunsRejectProposal(proposalId) {
+async function _apiRunsRejectProposal(proposalId, btn) {
   var comment = prompt('Rejection reason (optional):') || '';
+  btn.disabled = true;
   try {
     var res = await fetch('/api/remediation/proposals/' + encodeURIComponent(proposalId) + '/reject', {
       method: 'POST',
@@ -1307,6 +1310,7 @@ async function _apiRunsRejectProposal(proposalId) {
       _apiRunsRenderAiInsights(_apiRunsCurrentRun.id, _apiRunsCurrentRun.collectionId, panel);
     }
   } catch (err) {
+    btn.disabled = false;
     alert('Rejection failed: ' + String(err));
   }
 }
