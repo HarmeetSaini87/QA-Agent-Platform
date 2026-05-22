@@ -12,7 +12,7 @@ export function annotateOverlayWithProposals(
   bundle: AiGraphOverlayBundle,
   proposals: RemediationProposal[],
 ): AiGraphOverlayBundle {
-  if (proposals.length === 0) return bundle;
+  if (proposals.length === 0) return { ...bundle };
 
   // Deep-copy annotations so original bundle is untouched
   const annotationsMap = new Map<string, AiGraphAnnotation>(
@@ -35,6 +35,7 @@ export function annotateOverlayWithProposals(
       existing.badges.push(badge);
     } else {
       annotationsMap.set(proposal.stepId, {
+        // nodeId assumed equal to stepId when no existing annotation provides the graph nodeId
         nodeId: proposal.stepId,
         stepId: proposal.stepId,
         badges: [badge],
