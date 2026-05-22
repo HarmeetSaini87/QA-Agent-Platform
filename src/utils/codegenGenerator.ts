@@ -1185,9 +1185,28 @@ ${indent}}`
       );
     }
 
-    case 'ASSERT URL':
+    case 'ASSERT URL': {
       // toHaveURL has built-in retry — no extra wait needed
-      return line(`await expect(page).toHaveURL(${val});`);
+      // OLD: return line(`await expect(page).toHaveURL(${val});`);
+      // Normalise stored URL: if value contains a full domain (recorded in a different env),
+      // strip the origin and reconstruct with the running environment's baseUrl so that
+      // cross-project script reuse always asserts against the correct environment.
+      const _assertUrlBase = (environment?.url || project.appUrl || '').replace(/\/$/, '');
+      const _assertUrlVal  = step.value || '';
+      let   _assertUrlExpr: string;
+      if (/^https?:\/\//i.test(_assertUrlVal)) {
+        // Full URL stored — extract path+fragment and prepend running env base
+        const _assertUrlPath = _assertUrlVal.replace(/^https?:\/\/[^/]*/i, '');
+        const _assertUrlNorm = _assertUrlBase + _assertUrlPath;
+        _assertUrlExpr = `'${_assertUrlNorm.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
+      } else {
+        // Fragment/path only — prepend base if present, otherwise use as-is
+        _assertUrlExpr = _assertUrlBase
+          ? `'${(_assertUrlBase + _assertUrlVal).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`
+          : val;
+      }
+      return line(`await expect(page).toHaveURL(${_assertUrlExpr});`);
+    }
 
     case 'ASSERT TITLE':
       return line(`await expect(page).toHaveTitle(${val});`);
@@ -1306,8 +1325,22 @@ ${indent}}`
       ].join('\n');
     }
 
-    case 'ASSERT URL NOT':
-      return line(`await expect(page).not.toHaveURL(${val});`);
+    case 'ASSERT URL NOT': {
+      // OLD: return line(`await expect(page).not.toHaveURL(${val});`);
+      // Same domain-normalisation as ASSERT URL — strip stored domain, prepend running env base
+      const _auNotBase = (environment?.url || project.appUrl || '').replace(/\/$/, '');
+      const _auNotVal  = step.value || '';
+      let   _auNotExpr: string;
+      if (/^https?:\/\//i.test(_auNotVal)) {
+        const _auNotPath = _auNotVal.replace(/^https?:\/\/[^/]*/i, '');
+        _auNotExpr = `'${(_auNotBase + _auNotPath).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
+      } else {
+        _auNotExpr = _auNotBase
+          ? `'${(_auNotBase + _auNotVal).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`
+          : val;
+      }
+      return line(`await expect(page).not.toHaveURL(${_auNotExpr});`);
+    }
 
     case 'ASSERT TITLE NOT':
       return line(`await expect(page).not.toHaveTitle(${val});`);
@@ -1701,6 +1734,11 @@ export function generateCodegenSpec(input: CodegenInput): string {
   }
   lines.push(`// Per-browser counters — used for FAILED-<idx>-<browser>.png to match attachFailureScreenshots()`);
   lines.push(`const __browserIdx: Record<string, number> = { chromium: -1, firefox: -1, webkit: -1 };`);
+  // Emit running environment base URL as a spec-level constant so self-heal inline switch
+  // can normalise ASSERT URL expected values at runtime (same logic as static generation path).
+  const _specEnvBase = (environment?.url || project.appUrl || '').replace(/\/$/, '');
+  lines.push(`// Running environment base URL — used by ASSERT URL normalisation`);
+  lines.push(`const __ENV_BASE_URL = '${_specEnvBase.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}';`);
   lines.push(``);
   lines.push(`// ── Self-Healing T2: Alternatives fallback ───────────────────────────────────`);
   lines.push(`const __HEAL_LOG = \`\${__SS_DIR}/healed.ndjson\`;`);
@@ -2894,10 +2932,15 @@ export function generateDebugSpec(input: DebugCodegenInput): string {
       lines.push(`                if (__patchedVal_${o}) { const __toastTxt_${o} = await __toastLoc_${o}.innerText(); if (!__toastTxt_${o}.toLowerCase().includes(__patchedVal_${o}.toLowerCase())) throw new Error('Toast text mismatch: expected "' + __patchedVal_${o} + '" in "' + __toastTxt_${o} + '"'); }`);
       lines.push(`                break; }`);
       // ── Page-level ASSERT cases (no locator — act on page directly) ──────────
-      lines.push(`              case 'ASSERT URL':`);
-      lines.push(`                await expect(page).toHaveURL(__patchedVal_${o}); break;`);
-      lines.push(`              case 'ASSERT URL NOT':`);
-      lines.push(`                await expect(page).not.toHaveURL(__patchedVal_${o}); break;`);
+      // OLD: lines.push(`              case 'ASSERT URL':  await expect(page).toHaveURL(__patchedVal_${o}); break;`);
+      // Normalise: strip domain from stored value and prepend running env base URL
+      lines.push(`              case 'ASSERT URL': {`);
+      lines.push(`                const __auNorm_${o} = /^https?:\\/\\//i.test(__patchedVal_${o}) ? __ENV_BASE_URL + __patchedVal_${o}.replace(/^https?:\\/\\/[^/]*/i, '') : (__ENV_BASE_URL ? __ENV_BASE_URL + __patchedVal_${o} : __patchedVal_${o});`);
+      lines.push(`                await expect(page).toHaveURL(__auNorm_${o}); break; }`);
+      // OLD: lines.push(`              case 'ASSERT URL NOT': await expect(page).not.toHaveURL(__patchedVal_${o}); break;`);
+      lines.push(`              case 'ASSERT URL NOT': {`);
+      lines.push(`                const __auNotNorm_${o} = /^https?:\\/\\//i.test(__patchedVal_${o}) ? __ENV_BASE_URL + __patchedVal_${o}.replace(/^https?:\\/\\/[^/]*/i, '') : (__ENV_BASE_URL ? __ENV_BASE_URL + __patchedVal_${o} : __patchedVal_${o});`);
+      lines.push(`                await expect(page).not.toHaveURL(__auNotNorm_${o}); break; }`);
       lines.push(`              case 'ASSERT TITLE':`);
       lines.push(`                await expect(page).toHaveTitle(__patchedVal_${o}); break;`);
       lines.push(`              case 'ASSERT TITLE NOT':`);

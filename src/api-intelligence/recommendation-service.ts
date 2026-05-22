@@ -56,5 +56,11 @@ export function buildGraphOverlayBundle(input: RecommendationInput, req?: Reques
     ...analyzeRetryIntelligence(input.collection.steps, input.recentRuns, input.collection.id).annotations,
     ...(input.flakinessReport ? analyzeFlakinessInsights(input.flakinessReport).annotations : []),
   ];
+  if (req) {
+    logApiAudit('api:intelligence:recommendations:generated', input.collection.id, req, {
+      details: `${annotations.length} annotations (graph overlay)`,
+      tenantId,
+    });
+  }
   return { collectionId: input.collection.id, generatedAt: new Date().toISOString(), annotations, advisoryNote: ADVISORY };
 }

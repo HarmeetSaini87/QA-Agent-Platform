@@ -1165,7 +1165,7 @@ async function _apiRunsRenderAiInsights(runId, collectionId, container) {
     const recBundle = recRes.ok ? await recRes.json() : null;
     const rcaBundle = rcaRes.ok ? await rcaRes.json() : null;
 
-    let html = `<div class="ai-insights-advisory">⚠️ ${recBundle?.advisoryNote ?? 'AI recommendations are advisory only.'}</div>`;
+    let html = `<div class="ai-insights-advisory">⚠️ ${_aiEscHtml(recBundle?.advisoryNote ?? 'AI recommendations are advisory only.')}</div>`;
 
     // RCA Hints section
     if (rcaBundle && rcaBundle.hints && rcaBundle.hints.length > 0) {
