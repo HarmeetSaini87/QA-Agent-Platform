@@ -21,6 +21,7 @@ import {
 } from '../approval-store';
 import type { ApprovalRequest } from '../contracts/approval-workflow.contracts';
 import { loadRunsForCollection, getReport } from '../../api-flakiness/flakiness-service';
+import { globalRemediationPolicyRegistry } from '../remediation-policy-registry';
 
 const router = Router();
 const ADVISORY = 'Remediation proposals are advisory and approval-gated. AI must not apply proposals automatically. Human approval required before any remediation action.';
@@ -44,6 +45,12 @@ router.post(
       const recentRuns = loadRunsForCollection(collectionId).slice(0, 20);
       let flakinessReport = null;
       try { flakinessReport = getReport(collectionId); } catch { /* degrade */ }
+
+      const role = (req.session as any)?.role ?? 'viewer';
+      const policyCheck = globalRemediationPolicyRegistry.checkPropose(role, 100);
+      if (!policyCheck.canPropose) {
+        return res.status(403).json({ error: policyCheck.reason ?? 'Proposal generation blocked by policy' });
+      }
 
       const recBundle = buildRecommendationBundle({ collection, recentRuns, flakinessReport });
       const bundle = buildRemediationProposals(
@@ -94,6 +101,9 @@ router.post(
       const { proposalId } = req.params;
       const proposal = findProposalById(proposalId);
       if (!proposal) return res.status(404).json({ error: 'Proposal not found' });
+      if (proposal.status !== 'pending-approval') {
+        return res.status(409).json({ error: `Proposal is already '${proposal.status}'` });
+      }
 
       const updated = { ...proposal, status: 'approved' as const };
       upsertProposal(updated);
@@ -134,6 +144,9 @@ router.post(
       const { proposalId } = req.params;
       const proposal = findProposalById(proposalId);
       if (!proposal) return res.status(404).json({ error: 'Proposal not found' });
+      if (proposal.status !== 'pending-approval') {
+        return res.status(409).json({ error: `Proposal is already '${proposal.status}'` });
+      }
 
       const updated = { ...proposal, status: 'rejected' as const };
       upsertProposal(updated);
