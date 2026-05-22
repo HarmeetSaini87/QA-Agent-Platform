@@ -128,6 +128,7 @@ All code changes, experiments, and new features are developed here FIRST.
 > **📋 See [docs/superpowers/plans/2026-05-20-phase-d-step12-distributed-execution-readiness.md](docs/superpowers/plans/2026-05-20-phase-d-step12-distributed-execution-readiness.md) — Phase D Step 12 implementation plan (8 tasks). **COMPLETE as of 2026-05-20.**
 > **📋 See [docs/superpowers/plans/2026-05-20-phase-d-step13-enterprise-governance.md](docs/superpowers/plans/2026-05-20-phase-d-step13-enterprise-governance.md) — Phase D Step 13 implementation plan (8 tasks). **COMPLETE as of 2026-05-20.**
 > **📋 See [docs/superpowers/plans/2026-05-21-phase-d-step14-ai-workflow-intelligence.md](docs/superpowers/plans/2026-05-21-phase-d-step14-ai-workflow-intelligence.md) — Phase D Step 14 implementation plan (8 tasks). **COMPLETE as of 2026-05-21.**
+> **📋 See [docs/superpowers/plans/2026-05-22-phase-d-step15-ai-remediation-governance.md](docs/superpowers/plans/2026-05-22-phase-d-step15-ai-remediation-governance.md) — Phase D Step 15 implementation plan (8 tasks). **COMPLETE as of 2026-05-22.**
 
 ---
 
@@ -355,6 +356,21 @@ Graph at `.code-review-graph/graph.db` — 11 communities, auto-updates on file 
 - Governance: ApiAuditAction extended with api:intelligence:recommendations:generated + api:intelligence:rca:accessed
 - All recommendations include confidence (0–100), provenance (source, basis, evidenceRefs), actionHint
 - Graceful degradation: flakinessReport=null and missing replay sessions handled without error
+
+### Enterprise AI Remediation Governance (Phase D Step 15 — shipped 2026-05-22)
+- Module: `src/api-remediation/` — contracts, engines, stores, policy-registry, graph-overlay-remediator, routes
+- Engines: proposal-diff (field-level diff), proposal-engine (pure fn: AiRecommendation[] → RemediationProposal[])
+- Proposal categories: retry-tuning, url-healing, dependency-restructure, assertion-repair, flaky-stabilization, environment-correction
+- ADVISORY + APPROVAL-GATED — proposals have `pending-approval` status; must be explicitly approved or rejected by authorized user
+- Stores: `data/remediation-proposals.json` (atomic write) + `data/remediation-approvals.json` (atomic write, audit trail)
+- Policy: `RemediationPolicyRegistry` — confidence threshold, restricted envs, approver roles, `globalRemediationPolicyRegistry` singleton
+- Graph overlay: `annotateOverlayWithProposals()` augments existing AiGraphOverlayBundle with `approval-pending`/`remediation-proposed` badges
+- RBAC: `api:propose-remediation` (admin/editor/tester) + `api:approve-remediation` (admin/editor)
+- Audit: `api:remediation:proposed`, `api:remediation:approved`, `api:remediation:rejected` via existing `logApiAudit`
+- Routes: `POST /api/remediation/collections/:id/proposals`, `GET /api/remediation/collections/:id/proposals`, `POST /api/remediation/proposals/:id/approve`, `POST /api/remediation/proposals/:id/reject`, `GET /api/remediation/approvals`
+- UI: "Remediation Proposals" section in AI Insights tab (25-api-runs.js) — generate proposals button, diff table, approve/reject buttons, status badges
+- Backward compatible: existing collections, runs, recommendations, replay, graph overlays all unchanged
+- Future extension points: `rolled-back` status, policy-approved autonomous healing, confidence-based auto-approval (not implemented)
 
 ---
 
