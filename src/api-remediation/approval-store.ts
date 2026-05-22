@@ -40,6 +40,7 @@ export function upsertApproval(approval: ApprovalRequest): void {
   saveApprovalsRegistry(reg);
 }
 
+/** Returns the pending (undecided) approval request for the given proposalId, or null if none exists. */
 export function findApprovalByProposalId(proposalId: string): ApprovalRequest | null {
   return loadApprovalsRegistry().approvals.find(
     a => a.proposalId === proposalId && a.status === 'pending',
