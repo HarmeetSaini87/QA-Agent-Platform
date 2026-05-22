@@ -9,6 +9,8 @@ import { generateRcaHints } from '../engines/rca-hint-engine';
 import { logApiAudit } from '../../api-governance/audit.helper';
 import { loadReplaySession } from '../../api-observability/replay-event-store';
 import { loadRunsForCollection, getReport } from '../../api-flakiness/flakiness-service';
+import { listProposalsByCollection } from '../../api-remediation/proposal-store';
+import { annotateOverlayWithProposals } from '../../api-remediation/graph-overlay-remediator';
 
 const router = Router();
 
@@ -50,7 +52,9 @@ router.get('/collections/:collectionId/graph-overlay', requireAuth, async (req: 
     } catch { /* graceful degrade */ }
 
     const bundle = buildGraphOverlayBundle({ collection, recentRuns, flakinessReport }, req);
-    res.json(bundle);
+    const proposals = listProposalsByCollection(collectionId);
+    const augmented = annotateOverlayWithProposals(bundle, proposals);
+    res.json(augmented);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

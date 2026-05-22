@@ -3,7 +3,9 @@ export type AiOverlayBadgeType =
   | 'retry-hotspot'
   | 'optimization-hint'
   | 'healing-confidence'
-  | 'replay-anomaly';
+  | 'replay-anomaly'
+  | 'remediation-proposed'   // step has an approved/applied proposal
+  | 'approval-pending';      // step has a pending-approval proposal
 
 export interface AiOverlayBadge {
   type: AiOverlayBadgeType;
