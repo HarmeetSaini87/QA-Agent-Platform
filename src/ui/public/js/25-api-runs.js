@@ -1211,10 +1211,10 @@ async function _apiRunsRenderAiInsights(runId, collectionId, container) {
     // Remediation Proposals section
     html += '<div class="ai-insights-section"><h4>Remediation Proposals</h4>';
     if (propData && propData.proposals && propData.proposals.length > 0) {
-      html += `<p class="ai-remediation-advisory">${_aiEscHtml(propData.advisoryNote)}</p>`;
+      html += `<p class="ai-remediation-advisory">${_aiEscHtml(propData.advisoryNote ?? '')}</p>`;
       html += '<ul class="ai-proposal-list">';
       for (const prop of propData.proposals) {
-        const statusCls = 'ai-prop-' + _aiEscHtml(prop.status.replace(/-/g, '-'));
+        const statusCls = 'ai-prop-' + _aiEscHtml(prop.status);
         const canAct = prop.status === 'pending-approval';
         const diffRows = (prop.diff || []).map(function(ch) {
           return '<tr><td>' + _aiEscHtml(ch.humanLabel) + '</td>' +
