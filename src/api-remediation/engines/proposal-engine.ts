@@ -1,6 +1,6 @@
 // Pure function — data in, proposals out. No DB or HTTP calls.
 
-import type { AiRecommendation } from '../../api-intelligence/contracts/recommendation.contracts';
+import type { AiRecommendation, RecommendationCategory } from '../../api-intelligence/contracts/recommendation.contracts';
 import type { ApiTestStep } from '../../data/types';
 import type {
   RemediationProposal,
@@ -11,7 +11,7 @@ import { buildDiff } from './proposal-diff';
 
 const ADVISORY = 'Remediation proposals are advisory and approval-gated. AI must not apply proposals automatically. Human approval required before any remediation action.';
 
-const CATEGORY_TO_TYPE: Partial<Record<string, RemediationProposalType>> = {
+const CATEGORY_TO_TYPE: Partial<Record<RecommendationCategory, RemediationProposalType>> = {
   'retry':        'retry-tuning',
   'healing':      'url-healing',
   'dependency':   'dependency-restructure',

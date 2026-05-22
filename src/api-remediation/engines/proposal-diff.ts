@@ -47,12 +47,14 @@ export function buildDiff(rec: AiRecommendation, steps: ApiTestStep[]): Remediat
     }
     case 'flakiness': {
       const currentMax = step?.execution?.retryPolicy?.maxRetries ?? 0;
-      changes.push({
-        field: 'execution.retryPolicy.maxRetries',
-        before: currentMax,
-        after: Math.max(2, currentMax),
-        humanLabel: `Max retries for '${label}'`,
-      });
+      if (currentMax < 2) {
+        changes.push({
+          field: 'execution.retryPolicy.maxRetries',
+          before: currentMax,
+          after: 2,
+          humanLabel: `Max retries for '${label}'`,
+        });
+      }
       changes.push({
         field: 'quarantineEligible',
         before: false,
