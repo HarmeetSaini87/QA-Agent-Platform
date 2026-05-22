@@ -1157,13 +1157,15 @@ function apiRunsGraphFullscreenFit() {
 async function _apiRunsRenderAiInsights(runId, collectionId, container) {
   container.innerHTML = '<div class="ai-insights-loading">Loading AI insights…</div>';
   try {
-    const [recRes, rcaRes] = await Promise.all([
+    const [recRes, rcaRes, propRes] = await Promise.all([
       fetch(`/api/ai-intelligence/collections/${encodeURIComponent(collectionId)}/recommendations`),
       fetch(`/api/ai-intelligence/runs/${encodeURIComponent(runId)}/rca-hints`),
+      fetch(`/api/remediation/collections/${encodeURIComponent(collectionId)}/proposals`),
     ]);
 
     const recBundle = recRes.ok ? await recRes.json() : null;
     const rcaBundle = rcaRes.ok ? await rcaRes.json() : null;
+    const propData  = propRes.ok ? await propRes.json() : null;
 
     let html = `<div class="ai-insights-advisory">⚠️ ${_aiEscHtml(recBundle?.advisoryNote ?? 'AI recommendations are advisory only.')}</div>`;
 
@@ -1206,6 +1208,44 @@ async function _apiRunsRenderAiInsights(runId, collectionId, container) {
       html += '<div class="ai-insights-section"><h4>Collection Recommendations</h4><p class="ai-empty">No recommendations — collection looks healthy.</p></div>';
     }
 
+    // Remediation Proposals section
+    html += '<div class="ai-insights-section"><h4>Remediation Proposals</h4>';
+    if (propData && propData.proposals && propData.proposals.length > 0) {
+      html += `<p class="ai-remediation-advisory">${_aiEscHtml(propData.advisoryNote)}</p>`;
+      html += '<ul class="ai-proposal-list">';
+      for (const prop of propData.proposals) {
+        const statusCls = 'ai-prop-' + _aiEscHtml(prop.status.replace(/-/g, '-'));
+        const canAct = prop.status === 'pending-approval';
+        const diffRows = (prop.diff || []).map(function(ch) {
+          return '<tr><td>' + _aiEscHtml(ch.humanLabel) + '</td>' +
+            '<td class="ai-diff-before">' + _aiEscHtml(String(ch.before)) + '</td>' +
+            '<td class="ai-diff-after">' + _aiEscHtml(String(ch.after)) + '</td></tr>';
+        }).join('');
+        const safeId = _aiEscHtml(prop.id);
+        const safeCol = _aiEscHtml(collectionId);
+        html += `<li class="ai-proposal-item ${statusCls}">
+          <div class="ai-prop-header">
+            <span class="ai-prop-type-badge">${_aiEscHtml(prop.type)}</span>
+            <span class="ai-prop-title">${_aiEscHtml(prop.title)}</span>
+            <span class="ai-conf-badge">${prop.confidence}%</span>
+            <span class="ai-prop-status-badge">${_aiEscHtml(prop.status)}</span>
+          </div>
+          <div class="ai-prop-rationale">${_aiEscHtml(prop.rationale)}</div>
+          ${diffRows ? '<table class="ai-prop-diff-table"><thead><tr><th>Field</th><th>Before</th><th>After</th></tr></thead><tbody>' + diffRows + '</tbody></table>' : ''}
+          ${canAct ? '<div class="ai-prop-actions">' +
+            '<button class="ai-prop-approve-btn" onclick="_apiRunsApproveProposal(\'' + safeId + '\')">Approve</button>' +
+            '<button class="ai-prop-reject-btn" onclick="_apiRunsRejectProposal(\'' + safeId + '\')">Reject</button>' +
+            '</div>' : ''}
+        </li>`;
+      }
+      html += '</ul>';
+    } else {
+      html += '<p class="ai-empty">No proposals generated yet.</p>';
+      html += '<button class="ai-generate-proposals-btn" onclick="_apiRunsGenerateProposals(' +
+        JSON.stringify(collectionId) + ', this)">Generate Remediation Proposals</button>';
+    }
+    html += '</div>';
+
     container.innerHTML = html;
   } catch (err) {
     container.innerHTML = `<div class="ai-insights-error">Failed to load AI insights: ${_aiEscHtml(String(err))}</div>`;
@@ -1218,4 +1258,55 @@ function _aiEscHtml(str) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+async function _apiRunsGenerateProposals(collectionId, btn) {
+  btn.disabled = true;
+  btn.textContent = 'Generating…';
+  try {
+    var res = await fetch('/api/remediation/collections/' + encodeURIComponent(collectionId) + '/proposals', { method: 'POST' });
+    if (!res.ok) throw new Error(await res.text());
+    var panel = document.getElementById('ai-insights-panel-run');
+    if (panel) { panel.removeAttribute('data-loaded'); }
+    if (_apiRunsCurrentRun && panel) {
+      _apiRunsRenderAiInsights(_apiRunsCurrentRun.id, _apiRunsCurrentRun.collectionId, panel);
+    }
+  } catch (err) {
+    btn.disabled = false;
+    btn.textContent = 'Generate Remediation Proposals';
+    alert('Failed to generate proposals: ' + String(err));
+  }
+}
+
+async function _apiRunsApproveProposal(proposalId) {
+  try {
+    var res = await fetch('/api/remediation/proposals/' + encodeURIComponent(proposalId) + '/approve', { method: 'POST' });
+    if (!res.ok) throw new Error(await res.text());
+    var panel = document.getElementById('ai-insights-panel-run');
+    if (panel) { panel.removeAttribute('data-loaded'); }
+    if (_apiRunsCurrentRun && panel) {
+      _apiRunsRenderAiInsights(_apiRunsCurrentRun.id, _apiRunsCurrentRun.collectionId, panel);
+    }
+  } catch (err) {
+    alert('Approval failed: ' + String(err));
+  }
+}
+
+async function _apiRunsRejectProposal(proposalId) {
+  var comment = prompt('Rejection reason (optional):') || '';
+  try {
+    var res = await fetch('/api/remediation/proposals/' + encodeURIComponent(proposalId) + '/reject', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reviewComment: comment || undefined }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    var panel = document.getElementById('ai-insights-panel-run');
+    if (panel) { panel.removeAttribute('data-loaded'); }
+    if (_apiRunsCurrentRun && panel) {
+      _apiRunsRenderAiInsights(_apiRunsCurrentRun.id, _apiRunsCurrentRun.collectionId, panel);
+    }
+  } catch (err) {
+    alert('Rejection failed: ' + String(err));
+  }
 }

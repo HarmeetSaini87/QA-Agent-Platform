@@ -2641,3 +2641,32 @@ body[data-theme="light"] .exec-graph-timeline-bar-wrap { background: #e8e0d0; }
 .ai-conf-high { color: #059669; background: #d1fae5; }
 .ai-conf-med  { color: #d97706; background: #fef3c7; }
 .ai-conf-low  { color: #9ca3af; background: #f3f4f6; }
+
+/* ── Remediation Proposals (Phase D Step 15) ─────────────────────────────── */
+.ai-proposal-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 10px; }
+.ai-proposal-item { background: var(--bg-2, #1e1e2e); border: 1px solid var(--border, #3a3a5c); border-radius: 8px; padding: 12px; }
+.ai-proposal-item.ai-prop-pending-approval { border-left: 3px solid #f59e0b; }
+.ai-proposal-item.ai-prop-approved  { border-left: 3px solid #22c55e; opacity: 0.85; }
+.ai-proposal-item.ai-prop-rejected  { border-left: 3px solid #ef4444; opacity: 0.70; }
+.ai-proposal-item.ai-prop-rolled-back { border-left: 3px solid #6b7280; opacity: 0.60; }
+.ai-prop-header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+.ai-prop-type-badge { background: #334155; color: #94a3b8; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; padding: 2px 6px; border-radius: 4px; }
+.ai-prop-title { font-weight: 600; font-size: 13px; flex: 1; min-width: 0; }
+.ai-prop-status-badge { font-size: 10px; padding: 2px 6px; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+.ai-prop-pending-approval .ai-prop-status-badge { background: #451a03; color: #f59e0b; }
+.ai-prop-approved  .ai-prop-status-badge { background: #052e16; color: #22c55e; }
+.ai-prop-rejected  .ai-prop-status-badge { background: #450a0a; color: #ef4444; }
+.ai-prop-rationale { font-size: 12px; color: var(--text-muted, #8b8b9e); margin-bottom: 8px; }
+.ai-prop-diff-table { width: 100%; border-collapse: collapse; font-size: 11px; margin-bottom: 8px; }
+.ai-prop-diff-table th { background: var(--bg-3, #2a2a3e); color: var(--text-muted, #8b8b9e); text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--border, #3a3a5c); }
+.ai-prop-diff-table td { padding: 4px 8px; border-top: 1px solid var(--border, #3a3a5c); }
+.ai-diff-before { color: #ef4444; font-family: monospace; font-size: 11px; }
+.ai-diff-after  { color: #22c55e; font-family: monospace; font-size: 11px; }
+.ai-prop-actions { display: flex; gap: 8px; margin-top: 8px; }
+.ai-prop-approve-btn { background: #052e16; color: #22c55e; border: 1px solid #22c55e; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+.ai-prop-approve-btn:hover { background: #14532d; }
+.ai-prop-reject-btn  { background: #450a0a; color: #ef4444; border: 1px solid #ef4444; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+.ai-prop-reject-btn:hover  { background: #7f1d1d; }
+.ai-generate-proposals-btn { background: #1e3a5f; color: #60a5fa; border: 1px solid #3b82f6; padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: 12px; margin-top: 6px; }
+.ai-generate-proposals-btn:hover { background: #1e40af; }
+.ai-remediation-advisory { font-size: 11px; color: #f59e0b; background: #451a03; border-radius: 4px; padding: 6px 10px; margin-bottom: 8px; }
