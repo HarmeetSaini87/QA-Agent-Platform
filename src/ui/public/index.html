@@ -3030,6 +3030,7 @@
           <button class="api-run-tab-btn sub-tab active" data-tab="steps" onclick="apiRunsTabSwitch('steps')">Steps</button>
           <button class="api-run-tab-btn sub-tab" data-tab="graph" onclick="apiRunsTabSwitch('graph')">&#9645; Execution Graph</button>
           <button class="api-run-tab-btn sub-tab" data-tab="har" onclick="apiRunsTabSwitch('har')">HAR / Network</button>
+          <button class="api-run-tab-btn sub-tab" data-tab="ai-insights" onclick="apiRunsTabSwitch('ai-insights')">AI Insights</button>
         </div>
         <div class="api-run-tab-panel" data-tab="steps">
           <table class="data-table">
@@ -3070,6 +3071,8 @@
             <tbody id="api-run-har-tbody"></tbody>
           </table>
         </div>
+        <!-- AI Insights tab — lazy-loaded on first activation -->
+        <div class="api-run-tab-panel" data-tab="ai-insights" style="display:none;padding:12px" id="ai-insights-panel-run"></div>
       </div>
       <div class="modal-footer">
         <button class="btn btn-secondary" onclick="apiRunsCloseDetail()">Close</button>

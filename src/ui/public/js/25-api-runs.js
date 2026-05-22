@@ -322,6 +322,13 @@ function apiRunsTabSwitch(tab) {
   document.querySelectorAll('.api-run-tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   document.querySelectorAll('.api-run-tab-panel').forEach(p => p.style.display = p.dataset.tab === tab ? '' : 'none');
   if (tab === 'graph' && _apiRunsCurrentRun) _execGraphEnsureLoaded(_apiRunsCurrentRun);
+  if (tab === 'ai-insights' && _apiRunsCurrentRun) {
+    const panel = document.getElementById('ai-insights-panel-run');
+    if (panel && !panel.dataset.loaded) {
+      panel.dataset.loaded = '1';
+      _apiRunsRenderAiInsights(_apiRunsCurrentRun.id, _apiRunsCurrentRun.collectionId, panel);
+    }
+  }
 }
 
 // ── Execution Graph Overlay (Phase D Step 7) ─────────────────────────────────
@@ -1084,6 +1091,9 @@ function _execGraphReset() {
   document.querySelectorAll('.api-run-tab-btn').forEach(function(b) { b.classList.toggle('active', b.dataset.tab === 'steps'); });
   document.querySelectorAll('.api-run-tab-panel').forEach(function(p) { p.style.display = p.dataset.tab === 'steps' ? '' : 'none'; });
   if (_execGraphCy) { _execGraphCy.destroy(); _execGraphCy = null; }
+  // Reset AI Insights lazy-load flag so fresh data is fetched on next activation
+  var aiPanel = document.getElementById('ai-insights-panel-run');
+  if (aiPanel) { delete aiPanel.dataset.loaded; aiPanel.innerHTML = ''; }
 }
 
 function _execGraphDestroy() {
@@ -1138,4 +1148,74 @@ function apiRunsGraphFullscreenClose() {
 
 function apiRunsGraphFullscreenFit() {
   if (_execGraphFsCy) _execGraphFsCy.fit(undefined, 40);
+}
+
+// ── AI Insights Panel (Phase D Step 14) ──────────────────────────────────────
+// Advisory recommendations and RCA hints for a run. Lazy-loaded on tab click.
+// ADVISORY ONLY — never mutates collections, runtime, or WorkflowEnvelope.
+
+async function _apiRunsRenderAiInsights(runId, collectionId, container) {
+  container.innerHTML = '<div class="ai-insights-loading">Loading AI insights…</div>';
+  try {
+    const [recRes, rcaRes] = await Promise.all([
+      fetch(`/api/ai-intelligence/collections/${encodeURIComponent(collectionId)}/recommendations`),
+      fetch(`/api/ai-intelligence/runs/${encodeURIComponent(runId)}/rca-hints`),
+    ]);
+
+    const recBundle = recRes.ok ? await recRes.json() : null;
+    const rcaBundle = rcaRes.ok ? await rcaRes.json() : null;
+
+    let html = `<div class="ai-insights-advisory">⚠️ ${recBundle?.advisoryNote ?? 'AI recommendations are advisory only.'}</div>`;
+
+    // RCA Hints section
+    if (rcaBundle && rcaBundle.hints && rcaBundle.hints.length > 0) {
+      html += '<div class="ai-insights-section"><h4>RCA Hints</h4><ul class="ai-hints-list">';
+      for (const hint of rcaBundle.hints) {
+        const conf = hint.confidence;
+        const confClass = conf >= 85 ? 'ai-conf-high' : conf >= 65 ? 'ai-conf-med' : 'ai-conf-low';
+        html += `<li class="ai-hint-item">
+          <span class="ai-hint-title">${_aiEscHtml(hint.title)}</span>
+          <span class="ai-conf-badge ${confClass}">${conf}% confidence</span>
+          <div class="ai-hint-cause">${_aiEscHtml(hint.probableCause)}</div>
+        </li>`;
+      }
+      html += '</ul></div>';
+    } else if (rcaBundle) {
+      html += '<div class="ai-insights-section"><h4>RCA Hints</h4><p class="ai-empty">No anomalies detected in replay events for this run.</p></div>';
+    } else {
+      html += '<div class="ai-insights-section"><h4>RCA Hints</h4><p class="ai-empty">No replay session available for this run. Execute the collection to generate replay data.</p></div>';
+    }
+
+    // Recommendations section
+    if (recBundle && recBundle.recommendations && recBundle.recommendations.length > 0) {
+      html += '<div class="ai-insights-section"><h4>Collection Recommendations</h4><ul class="ai-rec-list">';
+      for (const rec of recBundle.recommendations) {
+        const sevClass = { critical: 'ai-sev-critical', warning: 'ai-sev-warning', info: 'ai-sev-info' }[rec.severity] || 'ai-sev-info';
+        html += `<li class="ai-rec-item ${sevClass}">
+          <div class="ai-rec-header">
+            <span class="ai-sev-badge">${rec.severity.toUpperCase()}</span>
+            <span class="ai-rec-title">${_aiEscHtml(rec.title)}</span>
+            <span class="ai-conf-badge">${rec.confidence}%</span>
+          </div>
+          <div class="ai-rec-detail">${_aiEscHtml(rec.detail)}</div>
+          <div class="ai-rec-action"><strong>Action:</strong> ${_aiEscHtml(rec.actionHint)}</div>
+        </li>`;
+      }
+      html += '</ul></div>';
+    } else if (recBundle) {
+      html += '<div class="ai-insights-section"><h4>Collection Recommendations</h4><p class="ai-empty">No recommendations — collection looks healthy.</p></div>';
+    }
+
+    container.innerHTML = html;
+  } catch (err) {
+    container.innerHTML = `<div class="ai-insights-error">Failed to load AI insights: ${_aiEscHtml(String(err))}</div>`;
+  }
+}
+
+function _aiEscHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }

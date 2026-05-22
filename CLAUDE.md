@@ -127,6 +127,7 @@ All code changes, experiments, and new features are developed here FIRST.
 > **📋 See [docs/superpowers/plans/2026-05-19-phase-d-step11-observability-replay.md](docs/superpowers/plans/2026-05-19-phase-d-step11-observability-replay.md) — Phase D Step 11 implementation plan (8 tasks). **COMPLETE as of 2026-05-19.**
 > **📋 See [docs/superpowers/plans/2026-05-20-phase-d-step12-distributed-execution-readiness.md](docs/superpowers/plans/2026-05-20-phase-d-step12-distributed-execution-readiness.md) — Phase D Step 12 implementation plan (8 tasks). **COMPLETE as of 2026-05-20.**
 > **📋 See [docs/superpowers/plans/2026-05-20-phase-d-step13-enterprise-governance.md](docs/superpowers/plans/2026-05-20-phase-d-step13-enterprise-governance.md) — Phase D Step 13 implementation plan (8 tasks). **COMPLETE as of 2026-05-20.**
+> **📋 See [docs/superpowers/plans/2026-05-21-phase-d-step14-ai-workflow-intelligence.md](docs/superpowers/plans/2026-05-21-phase-d-step14-ai-workflow-intelligence.md) — Phase D Step 14 implementation plan (8 tasks). **COMPLETE as of 2026-05-21.**
 
 ---
 
@@ -342,6 +343,18 @@ Graph at `.code-review-graph/graph.db` — 11 communities, auto-updates on file 
 - UI: `30-governance.js` — tenant card, filterable audit log, policy list + register form
 - `ApiCollection.tenantId?: string` — optional, backward-compatible
 - All contracts additive, JSON-serialisable; no runtime execution modified
+
+### AI-Assisted Workflow Intelligence (Phase D Step 14 — shipped 2026-05-21)
+- Module: `src/api-intelligence/` — contracts, engines, recommendation-service, routes
+- Engines: dependency-analyzer, retry-intelligence, flakiness-insights, rca-hint-engine, workflow-quality-analyzer (+ engine-helpers.ts shared factory)
+- All engines are pure functions — no DB/HTTP calls; data in → AiRecommendation[] or RcaHint[] out
+- recommendation-service.ts: orchestrates all engines, sorts by severity+confidence, applies tenant context, audits via logApiAudit
+- Routes: `GET /api/ai-intelligence/collections/:id/recommendations`, `/graph-overlay`, `GET /api/ai-intelligence/runs/:id/rca-hints`
+- UI: "AI Insights" tab in run detail view (25-api-runs.js) — RCA hints + collection recommendations, lazy-loaded on tab click
+- ADVISORY ONLY — AI must never mutate collections, runtime, WorkflowEnvelope, or retries
+- Governance: ApiAuditAction extended with api:intelligence:recommendations:generated + api:intelligence:rca:accessed
+- All recommendations include confidence (0–100), provenance (source, basis, evidenceRefs), actionHint
+- Graceful degradation: flakinessReport=null and missing replay sessions handled without error
 
 ---
 

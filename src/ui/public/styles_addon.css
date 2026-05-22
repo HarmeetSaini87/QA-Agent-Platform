@@ -2594,3 +2594,50 @@ body[data-theme="light"] .exec-graph-timeline-bar-wrap { background: #e8e0d0; }
 .gov-policy-badge { display:inline-block; border-radius:4px; padding:2px 10px; font-size:0.82em; font-weight:600; background:#2d3748; color:#a0aec0; margin-right:6px; }
 .gov-policy-badge--active { background:#1a4731; color:#68d391; }
 .gov-policy-badge--approval { background:#4a3000; color:#f6c23e; }
+
+/* ── AI Insights Panel (Phase D Step 14) ────────────────────────────────────── */
+.ai-insights-advisory {
+  background: #fffbeb;
+  border: 1px solid #f59e0b;
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: #92400e;
+  margin-bottom: 12px;
+}
+.ai-insights-loading { color: #6b7280; font-size: 13px; padding: 16px; }
+.ai-insights-error { color: #dc2626; font-size: 13px; padding: 12px; }
+.ai-insights-section { margin-bottom: 18px; }
+.ai-insights-section h4 { font-size: 13px; font-weight: 600; color: #374151; margin: 0 0 8px 0; }
+.ai-empty { font-size: 12px; color: #9ca3af; font-style: italic; }
+
+/* RCA Hints */
+.ai-hints-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.ai-hint-item { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px 12px; }
+.ai-hint-title { font-size: 12px; font-weight: 600; color: #1e293b; }
+.ai-hint-cause { font-size: 11px; color: #475569; margin-top: 4px; line-height: 1.4; }
+
+/* Recommendations */
+.ai-rec-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.ai-rec-item { border-radius: 6px; padding: 10px 12px; border-left: 4px solid #e5e7eb; background: #f9fafb; }
+.ai-rec-item.ai-sev-critical { border-left-color: #dc2626; background: #fff5f5; }
+.ai-rec-item.ai-sev-warning  { border-left-color: #f59e0b; background: #fffdf5; }
+.ai-rec-item.ai-sev-info     { border-left-color: #3b82f6; background: #f0f9ff; }
+.ai-rec-header { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 4px; }
+.ai-rec-title { font-size: 12px; font-weight: 600; color: #1f2937; }
+.ai-rec-detail { font-size: 11px; color: #4b5563; line-height: 1.4; }
+.ai-rec-action { font-size: 11px; color: #374151; margin-top: 4px; }
+
+/* Severity & confidence badges */
+.ai-sev-badge {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.05em;
+  padding: 1px 5px; border-radius: 3px; text-transform: uppercase;
+  background: #e5e7eb; color: #374151;
+}
+.ai-sev-critical .ai-sev-badge { background: #fee2e2; color: #dc2626; }
+.ai-sev-warning  .ai-sev-badge { background: #fef3c7; color: #b45309; }
+.ai-sev-info     .ai-sev-badge { background: #dbeafe; color: #1d4ed8; }
+.ai-conf-badge { font-size: 10px; color: #6b7280; padding: 1px 4px; background: #f3f4f6; border-radius: 3px; }
+.ai-conf-high { color: #059669; background: #d1fae5; }
+.ai-conf-med  { color: #d97706; background: #fef3c7; }
+.ai-conf-low  { color: #9ca3af; background: #f3f4f6; }
