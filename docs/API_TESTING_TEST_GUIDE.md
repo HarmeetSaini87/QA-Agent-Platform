@@ -3,7 +3,7 @@
 **Project:** qa-agent-platform-dev  
 **Module:** API Testing — All Phases (1–5, D, E)  
 **Last Updated:** 2026-05-22  
-**Version:** 2.0
+**Version:** 2.4
 
 ---
 

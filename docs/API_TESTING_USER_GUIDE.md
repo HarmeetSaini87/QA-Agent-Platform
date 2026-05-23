@@ -3,7 +3,7 @@
 **Audience:** SDETs, QA Engineers, Tech Leads, DevOps  
 **Platform:** QA Agent Platform — All Phases (1–5, D, E)  
 **Last Updated:** 2026-05-22  
-**Version:** 2.2
+**Version:** 2.3
 
 ---
 
