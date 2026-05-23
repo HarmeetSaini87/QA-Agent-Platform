@@ -39,3 +39,39 @@ function adminSubTab(name, btn) {
   if (name === 'apikeys') apikeyLoad();
 }
 
+// ── Toast notifications ────────────────────────────────────────────────────────
+
+function showToast(type, msg, ms) {
+  const container = document.getElementById('toast-container');
+  if (!container) return;
+  const t = document.createElement('div');
+  t.className = 'toast toast-' + type;
+  t.textContent = msg;
+  container.appendChild(t);
+  setTimeout(() => {
+    t.classList.add('toast-hide');
+    setTimeout(() => t.remove(), 300);
+  }, ms || 3500);
+}
+
+// ── Client-side export ─────────────────────────────────────────────────────────
+
+function downloadCSV(filename, headers, rows) {
+  const esc = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+  const lines = [headers.map(esc).join(','), ...rows.map(r => r.map(esc).join(','))];
+  const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
+  const a = Object.assign(document.createElement('a'), {
+    href: URL.createObjectURL(blob), download: filename
+  });
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function downloadJSON(filename, data) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const a = Object.assign(document.createElement('a'), {
+    href: URL.createObjectURL(blob), download: filename
+  });
+  a.click();
+  URL.revokeObjectURL(a.href);
+}

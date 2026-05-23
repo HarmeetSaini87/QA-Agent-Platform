@@ -128,6 +128,42 @@ function adminSubTab(name, btn) {
   if (name === 'apikeys') apikeyLoad();
 }
 
+// ── Toast notifications ────────────────────────────────────────────────────────
+
+function showToast(type, msg, ms) {
+  const container = document.getElementById('toast-container');
+  if (!container) return;
+  const t = document.createElement('div');
+  t.className = 'toast toast-' + type;
+  t.textContent = msg;
+  container.appendChild(t);
+  setTimeout(() => {
+    t.classList.add('toast-hide');
+    setTimeout(() => t.remove(), 300);
+  }, ms || 3500);
+}
+
+// ── Client-side export ─────────────────────────────────────────────────────────
+
+function downloadCSV(filename, headers, rows) {
+  const esc = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+  const lines = [headers.map(esc).join(','), ...rows.map(r => r.map(esc).join(','))];
+  const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
+  const a = Object.assign(document.createElement('a'), {
+    href: URL.createObjectURL(blob), download: filename
+  });
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function downloadJSON(filename, data) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const a = Object.assign(document.createElement('a'), {
+    href: URL.createObjectURL(blob), download: filename
+  });
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
 // ══════════════════════════════════════════════════════════════════════════════
 // USER MANAGEMENT
 // ══════════════════════════════════════════════════════════════════════════════
@@ -2211,6 +2247,15 @@ function onModuleTabSwitch(tab) {
   if (tab === 'api-collections') apiColLoad();
   if (tab === 'api-runs') apiRunsLoad();
   if (tab === 'api-flakiness') flakinessLoad();
+  if (tab === 'api-suites') apiSuitesInit();
+  if (tab === 'api-replay' && !_panelLoaded.has('api-replay')) { if (typeof apiReplayInit === 'function') apiReplayInit(); }
+  if (tab === 'worker-health') { if (typeof workerHealthInit === 'function') { var _whPanel = document.getElementById('panel-worker-health'); if (_whPanel) workerHealthInit(_whPanel); } }
+  if (tab === 'governance') { if (typeof governanceInit === 'function') { var _govPanel = document.getElementById('panel-governance'); if (_govPanel) governanceInit(_govPanel); } }
+  if (tab === 'api-plugins') { if (typeof apiPluginsLoad === 'function') apiPluginsLoad(); }
+  if (tab === 'api-graph') { if (typeof graphEditorLoad === 'function') graphEditorLoad(); }
+  if (tab === 'api-collab') { if (typeof collabLoad === 'function') collabLoad(); }
+  if (tab === 'api-copilot') { if (typeof copilotLoad === 'function') copilotLoad(); }
+  if (tab === 'perf-dashboard') { if (typeof perfLoad === 'function') perfLoad(); }
   if (tab === 'admin' && !_panelLoaded.has('admin')) adminSubTab('users', document.querySelector('.sub-tab'));
   _panelLoaded.add(tab);
 
@@ -2272,7 +2317,7 @@ async function projDropdownLoad() {
 }
 
 // Panels that require a project to be selected before any interaction
-const PROJECT_SCOPED_TABS = new Set(['scripts', 'suites', 'locators', 'functions', 'commondata', 'history', 'flaky', 'analytics', 'visual', 'locator-health', 'api-envs', 'api-collections', 'api-runs', 'api-flakiness']);
+const PROJECT_SCOPED_TABS = new Set(['scripts', 'suites', 'locators', 'functions', 'commondata', 'history', 'flaky', 'analytics', 'visual', 'locator-health', 'api-envs', 'api-collections', 'api-runs', 'api-flakiness', 'api-suites']);
 
 const _PROJ_BANNER_ID = 'proj-required-banner';
 
@@ -2327,6 +2372,7 @@ function onProjectChange() {
   apiEnvLoad();
   apiColLoad();
   apiRunsLoad();
+  if (typeof apiSuitesLoad === 'function') apiSuitesLoad();
 }
 
 function _toggleModuleAddButtons(enabled) {
@@ -10161,6 +10207,7 @@ function _apiColRenderList() {
         <button class="tbl-btn run-btn" onclick="apiColRun('${col.id}')">▶ Run</button>
         <button class="tbl-btn" onclick="apiColPrescan('${col.id}')">Pre-scan</button>
         <button class="tbl-btn" onclick="apiColGraphOpenModal('${col.id}')" title="View workflow graph">&#9645; Graph</button>
+        <button class="tbl-btn" onclick="apiColNegTests('${col.id}','${escHtml(col.name)}')" title="Generate negative test suggestions">&#x1F9EA; Neg Tests</button>
         <button class="tbl-btn del" onclick="apiColDelete('${col.id}','${escHtml(col.name)}')">Delete</button>
       </td>`;
     tbody.appendChild(tr);
@@ -10786,6 +10833,50 @@ async function apiColDelete(id, name) {
   if (!confirm(`Delete collection "${name}"?`)) return;
   await fetch(`/api/api-collections/${id}`, { method: 'DELETE' });
   await apiColLoad();
+}
+
+async function apiColNegTests(colId, colName) {
+  const content = document.getElementById('negative-tests-content');
+  if (!content) return;
+  content.innerHTML = '<div style="color:var(--text-muted)">Generating negative tests for <strong>' + escHtml(colName) + '</strong>…</div>';
+  openModal('modal-negative-tests');
+  try {
+    const res = await fetch('/api/ai-intelligence/collections/' + encodeURIComponent(colId) + '/generate-negative-tests', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+    });
+    if (!res.ok) {
+      content.innerHTML = '<div style="color:#ef4444">Failed to generate tests: ' + res.status + '</div>';
+      return;
+    }
+    const suite = await res.json();
+    const cases = suite.cases || [];
+    if (!cases.length) {
+      content.innerHTML = '<div style="color:var(--text-muted)">No negative test cases could be generated (collection may have no request bodies or auth headers).</div>';
+      return;
+    }
+    const strategyColors = { 'missing-field': '#ef4444', 'wrong-type': '#f59e0b',
+      'boundary-violation': '#3b82f6', 'auth-stripped': '#a78bfa', 'wrong-method': '#9ca3af' };
+    const rows = cases.map(function(c) {
+      const col = strategyColors[c.strategy] || '#9ca3af';
+      const expected = (c.expectedStatusCodes || []).join(', ');
+      return '<tr>' +
+        '<td style="font-size:11px"><span style="color:' + col + ';font-weight:600">' + escHtml(c.strategy) + '</span></td>' +
+        '<td style="font-size:11px">' + escHtml(c.stepName) + '</td>' +
+        '<td style="font-size:12px">' + escHtml(c.title) + '</td>' +
+        '<td style="font-size:11px;color:var(--text-muted)">' + escHtml(expected) + '</td>' +
+        '</tr>';
+    }).join('');
+    content.innerHTML =
+      '<div style="font-size:12px;color:var(--text-muted);margin-bottom:10px">' +
+        cases.length + ' test cases generated for <strong>' + escHtml(colName) + '</strong>' +
+      '</div>' +
+      '<table class="data-table">' +
+        '<thead><tr><th>Strategy</th><th>Step</th><th>Title</th><th>Expected Status</th></tr></thead>' +
+        '<tbody>' + rows + '</tbody>' +
+      '</table>';
+  } catch (e) {
+    content.innerHTML = '<div style="color:#ef4444">Error: ' + escHtml(e.message) + '</div>';
+  }
 }
 
 async function apiColRun(id) {
@@ -11491,6 +11582,11 @@ function _apiRunsRenderList() {
 async function apiRunsViewDetail(runId) {
   _apiRunsCurrentRunId = runId;
   clearInterval(_apiRunsPollTimer);
+  // Reset lazy-load panels for new run
+  const tlPanel = document.getElementById('run-timeline-panel');
+  if (tlPanel) { tlPanel.dataset.loaded = ''; tlPanel.innerHTML = ''; }
+  const vtPanel = document.getElementById('run-var-trace-panel');
+  if (vtPanel) { vtPanel.dataset.loaded = ''; vtPanel.innerHTML = ''; }
   await _apiRunsFetchAndRender(runId);
   openModal('modal-api-run-detail');
 }
@@ -11659,6 +11755,7 @@ function _buildStepDetailHtml(step) {
         <button class="tbl-btn" onclick="_apiRunsStepTab(this,'${detailId}','response')" data-steptab="response">Response</button>
         ${extractedRows ? `<button class="tbl-btn" onclick="_apiRunsStepTab(this,'${detailId}','vars')" data-steptab="vars">Vars</button>` : ''}
         <button class="tbl-btn" onclick="_apiRunsStepTab(this,'${detailId}','jira');_apiRunsLoadJiraPanel('${step.stepId}')" data-steptab="jira">Jira &amp; Heal</button>
+        <button class="tbl-btn" onclick="_apiRunsStepTab(this,'${detailId}','suggest');_apiRunsLoadSuggestPanel('${step.stepId}')" data-steptab="suggest">&#x1F4A1; Suggest</button>
       </div>
       <div id="${detailId}">
         <div data-steppanel="assertions">
@@ -11680,6 +11777,9 @@ function _buildStepDetailHtml(step) {
             : '<div style="color:var(--text-muted);font-size:12px;">Step passed — no defect to file.</div>'}
           <div id="jira-defect-ref-${step.stepId}" style="margin-top:6px;"></div>
           <div id="jira-heal-panel-${step.stepId}" style="margin-top:10px;"></div>
+        </div>
+        <div data-steppanel="suggest" style="display:none;padding:10px">
+          <div id="suggest-panel-${step.stepId}"><span style="color:var(--text-muted);font-size:12px">Click "Suggest" to generate assertion suggestions for this step.</span></div>
         </div>
       </div>
     </div>`;
@@ -11747,6 +11847,137 @@ function apiRunsTabSwitch(tab) {
       panel.dataset.loaded = '1';
       _apiRunsRenderAiInsights(_apiRunsCurrentRun.id, _apiRunsCurrentRun.collectionId, panel);
     }
+  }
+  if (tab === 'timeline' && _apiRunsCurrentRunId) {
+    const panel = document.getElementById('run-timeline-panel');
+    if (panel && !panel.dataset.loaded) { panel.dataset.loaded = '1'; _apiRunsLoadTimeline(_apiRunsCurrentRunId, panel); }
+  }
+  if (tab === 'var-trace' && _apiRunsCurrentRunId) {
+    const panel = document.getElementById('run-var-trace-panel');
+    if (panel && !panel.dataset.loaded) { panel.dataset.loaded = '1'; _apiRunsLoadVarTrace(_apiRunsCurrentRunId, panel); }
+  }
+}
+
+// ── Debugger Engine — Timeline (Phase F) ────────────────────────────────────
+
+async function _apiRunsLoadTimeline(runId, panel) {
+  panel.innerHTML = '<div style="color:var(--text-muted)">Loading timeline…</div>';
+  try {
+    const res = await fetch('/api/api-runs/' + encodeURIComponent(runId) + '/timeline');
+    if (!res.ok) { panel.innerHTML = '<div style="color:#ef4444">Timeline not available for this run.</div>'; return; }
+    const data = await res.json();
+    const tl = data.timeline;
+    const events = tl.events || [];
+    if (!events.length) { panel.innerHTML = '<div style="color:var(--text-muted)">No timeline events recorded.</div>'; return; }
+
+    const maxDur = Math.max(...events.map(function(e) { return e.durationMs || 0; }), 1);
+    const colorMap = { 'node-started': '#3b82f6', 'node-completed': '#22c55e', 'node-failed': '#ef4444',
+      'node-skipped': '#9ca3af', 'node-retrying': '#f59e0b', 'assertion-failed': '#ef4444',
+      'variable-extracted': '#a78bfa', 'failure-propagated': '#ef4444' };
+
+    const rows = events.map(function(e) {
+      const col = colorMap[e.eventType] || '#9ca3af';
+      const pct = e.durationMs ? Math.max(4, Math.round((e.durationMs / maxDur) * 100)) : 0;
+      const bar = e.durationMs ? '<div style="height:6px;width:' + pct + '%;background:' + col + ';border-radius:3px;margin-top:3px"></div>' : '';
+      const ts = e.timestamp ? new Date(e.timestamp).toLocaleTimeString() : '';
+      const detail = e.detail ? ' <span style="color:var(--text-muted);font-size:11px">— ' + escHtml(e.detail) + '</span>' : '';
+      const dur = e.durationMs != null ? ' <span style="color:var(--text-muted);font-size:11px">' + e.durationMs + 'ms</span>' : '';
+      return '<div style="padding:4px 0;border-bottom:1px solid var(--border)">' +
+        '<div style="display:flex;align-items:center;gap:8px">' +
+          '<span style="font-size:10px;color:var(--text-muted);min-width:70px">' + ts + '</span>' +
+          '<span style="font-size:11px;font-weight:600;color:' + col + '">' + escHtml(e.eventType) + '</span>' +
+          '<span style="font-size:12px">' + escHtml(e.nodeName || '') + '</span>' + detail + dur +
+        '</div>' + bar + '</div>';
+    }).join('');
+
+    const src = data.source === 'synthesized-from-snapshot'
+      ? '<div style="color:#f59e0b;font-size:11px;margin-bottom:8px">&#x26A0; ' + escHtml(data.advisoryNote) + '</div>' : '';
+    panel.innerHTML = src + '<div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">' + events.length + ' events · ' + (tl.totalDurationMs || 0) + 'ms total</div>' + rows;
+  } catch (e) {
+    panel.innerHTML = '<div style="color:#ef4444">Failed to load timeline: ' + escHtml(e.message) + '</div>';
+  }
+}
+
+// ── Debugger Engine — Variable Trace (Phase F) ───────────────────────────────
+
+async function _apiRunsLoadVarTrace(runId, panel) {
+  panel.innerHTML = '<div style="color:var(--text-muted)">Loading variable trace…</div>';
+  try {
+    const res = await fetch('/api/api-runs/' + encodeURIComponent(runId) + '/variable-trace');
+    if (!res.ok) { panel.innerHTML = '<div style="color:#ef4444">Variable trace not available (no snapshot for this run).</div>'; return; }
+    const data = await res.json();
+    const mutations = data.mutations || [];
+    if (!mutations.length) { panel.innerHTML = '<div style="color:var(--text-muted)">No variable mutations recorded.</div>'; return; }
+
+    const mutRows = mutations.map(function(m) {
+      const extracted = Object.entries(m.extracted || {});
+      if (!extracted.length) return '';
+      const kvRows = extracted.map(function(kv) {
+        return '<tr><td style="font-family:monospace;font-size:11px;color:#a78bfa">' + escHtml(kv[0]) + '</td><td style="font-family:monospace;font-size:11px">' + escHtml(kv[1]) + '</td></tr>';
+      }).join('');
+      return '<div style="margin-bottom:10px">' +
+        '<div style="font-size:12px;font-weight:600;margin-bottom:4px">' + escHtml(m.nodeName) + '</div>' +
+        '<table class="data-table"><thead><tr><th>Variable</th><th>New Value</th></tr></thead><tbody>' + kvRows + '</tbody></table>' +
+        '</div>';
+    }).filter(Boolean).join('');
+
+    const finalKeys = Object.entries(data.finalState || {});
+    const finalRows = finalKeys.length
+      ? finalKeys.map(function(kv) { return '<tr><td style="font-family:monospace;font-size:11px">' + escHtml(kv[0]) + '</td><td style="font-family:monospace;font-size:11px">' + escHtml(kv[1]) + '</td></tr>'; }).join('')
+      : '<tr><td colspan="2" style="color:var(--text-muted)">No variables in final state</td></tr>';
+
+    panel.innerHTML =
+      '<div style="margin-bottom:16px">' +
+        '<strong style="font-size:13px">Mutations by node</strong>' +
+        '<div style="margin-top:8px">' + (mutRows || '<div style="color:var(--text-muted)">No variable mutations found.</div>') + '</div>' +
+      '</div>' +
+      '<div>' +
+        '<strong style="font-size:13px">Final variable state</strong>' +
+        '<table class="data-table" style="margin-top:8px"><thead><tr><th>Variable</th><th>Value</th></tr></thead><tbody>' + finalRows + '</tbody></table>' +
+      '</div>';
+  } catch (e) {
+    panel.innerHTML = '<div style="color:#ef4444">Failed to load variable trace: ' + escHtml(e.message) + '</div>';
+  }
+}
+
+// ── AI Assertion Suggester (Phase F) ────────────────────────────────────────
+
+async function _apiRunsLoadSuggestPanel(stepId) {
+  const panel = document.getElementById('suggest-panel-' + stepId);
+  if (!panel || panel.dataset.loaded) return;
+  panel.dataset.loaded = '1';
+  const runId = _apiRunsCurrentRunId;
+  if (!runId) { panel.innerHTML = '<div style="color:#ef4444">No active run.</div>'; return; }
+  panel.innerHTML = '<div style="color:var(--text-muted)">Generating suggestions…</div>';
+  try {
+    const res = await fetch('/api/ai-intelligence/steps/' + encodeURIComponent(stepId) + '/suggest-assertions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ runId: runId }),
+    });
+    if (!res.ok) { panel.innerHTML = '<div style="color:#ef4444">No suggestions available for this step.</div>'; return; }
+    const data = await res.json();
+    const suggestions = data.suggestions || [];
+    if (!suggestions.length) { panel.innerHTML = '<div style="color:var(--text-muted)">No suggestions generated.</div>'; return; }
+
+    const rows = suggestions.map(function(s) {
+      return '<tr>' +
+        '<td style="font-size:11px">' + escHtml(s.type || '') + '</td>' +
+        '<td style="font-family:monospace;font-size:11px">' + escHtml(s.field || '—') + '</td>' +
+        '<td style="font-family:monospace;font-size:11px">' + escHtml(s.operator || '—') + '</td>' +
+        '<td style="font-family:monospace;font-size:11px">' + escHtml(JSON.stringify(s.expectedValue != null ? s.expectedValue : '—')) + '</td>' +
+        '<td style="font-size:11px;color:var(--text-muted)">' + escHtml(s.rationale || '') + '</td>' +
+        '</tr>';
+    }).join('');
+
+    panel.innerHTML =
+      '<div style="color:#f59e0b;font-size:11px;margin-bottom:8px">&#x26A0; Advisory only — review before adding to collection.</div>' +
+      '<table class="data-table">' +
+        '<thead><tr><th>Type</th><th>Field</th><th>Operator</th><th>Expected</th><th>Rationale</th></tr></thead>' +
+        '<tbody>' + rows + '</tbody>' +
+      '</table>';
+  } catch (e) {
+    panel.innerHTML = '<div style="color:#ef4444">Failed: ' + escHtml(e.message) + '</div>';
   }
 }
 
@@ -12576,13 +12807,15 @@ function apiRunsGraphFullscreenFit() {
 async function _apiRunsRenderAiInsights(runId, collectionId, container) {
   container.innerHTML = '<div class="ai-insights-loading">Loading AI insights…</div>';
   try {
-    const [recRes, rcaRes] = await Promise.all([
+    const [recRes, rcaRes, propRes] = await Promise.all([
       fetch(`/api/ai-intelligence/collections/${encodeURIComponent(collectionId)}/recommendations`),
       fetch(`/api/ai-intelligence/runs/${encodeURIComponent(runId)}/rca-hints`),
+      fetch(`/api/remediation/collections/${encodeURIComponent(collectionId)}/proposals`),
     ]);
 
     const recBundle = recRes.ok ? await recRes.json() : null;
     const rcaBundle = rcaRes.ok ? await rcaRes.json() : null;
+    const propData  = propRes.ok ? await propRes.json() : null;
 
     let html = `<div class="ai-insights-advisory">⚠️ ${_aiEscHtml(recBundle?.advisoryNote ?? 'AI recommendations are advisory only.')}</div>`;
 
@@ -12625,6 +12858,44 @@ async function _apiRunsRenderAiInsights(runId, collectionId, container) {
       html += '<div class="ai-insights-section"><h4>Collection Recommendations</h4><p class="ai-empty">No recommendations — collection looks healthy.</p></div>';
     }
 
+    // Remediation Proposals section
+    html += '<div class="ai-insights-section"><h4>Remediation Proposals</h4>';
+    if (propData && propData.proposals && propData.proposals.length > 0) {
+      html += `<p class="ai-remediation-advisory">${_aiEscHtml(propData.advisoryNote ?? '')}</p>`;
+      html += '<ul class="ai-proposal-list">';
+      for (const prop of propData.proposals) {
+        const statusCls = 'ai-prop-' + _aiEscHtml(prop.status);
+        const canAct = prop.status === 'pending-approval';
+        const diffRows = (prop.diff || []).map(function(ch) {
+          return '<tr><td>' + _aiEscHtml(ch.humanLabel) + '</td>' +
+            '<td class="ai-diff-before">' + _aiEscHtml(String(ch.before)) + '</td>' +
+            '<td class="ai-diff-after">' + _aiEscHtml(String(ch.after)) + '</td></tr>';
+        }).join('');
+        const safeId = _aiEscHtml(prop.id);
+        const safeCol = _aiEscHtml(collectionId);
+        html += `<li class="ai-proposal-item ${statusCls}">
+          <div class="ai-prop-header">
+            <span class="ai-prop-type-badge">${_aiEscHtml(prop.type)}</span>
+            <span class="ai-prop-title">${_aiEscHtml(prop.title)}</span>
+            <span class="ai-conf-badge">${_aiEscHtml(String(prop.confidence))}%</span>
+            <span class="ai-prop-status-badge">${_aiEscHtml(prop.status)}</span>
+          </div>
+          <div class="ai-prop-rationale">${_aiEscHtml(prop.rationale)}</div>
+          ${diffRows ? '<table class="ai-prop-diff-table"><thead><tr><th>Field</th><th>Before</th><th>After</th></tr></thead><tbody>' + diffRows + '</tbody></table>' : ''}
+          ${canAct ? '<div class="ai-prop-actions">' +
+            '<button class="ai-prop-approve-btn" onclick="_apiRunsApproveProposal(' + JSON.stringify(prop.id) + ', this)">Approve</button>' +
+            '<button class="ai-prop-reject-btn" onclick="_apiRunsRejectProposal(' + JSON.stringify(prop.id) + ', this)">Reject</button>' +
+            '</div>' : ''}
+        </li>`;
+      }
+      html += '</ul>';
+    } else {
+      html += '<p class="ai-empty">No proposals generated yet.</p>';
+      html += '<button class="ai-generate-proposals-btn" onclick="_apiRunsGenerateProposals(' +
+        JSON.stringify(collectionId) + ', this)">Generate Remediation Proposals</button>';
+    }
+    html += '</div>';
+
     container.innerHTML = html;
   } catch (err) {
     container.innerHTML = `<div class="ai-insights-error">Failed to load AI insights: ${_aiEscHtml(String(err))}</div>`;
@@ -12637,6 +12908,61 @@ function _aiEscHtml(str) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+async function _apiRunsGenerateProposals(collectionId, btn) {
+  btn.disabled = true;
+  btn.textContent = 'Generating…';
+  try {
+    var res = await fetch('/api/remediation/collections/' + encodeURIComponent(collectionId) + '/proposals', { method: 'POST' });
+    if (!res.ok) throw new Error(await res.text());
+    var panel = document.getElementById('ai-insights-panel-run');
+    if (panel) { panel.removeAttribute('data-loaded'); }
+    if (_apiRunsCurrentRun && panel) {
+      _apiRunsRenderAiInsights(_apiRunsCurrentRun.id, _apiRunsCurrentRun.collectionId, panel);
+    }
+  } catch (err) {
+    btn.disabled = false;
+    btn.textContent = 'Generate Remediation Proposals';
+    alert('Failed to generate proposals: ' + String(err));
+  }
+}
+
+async function _apiRunsApproveProposal(proposalId, btn) {
+  btn.disabled = true;
+  try {
+    var res = await fetch('/api/remediation/proposals/' + encodeURIComponent(proposalId) + '/approve', { method: 'POST' });
+    if (!res.ok) throw new Error(await res.text());
+    var panel = document.getElementById('ai-insights-panel-run');
+    if (panel) { panel.removeAttribute('data-loaded'); }
+    if (_apiRunsCurrentRun && panel) {
+      _apiRunsRenderAiInsights(_apiRunsCurrentRun.id, _apiRunsCurrentRun.collectionId, panel);
+    }
+  } catch (err) {
+    btn.disabled = false;
+    alert('Approval failed: ' + String(err));
+  }
+}
+
+async function _apiRunsRejectProposal(proposalId, btn) {
+  var comment = prompt('Rejection reason (optional):') || '';
+  btn.disabled = true;
+  try {
+    var res = await fetch('/api/remediation/proposals/' + encodeURIComponent(proposalId) + '/reject', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reviewComment: comment || undefined }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    var panel = document.getElementById('ai-insights-panel-run');
+    if (panel) { panel.removeAttribute('data-loaded'); }
+    if (_apiRunsCurrentRun && panel) {
+      _apiRunsRenderAiInsights(_apiRunsCurrentRun.id, _apiRunsCurrentRun.collectionId, panel);
+    }
+  } catch (err) {
+    btn.disabled = false;
+    alert('Rejection failed: ' + String(err));
+  }
 }
 // API FLAKINESS ANALYTICS MODULE
 // Collection-level flakiness report: hotspots, clusters, step breakdown
@@ -12790,129 +13116,199 @@ var _apiSuitesList = [];
 var _apiSuitesCurrentSuiteId = null;
 
 function apiSuitesInit() {
-  if (typeof window._apiSuitesLoaded === 'undefined') {
-    window._apiSuitesLoaded = true;
-  }
   apiSuitesLoad();
 }
 
 async function apiSuitesLoad() {
+  var tbody = document.getElementById('api-suites-tbody');
+  if (!tbody) return;
+
+  if (!currentProjectId) {
+    _apiSuitesList = [];
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:20px;">Select a project from the top bar to view API suites.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:16px;">Loading…</td></tr>';
   try {
-    var res = await fetch('/api/api-suites');
+    var url = '/api/api-suites?projectId=' + encodeURIComponent(currentProjectId);
+    var res = await fetch(url);
     if (!res.ok) { modAlert('api-suites-alert', 'error', 'Failed to load suites.'); return; }
     _apiSuitesList = await res.json();
+    _apiSuitesHideDetail();
     apiSuitesRender();
   } catch (e) {
     modAlert('api-suites-alert', 'error', 'Error loading suites: ' + e.message);
   }
 }
 
+function _apiSuitesHideDetail() {
+  var detail = document.getElementById('api-suites-detail');
+  var tbl = document.querySelector('#panel-api-suites .data-table');
+  var filters = document.querySelector('#panel-api-suites [id="api-suites-filter-name"]')?.closest('div');
+  if (detail) detail.style.display = 'none';
+  if (tbl) tbl.style.display = '';
+  if (filters) filters.style.display = '';
+}
+
+function _apiSuitesShowDetail() {
+  var detail = document.getElementById('api-suites-detail');
+  var tbl = document.querySelector('#panel-api-suites .data-table');
+  var filters = document.querySelector('#panel-api-suites [id="api-suites-filter-name"]')?.closest('div');
+  if (detail) detail.style.display = '';
+  if (tbl) tbl.style.display = 'none';
+  if (filters) filters.style.display = 'none';
+}
+
 function apiSuitesRender() {
-  var el = document.getElementById('api-suites-content');
-  if (!el) return;
-  if (_apiSuitesList.length === 0) {
-    el.innerHTML = '<div style="color:var(--text-muted);padding:20px;">No API suites yet. <button class="btn btn-sm" onclick="apiSuitesShowCreate()">+ New Suite</button></div>';
+  var tbody = document.getElementById('api-suites-tbody');
+  if (!tbody) return;
+
+  var nameFilter = (document.getElementById('api-suites-filter-name')?.value || '').toLowerCase();
+  var statusFilter = document.getElementById('api-suites-filter-status')?.value || '';
+
+  var filtered = _apiSuitesList.filter(function(s) {
+    if (nameFilter && !escHtml(s.name).toLowerCase().includes(nameFilter)) return false;
+    if (statusFilter === 'active' && s.archived) return false;
+    if (statusFilter === 'archived' && !s.archived) return false;
+    return true;
+  });
+
+  if (filtered.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:20px;">'
+      + (_apiSuitesList.length === 0 ? 'No API suites yet. Click <strong>+ New Suite</strong> to create one.' : 'No suites match the current filter.')
+      + '</td></tr>';
     return;
   }
-  el.innerHTML = '<div style="margin-bottom:12px;"><button class="btn btn-sm" onclick="apiSuitesShowCreate()">+ New Suite</button></div>'
-    + '<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Name</th><th>Collections</th><th>Environment</th><th>Actions</th></tr></thead><tbody>'
-    + _apiSuitesList.map(function(s) {
-      return '<tr>'
-        + '<td><a href="#" onclick="apiSuitesShowDetail(\'' + escHtml(s.id) + '\');return false;">' + escHtml(s.name) + '</a></td>'
-        + '<td>' + (s.collectionIds ? s.collectionIds.length : 0) + ' collections</td>'
-        + '<td>' + escHtml(s.environmentId || '') + '</td>'
-        + '<td>'
-        + '<button class="tbl-btn" onclick="apiSuitesRunSuite(\'' + escHtml(s.id) + '\')">&#9654; Run</button> '
-        + '<button class="tbl-btn" onclick="apiSuitesDelete(\'' + escHtml(s.id) + '\')">Delete</button>'
-        + '</td>'
-        + '</tr>';
-    }).join('')
-    + '</tbody></table></div>';
+
+  tbody.innerHTML = filtered.map(function(s) {
+    var colCount = s.collectionIds ? s.collectionIds.length : 0;
+    var hooks = [];
+    if (s.beforeAllCollectionId) hooks.push('beforeAll');
+    if (s.afterAllCollectionId) hooks.push('afterAll');
+    var lifecycle = hooks.length ? hooks.join(', ') : '—';
+    var statusBadge = s.archived
+      ? '<span class="badge badge-grey">Archived</span>'
+      : '<span class="badge badge-green">Active</span>';
+    return '<tr>'
+      + '<td><a href="#" onclick="apiSuitesShowDetail(\'' + s.id + '\');return false;" style="font-weight:500">' + escHtml(s.name) + '</a> ' + statusBadge + '</td>'
+      + '<td>' + colCount + ' collection' + (colCount !== 1 ? 's' : '') + '</td>'
+      + '<td>' + escHtml(s.environmentId || '—') + '</td>'
+      + '<td style="font-size:12px;color:var(--text-muted)">' + escHtml(lifecycle) + '</td>'
+      + '<td>'
+      + '<button class="tbl-btn run-btn" onclick="apiSuitesRunSuite(\'' + s.id + '\')">&#9654; Run</button> '
+      + '<button class="tbl-btn" onclick="apiSuitesShowDetail(\'' + s.id + '\')">Detail</button> '
+      + '<button class="tbl-btn del" onclick="apiSuitesDelete(\'' + s.id + '\')">Delete</button>'
+      + '</td>'
+      + '</tr>';
+  }).join('');
 }
 
 async function apiSuitesShowDetail(suiteId) {
   _apiSuitesCurrentSuiteId = suiteId;
-  var el = document.getElementById('api-suites-content');
-  if (!el) return;
-  el.innerHTML = '<div style="color:var(--text-muted);font-size:12px;">Loading...</div>';
+  var detail = document.getElementById('api-suites-detail');
+  if (!detail) return;
+  _apiSuitesShowDetail();
+  detail.innerHTML = '<div style="color:var(--text-muted);font-size:12px;padding:12px;">Loading…</div>';
   try {
     var suiteRes = await fetch('/api/api-suites/' + encodeURIComponent(suiteId));
     var runsRes = await fetch('/api/api-suites/' + encodeURIComponent(suiteId) + '/runs');
     if (!suiteRes.ok) { modAlert('api-suites-alert', 'error', 'Suite not found'); return; }
     var suite = await suiteRes.json();
     var runs = runsRes.ok ? await runsRes.json() : [];
-    el.innerHTML = apiSuitesDetailHtml(suite, runs);
+    detail.innerHTML = apiSuitesDetailHtml(suite, runs);
   } catch (e) {
     modAlert('api-suites-alert', 'error', 'Error: ' + e.message);
   }
 }
 
 function apiSuitesDetailHtml(suite, runs) {
-  var html = '<div style="margin-bottom:12px;">'
-    + '<button class="btn btn-sm" onclick="apiSuitesLoad()">&#8592; Back</button> '
-    + '<button class="btn btn-sm" onclick="apiSuitesRunSuite(\'' + escHtml(suite.id) + '\')">&#9654; Run Suite</button>'
+  var html = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;">'
+    + '<button class="btn btn-secondary btn-sm" onclick="apiSuitesLoad()">&#8592; Back to Suites</button>'
+    + '<button class="btn btn-primary btn-sm" onclick="apiSuitesRunSuite(\'' + escHtml(suite.id) + '\')">&#9654; Run Suite</button>'
     + '</div>'
-    + '<div style="font-size:16px;font-weight:600;margin-bottom:8px;">' + escHtml(suite.name) + '</div>'
-    + '<div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">'
-    + 'Collections: ' + (suite.collectionIds || []).length
-    + (suite.beforeAllCollectionId ? ' | beforeAll: ' + escHtml(suite.beforeAllCollectionId) : '')
-    + (suite.afterAllCollectionId ? ' | afterAll: ' + escHtml(suite.afterAllCollectionId) : '')
+    + '<div style="font-size:17px;font-weight:600;margin-bottom:4px;">' + escHtml(suite.name) + '</div>'
+    + '<div style="font-size:12px;color:var(--text-muted);margin-bottom:16px;display:flex;gap:16px;">'
+    + '<span>Collections: <strong>' + (suite.collectionIds || []).length + '</strong></span>'
+    + '<span>Environment: <strong>' + escHtml(suite.environmentId || '—') + '</strong></span>'
+    + '<span>On Failure: <strong>' + escHtml(suite.onFailure || 'continue') + '</strong></span>'
+    + (suite.beforeAllCollectionId ? '<span>beforeAll: <strong>' + escHtml(suite.beforeAllCollectionId) + '</strong></span>' : '')
+    + (suite.afterAllCollectionId ? '<span>afterAll: <strong>' + escHtml(suite.afterAllCollectionId) + '</strong></span>' : '')
     + '</div>';
 
+  html += '<div style="font-weight:600;font-size:13px;margin-bottom:8px;">Recent Runs <span style="font-size:12px;color:var(--text-muted);font-weight:400">(' + runs.length + ' total)</span></div>';
+
   if (runs.length === 0) {
-    html += '<div style="color:var(--text-muted);font-size:12px;">No runs yet.</div>';
+    html += '<div style="color:var(--text-muted);font-size:12px;padding:12px 0;">No runs yet for this suite.</div>';
     return html;
   }
 
-  html += '<div style="font-weight:600;font-size:13px;margin-bottom:8px;">Recent Runs</div>'
-    + runs.slice(0, 10).map(function(r) {
-      var statusClass = r.status === 'passed' ? 'suite-run-passed' : 'suite-run-failed';
-      return '<div style="border:1px solid #374151;border-radius:4px;padding:8px;margin-bottom:6px;cursor:pointer;" onclick="apiSuitesShowRun(\'' + escHtml(r.id) + '\')">'
-        + '<span class="' + statusClass + '">' + escHtml(r.status.toUpperCase()) + '</span> '
-        + '<span style="font-size:11px;color:var(--text-muted);">' + escHtml(r.startedAt.replace('T',' ').slice(0,19)) + '</span> '
-        + '<span style="font-size:11px;">' + r.phaseResults.length + ' phases</span>'
-        + '</div>';
-    }).join('');
+  html += '<table class="data-table"><thead><tr><th>Run ID</th><th>Status</th><th>Phases</th><th>Duration</th><th>Started</th><th>Actions</th></tr></thead><tbody>'
+    + runs.slice(0, 20).map(function(r) {
+      var statusCell = r.status === 'passed'
+        ? '<span class="badge badge-green">PASSED</span>'
+        : '<span class="badge badge-red">FAILED</span>';
+      return '<tr>'
+        + '<td style="font-size:11px;font-family:monospace">' + escHtml(r.id.slice(0, 8)) + '…</td>'
+        + '<td>' + statusCell + '</td>'
+        + '<td>' + (r.phaseResults ? r.phaseResults.length : '—') + '</td>'
+        + '<td>' + (r.durationMs ? Math.round(r.durationMs / 1000) + 's' : '—') + '</td>'
+        + '<td style="font-size:11px;">' + escHtml((r.startedAt || '').replace('T', ' ').slice(0, 19)) + '</td>'
+        + '<td><button class="tbl-btn" onclick="apiSuitesShowRun(\'' + escHtml(r.id) + '\')">View</button></td>'
+        + '</tr>';
+    }).join('')
+    + '</tbody></table>';
 
   return html;
 }
 
 async function apiSuitesShowRun(runId) {
-  var el = document.getElementById('api-suites-content');
-  if (!el) return;
+  var detail = document.getElementById('api-suites-detail');
+  if (!detail) return;
+  detail.innerHTML = '<div style="color:var(--text-muted);font-size:12px;padding:12px;">Loading run…</div>';
   try {
     var res = await fetch('/api/api-suite-runs/' + encodeURIComponent(runId));
     if (!res.ok) { modAlert('api-suites-alert', 'error', 'Run not found'); return; }
     var run = await res.json();
-    el.innerHTML = apiSuitesRunHtml(run);
+    detail.innerHTML = apiSuitesRunHtml(run);
   } catch (e) {
     modAlert('api-suites-alert', 'error', 'Error: ' + e.message);
   }
 }
 
 function apiSuitesRunHtml(run) {
-  var statusClass = run.status === 'passed' ? 'suite-run-passed' : 'suite-run-failed';
-  var html = '<div style="margin-bottom:12px;">'
-    + '<button class="btn btn-sm" onclick="apiSuitesShowDetail(\'' + escHtml(run.suiteId) + '\')">&#8592; Back</button>'
+  var statusBadge = run.status === 'passed'
+    ? '<span class="badge badge-green">PASSED</span>'
+    : '<span class="badge badge-red">FAILED</span>';
+
+  var html = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;">'
+    + '<button class="btn btn-secondary btn-sm" onclick="apiSuitesShowDetail(\'' + escHtml(run.suiteId) + '\')">&#8592; Back to Suite</button>'
     + '</div>'
-    + '<div style="font-size:16px;font-weight:600;margin-bottom:4px;">' + escHtml(run.suiteName) + ' &#8212; <span class="' + statusClass + '">' + escHtml(run.status.toUpperCase()) + '</span></div>'
-    + '<div style="font-size:11px;color:var(--text-muted);margin-bottom:12px;">'
-    + escHtml(run.startedAt.replace('T',' ').slice(0,19)) + ' &middot; ' + Math.round(run.durationMs / 1000) + 's'
+    + '<div style="font-size:17px;font-weight:600;margin-bottom:4px;">' + escHtml(run.suiteName) + ' &nbsp;' + statusBadge + '</div>'
+    + '<div style="font-size:12px;color:var(--text-muted);margin-bottom:16px;">'
+    + escHtml((run.startedAt || '').replace('T', ' ').slice(0, 19))
+    + ' &nbsp;&middot;&nbsp; ' + (run.durationMs ? Math.round(run.durationMs / 1000) + 's' : '—')
     + '</div>'
     + '<div style="font-weight:600;font-size:13px;margin-bottom:8px;">Lifecycle Timeline</div>'
+    + '<table class="data-table"><thead><tr><th>Phase</th><th>Collection</th><th>Status</th><th>Duration</th></tr></thead><tbody>'
     + (run.phaseResults || []).map(function(p) {
-      var phaseStatus = p.status === 'passed' ? '&#9989;' : p.status === 'failed' ? '&#10060;' : '&#9888;&#65039;';
+      var phaseStatus = p.status === 'passed'
+        ? '<span class="badge badge-green">passed</span>'
+        : p.status === 'failed'
+          ? '<span class="badge badge-red">failed</span>'
+          : '<span class="badge badge-grey">' + escHtml(p.status) + '</span>';
       var hookBadge = p.isLifecycleHook
         ? '<span style="font-size:10px;background:#1f2937;border:1px solid #374151;border-radius:3px;padding:1px 5px;margin-left:4px;color:#9ca3af;">'
-          + escHtml(p.phase.replace(/_/g,' ').toUpperCase()) + '</span>'
+          + escHtml(p.phase.replace(/_/g, ' ').toUpperCase()) + '</span>'
         : '';
-      return '<div class="suite-lifecycle-phase phase-' + escHtml(p.phase) + '">'
-        + phaseStatus + ' '
-        + '<a href="#" onclick="typeof apiRunsLoadByRunId===\'function\'&&apiRunsLoadByRunId(\'' + escHtml(p.runId) + '\');return false;">' + escHtml(p.collectionName) + '</a>'
-        + hookBadge
-        + ' <span style="font-size:10px;color:var(--text-muted);">' + p.durationMs + 'ms</span>'
-        + '</div>';
-    }).join('');
+      return '<tr>'
+        + '<td>' + escHtml(p.phase) + hookBadge + '</td>'
+        + '<td><a href="#" onclick="typeof apiRunsLoadByRunId===\'function\'&&apiRunsLoadByRunId(\'' + escHtml(p.runId) + '\');return false;">' + escHtml(p.collectionName) + '</a></td>'
+        + '<td>' + phaseStatus + '</td>'
+        + '<td>' + (p.durationMs || '—') + (p.durationMs ? 'ms' : '') + '</td>'
+        + '</tr>';
+    }).join('')
+    + '</tbody></table>';
 
   return html;
 }
@@ -12925,7 +13321,7 @@ async function apiSuitesRunSuite(suiteId) {
       modAlert('api-suites-alert', 'error', (err.error && err.error.message) || 'Run failed');
       return;
     }
-    modAlert('api-suites-alert', 'success', 'Suite run started &#8212; refresh Runs tab shortly.');
+    modAlert('api-suites-alert', 'success', 'Suite run started — check Detail view for results shortly.');
   } catch (e) {
     modAlert('api-suites-alert', 'error', 'Error: ' + e.message);
   }
@@ -12936,6 +13332,7 @@ async function apiSuitesDelete(suiteId) {
   try {
     var res = await fetch('/api/api-suites/' + encodeURIComponent(suiteId), { method: 'DELETE' });
     if (!res.ok) { modAlert('api-suites-alert', 'error', 'Delete failed'); return; }
+    modAlert('api-suites-alert', 'success', 'Suite deleted.');
     apiSuitesLoad();
   } catch (e) {
     modAlert('api-suites-alert', 'error', 'Error: ' + e.message);
@@ -12943,18 +13340,24 @@ async function apiSuitesDelete(suiteId) {
 }
 
 function apiSuitesShowCreate() {
-  modAlert('api-suites-alert', 'info', 'Suite creation UI &#8212; enter suite config below, then submit.');
-  var el = document.getElementById('api-suites-content');
-  if (!el) return;
-  el.innerHTML = '<div style="margin-bottom:12px;"><button class="btn btn-sm" onclick="apiSuitesLoad()">&#8592; Cancel</button></div>'
-    + '<form onsubmit="apiSuitesCreate(event)">'
-    + '<div class="form-group"><label>Suite Name</label><input name="name" class="form-control" required /></div>'
-    + '<div class="form-group"><label>Collection IDs (comma-separated)</label><input name="collectionIds" class="form-control" required /></div>'
-    + '<div class="form-group"><label>Environment ID</label><input name="environmentId" class="form-control" required /></div>'
+  var detail = document.getElementById('api-suites-detail');
+  if (!detail) return;
+  _apiSuitesShowDetail();
+  detail.innerHTML = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;">'
+    + '<button class="btn btn-secondary btn-sm" onclick="apiSuitesLoad()">&#8592; Cancel</button>'
+    + '<div style="font-size:15px;font-weight:600;">New API Suite</div>'
+    + '</div>'
+    + '<form onsubmit="apiSuitesCreate(event)" style="max-width:520px">'
+    + '<div class="form-group"><label>Suite Name <span style="color:#f87171">*</span></label><input name="name" class="form-control" placeholder="e.g. Smoke Suite" required /></div>'
+    + '<div class="form-group"><label>Collection IDs <span style="color:#f87171">*</span> <span style="font-weight:400;color:var(--text-muted)">(comma-separated)</span></label><input name="collectionIds" class="form-control" placeholder="col-abc123, col-def456" required /></div>'
+    + '<div class="form-group"><label>Environment ID <span style="color:#f87171">*</span></label><input name="environmentId" class="form-control" placeholder="env-abc123" required /></div>'
     + '<div class="form-group"><label>On Failure</label><select name="onFailure" class="form-control"><option value="continue">continue</option><option value="stop">stop</option></select></div>'
-    + '<div class="form-group"><label>Before All Collection ID (optional)</label><input name="beforeAllCollectionId" class="form-control" /></div>'
-    + '<div class="form-group"><label>After All Collection ID (optional)</label><input name="afterAllCollectionId" class="form-control" /></div>'
+    + '<div class="form-group"><label>Before All Collection ID <span style="color:var(--text-muted);font-weight:400">(optional)</span></label><input name="beforeAllCollectionId" class="form-control" placeholder="Optional setup collection" /></div>'
+    + '<div class="form-group"><label>After All Collection ID <span style="color:var(--text-muted);font-weight:400">(optional)</span></label><input name="afterAllCollectionId" class="form-control" placeholder="Optional teardown collection" /></div>'
+    + '<div style="display:flex;gap:8px;margin-top:8px;">'
     + '<button type="submit" class="btn btn-primary">Create Suite</button>'
+    + '<button type="button" class="btn btn-secondary" onclick="apiSuitesLoad()">Cancel</button>'
+    + '</div>'
     + '</form>';
 }
 
@@ -12968,6 +13371,7 @@ async function apiSuitesCreate(event) {
     onFailure: form.onFailure.value,
     beforeAllCollectionId: form.beforeAllCollectionId.value.trim() || undefined,
     afterAllCollectionId: form.afterAllCollectionId.value.trim() || undefined,
+    projectId: currentProjectId || undefined,
   };
   try {
     var res = await fetch('/api/api-suites', {
@@ -12985,11 +13389,6 @@ async function apiSuitesCreate(event) {
   } catch (e) {
     modAlert('api-suites-alert', 'error', 'Error: ' + e.message);
   }
-}
-
-// Page load hook — called by router when page becomes active
-if (typeof registerPageModule === 'function') {
-  registerPageModule('api-suites', apiSuitesInit);
 }
 // Module: Observability & Replay Engine UI
 // Page: api-replay
@@ -13179,12 +13578,15 @@ function workerHealthInit(panel) {
 }
 
 function workerHealthLoad() {
-  authFetch('/api/worker-pool/health')
-    .then(function(r) { return r.json(); })
+  fetch('/api/worker-pool/health')
+    .then(function(r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    })
     .then(function(report) { workerHealthRenderReport(report); })
     .catch(function(e) {
       var el = document.getElementById('worker-health-content');
-      if (el) el.innerHTML = '<div class="alert alert-danger">Failed to load worker health: ' + escHtml(String(e)) + '</div>';
+      if (el) el.innerHTML = '<div style="color:#f87171;padding:12px;">Failed to load worker health: ' + escHtml(String(e)) + '</div>';
     });
 }
 
@@ -13438,4 +13840,840 @@ function governanceSubmitPolicy(event) {
 
 if (typeof registerPageModule === 'function') {
   registerPageModule('governance', governanceInit);
+}
+// ══════════════════════════════════════════════════════════════════════════════
+// API PLUGINS MODULE — Plugin Ecosystem page
+// ══════════════════════════════════════════════════════════════════════════════
+
+let _apiPluginsList = [];
+
+async function apiPluginsLoad() {
+  const tbody = document.getElementById('api-plugins-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted)">Loading…</td></tr>';
+  try {
+    const res = await fetch('/api/plugins');
+    if (res.status === 401) { window.location.href = '/login?reason=expired'; return; }
+    if (!res.ok) { tbody.innerHTML = '<tr><td colspan="6" style="color:#ef4444">Failed to load plugins.</td></tr>'; return; }
+    _apiPluginsList = await res.json();
+    if (!Array.isArray(_apiPluginsList)) _apiPluginsList = [];
+    _apiPluginsRenderList();
+  } catch (e) {
+    tbody.innerHTML = '<tr><td colspan="6" style="color:#ef4444">Error loading plugins.</td></tr>';
+  }
+  _apiPluginsLoadExamples();
+}
+
+function apiPluginsFilter() {
+  _apiPluginsRenderList();
+}
+
+function _apiPluginsRenderList() {
+  const tbody = document.getElementById('api-plugins-tbody');
+  if (!tbody) return;
+  const q = (document.getElementById('api-plugins-search')?.value || '').toLowerCase();
+  const filtered = q
+    ? _apiPluginsList.filter(p =>
+        (p.name || '').toLowerCase().includes(q) ||
+        (p.id || '').toLowerCase().includes(q) ||
+        (p.capabilities || []).some(c => c.toLowerCase().includes(q)))
+    : _apiPluginsList;
+
+  if (!filtered.length) {
+    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--text-muted)">${q ? 'No plugins match the search.' : 'No plugins registered.'}</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = filtered.map(p => {
+    const statusBadge = p.status === 'enabled'
+      ? '<span style="color:#22c55e;font-weight:600">Enabled</span>'
+      : '<span style="color:#9ca3af">Disabled</span>';
+    const caps = (p.capabilities || []).map(c => `<span class="badge">${escHtml(c)}</span>`).join(' ');
+    const toggleBtn = p.status === 'enabled'
+      ? `<button class="tbl-btn" onclick="apiPluginDisable('${escHtml(p.id)}')">Disable</button>`
+      : `<button class="tbl-btn" onclick="apiPluginEnable('${escHtml(p.id)}')">Enable</button>`;
+    return `<tr>
+      <td>${escHtml(p.name || p.id)}</td>
+      <td style="font-size:11px;color:var(--text-muted);font-family:monospace">${escHtml(p.id)}</td>
+      <td>${escHtml(p.version || '—')}</td>
+      <td>${caps || '<span style="color:var(--text-muted)">—</span>'}</td>
+      <td>${statusBadge}</td>
+      <td>${toggleBtn}</td>
+    </tr>`;
+  }).join('');
+}
+
+async function apiPluginEnable(pluginId) {
+  const res = await fetch('/api/plugins/' + encodeURIComponent(pluginId) + '/enable', { method: 'POST' });
+  if (!res.ok) { modAlert('api-plugins-alert', 'error', 'Failed to enable plugin.'); return; }
+  const plugin = _apiPluginsList.find(p => p.id === pluginId);
+  if (plugin) plugin.status = 'enabled';
+  _apiPluginsRenderList();
+  modAlert('api-plugins-alert', 'success', 'Plugin enabled.');
+}
+
+async function apiPluginDisable(pluginId) {
+  const res = await fetch('/api/plugins/' + encodeURIComponent(pluginId) + '/disable', { method: 'POST' });
+  if (!res.ok) { modAlert('api-plugins-alert', 'error', 'Failed to disable plugin.'); return; }
+  const plugin = _apiPluginsList.find(p => p.id === pluginId);
+  if (plugin) plugin.status = 'disabled';
+  _apiPluginsRenderList();
+  modAlert('api-plugins-alert', 'success', 'Plugin disabled.');
+}
+
+async function _apiPluginsLoadExamples() {
+  const tbody = document.getElementById('api-plugins-examples-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-muted)">Loading…</td></tr>';
+  try {
+    const res = await fetch('/api/plugins/examples');
+    if (!res.ok) { tbody.innerHTML = '<tr><td colspan="4" style="color:#ef4444">Examples unavailable.</td></tr>'; return; }
+    const examples = await res.json();
+    if (!Array.isArray(examples) || !examples.length) {
+      tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-muted)">No example plugins available.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = examples.map(ex => {
+      const caps = (ex.capabilities || []).map(c => `<span class="badge">${escHtml(c)}</span>`).join(' ');
+      const manifest = escHtml(JSON.stringify(ex));
+      return `<tr>
+        <td>${escHtml(ex.name || ex.id)}</td>
+        <td style="color:var(--text-muted);font-size:12px">${escHtml(ex.description || '—')}</td>
+        <td>${caps || '<span style="color:var(--text-muted)">—</span>'}</td>
+        <td><button class="tbl-btn" onclick="apiPluginRegisterExample('${manifest}')">Register</button></td>
+      </tr>`;
+    }).join('');
+  } catch (e) {
+    tbody.innerHTML = '<tr><td colspan="4" style="color:#ef4444">Error loading examples.</td></tr>';
+  }
+}
+
+async function apiPluginRegisterExample(manifestJson) {
+  let manifest;
+  try { manifest = JSON.parse(manifestJson); } catch { return; }
+  const res = await fetch('/api/plugins', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(manifest)
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    modAlert('api-plugins-alert', 'error', 'Register failed: ' + (body.error || res.status));
+    return;
+  }
+  const registered = await res.json();
+  _apiPluginsList.push(registered);
+  _apiPluginsRenderList();
+  modAlert('api-plugins-alert', 'success', 'Plugin "' + escHtml(registered.name || registered.id) + '" registered.');
+}
+// ══════════════════════════════════════════════════════════════════════════════
+// GRAPH EDITOR MODULE — SVG DAG visualizer with drag, dep edit, layout save
+// ══════════════════════════════════════════════════════════════════════════════
+
+let _graphColId = '';
+let _graphSteps = [];
+let _graphDepMap = {}; // stepId → string[] (dependsOn)
+let _graphPositions = {}; // stepId → {x, y}
+let _graphSelected = []; // max 2 stepIds
+let _graphDragging = null; // {stepId, startX, startY, origX, origY}
+
+const _GN_W = 160, _GN_H = 44, _GN_HGAP = 80, _GN_VGAP = 20, _GN_PAD = 20;
+
+async function graphEditorLoad() {
+  const sel = document.getElementById('graph-col-select');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">— Select Collection —</option>';
+  const cols = (typeof allApiCollections !== 'undefined' && Array.isArray(allApiCollections) && allApiCollections.length)
+    ? allApiCollections
+    : await fetch('/api/api-collections').then(r => r.ok ? r.json() : []).catch(() => []);
+  (Array.isArray(cols) ? cols : []).forEach(c => {
+    sel.innerHTML += `<option value="${escHtml(c.id)}">${escHtml(c.name)}</option>`;
+  });
+  document.getElementById('graph-canvas').innerHTML = '<div style="color:var(--text-muted)">Select a collection to view its workflow graph.</div>';
+}
+
+async function graphEditorSelectCollection(colId) {
+  _graphColId = colId;
+  _graphSelected = [];
+  _graphDragging = null;
+  const canvas = document.getElementById('graph-canvas');
+  if (!colId) { canvas.innerHTML = '<div style="color:var(--text-muted)">Select a collection to view its workflow graph.</div>'; return; }
+  canvas.innerHTML = '<div style="color:var(--text-muted)">Loading…</div>';
+
+  const colRes = await fetch('/api/api-collections/' + encodeURIComponent(colId));
+  if (!colRes.ok) { canvas.innerHTML = '<div style="color:#ef4444">Failed to load collection.</div>'; return; }
+  const col = await colRes.json();
+  _graphSteps = col.steps || [];
+  _graphDepMap = {};
+  _graphSteps.forEach(s => { _graphDepMap[s.stepId] = Array.isArray(s.dependsOn) ? s.dependsOn : []; });
+
+  let savedPositions = {};
+  const layoutRes = await fetch('/api/graph-editor/' + encodeURIComponent(colId) + '/layout');
+  if (layoutRes.ok) {
+    const layout = await layoutRes.json();
+    savedPositions = layout.positions || {};
+  }
+
+  _graphPositions = _graphComputePositions(savedPositions);
+  _graphRender();
+}
+
+function _graphComputePositions(savedPositions) {
+  if (!_graphSteps.length) return {};
+  const allSaved = _graphSteps.every(s => savedPositions[s.stepId]);
+  if (allSaved) return Object.assign({}, savedPositions);
+
+  const layerOf = {};
+  const inDeg = {};
+  _graphSteps.forEach(s => { inDeg[s.stepId] = (_graphDepMap[s.stepId] || []).length; });
+  let queue = _graphSteps.filter(s => inDeg[s.stepId] === 0).map(s => s.stepId);
+  queue.forEach(id => { layerOf[id] = 0; });
+
+  while (queue.length) {
+    const next = [];
+    queue.forEach(id => {
+      _graphSteps.forEach(s => {
+        if ((_graphDepMap[s.stepId] || []).includes(id)) {
+          const nl = (layerOf[id] || 0) + 1;
+          if (layerOf[s.stepId] === undefined || layerOf[s.stepId] < nl) layerOf[s.stepId] = nl;
+          if (!next.includes(s.stepId)) next.push(s.stepId);
+        }
+      });
+    });
+    queue = next;
+  }
+  _graphSteps.forEach(s => { if (layerOf[s.stepId] === undefined) layerOf[s.stepId] = 0; });
+
+  const layerCtr = {};
+  const positions = {};
+  _graphSteps.forEach(s => {
+    const l = layerOf[s.stepId];
+    layerCtr[l] = layerCtr[l] || 0;
+    positions[s.stepId] = {
+      x: _GN_PAD + l * (_GN_W + _GN_HGAP),
+      y: _GN_PAD + layerCtr[l] * (_GN_H + _GN_VGAP)
+    };
+    layerCtr[l]++;
+  });
+  return positions;
+}
+
+function _graphRender() {
+  const canvas = document.getElementById('graph-canvas');
+  if (!canvas) return;
+  if (!_graphSteps.length) {
+    canvas.innerHTML = '<div style="color:var(--text-muted)">No steps in this collection.</div>';
+    return;
+  }
+
+  const xs = Object.values(_graphPositions).map(p => p.x + _GN_W);
+  const ys = Object.values(_graphPositions).map(p => p.y + _GN_H);
+  const svgW = Math.max(...xs) + _GN_PAD;
+  const svgH = Math.max(...ys) + _GN_PAD;
+
+  let svg = `<svg id="graph-svg" width="${svgW}" height="${svgH}" style="cursor:default;user-select:none;display:block"
+    onmouseup="_graphDragEnd(event)" onmousemove="_graphDragMove(event)" onmouseleave="_graphDragEnd(event)">
+    <defs>
+      <marker id="arr" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+        <path d="M0,0 L0,6 L8,3 z" fill="#9ca3af"/>
+      </marker>
+    </defs>`;
+
+  _graphSteps.forEach(s => {
+    (_graphDepMap[s.stepId] || []).forEach(depId => {
+      const fr = _graphPositions[depId], to = _graphPositions[s.stepId];
+      if (!fr || !to) return;
+      svg += `<line x1="${fr.x + _GN_W}" y1="${fr.y + _GN_H / 2}" x2="${to.x - 2}" y2="${to.y + _GN_H / 2}"
+        stroke="#9ca3af" stroke-width="1.5" marker-end="url(#arr)"/>`;
+    });
+  });
+
+  _graphSteps.forEach(s => {
+    const p = _graphPositions[s.stepId];
+    if (!p) return;
+    const isSel = _graphSelected.includes(s.stepId);
+    const label = (s.name || s.stepId || '').substring(0, 22);
+    svg += `<g onmousedown="_graphDragStart(event,'${escHtml(s.stepId)}')" onclick="_graphNodeClick(event,'${escHtml(s.stepId)}')" style="cursor:pointer">
+      <rect x="${p.x}" y="${p.y}" width="${_GN_W}" height="${_GN_H}" rx="6"
+        fill="var(--bg)" stroke="${isSel ? '#3b82f6' : '#d1d5db'}" stroke-width="${isSel ? 2 : 1}"
+        filter="drop-shadow(0 1px 2px rgba(0,0,0,.12))"/>
+      <text x="${p.x + _GN_W / 2}" y="${p.y + _GN_H / 2 + 5}" text-anchor="middle"
+        font-size="12" fill="var(--text)" font-family="system-ui,sans-serif">${escHtml(label)}</text>
+    </g>`;
+  });
+
+  svg += '</svg>';
+  canvas.innerHTML = svg;
+}
+
+function _graphNodeClick(event, stepId) {
+  if (_graphDragging) return;
+  const idx = _graphSelected.indexOf(stepId);
+  if (idx >= 0) _graphSelected.splice(idx, 1);
+  else { if (_graphSelected.length >= 2) _graphSelected.shift(); _graphSelected.push(stepId); }
+  _graphRender();
+}
+
+function _graphDragStart(event, stepId) {
+  event.stopPropagation();
+  const svg = document.getElementById('graph-svg');
+  if (!svg) return;
+  const pos = _graphPositions[stepId];
+  if (!pos) return;
+  const rect = svg.getBoundingClientRect();
+  _graphDragging = { stepId, startX: event.clientX - rect.left, startY: event.clientY - rect.top,
+    origX: pos.x, origY: pos.y };
+}
+
+function _graphDragMove(event) {
+  if (!_graphDragging) return;
+  const svg = document.getElementById('graph-svg');
+  if (!svg) return;
+  const rect = svg.getBoundingClientRect();
+  const dx = (event.clientX - rect.left) - _graphDragging.startX;
+  const dy = (event.clientY - rect.top) - _graphDragging.startY;
+  _graphPositions[_graphDragging.stepId] = {
+    x: Math.max(0, _graphDragging.origX + dx),
+    y: Math.max(0, _graphDragging.origY + dy)
+  };
+  _graphRender();
+}
+
+function _graphDragEnd() { _graphDragging = null; }
+
+async function graphEditorSaveLayout() {
+  if (!_graphColId) return;
+  const res = await fetch('/api/graph-editor/' + encodeURIComponent(_graphColId) + '/layout', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ positions: _graphPositions, nodeCount: _graphSteps.length })
+  });
+  modAlert('graph-editor-msg', res.ok ? 'success' : 'error', res.ok ? 'Layout saved.' : 'Failed to save layout.');
+}
+
+async function graphEditorValidate() {
+  if (!_graphColId || !_graphSteps.length) { modAlert('graph-editor-msg', 'error', 'Select a collection first.'); return; }
+  const res = await fetch('/api/graph-editor/' + encodeURIComponent(_graphColId) + '/validate-dag', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ nodeIds: _graphSteps.map(s => s.stepId), dependsOn: _graphDepMap })
+  });
+  if (!res.ok) { modAlert('graph-editor-msg', 'error', 'Validation request failed.'); return; }
+  const result = await res.json();
+  if (result.valid) {
+    const order = (result.topologicalOrder || []).join(' → ');
+    modAlert('graph-editor-msg', 'success', '✓ DAG is valid.' + (order ? ' Order: ' + order : ''));
+  } else {
+    const msgs = (result.violations || []).map(v => `${v.type}${v.fromStepId ? ': ' + v.fromStepId + '→' + v.toStepId : ''}`).join('; ');
+    modAlert('graph-editor-msg', 'error', '⚠️ Violations: ' + msgs);
+  }
+}
+
+async function graphEditorAddDep() {
+  if (_graphSelected.length !== 2) { modAlert('graph-editor-msg', 'error', 'Select exactly 2 nodes first.'); return; }
+  const [fromId, toId] = _graphSelected;
+  const currentDependsOn = {};
+  _graphSteps.forEach(s => { currentDependsOn[s.stepId] = _graphDepMap[s.stepId] || []; });
+  const res = await fetch('/api/graph-editor/' + encodeURIComponent(_graphColId) + '/dependency', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ nodeIds: _graphSteps.map(s => s.stepId), currentDependsOn, fromStepId: fromId, toStepId: toId, operation: 'add' })
+  });
+  if (!res.ok) { modAlert('graph-editor-msg', 'error', 'Failed to add dependency.'); return; }
+  const result = await res.json();
+  if (!result.success) {
+    const msgs = (result.violations || []).map(v => v.message || v.type).join('; ');
+    modAlert('graph-editor-msg', 'error', 'Cannot add dependency: ' + (msgs || result.error || 'unknown'));
+    return;
+  }
+  if (result.updatedDependsOn) _graphDepMap = result.updatedDependsOn;
+  _graphSelected = [];
+  _graphRender();
+  modAlert('graph-editor-msg', 'success', 'Dependency added.');
+}
+
+async function graphEditorRemoveDep() {
+  if (_graphSelected.length !== 2) { modAlert('graph-editor-msg', 'error', 'Select exactly 2 nodes first.'); return; }
+  const [fromId, toId] = _graphSelected;
+  const currentDependsOn = {};
+  _graphSteps.forEach(s => { currentDependsOn[s.stepId] = _graphDepMap[s.stepId] || []; });
+  const res = await fetch('/api/graph-editor/' + encodeURIComponent(_graphColId) + '/dependency', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ nodeIds: _graphSteps.map(s => s.stepId), currentDependsOn, fromStepId: fromId, toStepId: toId, operation: 'remove' })
+  });
+  if (!res.ok) { modAlert('graph-editor-msg', 'error', 'Failed to remove dependency.'); return; }
+  const result = await res.json();
+  if (result.updatedDependsOn) _graphDepMap = result.updatedDependsOn;
+  _graphSelected = [];
+  _graphRender();
+  modAlert('graph-editor-msg', 'success', 'Dependency removed.');
+}
+// ══════════════════════════════════════════════════════════════════════════════
+// COLLABORATION MODULE — revisions, review comments, workflow templates
+// ══════════════════════════════════════════════════════════════════════════════
+
+let _collabColId = '';
+let _collabRevisions = [];
+let _collabActiveTab = 'revisions';
+
+async function collabLoad() {
+  const sel = document.getElementById('collab-col-select');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">— Select Collection —</option>';
+  const cols = (typeof allApiCollections !== 'undefined' && Array.isArray(allApiCollections) && allApiCollections.length)
+    ? allApiCollections
+    : await fetch('/api/api-collections').then(r => r.ok ? r.json() : []).catch(() => []);
+  (Array.isArray(cols) ? cols : []).forEach(c => {
+    sel.innerHTML += `<option value="${escHtml(c.id)}">${escHtml(c.name)}</option>`;
+  });
+  collabLoadTemplates();
+}
+
+async function collabSelectCollection(colId) {
+  _collabColId = colId;
+  if (!colId) return;
+  if (_collabActiveTab === 'revisions') collabLoadRevisions(colId);
+  if (_collabActiveTab === 'comments') collabLoadComments(colId);
+}
+
+function collabTabSwitch(tab, btn) {
+  _collabActiveTab = tab;
+  document.querySelectorAll('[data-collabtab]').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  ['revisions', 'comments', 'templates'].forEach(t => {
+    const el = document.getElementById('collab-panel-' + t);
+    if (el) el.style.display = t === tab ? '' : 'none';
+  });
+  if (tab === 'revisions' && _collabColId) collabLoadRevisions(_collabColId);
+  if (tab === 'comments' && _collabColId) collabLoadComments(_collabColId);
+  if (tab === 'templates') collabLoadTemplates();
+}
+
+// ─── REVISIONS ───────────────────────────────────────────────────────────────
+
+async function collabLoadRevisions(colId) {
+  const tbody = document.getElementById('collab-revisions-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="6" style="color:var(--text-muted)">Loading…</td></tr>';
+  const res = await fetch('/api/collaboration/' + encodeURIComponent(colId) + '/revisions');
+  if (!res.ok) { tbody.innerHTML = '<tr><td colspan="6" style="color:#ef4444">Failed to load revisions.</td></tr>'; return; }
+  const data = await res.json();
+  _collabRevisions = data.revisions || [];
+  if (!_collabRevisions.length) { tbody.innerHTML = '<tr><td colspan="6" style="color:var(--text-muted)">No revisions yet.</td></tr>'; return; }
+  _collabRenderRevisions();
+}
+
+function _collabRenderRevisions() {
+  const tbody = document.getElementById('collab-revisions-tbody');
+  if (!tbody) return;
+  const q = (document.getElementById('collab-revisions-search')?.value || '').toLowerCase();
+  const filtered = q
+    ? _collabRevisions.filter(r =>
+        (r.description || '').toLowerCase().includes(q) ||
+        (r.authorId || '').toLowerCase().includes(q) ||
+        (r.status || '').toLowerCase().includes(q))
+    : _collabRevisions;
+  if (!filtered.length) {
+    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--text-muted)">${q ? 'No revisions match the search.' : 'No revisions yet.'}</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = filtered.map(r => `<tr>
+    <td>${escHtml(String(r.revisionNumber))}</td>
+    <td><span class="badge">${escHtml(r.status)}</span></td>
+    <td>${escHtml(r.authorId || '—')}</td>
+    <td>${escHtml(r.description || '—')}</td>
+    <td style="font-size:11px;color:var(--text-muted)">${r.createdAt ? new Date(r.createdAt).toLocaleString() : '—'}</td>
+    <td>
+      <button class="tbl-btn" onclick="collabRollback('${escHtml(r.revisionId)}')">Rollback</button>
+      <button class="tbl-btn" onclick="collabShowDiff('${escHtml(r.revisionId)}')">Diff</button>
+    </td>
+  </tr>`).join('');
+}
+
+function collabFilterRevisions() { _collabRenderRevisions(); }
+
+function collabCreateRevisionModal() {
+  if (!_collabColId) { modAlert('collab-revisions-msg', 'error', 'Select a collection first.'); return; }
+  const desc = prompt('Revision description (optional):');
+  if (desc === null) return;
+  collabCreateRevision(_collabColId, desc || '');
+}
+
+async function collabCreateRevision(colId, description) {
+  const res = await fetch('/api/collaboration/' + encodeURIComponent(colId) + '/revisions', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ authorId: 'ui-user', description, stepSnapshot: [] })
+  });
+  if (!res.ok) { modAlert('collab-revisions-msg', 'error', 'Failed to create revision.'); return; }
+  modAlert('collab-revisions-msg', 'success', 'Revision saved.');
+  collabLoadRevisions(colId);
+}
+
+async function collabRollback(revisionId) {
+  if (!_collabColId) return;
+  if (!confirm('Roll back to this revision?')) return;
+  const res = await fetch('/api/collaboration/' + encodeURIComponent(_collabColId) + '/revisions/rollback', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ toRevisionId: revisionId, actorId: 'ui-user' })
+  });
+  modAlert('collab-revisions-msg', res.ok ? 'success' : 'error', res.ok ? 'Rollback complete.' : 'Rollback failed.');
+  if (res.ok) collabLoadRevisions(_collabColId);
+}
+
+async function collabShowDiff(revisionId) {
+  if (!_collabColId || _collabRevisions.length < 2) { modAlert('collab-revisions-msg', 'error', 'Need at least 2 revisions to diff.'); return; }
+  const other = _collabRevisions.find(r => r.revisionId !== revisionId);
+  if (!other) return;
+  const res = await fetch('/api/collaboration/' + encodeURIComponent(_collabColId) + '/revisions/diff', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fromRevisionId: other.revisionId, toRevisionId: revisionId })
+  });
+  if (!res.ok) { modAlert('collab-revisions-msg', 'error', 'Diff request failed.'); return; }
+  const diff = await res.json();
+  const added = (diff.stepsAdded || []).map(s => `+${escHtml(s.stepId)}`).join(', ') || 'none';
+  const removed = (diff.stepsRemoved || []).map(s => `-${escHtml(s.stepId)}`).join(', ') || 'none';
+  const deps = (diff.dependenciesChanged || []).length;
+  modAlert('collab-revisions-msg', 'success', `Diff: Added: ${added} | Removed: ${removed} | Dependency changes: ${deps}`);
+}
+
+// ─── COMMENTS ────────────────────────────────────────────────────────────────
+
+let _collabComments = [];
+
+async function collabLoadComments(colId) {
+  const list = document.getElementById('collab-comments-list');
+  if (!list) return;
+  list.innerHTML = '<div style="color:var(--text-muted)">Loading…</div>';
+  const res = await fetch('/api/collaboration/' + encodeURIComponent(colId) + '/comments');
+  if (!res.ok) { list.innerHTML = '<div style="color:#ef4444">Failed to load comments.</div>'; return; }
+  _collabComments = await res.json();
+  if (!Array.isArray(_collabComments)) _collabComments = [];
+  _collabRenderComments();
+}
+
+function _collabRenderComments() {
+  const list = document.getElementById('collab-comments-list');
+  if (!list) return;
+  const q = (document.getElementById('collab-comments-search')?.value || '').toLowerCase();
+  const statusFilter = document.getElementById('collab-comments-status-filter')?.value || '';
+  const filtered = _collabComments.filter(c =>
+    (!statusFilter || c.status === statusFilter) &&
+    (!q || (c.body || '').toLowerCase().includes(q) || (c.authorId || '').toLowerCase().includes(q))
+  );
+  if (!filtered.length) { list.innerHTML = '<div style="color:var(--text-muted)">No comments match the filter.</div>'; return; }
+  list.innerHTML = filtered.map(c => `
+    <div style="border:1px solid var(--border);border-radius:6px;padding:10px;margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+        <span style="font-weight:600">${escHtml(c.authorId || '—')}</span>
+        <span style="font-size:11px;color:var(--text-muted)">${escHtml(c.targetType)}${c.targetId ? ':' + escHtml(c.targetId) : ''} · ${escHtml(c.status)}</span>
+      </div>
+      <div style="margin-bottom:6px">${escHtml(c.body)}</div>
+      ${c.status === 'open' ? `<button class="tbl-btn" onclick="collabResolveComment('${escHtml(c.commentId)}')">Resolve</button>` : '<span style="color:#22c55e;font-size:12px">✓ Resolved</span>'}
+    </div>`).join('');
+}
+
+function collabFilterComments() { _collabRenderComments(); }
+
+async function collabAddComment() {
+  if (!_collabColId) { modAlert('collab-comments-msg', 'error', 'Select a collection first.'); return; }
+  const body = document.getElementById('collab-comment-body')?.value?.trim();
+  if (!body) { modAlert('collab-comments-msg', 'error', 'Comment body is required.'); return; }
+  const targetType = document.getElementById('collab-comment-target-type')?.value || 'collection';
+  const targetId = document.getElementById('collab-comment-target-id')?.value?.trim() || _collabColId;
+  const res = await fetch('/api/collaboration/' + encodeURIComponent(_collabColId) + '/comments', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ authorId: 'ui-user', targetType, targetId, body })
+  });
+  if (!res.ok) { modAlert('collab-comments-msg', 'error', 'Failed to post comment.'); return; }
+  const bodyEl = document.getElementById('collab-comment-body');
+  if (bodyEl) bodyEl.value = '';
+  modAlert('collab-comments-msg', 'success', 'Comment posted.');
+  collabLoadComments(_collabColId);
+}
+
+async function collabResolveComment(commentId) {
+  const res = await fetch('/api/collaboration/comments/' + encodeURIComponent(commentId) + '/resolve', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ actorId: 'ui-user' })
+  });
+  if (res.ok && _collabColId) collabLoadComments(_collabColId);
+}
+
+// ─── TEMPLATES ───────────────────────────────────────────────────────────────
+
+async function collabLoadTemplates() {
+  const list = document.getElementById('collab-templates-list');
+  if (!list) return;
+  list.innerHTML = '<div style="color:var(--text-muted)">Loading…</div>';
+  const res = await fetch('/api/collaboration/templates');
+  if (!res.ok) { list.innerHTML = '<div style="color:#ef4444">Failed to load templates.</div>'; return; }
+  const templates = await res.json();
+  if (!Array.isArray(templates) || !templates.length) { list.innerHTML = '<div style="color:var(--text-muted)">No templates available.</div>'; return; }
+  list.innerHTML = templates.map(t => `
+    <div style="border:1px solid var(--border);border-radius:6px;padding:12px;margin-bottom:10px">
+      <div style="font-weight:600;margin-bottom:4px">${escHtml(t.name || t.templateId)}</div>
+      <div style="color:var(--text-muted);font-size:12px;margin-bottom:6px">${escHtml(t.description || '')} <span class="badge">${escHtml(t.category || '')}</span></div>
+      <div class="advisory-banner" style="margin-bottom:8px">ℹ️ Instantiate creates an advisory scaffold only. No collection is created automatically.</div>
+      <button class="tbl-btn" onclick="collabInstantiateTemplate('${escHtml(t.templateId)}')">Instantiate</button>
+    </div>`).join('');
+}
+
+async function collabInstantiateTemplate(templateId) {
+  const res = await fetch('/api/collaboration/templates/' + encodeURIComponent(templateId) + '/instantiate', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ targetCollectionId: _collabColId || undefined })
+  });
+  if (!res.ok) { modAlert('collab-revisions-msg', 'error', 'Instantiation failed.'); return; }
+  const scaffold = await res.json();
+  const summary = escHtml((scaffold.steps || scaffold.stepCount || JSON.stringify(scaffold)).toString().substring(0, 200));
+  modAlert('collab-revisions-msg', 'success', 'Advisory scaffold returned. Steps: ' + summary);
+}
+// ══════════════════════════════════════════════════════════════════════════════
+// COPILOT MODULE — AI guidance, flakiness/retry-storm/SLA predictions
+// ══════════════════════════════════════════════════════════════════════════════
+
+let _copilotColId = '';
+let _copilotHistory = [];
+
+async function copilotLoad() {
+  const sel = document.getElementById('copilot-col-select');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">— Select Collection —</option>';
+  const cols = (typeof allApiCollections !== 'undefined' && Array.isArray(allApiCollections) && allApiCollections.length)
+    ? allApiCollections
+    : await fetch('/api/api-collections').then(r => r.ok ? r.json() : []).catch(() => []);
+  (Array.isArray(cols) ? cols : []).forEach(c => {
+    sel.innerHTML += `<option value="${escHtml(c.id)}">${escHtml(c.name)}</option>`;
+  });
+}
+
+function copilotSelectCollection(colId) {
+  _copilotColId = colId;
+  const gr = document.getElementById('copilot-guidance-result');
+  const pr = document.getElementById('copilot-predict-result');
+  const hr = document.getElementById('copilot-history-result');
+  if (gr) gr.innerHTML = '';
+  if (pr) pr.innerHTML = '';
+  if (hr) hr.innerHTML = '<div style="color:var(--text-muted)">Select a collection then switch to History tab.</div>';
+}
+
+function copilotTabSwitch(tab, btn) {
+  document.querySelectorAll('[data-copilottab]').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  ['guidance', 'predict', 'history'].forEach(t => {
+    const el = document.getElementById('copilot-panel-' + t);
+    if (el) el.style.display = t === tab ? '' : 'none';
+  });
+  if (tab === 'history' && _copilotColId) copilotLoadHistory(_copilotColId);
+}
+
+// ─── GUIDANCE ────────────────────────────────────────────────────────────────
+
+async function copilotSubmitGuide() {
+  if (!_copilotColId) { modAlert('copilot-guidance-msg', 'error', 'Select a collection first.'); return; }
+  const queryType = document.getElementById('copilot-query-type')?.value || 'workflow-guidance';
+  const runIdEl = document.getElementById('copilot-run-id');
+  const runId = runIdEl?.value?.trim() || undefined;
+  const result = document.getElementById('copilot-guidance-result');
+  if (!result) return;
+  result.innerHTML = '<div style="color:var(--text-muted)">Asking Copilot…</div>';
+  modAlert('copilot-guidance-msg', 'success', '');
+  const res = await fetch('/api/copilot/guide', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ queryType, collectionId: _copilotColId, runId, actorId: 'ui-user', context: {} })
+  });
+  if (!res.ok) { result.innerHTML = '<div style="color:#ef4444">Copilot request failed.</div>'; return; }
+  const data = await res.json();
+  _copilotRenderGuidance(data, result);
+}
+
+function _copilotRenderGuidance(data, container) {
+  const items = data.items || [];
+  if (!items.length) { container.innerHTML = '<div style="color:var(--text-muted)">No guidance items returned.</div>'; return; }
+  const sevColor = { info: '#3b82f6', warning: '#f59e0b', critical: '#ef4444' };
+  container.innerHTML = `
+    <div class="advisory-banner" style="margin-bottom:10px">🤖 ${escHtml(data.governanceNote || 'Advisory only — review before acting.')}</div>
+    <table class="data-table"><thead><tr><th>Severity</th><th>Title</th><th>Guidance</th><th>Confidence</th><th>Action Hint</th></tr></thead>
+    <tbody>${items.map(it => `<tr>
+      <td><span style="color:${sevColor[it.severity] || '#9ca3af'};font-weight:600">${escHtml(it.severity)}</span></td>
+      <td>${escHtml(it.title)}</td>
+      <td style="max-width:300px">${escHtml(it.body)}</td>
+      <td>${escHtml(String(it.confidence))}%</td>
+      <td style="font-size:12px;color:var(--text-muted)">${escHtml(it.actionHint || '—')}</td>
+    </tr>`).join('')}</tbody></table>`;
+}
+
+async function copilotLoadHistory(colId) {
+  const container = document.getElementById('copilot-history-result');
+  if (!container) return;
+  container.innerHTML = '<div style="color:var(--text-muted)">Loading…</div>';
+  const res = await fetch('/api/copilot/history/' + encodeURIComponent(colId));
+  if (!res.ok) { container.innerHTML = '<div style="color:#ef4444">Failed to load history.</div>'; return; }
+  const history = await res.json();
+  _copilotHistory = Array.isArray(history) ? history : (history.items || []);
+  _copilotRenderHistory();
+}
+
+function _copilotRenderHistory() {
+  const container = document.getElementById('copilot-history-result');
+  if (!container) return;
+  const q = (document.getElementById('copilot-history-search')?.value || '').toLowerCase();
+  const filtered = q ? _copilotHistory.filter(h => (h.queryType || '').toLowerCase().includes(q)) : _copilotHistory;
+  if (!filtered.length) { container.innerHTML = `<div style="color:var(--text-muted)">${q ? 'No history matches filter.' : 'No guidance history yet.'}</div>`; return; }
+  container.innerHTML = `<table class="data-table"><thead><tr><th>Query Type</th><th>Items</th><th>Generated At</th></tr></thead>
+    <tbody>${filtered.map(h => `<tr>
+      <td>${escHtml(h.queryType)}</td>
+      <td>${escHtml(String((h.items || []).length))}</td>
+      <td style="font-size:11px;color:var(--text-muted)">${h.generatedAt ? new Date(h.generatedAt).toLocaleString() : '—'}</td>
+    </tr>`).join('')}</tbody></table>`;
+}
+
+function copilotFilterHistory() { _copilotRenderHistory(); }
+
+// ─── PREDICTIONS ─────────────────────────────────────────────────────────────
+
+async function copilotPredictFlakiness() {
+  if (!_copilotColId) { modAlert('copilot-predict-msg', 'error', 'Select a collection first.'); return; }
+  const result = document.getElementById('copilot-predict-result');
+  if (!result) return;
+  result.innerHTML = '<div style="color:var(--text-muted)">Forecasting flakiness…</div>';
+  const res = await fetch('/api/copilot/predict/flakiness', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ collectionId: _copilotColId })
+  });
+  if (!res.ok) { result.innerHTML = '<div style="color:#ef4444">Flakiness forecast failed.</div>'; return; }
+  const data = await res.json();
+  const forecasts = data.forecasts || [];
+  if (!forecasts.length) { result.innerHTML = '<div style="color:var(--text-muted)">No flakiness forecasts available.</div>'; return; }
+  result.innerHTML = `<h4 style="margin:0 0 8px">🧪 Flakiness Forecast</h4>
+    <table class="data-table"><thead><tr><th>Step ID</th><th>Predicted Score</th><th>Confidence</th><th>Contributing Factors</th></tr></thead>
+    <tbody>${forecasts.map(f => {
+      const score = f.predictedFlakinessScore || 0;
+      const col = score > 70 ? '#ef4444' : score > 40 ? '#f59e0b' : '#22c55e';
+      return `<tr>
+        <td style="font-size:12px">${escHtml(f.stepId)}</td>
+        <td><span style="color:${col};font-weight:600">${escHtml(String(score))}%</span></td>
+        <td>${escHtml(String(f.confidence))}%</td>
+        <td style="font-size:12px;color:var(--text-muted)">${escHtml((f.contributingFactors || []).join(', ') || '—')}</td>
+      </tr>`;
+    }).join('')}</tbody></table>`;
+}
+
+async function copilotPredictRetryStorm() {
+  if (!_copilotColId) { modAlert('copilot-predict-msg', 'error', 'Select a collection first.'); return; }
+  const result = document.getElementById('copilot-predict-result');
+  if (!result) return;
+  result.innerHTML = '<div style="color:var(--text-muted)">Forecasting retry storm…</div>';
+  const res = await fetch('/api/copilot/predict/retry-storm', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ collectionId: _copilotColId })
+  });
+  if (!res.ok) { result.innerHTML = '<div style="color:#ef4444">Retry storm forecast failed.</div>'; return; }
+  const f = await res.json();
+  const riskColor = { low: '#22c55e', medium: '#f59e0b', high: '#ef4444' };
+  result.innerHTML = `<h4 style="margin:0 0 8px">⚡ Retry Storm Forecast</h4>
+    <div style="margin-bottom:8px">Risk: <strong style="color:${riskColor[f.stormRisk] || '#9ca3af'}">${escHtml(f.stormRisk || '—')}</strong>
+      &nbsp;Predicted retry rate: <strong>${((f.predictedRetryRate || 0) * 100).toFixed(1)}%</strong>
+      &nbsp;Confidence: ${escHtml(String(f.confidence || 0))}%</div>
+    ${(f.affectedStepIds || []).length ? '<div style="font-size:12px;color:var(--text-muted)">Affected steps: ' + f.affectedStepIds.map(id => escHtml(id)).join(', ') + '</div>' : ''}`;
+}
+
+async function copilotPredictSlaBreach() {
+  if (!_copilotColId) { modAlert('copilot-predict-msg', 'error', 'Select a collection first.'); return; }
+  const slaMetricEl = document.getElementById('copilot-sla-metric');
+  const slaValueEl = document.getElementById('copilot-sla-value');
+  const slaMetric = slaMetricEl?.value?.trim();
+  const currentValue = parseFloat(slaValueEl?.value || '0');
+  if (!slaMetric) { modAlert('copilot-predict-msg', 'error', 'Enter SLA metric name.'); return; }
+  const result = document.getElementById('copilot-predict-result');
+  if (!result) return;
+  result.innerHTML = '<div style="color:var(--text-muted)">Forecasting SLA breach…</div>';
+  const res = await fetch('/api/copilot/predict/sla-breach', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ collectionId: _copilotColId, slaMetric, currentValue })
+  });
+  if (!res.ok) { result.innerHTML = '<div style="color:#ef4444">SLA breach forecast failed.</div>'; return; }
+  const f = await res.json();
+  const likelihood = ((f.breachLikelihood || 0) * 100).toFixed(1);
+  const col = f.breachLikelihood > 0.7 ? '#ef4444' : f.breachLikelihood > 0.4 ? '#f59e0b' : '#22c55e';
+  result.innerHTML = `<h4 style="margin:0 0 8px">SLA Breach Forecast — ${escHtml(slaMetric)}</h4>
+    <div>Breach likelihood: <strong style="color:${col}">${likelihood}%</strong>
+      &nbsp;Current value: ${escHtml(String(currentValue))}
+      &nbsp;Forecasted value: ${f.forecastedValue !== undefined ? escHtml(String(f.forecastedValue)) : '—'}</div>`;
+}
+// ══════════════════════════════════════════════════════════════════════════════
+// PERFORMANCE DASHBOARD MODULE — profiling, cache stats, safeguards
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function perfLoad() {
+  await Promise.all([_perfLoadSafeguards(), _perfLoadCacheStats(), _perfLoadProfile()]);
+}
+
+async function _perfLoadSafeguards() {
+  const el = document.getElementById('perf-safeguards-result');
+  if (!el) return;
+  el.innerHTML = '<div style="color:var(--text-muted)">Checking…</div>';
+  const res = await fetch('/api/performance/safeguards');
+  if (!res.ok) { el.innerHTML = '<div style="color:#ef4444">Failed to load safeguard status.</div>'; return; }
+  const data = await res.json();
+  const result = data.result || data;
+  const violations = result.violations || [];
+  if (result.healthy) {
+    el.innerHTML = '<div style="color:#22c55e;font-weight:600">✓ All safeguard checks passed.</div>';
+    return;
+  }
+  const sevColor = { info: '#3b82f6', warning: '#f59e0b', critical: '#ef4444' };
+  el.innerHTML = `<table class="data-table"><thead><tr><th>Code</th><th>Severity</th><th>Measured</th><th>Threshold</th><th>Note</th></tr></thead>
+    <tbody>${violations.map(v => `<tr>
+      <td style="font-size:12px">${escHtml(v.code)}</td>
+      <td><span style="color:${sevColor[v.severity] || '#9ca3af'};font-weight:600">${escHtml(v.severity)}</span></td>
+      <td>${v.measuredValue !== undefined ? escHtml(String(v.measuredValue)) : '—'}</td>
+      <td>${v.threshold !== undefined ? escHtml(String(v.threshold)) : '—'}</td>
+      <td style="font-size:12px;color:var(--text-muted)">${escHtml(v.advisoryNote || v.message || '—')}</td>
+    </tr>`).join('')}</tbody></table>`;
+}
+
+async function _perfLoadCacheStats() {
+  const el = document.getElementById('perf-cache-result');
+  if (!el) return;
+  el.innerHTML = '<div style="color:var(--text-muted)">Loading…</div>';
+  const res = await fetch('/api/performance/cache/stats');
+  if (!res.ok) { el.innerHTML = '<div style="color:#ef4444">Failed to load cache stats.</div>'; return; }
+  const data = await res.json();
+  const s = data.stats || data;
+  const hitRate = s.hitRate !== undefined ? (s.hitRate * 100).toFixed(1) + '%' : '—';
+  el.innerHTML = `<div style="display:flex;gap:24px;flex-wrap:wrap">
+    <div><div style="font-size:22px;font-weight:700;color:#22c55e">${escHtml(String(s.hits || 0))}</div><div style="font-size:12px;color:var(--text-muted)">Hits</div></div>
+    <div><div style="font-size:22px;font-weight:700;color:#f59e0b">${escHtml(String(s.misses || 0))}</div><div style="font-size:12px;color:var(--text-muted)">Misses</div></div>
+    <div><div style="font-size:22px;font-weight:700;color:#9ca3af">${escHtml(String(s.evictions || 0))}</div><div style="font-size:12px;color:var(--text-muted)">Evictions</div></div>
+    <div><div style="font-size:22px;font-weight:700;color:#3b82f6">${escHtml(hitRate)}</div><div style="font-size:12px;color:var(--text-muted)">Hit Rate</div></div>
+  </div>`;
+}
+
+async function perfInvalidateCache() {
+  const colIdEl = document.getElementById('perf-invalidate-col');
+  const colId = colIdEl?.value?.trim();
+  if (!colId) { modAlert('perf-dashboard-msg', 'error', 'Enter a Collection ID to invalidate.'); return; }
+  const res = await fetch('/api/performance/cache/invalidate/' + encodeURIComponent(colId), { method: 'POST' });
+  if (res.ok) {
+    modAlert('perf-dashboard-msg', 'success', 'Cache invalidated for ' + escHtml(colId));
+    _perfLoadCacheStats();
+  } else {
+    modAlert('perf-dashboard-msg', 'error', 'Cache invalidation failed.');
+  }
+}
+
+async function _perfLoadProfile() {
+  const el = document.getElementById('perf-profile-result');
+  if (!el) return;
+  el.innerHTML = '<div style="color:var(--text-muted)">Loading…</div>';
+  const res = await fetch('/api/performance/profile');
+  if (!res.ok) { el.innerHTML = '<div style="color:#ef4444">Failed to load profiling data.</div>'; return; }
+  const data = await res.json();
+  const snapshot = data.snapshot || data;
+  const spans = snapshot.recentSpans || [];
+  if (!spans.length) { el.innerHTML = '<div style="color:var(--text-muted)">No profiling spans recorded yet.</div>'; return; }
+  el.innerHTML = `<table class="data-table"><thead><tr><th>Phase</th><th>Label</th><th>Duration (ms)</th><th>Start</th></tr></thead>
+    <tbody>${spans.slice(-20).reverse().map(sp => `<tr>
+      <td style="font-size:12px">${escHtml(sp.phase || '—')}</td>
+      <td style="font-size:12px">${escHtml(sp.label || '—')}</td>
+      <td>${sp.durationMs !== undefined ? escHtml(String(sp.durationMs)) : '—'}</td>
+      <td style="font-size:11px;color:var(--text-muted)">${sp.startMs ? new Date(sp.startMs).toLocaleTimeString() : '—'}</td>
+    </tr>`).join('')}</tbody></table>`;
 }
