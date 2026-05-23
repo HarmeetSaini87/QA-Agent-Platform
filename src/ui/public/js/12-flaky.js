@@ -1,14 +1,4 @@
-// ══════════════════════════════════════════════════════════════════════════════
-// Toast notification helper
-// ══════════════════════════════════════════════════════════════════════════════
-function showToast(msg, level) {
-  const d = document.createElement('div');
-  const bg = level === 'error' ? '#f48771' : level === 'warn' ? '#dcdcaa' : '#4ec9b0';
-  d.style.cssText = `position:fixed;bottom:24px;right:24px;z-index:9999;padding:10px 18px;border-radius:6px;font-size:13px;font-weight:600;color:#1e1e1e;background:${bg};box-shadow:0 2px 8px rgba(0,0,0,0.3)`;
-  d.textContent = msg;
-  document.body.appendChild(d);
-  setTimeout(() => d.remove(), 4000);
-}
+// showToast is defined in 02-shared-helpers.js — signature: showToast(type, msg, ms)
 
 // Flaky Test Detection
 // ══════════════════════════════════════════════════════════════════════════════
@@ -271,8 +261,8 @@ async function flakyQuarantine(suiteId, testId, testName) {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ suiteId, testId, testName, reason: 'manual' })
   });
-  if (res.ok) { showToast('Test quarantined.', 'info'); flakyLoad(); }
-  else showToast('Quarantine failed.', 'error');
+  if (res.ok) { showToast('info', 'Test quarantined.'); flakyLoad(); }
+  else showToast('error', 'Quarantine failed.');
 }
 
 async function flakyRestore(suiteId, testId, testName) {
@@ -281,8 +271,8 @@ async function flakyRestore(suiteId, testId, testName) {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ suiteId, testId })
   });
-  if (res.ok) { showToast('Test restored from quarantine.', 'info'); flakyLoad(); }
-  else showToast('Restore failed.', 'error');
+  if (res.ok) { showToast('info', 'Test restored from quarantine.'); flakyLoad(); }
+  else showToast('error', 'Restore failed.');
 }
 
 // Flakiness Config (Suite Settings)
@@ -328,7 +318,7 @@ function flakyApplyPreset() {
 async function flakyConfigSave() {
   const suiteId = window._editingSuiteId || editingSuiteId;
   const projectId = currentProjectId;
-  if (!suiteId || !projectId) { showToast('No suite selected.', 'warn'); return; }
+  if (!suiteId || !projectId) { showToast('info', 'No suite selected.'); return; }
 
   const threshold = parseFloat(document.getElementById('flaky-cfg-threshold')?.value || '');
   const minRuns = parseInt(document.getElementById('flaky-cfg-minruns')?.value || '');
@@ -347,12 +337,12 @@ async function flakyConfigSave() {
       body: JSON.stringify({ projectId, suiteId, overrides })
     });
     if (res.ok) {
-      showToast('Flakiness config saved.', 'info');
+      showToast('info', 'Flakiness config saved.');
     } else {
       const e = await res.json();
-      showToast('Save failed: ' + ((e.errors || []).join(', ') || 'unknown error'), 'error');
+      showToast('error', 'Save failed: ' + ((e.errors || []).join(', ') || 'unknown error'));
     }
-  } catch { showToast('Save failed.', 'error'); }
+  } catch { showToast('error', 'Save failed.'); }
 }
 
 async function flakyConfigReset() {
@@ -364,7 +354,7 @@ async function flakyConfigReset() {
     const presetEl = document.getElementById('flaky-preset');
     if (presetEl) presetEl.value = '';
     flakyApplyPreset();
-    showToast('Reset to default values.', 'info');
+    showToast('info', 'Reset to default values.');
     return;
   }
 
@@ -380,7 +370,7 @@ async function flakyConfigReset() {
     // Scenario 2: Reset preset dropdown to Custom — project defaults don't map to any named preset
     const presetEl = document.getElementById('flaky-preset');
     if (presetEl) presetEl.value = '';
-    showToast('Reset to project defaults.', 'info');
-  } catch { showToast('Reset failed.', 'error'); }
+    showToast('info', 'Reset to project defaults.');
+  } catch { showToast('error', 'Reset failed.'); }
 }
 
