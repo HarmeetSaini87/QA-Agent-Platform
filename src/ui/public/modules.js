@@ -13963,6 +13963,18 @@ async function apiPluginRegisterExample(manifestJson) {
   _apiPluginsRenderList();
   modAlert('api-plugins-alert', 'success', 'Plugin "' + escHtml(registered.name || registered.id) + '" registered.');
 }
+
+function apiPluginsExport() {
+  if (!_apiPluginsList.length) { showToast('error', 'No plugins to export.'); return; }
+  downloadCSV('plugins.csv',
+    ['Name', 'Plugin ID', 'Version', 'Capabilities', 'Status'],
+    _apiPluginsList.map(p => [
+      p.name || p.id, p.id, p.version || '',
+      (p.capabilities || []).join('; '), p.status
+    ])
+  );
+  showToast('success', 'Plugins exported to plugins.csv');
+}
 // ══════════════════════════════════════════════════════════════════════════════
 // GRAPH EDITOR MODULE — SVG DAG visualizer with drag, dep edit, layout save
 // ══════════════════════════════════════════════════════════════════════════════
@@ -13973,6 +13985,8 @@ let _graphDepMap = {}; // stepId → string[] (dependsOn)
 let _graphPositions = {}; // stepId → {x, y}
 let _graphSelected = []; // max 2 stepIds
 let _graphDragging = null; // {stepId, startX, startY, origX, origY}
+let _graphZoom = 1.0;
+const _ZOOM_MIN = 0.3, _ZOOM_MAX = 3.0, _ZOOM_STEP = 0.2;
 
 const _GN_W = 160, _GN_H = 44, _GN_HGAP = 80, _GN_VGAP = 20, _GN_PAD = 20;
 
@@ -13993,6 +14007,7 @@ async function graphEditorSelectCollection(colId) {
   _graphColId = colId;
   _graphSelected = [];
   _graphDragging = null;
+  _graphZoom = 1.0;
   const canvas = document.getElementById('graph-canvas');
   if (!colId) { canvas.innerHTML = '<div style="color:var(--text-muted)">Select a collection to view its workflow graph.</div>'; return; }
   canvas.innerHTML = '<div style="color:var(--text-muted)">Loading…</div>';
@@ -14058,6 +14073,11 @@ function _graphComputePositions(savedPositions) {
 function _graphRender() {
   const canvas = document.getElementById('graph-canvas');
   if (!canvas) return;
+  const countEl = document.getElementById('graph-node-count');
+  if (countEl) {
+    const edgeCount = Object.values(_graphDepMap).reduce((s, deps) => s + deps.length, 0);
+    countEl.textContent = _graphSteps.length + ' nodes · ' + edgeCount + ' edges';
+  }
   if (!_graphSteps.length) {
     canvas.innerHTML = '<div style="color:var(--text-muted)">No steps in this collection.</div>';
     return;
@@ -14068,7 +14088,9 @@ function _graphRender() {
   const svgW = Math.max(...xs) + _GN_PAD;
   const svgH = Math.max(...ys) + _GN_PAD;
 
-  let svg = `<svg id="graph-svg" width="${svgW}" height="${svgH}" style="cursor:default;user-select:none;display:block"
+  const zoomLbl = document.getElementById('graph-zoom-label');
+  if (zoomLbl) zoomLbl.textContent = Math.round(_graphZoom * 100) + '%';
+  let svg = `<svg id="graph-svg" width="${svgW}" height="${svgH}" style="cursor:default;user-select:none;display:block;transform:scale(${_graphZoom});transform-origin:top left"
     onmouseup="_graphDragEnd(event)" onmousemove="_graphDragMove(event)" onmouseleave="_graphDragEnd(event)">
     <defs>
       <marker id="arr" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
@@ -14202,6 +14224,10 @@ async function graphEditorRemoveDep() {
   _graphRender();
   modAlert('graph-editor-msg', 'success', 'Dependency removed.');
 }
+
+function graphEditorZoomIn()    { _graphZoom = Math.min(_ZOOM_MAX, +(_graphZoom + _ZOOM_STEP).toFixed(1)); _graphRender(); }
+function graphEditorZoomOut()   { _graphZoom = Math.max(_ZOOM_MIN, +(_graphZoom - _ZOOM_STEP).toFixed(1)); _graphRender(); }
+function graphEditorZoomReset() { _graphZoom = 1.0; _graphRender(); }
 // ══════════════════════════════════════════════════════════════════════════════
 // COLLABORATION MODULE — revisions, review comments, workflow templates
 // ══════════════════════════════════════════════════════════════════════════════
@@ -14422,6 +14448,19 @@ async function collabInstantiateTemplate(templateId) {
   const summary = escHtml((scaffold.steps || scaffold.stepCount || JSON.stringify(scaffold)).toString().substring(0, 200));
   modAlert('collab-revisions-msg', 'success', 'Advisory scaffold returned. Steps: ' + summary);
 }
+
+function collabExportRevisions() {
+  if (!_collabRevisions.length) { showToast('error', 'No revisions to export.'); return; }
+  downloadCSV('revisions.csv',
+    ['Revision #', 'Status', 'Author', 'Description', 'Created At'],
+    _collabRevisions.map(r => [
+      r.revisionNumber, r.status, r.authorId || '',
+      r.description || '',
+      r.createdAt ? new Date(r.createdAt).toLocaleString() : ''
+    ])
+  );
+  showToast('success', 'Revisions exported to revisions.csv');
+}
 // ══════════════════════════════════════════════════════════════════════════════
 // COPILOT MODULE — AI guidance, flakiness/retry-storm/SLA predictions
 // ══════════════════════════════════════════════════════════════════════════════
@@ -14595,9 +14634,24 @@ async function copilotPredictSlaBreach() {
       &nbsp;Current value: ${escHtml(String(currentValue))}
       &nbsp;Forecasted value: ${f.forecastedValue !== undefined ? escHtml(String(f.forecastedValue)) : '—'}</div>`;
 }
+
+function copilotExportHistory() {
+  if (!_copilotHistory.length) { showToast('error', 'No history to export.'); return; }
+  downloadCSV('copilot-history.csv',
+    ['Query Type', 'Items', 'Generated At'],
+    _copilotHistory.map(h => [
+      h.queryType,
+      (h.items || []).length,
+      h.generatedAt ? new Date(h.generatedAt).toLocaleString() : ''
+    ])
+  );
+  showToast('success', 'Copilot history exported to copilot-history.csv');
+}
 // ══════════════════════════════════════════════════════════════════════════════
 // PERFORMANCE DASHBOARD MODULE — profiling, cache stats, safeguards
 // ══════════════════════════════════════════════════════════════════════════════
+
+let _perfSpans = [];
 
 async function perfLoad() {
   await Promise.all([_perfLoadSafeguards(), _perfLoadCacheStats(), _perfLoadProfile()]);
@@ -14666,6 +14720,7 @@ async function _perfLoadProfile() {
   const data = await res.json();
   const snapshot = data.snapshot || data;
   const spans = snapshot.recentSpans || [];
+  _perfSpans = spans;
   if (!spans.length) { el.innerHTML = '<div style="color:var(--text-muted)">No profiling spans recorded yet.</div>'; return; }
   el.innerHTML = `<table class="data-table"><thead><tr><th>Phase</th><th>Label</th><th>Duration (ms)</th><th>Start</th></tr></thead>
     <tbody>${spans.slice(-20).reverse().map(sp => `<tr>
@@ -14674,4 +14729,17 @@ async function _perfLoadProfile() {
       <td>${sp.durationMs !== undefined ? escHtml(String(sp.durationMs)) : '—'}</td>
       <td style="font-size:11px;color:var(--text-muted)">${sp.startMs ? new Date(sp.startMs).toLocaleTimeString() : '—'}</td>
     </tr>`).join('')}</tbody></table>`;
+}
+
+function perfExportSpans() {
+  if (!_perfSpans.length) { showToast('error', 'No spans to export. Load the dashboard first.'); return; }
+  downloadCSV('perf-spans.csv',
+    ['Phase', 'Label', 'Duration (ms)', 'Start'],
+    _perfSpans.map(sp => [
+      sp.phase || '', sp.label || '',
+      sp.durationMs !== undefined ? sp.durationMs : '',
+      sp.startMs ? new Date(sp.startMs).toLocaleString() : ''
+    ])
+  );
+  showToast('success', 'Performance spans exported to perf-spans.csv');
 }
