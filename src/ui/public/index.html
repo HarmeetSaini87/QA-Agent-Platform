@@ -11,6 +11,7 @@
 </head>
 
 <body>
+<div id="toast-container"></div>
   <script>(function(){var t=localStorage.getItem('qa-theme');if(t)document.body.setAttribute('data-theme',t);else if(window.matchMedia('(prefers-color-scheme:light)').matches)document.body.setAttribute('data-theme','light');})();</script>
   <!-- P1-09: License expiry / status banner -->
   <div id="license-banner" style="display:none"></div>
@@ -155,11 +156,16 @@
           </svg>
           <span>API Runs</span>
         </div>
-        <div class="nav-item" data-tab="api-flakiness">API Flakiness</div>
+        <div class="nav-item" data-tab="api-flakiness">&#x26A1; API Flakiness</div>
         <div class="nav-item" data-tab="api-suites">⚡ API Suites</div>
         <div class="nav-item" data-tab="api-replay">🔍 Replay</div>
         <div class="nav-item" data-tab="worker-health">⚙️ Workers</div>
         <div class="nav-item" data-tab="governance">&#x1F3DB;&#xFE0F; Governance</div>
+        <div class="nav-item" data-tab="api-plugins">&#x1F9E9; Plugins</div>
+        <div class="nav-item" data-tab="api-graph">&#x1F5FA;&#xFE0F; Graph Editor</div>
+        <div class="nav-item" data-tab="api-collab">&#x1F4AC; Collaboration</div>
+        <div class="nav-item" data-tab="api-copilot">&#x1F916; Copilot</div>
+        <div class="nav-item" data-tab="perf-dashboard">&#x26A1; Performance</div>
 
         <div class="nav-section-label admin-only" id="admin-section-label">Admin</div>
         <div class="nav-item admin-only" data-tab="projects" id="nav-projects">
@@ -1234,8 +1240,40 @@
 
         <!-- ── Tab: API Suites ───────────────────────────────────────────── -->
         <div class="panel" id="panel-api-suites">
-          <div id="api-suites-alert"></div>
-          <div id="api-suites-content"></div>
+          <div class="card">
+            <div class="card-title">
+              API Suites
+              <div style="display:flex;gap:8px;margin-left:auto;align-items:center">
+                <button class="btn btn-primary btn-sm" onclick="apiSuitesShowCreate()">+ New Suite</button>
+              </div>
+            </div>
+            <div id="api-suites-alert"></div>
+            <!-- Filter row -->
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:center">
+              <input id="api-suites-filter-name" class="filter-input" style="width:220px" placeholder="Filter by name…" oninput="apiSuitesRender()">
+              <select id="api-suites-filter-status" class="filter-input" style="width:150px" onchange="apiSuitesRender()">
+                <option value="">All Statuses</option>
+                <option value="active">Active</option>
+                <option value="archived">Archived</option>
+              </select>
+              <button class="btn btn-secondary btn-sm" onclick="apiSuitesLoad()" title="Refresh">&#8635; Refresh</button>
+            </div>
+            <!-- Table -->
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Collections</th>
+                  <th>Environment</th>
+                  <th>Lifecycle</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="api-suites-tbody"></tbody>
+            </table>
+            <!-- Detail panel (shown in-place when viewing a suite) -->
+            <div id="api-suites-detail" style="display:none"></div>
+          </div>
         </div><!-- /panel-api-suites -->
         <div class="panel" id="panel-api-replay">
           <div id="api-replay-alert"></div>
@@ -1248,6 +1286,196 @@
         </div><!-- /panel-worker-health -->
         <div class="panel" id="panel-governance">
         </div><!-- /panel-governance -->
+
+        <!-- ── Tab: API Plugins ──────────────────────────────────────────── -->
+        <div class="panel" id="panel-api-plugins" style="display:none">
+          <div class="card">
+            <div class="card-title">
+              &#x1F9E9; Plugin Ecosystem
+              <div style="display:flex;gap:8px;margin-left:auto;align-items:center">
+                <input id="api-plugins-search" type="text" placeholder="Search plugins…" oninput="apiPluginsFilter()" style="width:200px">
+                <button class="btn btn-secondary btn-sm" onclick="apiPluginsLoad()">&#x21BA; Refresh</button>
+                <button class="btn btn-secondary btn-sm" onclick="apiPluginsExport()">&#x2B07; Export CSV</button>
+              </div>
+            </div>
+            <div id="api-plugins-alert"></div>
+            <table class="data-table">
+              <thead><tr><th>Name</th><th>Plugin ID</th><th>Version</th><th>Capabilities</th><th>Status</th><th>Actions</th></tr></thead>
+              <tbody id="api-plugins-tbody"><tr><td colspan="6" style="text-align:center;color:var(--text-muted)">Loading…</td></tr></tbody>
+            </table>
+
+            <h3 style="font-size:14px;margin:24px 0 4px">Example Plugins</h3>
+            <div style="color:var(--text-muted);font-size:12px;margin-bottom:8px">Advisory only — register to explore the plugin system. Never auto-registered.</div>
+            <table class="data-table">
+              <thead><tr><th>Name</th><th>Description</th><th>Capabilities</th><th>Actions</th></tr></thead>
+              <tbody id="api-plugins-examples-tbody"><tr><td colspan="4" style="text-align:center;color:var(--text-muted)">Loading examples…</td></tr></tbody>
+            </table>
+          </div>
+        </div><!-- /panel-api-plugins -->
+
+        <div class="panel" id="panel-api-graph" style="display:none">
+          <div class="card">
+            <div class="card-title">
+              &#x1F5FA;&#xFE0F; Graph Editor
+              <div style="display:flex;gap:8px;margin-left:auto;align-items:center">
+                <select id="graph-col-select" onchange="graphEditorSelectCollection(this.value)" style="min-width:220px">
+                  <option value="">&#x2014; Select Collection &#x2014;</option>
+                </select>
+                <button class="btn btn-secondary btn-sm" onclick="graphEditorValidate()">&#x2713; Validate DAG</button>
+                <button class="btn btn-secondary btn-sm" onclick="graphEditorSaveLayout()">&#x1F4BE; Save Layout</button>
+                <button class="btn btn-secondary btn-sm" onclick="graphEditorAddDep()">+ Add Dep</button>
+                <button class="btn btn-secondary btn-sm" onclick="graphEditorRemoveDep()">&#x2212; Remove Dep</button>
+                <button class="btn btn-secondary btn-sm" onclick="graphEditorZoomOut()">&#x2212;</button>
+                <span id="graph-zoom-label" style="font-size:12px;min-width:38px;text-align:center;color:var(--text-muted)">100%</span>
+                <button class="btn btn-secondary btn-sm" onclick="graphEditorZoomIn()">+</button>
+                <button class="btn btn-secondary btn-sm" onclick="graphEditorZoomReset()">&#x229E; Fit</button>
+              </div>
+            </div>
+            <div id="graph-editor-msg"></div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+              <div style="font-size:12px;color:var(--text-muted)">Click a node to select it (max 2). Drag to reposition. Use Add/Remove Dep with 2 selected nodes.</div>
+              <span id="graph-node-count" style="font-size:12px;color:var(--text-muted)"></span>
+            </div>
+            <div id="graph-canvas" style="overflow:auto;min-height:300px;background:var(--bg-secondary);border-radius:6px;padding:12px">
+              <div style="color:var(--text-muted)">Select a collection to view its workflow graph.</div>
+            </div>
+          </div>
+        </div><!-- /panel-api-graph -->
+
+        <div class="panel" id="panel-api-collab" style="display:none">
+          <div class="card">
+            <div class="card-title">
+              &#x1F4AC; Collaboration
+              <div style="display:flex;gap:8px;margin-left:auto;align-items:center">
+                <select id="collab-col-select" onchange="collabSelectCollection(this.value)" style="min-width:220px">
+                  <option value="">&#x2014; Select Collection &#x2014;</option>
+                </select>
+              </div>
+            </div>
+            <div style="display:flex;gap:8px;margin-bottom:12px">
+              <button class="sub-tab active" data-collabtab="revisions" onclick="collabTabSwitch('revisions',this)">&#x1F4CB; Revisions</button>
+              <button class="sub-tab" data-collabtab="comments" onclick="collabTabSwitch('comments',this)">&#x1F4AC; Comments</button>
+              <button class="sub-tab" data-collabtab="templates" onclick="collabTabSwitch('templates',this)">&#x1F4D1; Templates</button>
+            </div>
+            <div id="collab-panel-revisions">
+              <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;flex-wrap:wrap">
+                <input id="collab-revisions-search" type="text" placeholder="Search revisions…" oninput="collabFilterRevisions()" style="flex:1;min-width:180px">
+                <button class="btn btn-primary btn-sm" onclick="collabCreateRevisionModal()">+ Save Revision</button>
+                <button class="btn btn-secondary btn-sm" onclick="collabExportRevisions()">&#x2B07; Export CSV</button>
+              </div>
+              <div id="collab-revisions-msg"></div>
+              <table class="data-table">
+                <thead><tr><th>#</th><th>Status</th><th>Author</th><th>Description</th><th>Created</th><th>Actions</th></tr></thead>
+                <tbody id="collab-revisions-tbody"><tr><td colspan="6" style="text-align:center;color:var(--text-muted)">Select a collection.</td></tr></tbody>
+              </table>
+            </div>
+            <div id="collab-panel-comments" style="display:none">
+              <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;flex-wrap:wrap">
+                <input id="collab-comments-search" type="text" placeholder="Filter comments…" oninput="collabFilterComments()" style="flex:1;min-width:160px">
+                <select id="collab-comments-status-filter" onchange="collabFilterComments()" style="width:120px">
+                  <option value="">All statuses</option>
+                  <option value="open">Open</option>
+                  <option value="resolved">Resolved</option>
+                </select>
+              </div>
+              <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center">
+                <input id="collab-comment-body" type="text" placeholder="Add a comment&#x2026;" style="flex:1;min-width:200px">
+                <select id="collab-comment-target-type" style="width:140px">
+                  <option value="collection">collection</option>
+                  <option value="step">step</option>
+                  <option value="dependency">dependency</option>
+                  <option value="replay">replay</option>
+                </select>
+                <input id="collab-comment-target-id" type="text" placeholder="Target ID (optional)" style="width:160px">
+                <button class="btn btn-primary btn-sm" onclick="collabAddComment()">Post</button>
+              </div>
+              <div id="collab-comments-msg"></div>
+              <div id="collab-comments-list"><div style="color:var(--text-muted)">Select a collection.</div></div>
+            </div>
+            <div id="collab-panel-templates" style="display:none">
+              <div id="collab-templates-list"><div style="color:var(--text-muted)">Loading&#x2026;</div></div>
+            </div>
+          </div>
+        </div><!-- /panel-api-collab -->
+
+        <div class="panel" id="panel-api-copilot" style="display:none">
+          <div class="card">
+            <div class="card-title">
+              &#x1F916; Copilot
+              <div style="display:flex;gap:8px;margin-left:auto;align-items:center">
+                <select id="copilot-col-select" onchange="copilotSelectCollection(this.value)" style="min-width:220px">
+                  <option value="">&#x2014; Select Collection &#x2014;</option>
+                </select>
+              </div>
+            </div>
+            <div id="copilot-advisory" style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:6px;padding:10px 14px;margin-bottom:12px;font-size:13px">
+              &#x1F916; <strong>Advisory only.</strong> All guidance and predictions are AI-generated suggestions. Nothing is applied automatically.
+            </div>
+            <div style="display:flex;gap:8px;margin-bottom:12px">
+              <button class="sub-tab active" data-copilottab="guidance" onclick="copilotTabSwitch('guidance',this)">&#x1F4A1; Guidance</button>
+              <button class="sub-tab" data-copilottab="predict" onclick="copilotTabSwitch('predict',this)">&#x1F4CA; Predictions</button>
+              <button class="sub-tab" data-copilottab="history" onclick="copilotTabSwitch('history',this)">&#x1F4DC; History</button>
+            </div>
+            <div id="copilot-panel-guidance">
+              <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;align-items:center">
+                <select id="copilot-query-type" style="width:240px">
+                  <option value="workflow-guidance">workflow-guidance</option>
+                  <option value="orchestration-recommendation">orchestration-recommendation</option>
+                  <option value="replay-debug">replay-debug</option>
+                  <option value="flakiness-investigation">flakiness-investigation</option>
+                  <option value="dependency-optimization">dependency-optimization</option>
+                  <option value="retry-tuning">retry-tuning</option>
+                  <option value="environment-anomaly">environment-anomaly</option>
+                </select>
+                <input id="copilot-run-id" type="text" placeholder="Run ID (optional)" style="width:160px">
+                <button class="btn btn-primary btn-sm" onclick="copilotSubmitGuide()">&#x1F4A1; Get Guidance</button>
+              </div>
+              <div id="copilot-guidance-msg"></div>
+              <div id="copilot-guidance-result"></div>
+            </div>
+            <div id="copilot-panel-predict" style="display:none">
+              <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:center">
+                <button class="btn btn-secondary btn-sm" onclick="copilotPredictFlakiness()">&#x1F9EA; Flakiness Forecast</button>
+                <button class="btn btn-secondary btn-sm" onclick="copilotPredictRetryStorm()">&#x26A1; Retry Storm Risk</button>
+                <input id="copilot-sla-metric" type="text" placeholder="SLA metric name" style="width:150px">
+                <input id="copilot-sla-value" type="number" placeholder="Current value" style="width:120px">
+                <button class="btn btn-secondary btn-sm" onclick="copilotPredictSlaBreach()">SLA Breach?</button>
+              </div>
+              <div id="copilot-predict-msg"></div>
+              <div id="copilot-predict-result"></div>
+            </div>
+            <div id="copilot-panel-history" style="display:none">
+              <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center">
+                <input id="copilot-history-search" type="text" placeholder="Filter by query type…" oninput="copilotFilterHistory()" style="flex:1;max-width:300px">
+                <button class="btn btn-secondary btn-sm" onclick="copilotExportHistory()">&#x2B07; Export CSV</button>
+              </div>
+              <div id="copilot-history-result"><div style="color:var(--text-muted)">Select a collection.</div></div>
+            </div>
+          </div>
+        </div><!-- /panel-api-copilot -->
+
+        <div class="panel" id="panel-perf-dashboard" style="display:none">
+          <div class="card">
+            <div class="card-title">
+              &#x26A1; Performance Dashboard
+              <button class="btn btn-secondary btn-sm" style="margin-left:auto" onclick="perfLoad()">&#x21BB; Refresh</button>
+            </div>
+            <div id="perf-dashboard-msg"></div>
+            <h3 style="font-size:14px;margin:0 0 8px">Safeguards</h3>
+            <div id="perf-safeguards-result"><div style="color:var(--text-muted)">Loading&#x2026;</div></div>
+            <h3 style="font-size:14px;margin:16px 0 8px">Cache Stats</h3>
+            <div id="perf-cache-result"><div style="color:var(--text-muted)">Loading&#x2026;</div></div>
+            <div style="display:flex;gap:8px;align-items:center;margin:8px 0 16px">
+              <input id="perf-invalidate-col" type="text" placeholder="Collection ID to invalidate cache" style="width:260px">
+              <button class="btn btn-secondary btn-sm" onclick="perfInvalidateCache()">Invalidate</button>
+            </div>
+            <h3 style="font-size:14px;margin:0 0 8px;display:flex;align-items:center;gap:12px">
+              Recent Profiling Spans
+              <button class="btn btn-secondary btn-sm" onclick="perfExportSpans()">&#x2B07; Export CSV</button>
+            </h3>
+            <div id="perf-profile-result"><div style="color:var(--text-muted)">Loading&#x2026;</div></div>
+          </div>
+        </div><!-- /panel-perf-dashboard -->
 
         <!-- ── Tab: Projects ──────────────────────────────────────────────── -->
         <div class="panel admin-only" id="panel-projects">
@@ -3030,6 +3258,8 @@
           <button class="api-run-tab-btn sub-tab active" data-tab="steps" onclick="apiRunsTabSwitch('steps')">Steps</button>
           <button class="api-run-tab-btn sub-tab" data-tab="graph" onclick="apiRunsTabSwitch('graph')">&#9645; Execution Graph</button>
           <button class="api-run-tab-btn sub-tab" data-tab="har" onclick="apiRunsTabSwitch('har')">HAR / Network</button>
+          <button class="api-run-tab-btn sub-tab" data-tab="timeline" onclick="apiRunsTabSwitch('timeline')">&#x23F1; Timeline</button>
+          <button class="api-run-tab-btn sub-tab" data-tab="var-trace" onclick="apiRunsTabSwitch('var-trace')">&#x1F4CA; Var Trace</button>
           <button class="api-run-tab-btn sub-tab" data-tab="ai-insights" onclick="apiRunsTabSwitch('ai-insights')">AI Insights</button>
         </div>
         <div class="api-run-tab-panel" data-tab="steps">
@@ -3071,11 +3301,33 @@
             <tbody id="api-run-har-tbody"></tbody>
           </table>
         </div>
+        <!-- Timeline tab — lazy-loaded on first activation -->
+        <div class="api-run-tab-panel" data-tab="timeline" style="display:none;padding:12px" id="run-timeline-panel"></div>
+        <!-- Variable Trace tab — lazy-loaded on first activation -->
+        <div class="api-run-tab-panel" data-tab="var-trace" style="display:none;padding:12px" id="run-var-trace-panel"></div>
         <!-- AI Insights tab — lazy-loaded on first activation -->
         <div class="api-run-tab-panel" data-tab="ai-insights" style="display:none;padding:12px" id="ai-insights-panel-run"></div>
       </div>
       <div class="modal-footer">
         <button class="btn btn-secondary" onclick="apiRunsCloseDetail()">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Negative Test Generator Modal -->
+  <div class="modal-backdrop" id="modal-negative-tests" style="display:none">
+    <div class="modal" style="max-width:860px;width:95vw">
+      <div class="modal-header">
+        <h3>&#x1F9EA; Generated Negative Tests</h3>
+        <button class="modal-close" onclick="closeModal('modal-negative-tests')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="negative-tests-alert"></div>
+        <div style="color:#f59e0b;font-size:12px;margin-bottom:10px">&#x26A0; Advisory only. These are suggestions — review before using. The platform never auto-runs generated tests.</div>
+        <div id="negative-tests-content"><span style="color:var(--text-muted)">Loading…</span></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal('modal-negative-tests')">Close</button>
       </div>
     </div>
   </div>
