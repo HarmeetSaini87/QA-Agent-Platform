@@ -407,7 +407,13 @@ export function registerApiTestingRoutes(app: express.Application): void {
       } catch { /* skip corrupt file */ }
     }
     runs.sort((a, b) => b.startedAt.localeCompare(a.startedAt));
-    res.json(runs.slice(0, 50));
+    // OLD: res.json(runs.slice(0, 50));
+    const enriched = runs.slice(0, 200).map(r => {
+      const col = findById<ApiCollection>(API_COLLECTIONS, r.collectionId);
+      const env = col ? findById<ApiEnvironment>(API_ENVS, col.environmentId) : null;
+      return { ...r, collectionName: col?.name ?? r.collectionId, environmentName: env?.name ?? '—' };
+    });
+    res.json(enriched);
   });
 
   // ── Pre-Scan Health Check ───────────────────────────────────────────────────
