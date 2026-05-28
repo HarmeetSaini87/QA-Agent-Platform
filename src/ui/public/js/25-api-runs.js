@@ -112,13 +112,15 @@ function _apiRunsRenderList() {
   if (_apiRunsPage < 0) _apiRunsPage = 0;
 
   // Read filter values
-  const search = (document.getElementById('api-runs-search')?.value || '').toLowerCase();
+  const search    = (document.getElementById('api-runs-search')?.value || '').toLowerCase();
+  const envSearch = (document.getElementById('api-runs-filter-env')?.value || '').toLowerCase();
   const statusFilter = document.getElementById('api-runs-filter-status')?.value || '';
-  const dateFilter = document.getElementById('api-runs-filter-date')?.value || '';
+  const dateFilter   = document.getElementById('api-runs-filter-date')?.value || '';
 
   // Filter
   const filtered = _apiRunsList.filter(r => {
-    if (search && !(r.collectionName || r.collectionId || '').toLowerCase().includes(search)) return false;
+    if (search    && !(r.collectionName  || r.collectionId  || '').toLowerCase().includes(search))    return false;
+    if (envSearch && !(r.environmentName || '').toLowerCase().includes(envSearch)) return false;
     if (statusFilter && r.status !== statusFilter) return false;
     if (!_apiRunsDateMatches(r, dateFilter)) return false;
     return true;

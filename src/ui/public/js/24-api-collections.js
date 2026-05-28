@@ -10,12 +10,22 @@ let _apiColEnvs = [];
 async function apiColLoad() {
   if (!currentProjectId) { _apiCols = []; _apiColEnvs = []; _apiColRenderList(); return; }
   try {
-    const [colRes, envRes] = await Promise.all([
+    const [colRes, envRes, runsRes] = await Promise.all([
       fetch(`/api/api-collections?projectId=${encodeURIComponent(currentProjectId ?? '')}`),
       fetch(`/api/api-envs?projectId=${encodeURIComponent(currentProjectId ?? '')}`),
+      fetch(`/api/api-runs?projectId=${encodeURIComponent(currentProjectId ?? '')}`),
     ]);
-    _apiCols = await colRes.json();
+    _apiCols    = await colRes.json();
     _apiColEnvs = await envRes.json();
+    // Populate last-run cache: group runs by collectionId, keep most recent per collection
+    // (backend already returns sorted desc by startedAt, so first match = most recent)
+    const runs = runsRes.ok ? await runsRes.json() : [];
+    _apiColLastRuns = {};
+    for (const r of runs) {
+      if (r.collectionId && !_apiColLastRuns[r.collectionId]) {
+        _apiColLastRuns[r.collectionId] = { status: r.status, startedAt: r.startedAt };
+      }
+    }
     _apiColRenderList();
   } catch (e) {
     modAlert('api-col-list-alert', 'error', 'Load failed: ' + e.message);

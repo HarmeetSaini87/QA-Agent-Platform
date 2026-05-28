@@ -1216,10 +1216,12 @@
           <div class="card">
             <div class="card-title">
               API Runs
-              <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-                <input id="api-runs-search" class="filter-input" style="width:200px"
-                  placeholder="Search collection…" oninput="_apiRunsPage=0;_apiRunsRenderList()" />
-                <select id="api-runs-filter-status" class="fm-input" style="font-size:12px"
+              <div style="margin-left:auto;display:flex;gap:6px;flex-wrap:nowrap;align-items:center">
+                <input id="api-runs-search" class="filter-input" style="width:160px"
+                  placeholder="Collection…" oninput="_apiRunsPage=0;_apiRunsRenderList()" />
+                <input id="api-runs-filter-env" class="filter-input" style="width:130px"
+                  placeholder="Environment…" oninput="_apiRunsPage=0;_apiRunsRenderList()" />
+                <select id="api-runs-filter-status" class="fm-input" style="font-size:12px;width:130px"
                   onchange="_apiRunsPage=0;_apiRunsRenderList()">
                   <option value="">All Statuses</option>
                   <option value="passed">Passed</option>
@@ -1227,7 +1229,7 @@
                   <option value="error">Error</option>
                   <option value="running">Running</option>
                 </select>
-                <select id="api-runs-filter-date" class="fm-input" style="font-size:12px"
+                <select id="api-runs-filter-date" class="fm-input" style="font-size:12px;width:130px"
                   onchange="_apiRunsPage=0;_apiRunsRenderList()">
                   <option value="">All Dates</option>
                   <option value="today">Today</option>
