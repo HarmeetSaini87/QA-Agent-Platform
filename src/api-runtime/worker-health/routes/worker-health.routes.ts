@@ -20,4 +20,11 @@ export function registerWorkerHealthRoutes(app: Express): void {
     const report = aggregatePoolHealth(null, registry);
     void res.json({ stuckRuns: report.stuckRuns });
   });
+
+  // Phase F alias — plan specified /api/api-runtime/health (same handler)
+  app.get('/api/api-runtime/health', requireAuth, (_req, res) => {
+    const registry = getWorkerHealthLeaseRegistry();
+    const report = aggregatePoolHealth(null, registry);
+    void res.json(report);
+  });
 }

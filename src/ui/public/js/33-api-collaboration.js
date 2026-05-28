@@ -10,9 +10,7 @@ async function collabLoad() {
   const sel = document.getElementById('collab-col-select');
   if (!sel) return;
   sel.innerHTML = '<option value="">— Select Collection —</option>';
-  const cols = (typeof allApiCollections !== 'undefined' && Array.isArray(allApiCollections) && allApiCollections.length)
-    ? allApiCollections
-    : await fetch('/api/api-collections').then(r => r.ok ? r.json() : []).catch(() => []);
+  const cols = await fetch('/api/api-collections').then(r => r.ok ? r.json() : []).catch(() => []);
   (Array.isArray(cols) ? cols : []).forEach(c => {
     sel.innerHTML += `<option value="${escHtml(c.id)}">${escHtml(c.name)}</option>`;
   });

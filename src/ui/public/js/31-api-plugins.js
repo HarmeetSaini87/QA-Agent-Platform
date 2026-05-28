@@ -84,19 +84,21 @@ async function _apiPluginsLoadExamples() {
   try {
     const res = await fetch('/api/plugins/examples');
     if (!res.ok) { tbody.innerHTML = '<tr><td colspan="4" style="color:#ef4444">Examples unavailable.</td></tr>'; return; }
-    const examples = await res.json();
-    if (!Array.isArray(examples) || !examples.length) {
+    const data = await res.json();
+    const examples = Array.isArray(data) ? data : (data.examples || []);
+    if (!examples.length) {
       tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-muted)">No example plugins available.</td></tr>';
       return;
     }
     tbody.innerHTML = examples.map(ex => {
-      const caps = (ex.capabilities || []).map(c => `<span class="badge">${escHtml(c)}</span>`).join(' ');
-      const manifest = escHtml(JSON.stringify(ex));
+      const manifest = ex.manifest || ex;
+      const caps = (manifest.capabilities || []).map(c => `<span class="badge">${escHtml(c)}</span>`).join(' ');
+      const manifestStr = escHtml(JSON.stringify(manifest));
       return `<tr>
         <td>${escHtml(ex.name || ex.id)}</td>
         <td style="color:var(--text-muted);font-size:12px">${escHtml(ex.description || '—')}</td>
         <td>${caps || '<span style="color:var(--text-muted)">—</span>'}</td>
-        <td><button class="tbl-btn" onclick="apiPluginRegisterExample('${manifest}')">Register</button></td>
+        <td><button class="tbl-btn" onclick="apiPluginRegisterExample('${manifestStr}')">Register</button></td>
       </tr>`;
     }).join('');
   } catch (e) {

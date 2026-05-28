@@ -9,7 +9,13 @@ import {
   type ProjectionMeta,
   type ProjectionWarning,
   type ProjectionStrategy,
+  type VirtualizationReadiness,
 } from '../contracts/graph.contracts';
+
+// Phase E Step 1: Node count thresholds for rendering guidance.
+const VIRTUALIZATION_WARNING_THRESHOLD = 100;
+const VIRTUALIZATION_PAGE_SIZE_SMALL = 50;
+const VIRTUALIZATION_PAGE_SIZE_LARGE = 25;
 import { computeAutoLayout } from './auto-layout';
 import { shimLegacyNodes } from './legacy-node-shim';
 import { flattenHierarchy } from './hierarchy-flattener';
@@ -141,6 +147,18 @@ export function buildGraphProjection(
     metadata.normalizationSource
   );
 
+  // Phase E Step 1: Compute virtualization readiness hints for large graph frontend rendering.
+  const virtualizationReadiness: VirtualizationReadiness | undefined =
+    visualNodes.length >= VIRTUALIZATION_WARNING_THRESHOLD
+      ? {
+          shouldVirtualize: true,
+          recommendedPageSize: visualNodes.length >= MAX_GRAPH_NODE_COUNT
+            ? VIRTUALIZATION_PAGE_SIZE_LARGE
+            : VIRTUALIZATION_PAGE_SIZE_SMALL,
+          collapseHierarchyByDefault: hierarchy.rootId !== null && visualNodes.length >= MAX_GRAPH_NODE_COUNT / 2,
+        }
+      : undefined;
+
   const meta: ProjectionMeta = {
     collectionId: workflow.id,
     projectedAt: opts.projectedAt,
@@ -153,6 +171,7 @@ export function buildGraphProjection(
     edgeCount: edges.length,
     hasHierarchy: hierarchy.rootId !== null,
     hasAiReadiness: metadata.aiReadiness !== undefined,
+    virtualizationReadiness,
   };
 
   return {

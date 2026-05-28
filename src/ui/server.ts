@@ -60,9 +60,30 @@ import { registerApiDefectsRoutes } from '../api-defects/routes/api-defects.rout
 import { registerApiSuiteRoutes } from '../api-suite/routes/api-suites.routes';
 import { registerObservabilityRoutes } from '../api-observability/routes/observability.routes';
 import { registerWorkerHealthRoutes } from '../api-runtime/worker-health/routes/worker-health.routes';
+import { registerDebuggerEngineRoutes } from '../api-runtime/debugger-engine/routes/debugger-engine.routes';
+import { registerCoordinatorRoutes } from '../api-runtime/execution-coordinator/routes/coordinator.routes';
 import governanceRouter from '../api-governance/routes/governance.routes';
 import { registerAiIntelligenceRoutes } from '../api-intelligence/routes/ai-intelligence.routes';
 import { registerRemediationRoutes } from '../api-remediation/routes/remediation.routes';
+import { registerPerformanceRoutes } from '../api-performance/routes/performance.routes';
+import { registerOrchestrationRoutes } from '../api-orchestration/routes/orchestration.routes';
+import { registerSecurityRoutes } from '../api-security/routes/security.routes';
+import { registerGraphEditorRoutes } from '../api-graph-editor/routes/graph-editor.routes';
+import { registerCloudRoutes } from '../api-cloud/routes/cloud.routes';
+import { registerAnalyticsRoutes as registerEnterpriseAnalyticsRoutes } from '../api-analytics/routes/analytics.routes';
+import { registerPluginRoutes } from '../api-plugins/routes/plugins.routes';
+import { registerCollaborationRoutes } from '../api-collaboration/routes/collaboration.routes';
+import { registerCopilotRoutes } from '../api-copilot/routes/copilot.routes';
+import { registerAutonomousRoutes } from '../api-autonomous/routes/autonomous.routes';
+import { registerFederationRoutes } from '../api-federation/routes/federation.routes';
+import { registerMeshRoutes } from '../api-mesh/routes/mesh.routes';
+import { registerCognitionRoutes } from '../api-cognition/routes/cognition.routes';
+import { registerReliabilityRoutes } from '../api-reliability/routes/reliability.routes';
+import { registerOpfabricRoutes } from '../api-opfabric/routes/opfabric.routes';
+import { registerSemknowRoutes } from '../api-semknow/routes/semknow.routes';
+import { registerResilienceRoutes } from '../api-resilience/routes/resilience.routes';
+import { registerGovautomationRoutes } from '../api-govautomation/routes/govautomation.routes';
+import { registerQaosRoutes } from '../api-qaos/routes/qaos.routes';
 
 dotenv.config();
 
@@ -236,13 +257,44 @@ registerApiDefectsRoutes(app);
 registerApiSuiteRoutes(app);
 registerObservabilityRoutes(app);
 registerWorkerHealthRoutes(app);
+registerDebuggerEngineRoutes(app);
+registerCoordinatorRoutes(app);
 app.use('/api/governance', governanceRouter);
 registerAiIntelligenceRoutes(app);
 registerRemediationRoutes(app);
+registerPerformanceRoutes(app);
+registerOrchestrationRoutes(app);
+registerSecurityRoutes(app);
+registerGraphEditorRoutes(app);
+registerCloudRoutes(app);
+registerEnterpriseAnalyticsRoutes(app);
+registerPluginRoutes(app);
+registerCollaborationRoutes(app);
+registerCopilotRoutes(app);
+registerAutonomousRoutes(app);
+registerFederationRoutes(app);
+registerMeshRoutes(app);
+registerCognitionRoutes(app);
+registerReliabilityRoutes(app);
+registerOpfabricRoutes(app);
+registerSemknowRoutes(app);
+registerResilienceRoutes(app);
+registerGovautomationRoutes(app);
+registerQaosRoutes(app);
 
 // ── SPA fallback (requires auth) — MUST be after all API routes ──────────────
 app.get('*', requireAuth, (_req: Request, res: Response) => {
   res.sendFile(path.join(PUBLIC_DIR, 'index.html'));
+});
+
+// ── Global JSON error handler — MUST be last; prevents Express HTML 500 pages on /api routes ──
+app.use((err: Error, req: Request, res: Response, _next: NextFunction) => {
+  const msg = err?.message ?? 'Internal server error';
+  if (req.originalUrl.startsWith('/api/')) {
+    res.status(500).json({ error: msg });
+  } else {
+    res.status(500).send(msg);
+  }
 });
 
 // ── HTTP + WebSocket server ───────────────────────────────────────────────────

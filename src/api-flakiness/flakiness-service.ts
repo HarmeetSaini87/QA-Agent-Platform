@@ -12,7 +12,8 @@ const RUNS_DIR = path.join(path.resolve(process.env.DATA_DIR || 'data'), 'api-ru
 /** Load all persisted runs for a collection (max 100, most recent first) */
 export function loadRunsForCollection(collectionId: string): ApiCollectionRunResult[] {
   if (!fs.existsSync(RUNS_DIR)) return [];
-  const files = fs.readdirSync(RUNS_DIR).filter(f => f.endsWith('.json'));
+  // OLD: .filter(f => f.endsWith('.json')) — matched .snapshot.json files which lack startedAt, crashing sort()
+  const files = fs.readdirSync(RUNS_DIR).filter(f => f.endsWith('.json') && !f.includes('.snapshot') && !f.endsWith('.tmp'));
   const runs: ApiCollectionRunResult[] = [];
   for (const f of files) {
     try {

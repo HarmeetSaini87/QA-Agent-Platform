@@ -47,6 +47,20 @@ async function licenseCopyMachineId() {
   }
 }
 
+async function licCopyMachineId() {
+  const field = document.getElementById('lic-machine-id-field');
+  const id = field?.value?.trim() ?? '';
+  if (!id) return;
+  const btn = document.getElementById('lic-copy-mid-btn');
+  try {
+    await navigator.clipboard.writeText(id);
+    if (btn) { btn.textContent = 'Copied!'; btn.style.color = 'var(--success,#4ade80)'; setTimeout(() => { btn.textContent = 'Copy ID'; btn.style.color = ''; }, 2000); }
+  } catch {
+    field.select();
+    prompt('Copy this Machine ID and send it to your vendor:', id);
+  }
+}
+
 function _renderLicensePanel(data, machine, audit, sessions) {
   const statusBlock = document.getElementById('lic-status-block');
   const activateBlock = document.getElementById('lic-activate-block');
@@ -61,7 +75,8 @@ function _renderLicensePanel(data, machine, audit, sessions) {
     if (preActivateEl) preActivateEl.style.display = '';
     return;
   }
-  if (preActivateEl) preActivateEl.style.display = 'none';
+  // Also show Machine ID block during trial so customer can request a paid license
+  if (preActivateEl) preActivateEl.style.display = data.isAutoTrial ? '' : 'none';
 
   // Show status block
   statusBlock.style.display = '';
@@ -143,20 +158,66 @@ function _renderLicensePanel(data, machine, audit, sessions) {
   if (machineEl && machine) {
     const bound = machine.boundMachineId;
     const match = machine.match;
+    const fullMachineId = machine.currentMachineId || '';
+    const c = machine.components || {};
+    const stability = machine.stability || 'unknown';
+    const signalCount = machine.signalCount ?? 0;
+
     const matchBadge = match === true
       ? `<span class="lic-chip lic-chip-green" style="font-size:.72rem">Bound ✓</span>`
       : match === false
         ? `<span class="lic-chip lic-chip-red" style="font-size:.72rem">Mismatch ⚠</span>`
         : `<span class="lic-chip" style="font-size:.72rem">Unbound</span>`;
+
+    const stabilityColor = stability === 'excellent' ? '#4ade80' : stability === 'good' ? '#86efac'
+      : stability === 'fair' ? '#fbbf24' : '#f87171';
+    const stabilityLabel = stability === 'excellent' ? '● Excellent — 3+ hardware signals'
+      : stability === 'good' ? '● Good — 2 hardware signals'
+      : stability === 'fair' ? '● Fair — 1 hardware signal'
+      : '● Weak — no hardware signals (VM/container with no identifiers)';
+
+    const sig = (label, val) => `<div style="display:flex;gap:8px;padding:3px 0;border-bottom:1px solid rgba(255,255,255,.05)">
+      <span style="font-size:.72rem;color:var(--text-muted);min-width:140px;flex-shrink:0">${label}</span>
+      <code style="font-size:.72rem;color:${val ? '#e2e8f0' : 'var(--text-muted)'};word-break:break-all">${_escHtml(val || '—')}</code>
+    </div>`;
+
     machineEl.innerHTML = `
       <div style="margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,.07)">
-        <div style="font-size:.78rem;color:var(--text-muted);margin-bottom:6px">Machine Binding</div>
-        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <div style="font-size:.78rem;color:var(--text-muted);margin-bottom:8px">Machine Binding</div>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
           <code style="font-size:.78rem;color:var(--text-secondary)">${_escHtml(bound ? machine.boundMachineIdHint : machine.currentMachineIdHint)}</code>
           ${matchBadge}
           ${match === false ? `<button class="btn btn-outline btn-sm" onclick="licenseTransfer()" style="color:var(--warning)">Transfer to this machine</button>` : ''}
         </div>
-        ${data.maxInstances && data.maxInstances !== -1 ? `<div style="font-size:.72rem;color:var(--text-muted);margin-top:4px">Max ${data.maxInstances} server instance${data.maxInstances === 1 ? '' : 's'} allowed</div>` : ''}
+
+        <div style="margin-bottom:10px">
+          <div style="font-size:.72rem;margin-bottom:4px">
+            <span style="color:${stabilityColor};font-weight:600">${stabilityLabel}</span>
+            <span style="color:var(--text-muted);margin-left:6px">(${signalCount} of 4 hardware signals available)</span>
+          </div>
+          <div style="background:rgba(0,0,0,.25);border-radius:6px;padding:8px 10px">
+            ${sig('Windows GUID (S1)', c.windowsMachineGuid)}
+            ${sig('BIOS UUID (S2)', c.biosUuid)}
+            ${sig('Volume Serial (S3)', c.volumeSerial)}
+            ${sig('Physical MAC (S4)', c.stableMAC)}
+            ${sig('Hostname', c.hostname)}
+            ${sig('CPU Model', c.cpuModel)}
+            ${sig('Platform / Arch', c.platform && c.arch ? c.platform + ' / ' + c.arch : '')}
+          </div>
+        </div>
+
+        <div>
+          <div style="font-size:.74rem;color:var(--text-muted);margin-bottom:5px">Share this Machine ID with your vendor to receive a license key:</div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <input id="lic-machine-id-field" type="text" readonly value="${_escHtml(fullMachineId)}"
+              style="font-family:monospace;font-size:.78rem;background:var(--bg-secondary,#1e1e2e);border:1px solid rgba(255,255,255,.12);
+                     border-radius:6px;padding:6px 10px;color:var(--text-primary);flex:1;min-width:0;cursor:pointer"
+              onclick="this.select()" title="Click to select all" />
+            <button class="btn btn-outline btn-sm" onclick="licCopyMachineId()" id="lic-copy-mid-btn"
+              style="white-space:nowrap;flex-shrink:0">Copy ID</button>
+          </div>
+        </div>
+        ${data.maxInstances && data.maxInstances !== -1 ? `<div style="font-size:.72rem;color:var(--text-muted);margin-top:6px">Max ${data.maxInstances} server instance${data.maxInstances === 1 ? '' : 's'} allowed</div>` : ''}
       </div>`;
   }
 

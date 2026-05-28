@@ -21,7 +21,10 @@ export type ApiAuditAction =
   | 'api:intelligence:rca:accessed'
   | 'api:remediation:proposed'
   | 'api:remediation:approved'
-  | 'api:remediation:rejected';
+  | 'api:remediation:rejected'
+  | 'api:intelligence:negative-tests:generated'
+  | 'api:intelligence:assertions:suggested'
+  | 'api:intelligence:tests:generated';
 
 export interface ExtendedAuditEntry extends AuditEntry {
   tenantId?:         string;

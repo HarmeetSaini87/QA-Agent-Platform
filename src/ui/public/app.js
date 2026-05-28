@@ -141,6 +141,11 @@ function switchTab(tab) {
     flaky: 'Flaky Test Detection', analytics: 'Analytics Dashboard',
     visual: 'Visual Baselines',
     projects: 'Projects', admin: 'Admin Panel',
+    'api-envs': 'API Environments',
+    'api-collections': 'API Collections',
+    'api-runs': 'API Runs',
+    'api-suites': 'API Suites',
+    'locator-health': 'Locator Health',
   }[tab] ?? tab;
   if (tab === 'history')   histLoad();
   if (tab === 'flaky')     flakyLoad();

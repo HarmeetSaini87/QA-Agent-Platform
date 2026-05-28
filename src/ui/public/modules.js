@@ -9192,6 +9192,20 @@ async function licenseCopyMachineId() {
   }
 }
 
+async function licCopyMachineId() {
+  const field = document.getElementById('lic-machine-id-field');
+  const id = field?.value?.trim() ?? '';
+  if (!id) return;
+  const btn = document.getElementById('lic-copy-mid-btn');
+  try {
+    await navigator.clipboard.writeText(id);
+    if (btn) { btn.textContent = 'Copied!'; btn.style.color = 'var(--success,#4ade80)'; setTimeout(() => { btn.textContent = 'Copy ID'; btn.style.color = ''; }, 2000); }
+  } catch {
+    field.select();
+    prompt('Copy this Machine ID and send it to your vendor:', id);
+  }
+}
+
 function _renderLicensePanel(data, machine, audit, sessions) {
   const statusBlock = document.getElementById('lic-status-block');
   const activateBlock = document.getElementById('lic-activate-block');
@@ -9206,7 +9220,8 @@ function _renderLicensePanel(data, machine, audit, sessions) {
     if (preActivateEl) preActivateEl.style.display = '';
     return;
   }
-  if (preActivateEl) preActivateEl.style.display = 'none';
+  // Also show Machine ID block during trial so customer can request a paid license
+  if (preActivateEl) preActivateEl.style.display = data.isAutoTrial ? '' : 'none';
 
   // Show status block
   statusBlock.style.display = '';
@@ -9288,20 +9303,66 @@ function _renderLicensePanel(data, machine, audit, sessions) {
   if (machineEl && machine) {
     const bound = machine.boundMachineId;
     const match = machine.match;
+    const fullMachineId = machine.currentMachineId || '';
+    const c = machine.components || {};
+    const stability = machine.stability || 'unknown';
+    const signalCount = machine.signalCount ?? 0;
+
     const matchBadge = match === true
       ? `<span class="lic-chip lic-chip-green" style="font-size:.72rem">Bound ✓</span>`
       : match === false
         ? `<span class="lic-chip lic-chip-red" style="font-size:.72rem">Mismatch ⚠</span>`
         : `<span class="lic-chip" style="font-size:.72rem">Unbound</span>`;
+
+    const stabilityColor = stability === 'excellent' ? '#4ade80' : stability === 'good' ? '#86efac'
+      : stability === 'fair' ? '#fbbf24' : '#f87171';
+    const stabilityLabel = stability === 'excellent' ? '● Excellent — 3+ hardware signals'
+      : stability === 'good' ? '● Good — 2 hardware signals'
+      : stability === 'fair' ? '● Fair — 1 hardware signal'
+      : '● Weak — no hardware signals (VM/container with no identifiers)';
+
+    const sig = (label, val) => `<div style="display:flex;gap:8px;padding:3px 0;border-bottom:1px solid rgba(255,255,255,.05)">
+      <span style="font-size:.72rem;color:var(--text-muted);min-width:140px;flex-shrink:0">${label}</span>
+      <code style="font-size:.72rem;color:${val ? '#e2e8f0' : 'var(--text-muted)'};word-break:break-all">${_escHtml(val || '—')}</code>
+    </div>`;
+
     machineEl.innerHTML = `
       <div style="margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,.07)">
-        <div style="font-size:.78rem;color:var(--text-muted);margin-bottom:6px">Machine Binding</div>
-        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <div style="font-size:.78rem;color:var(--text-muted);margin-bottom:8px">Machine Binding</div>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
           <code style="font-size:.78rem;color:var(--text-secondary)">${_escHtml(bound ? machine.boundMachineIdHint : machine.currentMachineIdHint)}</code>
           ${matchBadge}
           ${match === false ? `<button class="btn btn-outline btn-sm" onclick="licenseTransfer()" style="color:var(--warning)">Transfer to this machine</button>` : ''}
         </div>
-        ${data.maxInstances && data.maxInstances !== -1 ? `<div style="font-size:.72rem;color:var(--text-muted);margin-top:4px">Max ${data.maxInstances} server instance${data.maxInstances === 1 ? '' : 's'} allowed</div>` : ''}
+
+        <div style="margin-bottom:10px">
+          <div style="font-size:.72rem;margin-bottom:4px">
+            <span style="color:${stabilityColor};font-weight:600">${stabilityLabel}</span>
+            <span style="color:var(--text-muted);margin-left:6px">(${signalCount} of 4 hardware signals available)</span>
+          </div>
+          <div style="background:rgba(0,0,0,.25);border-radius:6px;padding:8px 10px">
+            ${sig('Windows GUID (S1)', c.windowsMachineGuid)}
+            ${sig('BIOS UUID (S2)', c.biosUuid)}
+            ${sig('Volume Serial (S3)', c.volumeSerial)}
+            ${sig('Physical MAC (S4)', c.stableMAC)}
+            ${sig('Hostname', c.hostname)}
+            ${sig('CPU Model', c.cpuModel)}
+            ${sig('Platform / Arch', c.platform && c.arch ? c.platform + ' / ' + c.arch : '')}
+          </div>
+        </div>
+
+        <div>
+          <div style="font-size:.74rem;color:var(--text-muted);margin-bottom:5px">Share this Machine ID with your vendor to receive a license key:</div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <input id="lic-machine-id-field" type="text" readonly value="${_escHtml(fullMachineId)}"
+              style="font-family:monospace;font-size:.78rem;background:var(--bg-secondary,#1e1e2e);border:1px solid rgba(255,255,255,.12);
+                     border-radius:6px;padding:6px 10px;color:var(--text-primary);flex:1;min-width:0;cursor:pointer"
+              onclick="this.select()" title="Click to select all" />
+            <button class="btn btn-outline btn-sm" onclick="licCopyMachineId()" id="lic-copy-mid-btn"
+              style="white-space:nowrap;flex-shrink:0">Copy ID</button>
+          </div>
+        </div>
+        ${data.maxInstances && data.maxInstances !== -1 ? `<div style="font-size:.72rem;color:var(--text-muted);margin-top:6px">Max ${data.maxInstances} server instance${data.maxInstances === 1 ? '' : 's'} allowed</div>` : ''}
       </div>`;
   }
 
@@ -10000,12 +10061,16 @@ async function jiraConfigSave() {
     if (tokenEl) { tokenEl.value = ''; tokenEl.placeholder = '(token set — leave blank to keep)'; }
   } else { msg.style.color = '#dc2626'; msg.textContent = `✗ ${j?.error?.message || 'Save failed'}`; }
 }
-// API ENVIRONMENTS MODULE
+// API ENVIRONMENTS MODULE — Enterprise No-Code Edition
 // ══════════════════════════════════════════════════════════════════════════════
 
 let _apiEnvs = [];
 let _editingApiEnvId = null;
-let _apiEnvVars = []; // [{key, value, sensitive}]
+let _apiEnvVars = []; // [{key, value, sensitive, category}]
+let _wizardStep = 1;
+let _pingInProgress = {};
+
+// ── Load & Render ─────────────────────────────────────────────────────────────
 
 async function apiEnvLoad() {
   if (!currentProjectId) { _apiEnvs = []; _apiEnvRender(); return; }
@@ -10015,46 +10080,497 @@ async function apiEnvLoad() {
     _apiEnvs = await res.json();
     _apiEnvRender();
   } catch (e) {
-    modAlert('api-env-list-alert', 'error', 'Load failed: ' + e.message);
+    modAlert('api-env-list-alert', 'error', 'Could not load environments: ' + e.message);
   }
 }
 
 function _apiEnvRender() {
-  const tbody = document.getElementById('api-env-tbody');
-  if (!tbody) return;
-  tbody.innerHTML = '';
-  if (_apiEnvs.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted)">No environments yet</td></tr>';
+  const container = document.getElementById('api-env-cards');
+  if (!container) return;
+
+  const searchVal = (document.getElementById('api-env-search')?.value ?? '').toLowerCase();
+  const filterType = document.getElementById('api-env-filter-type')?.value ?? '';
+
+  let envs = _apiEnvs;
+  if (searchVal) envs = envs.filter(e => e.name.toLowerCase().includes(searchVal) || (e.description ?? '').toLowerCase().includes(searchVal));
+  if (filterType) envs = envs.filter(e => (e.envType ?? 'custom') === filterType);
+
+  container.innerHTML = '';
+
+  if (envs.length === 0) {
+    container.innerHTML = `
+      <div class="api-env-empty">
+        <div class="api-env-empty-icon">🌐</div>
+        <div class="api-env-empty-title">No environments yet</div>
+        <div class="api-env-empty-sub">Create your first environment to start testing your API</div>
+        <button class="btn btn-primary" onclick="apiEnvOpenModal()">+ New Environment</button>
+      </div>`;
     return;
   }
-  for (const env of _apiEnvs) {
-    const tr = document.createElement('tr');
-    const authType = env.authConfig?.type ?? 'none';
-    const varCount = (env.variables ?? []).length;
-    tr.innerHTML = `
-      <td>${escHtml(env.name)}</td>
-      <td style="font-family:monospace;font-size:12px">${escHtml(env.baseUrl)}</td>
-      <td>${varCount} variable${varCount !== 1 ? 's' : ''}</td>
-      <td><span class="badge badge-${authType === 'none' ? 'grey' : 'blue'}">${escHtml(authType)}</span></td>
-      <td>
-        <button class="tbl-btn" onclick="apiEnvOpenModal('${env.id}')">Edit</button>
-        <button class="tbl-btn del" onclick="apiEnvDelete('${env.id}','${escHtml(env.name)}')">Delete</button>
-      </td>`;
-    tbody.appendChild(tr);
+
+  for (const env of envs) {
+    container.appendChild(_apiEnvBuildCard(env));
   }
 }
+
+function _apiEnvBuildCard(env) {
+  const card = document.createElement('div');
+  card.className = 'api-env-card';
+  card.setAttribute('data-id', env.id);
+
+  const typeLabel = { development: 'Development', staging: 'Staging', production: 'Production', custom: 'Custom' }[env.envType ?? 'custom'] ?? 'Custom';
+  const typeClass = { development: 'env-type-dev', staging: 'env-type-staging', production: 'env-type-prod', custom: 'env-type-custom' }[env.envType ?? 'custom'] ?? 'env-type-custom';
+  const authLabel = _authTypeLabel(env.authConfig?.type ?? 'none');
+  const varCount = (env.variables ?? []).length;
+  const tags = (env.tags ?? []).map(t => `<span class="env-tag">${escHtml(t)}</span>`).join('');
+
+  // ping status
+  const ping = env.lastPingResult;
+  let pingDot = '<span class="ping-dot ping-unknown" title="Not tested yet">●</span>';
+  if (ping) {
+    if (ping.reachable) pingDot = `<span class="ping-dot ping-online" title="Online · ${ping.latencyMs}ms · tested ${_relTime(ping.testedAt)}">●</span>`;
+    else pingDot = `<span class="ping-dot ping-offline" title="Unreachable · tested ${_relTime(ping.testedAt)}">●</span>`;
+  }
+
+  card.innerHTML = `
+    <div class="env-card-banner ${typeClass}">
+      <span class="env-type-badge">${typeLabel}</span>
+      ${pingDot}
+    </div>
+    <div class="env-card-body">
+      <div class="env-card-name">${escHtml(env.name)}</div>
+      ${env.description ? `<div class="env-card-desc">${escHtml(env.description)}</div>` : ''}
+      <div class="env-card-url" title="${escHtml(env.baseUrl)}">🔗 ${escHtml(env.baseUrl)}</div>
+      <div class="env-card-meta">
+        <span class="env-meta-pill">🔑 ${authLabel}</span>
+        <span class="env-meta-pill">⚙️ ${varCount} value${varCount !== 1 ? 's' : ''}</span>
+      </div>
+      ${tags ? `<div class="env-tags">${tags}</div>` : ''}
+    </div>
+    <div class="env-card-actions">
+      <button class="env-action-btn env-action-test" onclick="apiEnvPing('${env.id}')" title="Test Connection">
+        <span id="ping-btn-${env.id}">⚡ Test</span>
+      </button>
+      <button class="env-action-btn env-action-clone" onclick="apiEnvClone('${env.id}')" title="Clone this environment">📋 Clone</button>
+      <button class="env-action-btn env-action-promote" onclick="apiEnvPromoteOpen('${env.id}')" title="Copy settings to another environment">🚀 Promote</button>
+      <button class="env-action-btn env-action-edit" onclick="apiEnvOpenModal('${env.id}')">✏️ Edit</button>
+      <button class="env-action-btn env-action-del" onclick="apiEnvDelete('${env.id}','${escHtml(env.name)}')">🗑</button>
+    </div>`;
+
+  return card;
+}
+
+function _authTypeLabel(type) {
+  return { none: 'No Login', bearer: 'Token (Bearer)', apiKey: 'API Key', basic: 'Username & Password', oauth2CC: 'Auto-Login (OAuth2)' }[type] ?? type;
+}
+
+function _relTime(iso) {
+  const diff = Date.now() - new Date(iso).getTime();
+  if (diff < 60000) return 'just now';
+  if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+  return `${Math.floor(diff / 3600000)}h ago`;
+}
+
+// ── Search & Filter ───────────────────────────────────────────────────────────
+
+function apiEnvSearch() { _apiEnvRender(); }
+function apiEnvFilterType() { _apiEnvRender(); }
+
+// ── Ping / Connection Test ────────────────────────────────────────────────────
+
+async function apiEnvPing(id) {
+  if (_pingInProgress[id]) return;
+  _pingInProgress[id] = true;
+  const btn = document.getElementById(`ping-btn-${id}`);
+  if (btn) btn.textContent = '⏳ Testing…';
+  try {
+    const res = await fetch(`/api/api-envs/${id}/ping`, { method: 'POST' });
+    const data = await res.json();
+    const env = _apiEnvs.find(e => e.id === id);
+    if (env) env.lastPingResult = data;
+    // re-render just this card
+    const card = document.querySelector(`.api-env-card[data-id="${id}"]`);
+    if (card) card.replaceWith(_apiEnvBuildCard(env));
+  } catch (e) {
+    if (btn) btn.textContent = '⚡ Test';
+  } finally {
+    _pingInProgress[id] = false;
+  }
+}
+
+// ── Clone ─────────────────────────────────────────────────────────────────────
+
+async function apiEnvClone(id) {
+  try {
+    const res = await fetch(`/api/api-envs/${id}/clone`, { method: 'POST' });
+    if (!res.ok) throw new Error((await res.json()).error);
+    await apiEnvLoad();
+  } catch (e) {
+    modAlert('api-env-list-alert', 'error', 'Clone failed: ' + e.message);
+  }
+}
+
+// ── Promote ───────────────────────────────────────────────────────────────────
+
+function apiEnvPromoteOpen(sourceId) {
+  const source = _apiEnvs.find(e => e.id === sourceId);
+  if (!source) return;
+  const others = _apiEnvs.filter(e => e.id !== sourceId);
+  if (others.length === 0) { modAlert('api-env-list-alert', 'warn', 'No other environments to promote to. Create a target environment first.'); return; }
+
+  document.getElementById('promote-source-name').textContent = source.name;
+  const sel = document.getElementById('promote-target-select');
+  sel.innerHTML = others.map(e => `<option value="${e.id}">${escHtml(e.name)}</option>`).join('');
+  sel.setAttribute('data-source', sourceId);
+  document.getElementById('promote-diff-area').innerHTML = '';
+  document.getElementById('promote-confirm-btn').style.display = 'none';
+  openModal('modal-api-env-promote');
+}
+
+async function apiEnvPromotePreview() {
+  const sel = document.getElementById('promote-target-select');
+  const sourceId = sel.getAttribute('data-source');
+  const targetId = sel.value;
+  try {
+    // dry run — just compute diff without saving by reading both environments
+    const source = _apiEnvs.find(e => e.id === sourceId);
+    const target = _apiEnvs.find(e => e.id === targetId);
+    const sourceVars = source?.variables ?? [];
+    const targetVars = target?.variables ?? [];
+    const rows = sourceVars.map(sv => {
+      const tv = targetVars.find(v => v.key === sv.key);
+      const fromVal = tv ? (tv.sensitive ? '••••••••' : tv.value) : '<em>not set</em>';
+      const toVal = sv.sensitive ? '••••••••' : sv.value;
+      const isNew = !tv;
+      return `<tr>
+        <td>${escHtml(sv.key)}</td>
+        <td>${fromVal}</td>
+        <td>${toVal}</td>
+        <td><span class="badge ${isNew ? 'badge-blue' : 'badge-grey'}">${isNew ? 'New' : 'Update'}</span></td>
+      </tr>`;
+    });
+    document.getElementById('promote-diff-area').innerHTML = rows.length
+      ? `<table class="tbl" style="margin-top:8px"><thead><tr><th>Setting</th><th>Current in Target</th><th>Will be set to</th><th>Action</th></tr></thead><tbody>${rows.join('')}</tbody></table>`
+      : '<p style="color:var(--text-muted)">No configuration values to promote.</p>';
+    document.getElementById('promote-confirm-btn').style.display = '';
+  } catch (e) {
+    modAlert('api-env-list-alert', 'error', e.message);
+  }
+}
+
+async function apiEnvPromoteConfirm() {
+  const sel = document.getElementById('promote-target-select');
+  const sourceId = sel.getAttribute('data-source');
+  const targetId = sel.value;
+  try {
+    const res = await fetch(`/api/api-envs/${sourceId}/promote`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ targetEnvId: targetId })
+    });
+    if (!res.ok) throw new Error((await res.json()).error);
+    closeModal('modal-api-env-promote');
+    await apiEnvLoad();
+    modAlert('api-env-list-alert', 'success', 'Settings promoted successfully.');
+  } catch (e) {
+    modAlert('api-env-list-alert', 'error', 'Promote failed: ' + e.message);
+  }
+}
+
+// ── Delete (with usage check) ─────────────────────────────────────────────────
+
+async function apiEnvDelete(id, name) {
+  try {
+    const usageRes = await fetch(`/api/api-envs/${id}/usage`);
+    const usage = await usageRes.json();
+    let msg = `Delete environment "${name}"?`;
+    if (usage.count > 0) {
+      const names = usage.collections.map(c => `"${c.name}"`).join(', ');
+      msg = `"${name}" is used by ${usage.count} collection${usage.count !== 1 ? 's' : ''}: ${names}.\n\nDeleting it will affect those tests. Continue?`;
+    }
+    if (!confirm(msg)) return;
+    await fetch(`/api/api-envs/${id}`, { method: 'DELETE' });
+    await apiEnvLoad();
+  } catch (e) {
+    modAlert('api-env-list-alert', 'error', 'Delete failed: ' + e.message);
+  }
+}
+
+// ── Wizard Modal ──────────────────────────────────────────────────────────────
 
 function apiEnvOpenModal(id) {
   _editingApiEnvId = id ?? null;
   const env = id ? _apiEnvs.find(e => e.id === id) : null;
   document.getElementById('api-env-modal-title').textContent = id ? 'Edit Environment' : 'New Environment';
+  document.getElementById('api-env-modal-alert').textContent = '';
+
+  // Step 1 — Identity
   document.getElementById('api-env-name').value = env?.name ?? '';
+  document.getElementById('api-env-description').value = env?.description ?? '';
+  document.getElementById('api-env-tags').value = (env?.tags ?? []).join(', ');
+  _wizardSetEnvType(env?.envType ?? 'development');
+
+  // Step 2 — Connection
   document.getElementById('api-env-baseurl').value = env?.baseUrl ?? '';
-  _apiEnvVars = (env?.variables ?? []).map(v => ({ ...v }));
+  _apiEnvClearPingInline();
+
+  // Step 3 — Security & Variables
+  _apiEnvVars = (env?.variables ?? []).map(v => ({ ...v, category: v.category ?? 'custom' }));
   _apiEnvRenderVars();
   _apiEnvAuthRender(env?.authConfig ?? null);
-  document.getElementById('api-env-modal-alert').textContent = '';
+
+  _wizardGoto(1);
   openModal('modal-api-env');
+}
+
+function _wizardSetEnvType(type) {
+  document.querySelectorAll('.env-type-card').forEach(c => c.classList.remove('selected'));
+  const card = document.querySelector(`.env-type-card[data-type="${type}"]`);
+  if (card) card.classList.add('selected');
+  const hidden = document.getElementById('api-env-type');
+  if (hidden) hidden.value = type;
+}
+
+function apiEnvSelectType(type) { _wizardSetEnvType(type); }
+
+function _wizardGoto(step) {
+  _wizardStep = step;
+  [1, 2, 3].forEach(s => {
+    const panel = document.getElementById(`wizard-step-${s}`);
+    if (panel) panel.style.display = s === step ? '' : 'none';
+  });
+  document.querySelectorAll('.wizard-step-indicator').forEach((el, i) => {
+    el.classList.toggle('active', i + 1 === step);
+    el.classList.toggle('done', i + 1 < step);
+  });
+  document.getElementById('wizard-back-btn').style.display = step > 1 ? '' : 'none';
+  document.getElementById('wizard-next-btn').textContent = step === 3 ? 'Save Environment' : 'Next →';
+}
+
+function apiEnvWizardBack() {
+  if (_wizardStep > 1) _wizardGoto(_wizardStep - 1);
+}
+
+function apiEnvWizardNext() {
+  if (_wizardStep === 1) {
+    const name = document.getElementById('api-env-name').value.trim();
+    if (!name) { modAlert('api-env-modal-alert', 'error', 'Environment name is required'); return; }
+    _wizardGoto(2);
+  } else if (_wizardStep === 2) {
+    const baseUrl = document.getElementById('api-env-baseurl').value.trim();
+    if (!baseUrl) { modAlert('api-env-modal-alert', 'error', 'Server address is required'); return; }
+    _wizardGoto(3);
+  } else {
+    apiEnvSave();
+  }
+}
+
+// ── Inline Ping (Step 2) ──────────────────────────────────────────────────────
+
+function _apiEnvClearPingInline() {
+  const el = document.getElementById('api-env-ping-inline');
+  if (el) el.innerHTML = '';
+}
+
+async function apiEnvPingInline() {
+  const baseUrl = document.getElementById('api-env-baseurl').value.trim();
+  if (!baseUrl) { modAlert('api-env-modal-alert', 'error', 'Enter server address first'); return; }
+  const el = document.getElementById('api-env-ping-inline');
+  if (el) el.innerHTML = '<span style="color:var(--text-muted)">⏳ Testing connection…</span>';
+
+  if (_editingApiEnvId) {
+    // test existing env
+    const res = await fetch(`/api/api-envs/${_editingApiEnvId}/ping`, { method: 'POST' }).catch(() => null);
+    if (!res) { if (el) el.innerHTML = '<span class="ping-inline-fail">❌ Could not reach server</span>'; return; }
+    const data = await res.json();
+    if (el) el.innerHTML = data.reachable
+      ? `<span class="ping-inline-ok">✅ Online · ${data.latencyMs}ms · HTTP ${data.statusCode}</span>`
+      : `<span class="ping-inline-fail">❌ Unreachable · ${data.error ?? ''}</span>`;
+  } else {
+    // test ad-hoc via a lightweight HEAD fetch from browser
+    try {
+      const start = Date.now();
+      await fetch(baseUrl, { method: 'HEAD', mode: 'no-cors' });
+      const ms = Date.now() - start;
+      if (el) el.innerHTML = `<span class="ping-inline-ok">✅ Server responded · ~${ms}ms</span>`;
+    } catch {
+      if (el) el.innerHTML = '<span class="ping-inline-fail">❌ Could not reach server — check the address</span>';
+    }
+  }
+}
+
+// ── Postman Environment Import — fully client-side, no backend call needed ─────
+
+const _TOKEN_RE   = /token|jwt|bearer|auth|session/i;
+const _SECRET_RE  = /secret|password|passwd|apikey|api_key|accesstoken|access_token|private|credential/i;
+const _URL_RE     = /url|host|endpoint|base|server|domain/i;
+const _FLAG_RE    = /flag|feature|toggle|enable|disable/i;
+
+function _classifyVar(key) {
+  if (_URL_RE.test(key))    return { category: 'url',        sensitive: false };
+  if (_TOKEN_RE.test(key))  return { category: 'credential', sensitive: true  };
+  if (_SECRET_RE.test(key)) return { category: 'credential', sensitive: true  };
+  if (_FLAG_RE.test(key))   return { category: 'flag',       sensitive: false };
+  return                           { category: 'custom',     sensitive: false };
+}
+
+function _parsePostmanEnvJson(json) {
+  // Validate it looks like a Postman environment file
+  if (!json.values || !Array.isArray(json.values)) {
+    throw new Error('This does not look like a Postman Environment file. Make sure you export from Postman → Environments → Export.');
+  }
+
+  const variables = json.values
+    .filter(v => v.enabled !== false && v.key)
+    .map(v => {
+      const cls = _classifyVar(v.key);
+      return { key: v.key, value: v.value ?? '', ...cls };
+    });
+
+  const urlVar = variables.find(v => v.category === 'url');
+  const baseUrl = urlVar?.value ?? '';
+
+  let envType = 'custom';
+  if (/stg|staging/i.test(baseUrl))   envType = 'staging';
+  else if (/prod|live/i.test(baseUrl)) envType = 'production';
+  else if (/dev|local/i.test(baseUrl)) envType = 'development';
+
+  return { envName: json.name ?? '', baseUrl, envType, variables };
+}
+
+function _applyParsedEnvData(data) {
+  // Auto-fill Step 1 & 2 if empty
+  const nameEl = document.getElementById('api-env-name');
+  const urlEl  = document.getElementById('api-env-baseurl');
+  if (nameEl && !nameEl.value && data.envName) nameEl.value = data.envName;
+  if (urlEl  && !urlEl.value  && data.baseUrl) urlEl.value  = data.baseUrl;
+  if (data.envType) _wizardSetEnvType(data.envType);
+
+  // Merge variables — skip keys already present
+  const existingKeys = new Set(_apiEnvVars.map(v => v.key));
+  let added = 0;
+  for (const v of data.variables) {
+    if (!existingKeys.has(v.key)) {
+      _apiEnvVars.push(v);
+      existingKeys.add(v.key);
+      added++;
+    }
+  }
+  return added;
+}
+
+function apiEnvTriggerPostmanImport() {
+  const input = document.getElementById('api-env-postman-file');
+  if (input) { input.value = ''; input.click(); }
+}
+
+async function apiEnvHandlePostmanFile(input) {
+  const file = input.files?.[0];
+  if (!file) return;
+  await _processPostmanFile(file);
+}
+
+async function _processPostmanFile(file) {
+  const previewArea = document.getElementById('api-env-import-preview');
+  const zone = document.getElementById('api-env-import-zone');
+  previewArea.innerHTML = '<p style="color:var(--text-muted);font-size:13px">⏳ Reading file…</p>';
+  if (zone) zone.classList.remove('drag-over');
+
+  try {
+    const text = await file.text();
+    let json;
+    try { json = JSON.parse(text); } catch {
+      throw new Error('File is not valid JSON. Make sure you export from Postman → Environments → ··· menu → Export.');
+    }
+
+    const data = _parsePostmanEnvJson(json);
+    const added = _applyParsedEnvData(data);
+
+    previewArea.innerHTML = _buildSmartPreviewHtml(data, added);
+    _apiEnvRenderVars();
+  } catch (e) {
+    previewArea.innerHTML = `<div class="smart-preview-error">❌ ${escHtml(e.message)}</div>`;
+  }
+}
+
+function _buildSmartPreviewHtml(data, added) {
+  if (!data.variables.length) return '<p class="smart-preview-empty">No variables found in this file.</p>';
+
+  const categoryLabel = { url: '🌐 URL', credential: '🔑 Credential', flag: '🚩 Flag', custom: '⚙️ Custom' };
+
+  const rows = data.variables.map(v => {
+    const catLabel = categoryLabel[v.category] ?? v.category;
+    const secretBadge = v.sensitive ? '<span class="smart-badge smart-badge-secret">🔒 Hidden in reports</span>' : '';
+    const displayVal = v.sensitive
+      ? '••••••••'
+      : (!v.value ? '<em style="color:var(--text-muted)">auto-filled at runtime</em>'
+                  : escHtml(v.value.slice(0, 48) + (v.value.length > 48 ? '…' : '')));
+    return `<tr>
+      <td><strong>${escHtml(v.key)}</strong></td>
+      <td>${catLabel}</td>
+      <td style="font-size:12px;font-family:monospace">${displayVal}</td>
+      <td>${secretBadge}</td>
+    </tr>`;
+  }).join('');
+
+  const baseUrlRow = data.baseUrl
+    ? `<div class="smart-preview-row">🌐 <strong>Server address</strong> detected: <code>${escHtml(data.baseUrl)}</code></div>`
+    : '';
+  const envTypeRow = (data.envType && data.envType !== 'custom')
+    ? `<div class="smart-preview-row">🏷️ Environment type detected as <strong>${data.envType}</strong></div>`
+    : '';
+
+  return `
+    <div class="smart-preview-box">
+      <div class="smart-preview-title">✅ We found ${data.variables.length} setting${data.variables.length !== 1 ? 's' : ''} — ${added} added below</div>
+      ${baseUrlRow}${envTypeRow}
+      <table class="tbl smart-preview-table">
+        <thead><tr><th>Setting Name</th><th>Type We Detected</th><th>Value</th><th></th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <p class="smart-preview-note">💡 Review the table below. You can change the type or value of any setting before saving.</p>
+    </div>`;
+}
+
+// ── Drag and Drop support ─────────────────────────────────────────────────────
+
+function apiEnvImportZoneDragOver(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  document.getElementById('api-env-import-zone')?.classList.add('drag-over');
+}
+
+function apiEnvImportZoneDragLeave(e) {
+  e.preventDefault();
+  document.getElementById('api-env-import-zone')?.classList.remove('drag-over');
+}
+
+async function apiEnvImportZoneDrop(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  const file = e.dataTransfer?.files?.[0];
+  if (!file) return;
+  if (!file.name.endsWith('.json')) {
+    document.getElementById('api-env-import-preview').innerHTML =
+      '<div class="smart-preview-error">❌ Please drop a .json file exported from Postman.</div>';
+    document.getElementById('api-env-import-zone')?.classList.remove('drag-over');
+    return;
+  }
+  await _processPostmanFile(file);
+}
+
+// ── Variables ─────────────────────────────────────────────────────────────────
+
+const _VAR_TYPE_TIPS = {
+  url:        { icon: '🌐', title: 'URL', desc: 'A web address used in your tests — like a server link or an endpoint. Not secret.' },
+  credential: { icon: '🔑', title: 'Credential', desc: 'A password, token, API key, or any secret code. Always kept hidden in reports.' },
+  flag:       { icon: '🚩', title: 'Feature Flag', desc: 'A true/false switch that turns a feature on or off during testing.' },
+  custom:     { icon: '⚙️', title: 'Custom', desc: 'Any other setting that does not fit the above categories.' },
+};
+
+function _varTypeTooltipIcon(cat) {
+  const tip = _VAR_TYPE_TIPS[cat] || _VAR_TYPE_TIPS.custom;
+  return `<span class="vtt-icon" title="${tip.title}: ${tip.desc}">ℹ️</span>`;
 }
 
 function _apiEnvRenderVars() {
@@ -10063,16 +10579,28 @@ function _apiEnvRenderVars() {
   tbody.innerHTML = '';
   _apiEnvVars.forEach((v, i) => {
     const tr = document.createElement('tr');
-    const displayVal = v.sensitive ? '••••••••' : escHtml(v.value);
+    const displayVal = v.sensitive ? '' : escHtml(v.value);
     tr.innerHTML = `
+      <td class="var-type-cell">
+        <select class="fm-input fm-select-sm" onchange="_apiEnvVarField(${i},'category',this.value)">
+          <option value="url" ${v.category==='url'?'selected':''}>🌐 URL</option>
+          <option value="credential" ${v.category==='credential'?'selected':''}>🔑 Credential</option>
+          <option value="flag" ${v.category==='flag'?'selected':''}>🚩 Feature Flag</option>
+          <option value="custom" ${v.category==='custom'?'selected':''}>⚙️ Custom</option>
+        </select>
+        <span class="var-type-tooltip" data-cat="${v.category ?? 'custom'}">${_varTypeTooltipIcon(v.category)}</span>
+      </td>
       <td><input class="fm-input" style="width:100%" value="${escHtml(v.key)}"
-        oninput="_apiEnvVarField(${i},'key',this.value)" placeholder="Variable name"/></td>
+        oninput="_apiEnvVarField(${i},'key',this.value)" placeholder="Setting name"/></td>
       <td><input class="fm-input" style="width:100%" value="${displayVal}" type="${v.sensitive ? 'password' : 'text'}"
         oninput="_apiEnvVarField(${i},'value',this.value)" placeholder="Value"/></td>
       <td style="text-align:center">
-        <input type="checkbox" ${v.sensitive ? 'checked' : ''} onchange="_apiEnvVarField(${i},'sensitive',this.checked)" title="Sensitive"/>
+        <label class="toggle-label" title="Keep this value secret in reports">
+          <input type="checkbox" ${v.sensitive ? 'checked' : ''} onchange="_apiEnvVarField(${i},'sensitive',this.checked)"/>
+          <span class="toggle-text">Secret</span>
+        </label>
       </td>
-      <td><button class="tbl-btn del" onclick="_apiEnvVarRemove(${i})">✕</button></td>`;
+      <td><button class="tbl-btn del" onclick="_apiEnvVarRemove(${i})" title="Remove">✕</button></td>`;
     tbody.appendChild(tr);
   });
 }
@@ -10082,12 +10610,41 @@ function _apiEnvVarField(i, field, val) {
   if (field === 'sensitive') _apiEnvRenderVars();
 }
 function _apiEnvVarRemove(i) { _apiEnvVars.splice(i, 1); _apiEnvRenderVars(); }
-function apiEnvVarAdd() { _apiEnvVars.push({ key: '', value: '', sensitive: false }); _apiEnvRenderVars(); }
+function apiEnvVarAdd() { _apiEnvVars.push({ key: '', value: '', sensitive: false, category: 'custom' }); _apiEnvRenderVars(); }
+
+function apiEnvVarBulkImport() {
+  const raw = document.getElementById('api-env-bulk-import')?.value?.trim() ?? '';
+  if (!raw) return;
+  raw.split('\n').forEach(line => {
+    const idx = line.indexOf('=');
+    if (idx < 1) return;
+    const key = line.slice(0, idx).trim();
+    const value = line.slice(idx + 1).trim().replace(/^["']|["']$/g, '');
+    if (key) _apiEnvVars.push({ key, value, sensitive: false, category: 'custom' });
+  });
+  if (document.getElementById('api-env-bulk-import')) document.getElementById('api-env-bulk-import').value = '';
+  _apiEnvRenderVars();
+}
+
+// ── Auth ──────────────────────────────────────────────────────────────────────
 
 function _apiEnvAuthRender(authConfig) {
   const type = authConfig?.type ?? 'none';
-  document.getElementById('api-env-auth-type').value = type;
+  document.querySelectorAll('.auth-type-card').forEach(c => c.classList.remove('selected'));
+  const card = document.querySelector(`.auth-type-card[data-auth="${type}"]`);
+  if (card) card.classList.add('selected');
+  const hidden = document.getElementById('api-env-auth-type');
+  if (hidden) hidden.value = type;
   _apiEnvAuthToggle(type, authConfig);
+}
+
+function apiEnvSelectAuth(type) {
+  document.querySelectorAll('.auth-type-card').forEach(c => c.classList.remove('selected'));
+  const card = document.querySelector(`.auth-type-card[data-auth="${type}"]`);
+  if (card) card.classList.add('selected');
+  const hidden = document.getElementById('api-env-auth-type');
+  if (hidden) hidden.value = type;
+  _apiEnvAuthToggle(type, null);
 }
 
 function _apiEnvAuthToggle(type, cfg) {
@@ -10113,7 +10670,8 @@ function _apiEnvAuthToggle(type, cfg) {
   }
 }
 
-function apiEnvAuthTypeChange(sel) { _apiEnvAuthToggle(sel.value, null); }
+// OLD: apiEnvAuthTypeChange(sel) — replaced by card-based selection
+// function apiEnvAuthTypeChange(sel) { _apiEnvAuthToggle(sel.value, null); }
 
 function _apiEnvBuildAuthConfig() {
   const type = document.getElementById('api-env-auth-type').value;
@@ -10125,11 +10683,26 @@ function _apiEnvBuildAuthConfig() {
   return { type: 'none' };
 }
 
+// ── Save ──────────────────────────────────────────────────────────────────────
+
 async function apiEnvSave() {
   const name = document.getElementById('api-env-name').value.trim();
   const baseUrl = document.getElementById('api-env-baseurl').value.trim();
-  if (!name || !baseUrl) { modAlert('api-env-modal-alert', 'error', 'Name and Base URL are required'); return; }
-  const body = { name, baseUrl, variables: _apiEnvVars, authConfig: _apiEnvBuildAuthConfig(), projectId: currentProjectId };
+  if (!name || !baseUrl) { modAlert('api-env-modal-alert', 'error', 'Name and server address are required'); return; }
+
+  const tagsRaw = document.getElementById('api-env-tags').value.trim();
+  const tags = tagsRaw ? tagsRaw.split(',').map(t => t.trim()).filter(Boolean) : [];
+
+  const body = {
+    name,
+    baseUrl,
+    description: document.getElementById('api-env-description').value.trim(),
+    envType: document.getElementById('api-env-type').value || 'custom',
+    tags,
+    variables: _apiEnvVars,
+    authConfig: _apiEnvBuildAuthConfig(),
+    projectId: currentProjectId
+  };
   const method = _editingApiEnvId ? 'PUT' : 'POST';
   const url = _editingApiEnvId ? `/api/api-envs/${_editingApiEnvId}` : '/api/api-envs';
   try {
@@ -10143,13 +10716,8 @@ async function apiEnvSave() {
   }
 }
 
-async function apiEnvDelete(id, name) {
-  if (!confirm(`Delete environment "${name}"?`)) return;
-  await fetch(`/api/api-envs/${id}`, { method: 'DELETE' });
-  await apiEnvLoad();
-}
-
 function apiEnvCloseModal() { closeModal('modal-api-env'); _editingApiEnvId = null; }
+function apiEnvClosePromoteModal() { closeModal('modal-api-env-promote'); }
 // API COLLECTIONS MODULE
 // ══════════════════════════════════════════════════════════════════════════════
 
@@ -10177,30 +10745,148 @@ async function apiColLoad() {
 function _apiColRenderList() {
   const tbody = document.getElementById('api-col-tbody');
   if (!tbody) return;
-  tbody.innerHTML = '';
-  if (_apiCols.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted)">No collections yet</td></tr>';
+
+  // Reset select-all checkbox
+  const checkAll = document.getElementById('api-col-check-all');
+  if (checkAll) checkAll.checked = false;
+  _apiColUpdateBulkBar();
+
+  if (!_apiCols.length) {
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:24px">No collections yet — create one or import from Postman / OpenAPI.</td></tr>';
+    _apiColRenderPagination(0, 0);
     return;
   }
-  for (const col of _apiCols) {
-    const envName = _apiColEnvs.find(e => e.id === col.environmentId)?.name ?? '—';
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td>${escHtml(col.name)}</td>
-      <td>${escHtml(envName)}</td>
-      <td>${(col.steps ?? []).length} steps</td>
-      <td>${escHtml(col.executionMode ?? 'sequential')}</td>
-      <td>
-        <button class="tbl-btn" onclick="apiColEdit('${col.id}')">Edit</button>
-        <button class="tbl-btn run-btn" onclick="apiColRun('${col.id}')">▶ Run</button>
-        <button class="tbl-btn" onclick="apiColPrescan('${col.id}')">Pre-scan</button>
-        <button class="tbl-btn" onclick="apiColGraphOpenModal('${col.id}')" title="View workflow graph">&#9645; Graph</button>
-        <button class="tbl-btn" onclick="apiColNegTests('${col.id}','${escHtml(col.name)}')" title="Generate negative test suggestions">&#x1F9EA; Neg Tests</button>
-        <button class="tbl-btn del" onclick="apiColDelete('${col.id}','${escHtml(col.name)}')">Delete</button>
-      </td>`;
-    tbody.appendChild(tr);
+
+  const totalPages = Math.max(1, Math.ceil(_apiCols.length / _apiColPageSize));
+  if (_apiColPage >= totalPages) _apiColPage = totalPages - 1;
+  const pageStart = _apiColPage * _apiColPageSize;
+  const pageCols  = _apiCols.slice(pageStart, pageStart + _apiColPageSize);
+
+  const modeLabels = { sequential: '▶ Sequential', parallel: '⚡ Parallel', dag: '🔀 DAG', auto: '🔀 DAG (Auto)' };
+
+  tbody.innerHTML = pageCols.map((col, pageIdx) => {
+    const globalIdx = pageStart + pageIdx;
+    const envName   = _apiColEnvs.find(e => e.id === col.environmentId)?.name ?? '—';
+    const stepCount = (col.steps ?? []).length;
+    const mode      = col.executionMode ?? 'sequential';
+    const modeLabel = modeLabels[mode] ?? mode;
+    const lastRun   = (_apiColLastRuns ?? {})[col.id];
+    let runBadge    = '<span style="color:var(--text-muted);font-size:11px">—</span>';
+    if (lastRun) {
+      const cls  = lastRun.status === 'passed' ? 'col-run-pass' : lastRun.status === 'running' ? 'col-run-running' : 'col-run-fail';
+      const icon = lastRun.status === 'passed' ? '✅' : lastRun.status === 'running' ? '⏳' : '❌';
+      runBadge = `<span class="col-run-badge ${cls}">${icon} ${lastRun.status}</span>`;
+    }
+    const hasDeps   = (col.steps ?? []).some(s => (s.dependsOn ?? []).length > 0);
+    const showGraph = mode === 'dag' || mode === 'parallel' || hasDeps;
+    const id  = col.id;
+    const nm  = escHtml(col.name);
+    return `<tr>
+      <td style="text-align:center;width:36px"><input type="checkbox" class="api-col-row-cb" data-id="${id}" onchange="_apiColUpdateBulkBar()"/></td>
+      <td style="text-align:center;width:42px;color:var(--text-muted);font-size:12px">${globalIdx + 1}</td>
+      <td style="font-weight:600">${nm}</td>
+      <td style="color:var(--text-muted);font-size:12px">${escHtml(envName)}</td>
+      <td style="text-align:center">${stepCount}</td>
+      <td style="font-size:12px">${modeLabel}</td>
+      <td>${runBadge}</td>
+      <td class="tbl-actions">
+        <button class="tbl-btn" onclick="apiColRun('${id}')">▶ Run</button>
+        <button class="tbl-btn" onclick="apiColTryRequestOpen('${id}')">🧪 Try</button>
+        <button class="tbl-btn" onclick="apiColGenTestsOpen('${id}','${nm}')">✨ Suggest Tests</button>
+        ${showGraph ? `<button class="tbl-btn" onclick="apiColGraphOpenModal('${id}')">🔀 Graph</button>` : ''}
+        <button class="tbl-btn" onclick="apiColAnalyticsOpen('${id}','${nm}')">📊 Analytics</button>
+        <button class="tbl-btn" onclick="apiColPrescan('${id}')">🔍 Pre-scan</button>
+        <button class="tbl-btn" onclick="apiColEdit('${id}')">✏️ Edit</button>
+        <button class="tbl-btn del" onclick="apiColDelete('${id}','${nm}')">🗑</button>
+      </td>
+    </tr>`;
+  }).join('');
+
+  _apiColRenderPagination(totalPages, _apiCols.length);
+}
+
+// ── Bulk selection helpers ─────────────────────────────────────────────────────
+
+function apiColCheckAll(checked) {
+  document.querySelectorAll('.api-col-row-cb').forEach(cb => cb.checked = checked);
+  _apiColUpdateBulkBar();
+}
+
+function _apiColUpdateBulkBar() {
+  const checked = document.querySelectorAll('.api-col-row-cb:checked');
+  const total   = document.querySelectorAll('.api-col-row-cb').length;
+  const bar     = document.getElementById('api-col-bulk-bar');
+  const cnt     = document.getElementById('api-col-bulk-count');
+  const checkAll = document.getElementById('api-col-check-all');
+  if (bar)  bar.style.display  = checked.length > 0 ? 'flex' : 'none';
+  if (cnt)  cnt.textContent    = checked.length + ' collection' + (checked.length !== 1 ? 's' : '') + ' selected';
+  if (checkAll) {
+    checkAll.checked       = checked.length > 0 && checked.length === total;
+    checkAll.indeterminate = checked.length > 0 && checked.length < total;
   }
 }
+
+function apiColBulkClear() {
+  document.querySelectorAll('.api-col-row-cb').forEach(cb => cb.checked = false);
+  _apiColUpdateBulkBar();
+}
+
+function _apiColRenderPagination(totalPages, total) {
+  // Inject pagination row into tfoot (create if missing)
+  let tfoot = document.querySelector('#api-col-list-view table tfoot');
+  if (!tfoot) {
+    tfoot = document.createElement('tfoot');
+    document.querySelector('#api-col-list-view table')?.appendChild(tfoot);
+  }
+  if (total === 0) { tfoot.innerHTML = ''; return; }
+  const start = _apiColPage * _apiColPageSize + 1;
+  const end   = Math.min((_apiColPage + 1) * _apiColPageSize, total);
+  const rppOpts = [10, 25, 50, 100, 200].map(n =>
+    `<option value="${n}"${_apiColPageSize === n ? ' selected' : ''}>${n}</option>`
+  ).join('');
+  tfoot.innerHTML = `<tr><td colspan="8" style="padding:6px 4px">
+    <div class="lt-pagination">
+      <label style="font-size:12px;color:var(--text-muted)">Rows per page:
+        <select class="fm-input" style="padding:2px 6px;font-size:12px;width:auto" onchange="_apiColSetPageSize(+this.value)">${rppOpts}</select>
+      </label>
+      ${totalPages <= 1
+        ? `<span style="font-size:12px;color:var(--text-muted)">${start}–${end} of ${total}</span>`
+        : `<button class="tbl-btn" onclick="_apiColPageGo(-1)" ${_apiColPage === 0 ? 'disabled' : ''}>← Prev</button>
+           <span style="font-size:12px;color:var(--text-muted)">Page ${_apiColPage + 1} / ${totalPages} &nbsp;(${start}–${end} of ${total})</span>
+           <button class="tbl-btn" onclick="_apiColPageGo(1)" ${_apiColPage >= totalPages - 1 ? 'disabled' : ''}>Next →</button>`}
+    </div>
+  </td></tr>`;
+}
+
+async function apiColBulkDelete() {
+  const checked = Array.from(document.querySelectorAll('.api-col-row-cb:checked'));
+  if (!checked.length) return;
+  const ids   = checked.map(cb => cb.dataset.id);
+  const names = ids.map(id => _apiCols.find(c => c.id === id)?.name ?? id);
+  if (!confirm(`Delete ${ids.length} collection${ids.length !== 1 ? 's' : ''}?\n\n${names.join('\n')}\n\nThis cannot be undone.`)) return;
+
+  // Parallel delete — all requests fire simultaneously
+  const results = await Promise.allSettled(
+    ids.map(id => fetch(`/api/api-collections/${encodeURIComponent(id)}`, { method: 'DELETE' }))
+  );
+  const failed  = results.filter(r => r.status === 'rejected' || (r.status === 'fulfilled' && !r.value.ok)).length;
+  const deleted = ids.length - failed;
+  modAlert('api-col-list-alert', failed ? 'error' : 'success',
+    `${deleted} deleted${failed ? ', ' + failed + ' failed' : ''}.`);
+  await apiColLoad();
+}
+
+// cache for last run statuses — populated lazily
+let _apiColLastRuns = {};
+
+// Pagination state
+let _apiColPage     = 0;
+let _apiColPageSize = 10;
+
+function apiColSearch()     { _apiColPage = 0; _apiColRenderList(); }
+function apiColFilterMode() { _apiColPage = 0; _apiColRenderList(); }
+function _apiColPageGo(delta)     { _apiColPage += delta; _apiColRenderList(); }
+function _apiColSetPageSize(n)    { _apiColPageSize = n; _apiColPage = 0; _apiColRenderList(); }
 
 function apiColOpenNew() {
   _editingApiColId = null;
@@ -10823,47 +11509,435 @@ async function apiColDelete(id, name) {
   await apiColLoad();
 }
 
-async function apiColNegTests(colId, colName) {
-  const content = document.getElementById('negative-tests-content');
+const _GEN_TEST_CATEGORIES = [
+  'Positive','Negative','Security','Edge','Contract',
+  'Authorization','Boundary','Business Rules','Content-Type',
+  'Idempotency','Token Lifecycle','Unicode'
+];
+const _GEN_TEST_CATEGORY_ICONS = {
+  'Positive':'🟢','Negative':'🔴','Security':'🔒','Edge':'⚡','Contract':'🟣',
+  'Authorization':'🛡️','Boundary':'📐','Business Rules':'📋','Content-Type':'📄',
+  'Idempotency':'🔁','Token Lifecycle':'🔑','Unicode':'🌐'
+};
+let _genTestColId = '';
+let _genTestColName = '';
+
+function apiColGenTestsOpen(colId, colName) {
+  _genTestColId = colId;
+  _genTestColName = colName;
+  _genTestCases = [];
+  const sel = document.getElementById('gen-tests-category-select');
+  if (sel) sel.value = 'Negative';
+  const content = document.getElementById('gen-tests-content');
+  if (content) content.innerHTML = '<div style="color:var(--text-muted);padding:16px 0">Choose a category and click Suggest Tests to see recommendations.</div>';
+  const title = document.getElementById('gen-tests-modal-title');
+  if (title) title.textContent = '🧪 Suggest Tests — ' + colName;
+  _genTestsShowSelControls(false);
+  openModal('modal-gen-tests');
+}
+
+let _genTestCases = [];
+
+function _genTestsShowSelControls(show) {
+  ['btn-gen-tests-select-all','btn-gen-tests-deselect-all','btn-gen-tests-add'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = show ? '' : 'none';
+  });
+  const cnt = document.getElementById('gen-tests-sel-count');
+  if (cnt) cnt.textContent = '';
+}
+
+function _genTestsUpdateSelCount() {
+  const checked = document.querySelectorAll('#gen-tests-content input[type=checkbox]:checked').length;
+  const total   = document.querySelectorAll('#gen-tests-content input[type=checkbox]').length;
+  const cnt = document.getElementById('gen-tests-sel-count');
+  if (cnt) cnt.textContent = checked + ' of ' + total + ' selected';
+}
+
+function apiColGenTestsSelectAll()   { document.querySelectorAll('#gen-tests-content input[type=checkbox]').forEach(cb => cb.checked = true);  _genTestsUpdateSelCount(); }
+function apiColGenTestsDeselectAll() { document.querySelectorAll('#gen-tests-content input[type=checkbox]').forEach(cb => cb.checked = false); _genTestsUpdateSelCount(); }
+
+async function apiColGenTestsRun() {
+  const sel = document.getElementById('gen-tests-category-select');
+  const category = sel ? sel.value : 'Negative';
+  const content  = document.getElementById('gen-tests-content');
+  const aiBadge  = document.getElementById('gen-tests-ai-badge');
   if (!content) return;
-  content.innerHTML = '<div style="color:var(--text-muted)">Generating negative tests for <strong>' + escHtml(colName) + '</strong>…</div>';
-  openModal('modal-negative-tests');
+
+  _genTestCases = [];
+  _genTestsShowSelControls(false);
+  if (aiBadge) aiBadge.style.display = 'none';
+  content.innerHTML = '<div style="color:var(--text-muted);padding:12px 0">⏳ Generating <strong>' + escHtml(category) + '</strong> tests… this may take a few seconds if AI is enabled.</div>';
+
   try {
-    const res = await fetch('/api/ai-intelligence/collections/' + encodeURIComponent(colId) + '/generate-negative-tests', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+    const col = _apiCols.find(c => c.id === _genTestColId);
+    const env = col ? _apiColEnvs.find(e => e.id === col.environmentId) : null;
+    const baseUrl = env ? (env.baseUrl || '') : '';
+
+    const res = await fetch('/api/ai-intelligence/collections/' + encodeURIComponent(_genTestColId) + '/generate-tests', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ category, baseUrl }),
     });
-    if (!res.ok) {
-      content.innerHTML = '<div style="color:#ef4444">Failed to generate tests: ' + res.status + '</div>';
-      return;
-    }
+    if (!res.ok) { content.innerHTML = '<div style="color:#ef4444">Failed: ' + res.status + '</div>'; return; }
+
     const suite = await res.json();
-    const cases = suite.cases || [];
-    if (!cases.length) {
-      content.innerHTML = '<div style="color:var(--text-muted)">No negative test cases could be generated (collection may have no request bodies or auth headers).</div>';
+    _genTestCases = suite.cases || [];
+
+    if (!_genTestCases.length) {
+      content.innerHTML = '<div style="color:var(--text-muted);padding:16px 0">No test suggestions generated. The collection may have no steps with request bodies.</div>';
       return;
     }
-    const strategyColors = { 'missing-field': '#ef4444', 'wrong-type': '#f59e0b',
-      'boundary-violation': '#3b82f6', 'auth-stripped': '#a78bfa', 'wrong-method': '#9ca3af' };
-    const rows = cases.map(function(c) {
-      const col = strategyColors[c.strategy] || '#9ca3af';
-      const expected = (c.expectedStatusCodes || []).join(', ');
+
+    // Show AI badge if enhanced
+    if (suite.aiEnhanced && aiBadge) aiBadge.style.display = '';
+
+    // Show advisory note from backend if present
+    const advisory = suite.aiError
+      ? '<div class="advisory-banner advisory-banner-warn" style="margin-bottom:10px">ℹ️ ' + escHtml(suite.aiError) + '</div>'
+      : '';
+
+    const sevColor = { low:'#22c55e', medium:'#f59e0b', high:'#ef4444', critical:'#7c3aed' };
+
+    const rows = _genTestCases.map(function(c, idx) {
+      const sc  = sevColor[c.severity] || '#9ca3af';
+      const exp = (c.expectedStatusCodes || []).join(', ');
       return '<tr>' +
-        '<td style="font-size:11px"><span style="color:' + col + ';font-weight:600">' + escHtml(c.strategy) + '</span></td>' +
-        '<td style="font-size:11px">' + escHtml(c.stepName) + '</td>' +
-        '<td style="font-size:12px">' + escHtml(c.title) + '</td>' +
-        '<td style="font-size:11px;color:var(--text-muted)">' + escHtml(expected) + '</td>' +
+        '<td style="width:36px;text-align:center"><input type="checkbox" class="gen-test-cb" data-idx="' + idx + '" onchange="_genTestsUpdateSelCount()"/></td>' +
+        '<td><span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;background:' + sc + '22;color:' + sc + '">' + escHtml(c.severity) + '</span></td>' +
+        '<td style="font-size:11px;color:var(--text-muted)">' + escHtml(c.stepName) + '</td>' +
+        '<td>' +
+          '<div style="font-size:12px;font-weight:600">' + escHtml(c.title) + '</div>' +
+          (c.description ? '<div style="font-size:11px;color:var(--text-muted);margin-top:2px">' + escHtml(c.description) + '</div>' : '') +
+        '</td>' +
+        '<td style="font-size:11px;text-align:center"><code>' + escHtml(exp) + '</code></td>' +
+        '<td style="font-size:11px;color:var(--text-muted);max-width:220px">' + escHtml(c.expectedBehavior) + '</td>' +
         '</tr>';
     }).join('');
+
     content.innerHTML =
-      '<div style="font-size:12px;color:var(--text-muted);margin-bottom:10px">' +
-        cases.length + ' test cases generated for <strong>' + escHtml(colName) + '</strong>' +
+      advisory +
+      '<div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">' +
+        '<strong>' + _genTestCases.length + '</strong> suggestions for <strong>' + escHtml(category) + '</strong>' +
+        (suite.aiProvider ? ' <span style="color:var(--accent);font-size:11px">via ' + escHtml(suite.aiProvider) + '</span>' : '') +
       '</div>' +
-      '<table class="data-table">' +
-        '<thead><tr><th>Strategy</th><th>Step</th><th>Title</th><th>Expected Status</th></tr></thead>' +
-        '<tbody>' + rows + '</tbody>' +
-      '</table>';
+      '<div style="overflow:auto;max-height:420px">' +
+        '<table class="data-table">' +
+          '<thead><tr><th style="width:36px"></th><th>Severity</th><th>Step</th><th>Test Description</th><th>Expected Status</th><th>What to verify</th></tr></thead>' +
+          '<tbody>' + rows + '</tbody>' +
+        '</table>' +
+      '</div>';
+
+    _genTestsShowSelControls(true);
+    _genTestsUpdateSelCount();
   } catch (e) {
     content.innerHTML = '<div style="color:#ef4444">Error: ' + escHtml(e.message) + '</div>';
+  }
+}
+
+async function apiColGenTestsAddSelected() {
+  const checked = Array.from(document.querySelectorAll('#gen-tests-content input[type=checkbox]:checked'));
+  if (!checked.length) { alert('Select at least one test to add.'); return; }
+  const selectedCases = checked.map(cb => _genTestCases[parseInt(cb.dataset.idx)]);
+
+  const btn = document.getElementById('btn-gen-tests-add');
+  if (btn) { btn.textContent = '⏳ Adding…'; btn.disabled = true; }
+
+  try {
+    const res = await fetch('/api/api-collections/' + encodeURIComponent(_genTestColId) + '/add-steps', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ steps: selectedCases.map(c => ({
+        id: '', name: c.title,
+        request: {
+          method:  c.suggestedRequest?.method  ?? 'GET',
+          url:     c.suggestedRequest?.url     ?? '',
+          headers: c.suggestedRequest?.headers ?? {},
+          body:    c.suggestedRequest?.body    ?? null,
+        },
+        assertions: (c.assertions ?? []).map(a => ({ type: 'status', operator: 'equals', value: String(c.expectedStatusCodes?.[0] ?? 200), message: a })),
+        variables: [],
+      })) }),
+    });
+    if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'Add failed'); }
+    const data = await res.json();
+    const cnt = data.addedCount ?? selectedCases.length;
+    closeModal('modal-gen-tests');
+    modAlert('api-col-list-alert', 'success', cnt + ' test step' + (cnt !== 1 ? 's' : '') + ' added to collection.');
+    await apiColLoad();
+  } catch (e) {
+    modAlert('api-col-list-alert', 'error', e.message);
+  } finally {
+    if (btn) { btn.textContent = '+ Add Selected to Collection'; btn.disabled = false; }
+  }
+}
+
+// ── Try a Request — standalone Postman-style request builder ──────────────────
+
+let _tryReqLastResult = null;  // last successful send result
+
+function apiColTryRequestOpen(preselectColId) {
+  _tryReqLastResult = null;
+
+  // Reset request fields
+  document.getElementById('try-req-method').value = 'GET';
+  document.getElementById('try-req-url').value = '';
+  document.getElementById('try-req-headers').value = '';
+  document.getElementById('try-req-body').value = '';
+
+  // Populate environment selector
+  const envSel = document.getElementById('try-req-env');
+  if (envSel) {
+    const preEnvId = preselectColId ? (_apiCols.find(c => c.id === preselectColId)?.environmentId ?? '') : '';
+    envSel.innerHTML = '<option value="">— No environment —</option>' +
+      _apiColEnvs.map(e => `<option value="${e.id}"${e.id === preEnvId ? ' selected' : ''}>${escHtml(e.name)}</option>`).join('');
+  }
+
+  // Populate "Load from collection step" — collection dropdown
+  const colSel = document.getElementById('try-req-col-select');
+  if (colSel) {
+    colSel.innerHTML = '<option value="">— choose a collection —</option>' +
+      _apiCols.map(c => `<option value="${c.id}"${c.id === preselectColId ? ' selected' : ''}>${escHtml(c.name)}</option>`).join('');
+    if (preselectColId) {
+      _tryReqPopulateSteps(preselectColId);
+    } else {
+      const stepSel = document.getElementById('try-req-step-select');
+      if (stepSel) { stepSel.innerHTML = '<option value="">— choose a step —</option>'; stepSel.disabled = true; }
+    }
+  }
+
+  // Populate "Save to collection" dropdown in footer
+  const saveSel = document.getElementById('try-req-save-col');
+  if (saveSel) {
+    saveSel.innerHTML = '<option value="">— choose a collection —</option>' +
+      _apiCols.map(c => `<option value="${c.id}"${c.id === preselectColId ? ' selected' : ''}>${escHtml(c.name)}</option>`).join('');
+  }
+
+  // Reset save name
+  const nameEl = document.getElementById('try-req-save-name');
+  if (nameEl) nameEl.value = '';
+
+  // Reset response / error
+  document.getElementById('try-req-response').style.display = 'none';
+  document.getElementById('try-req-loading').style.display = 'none';
+  document.getElementById('try-req-error').style.display = 'none';
+  document.getElementById('try-req-save-row').style.display = 'none';
+
+  _tryReqTab('headers');
+  _tryRespTab('body');
+  openModal('modal-try-request');
+}
+
+function _tryReqPopulateSteps(colId) {
+  const stepSel = document.getElementById('try-req-step-select');
+  if (!stepSel) return;
+  const col = _apiCols.find(c => c.id === colId);
+  if (!col || !(col.steps || []).length) {
+    stepSel.innerHTML = '<option value="">— no steps in this collection —</option>';
+    stepSel.disabled = true;
+    return;
+  }
+  stepSel.innerHTML = '<option value="">— choose a step to pre-fill —</option>' +
+    col.steps.map((s, i) =>
+      `<option value="${i}">${i + 1}. ${escHtml(s.request?.method ?? 'GET')} ${escHtml(s.request?.url ?? s.name ?? '')}</option>`
+    ).join('');
+  stepSel.disabled = false;
+}
+
+function _tryReqColSelected() {
+  const colId = document.getElementById('try-req-col-select')?.value ?? '';
+  _tryReqPopulateSteps(colId);
+  // Also sync environment
+  if (colId) {
+    const col = _apiCols.find(c => c.id === colId);
+    if (col && col.environmentId) {
+      const envSel = document.getElementById('try-req-env');
+      if (envSel) envSel.value = col.environmentId;
+    }
+  }
+}
+
+function _tryReqStepSelected() {
+  const colId   = document.getElementById('try-req-col-select')?.value ?? '';
+  const stepIdx = document.getElementById('try-req-step-select')?.value;
+  if (!colId || stepIdx === '' || stepIdx === undefined) return;
+  const col  = _apiCols.find(c => c.id === colId);
+  if (!col) return;
+  const step = col.steps[parseInt(stepIdx)];
+  if (!step) return;
+
+  // Pre-fill method + URL
+  document.getElementById('try-req-method').value = step.request?.method ?? 'GET';
+  document.getElementById('try-req-url').value    = step.request?.url ?? '';
+
+  // Pre-fill headers
+  const hdrs = step.request?.headers ?? {};
+  document.getElementById('try-req-headers').value = Object.entries(hdrs).map(([k, v]) => k + ': ' + v).join('\n');
+
+  // Pre-fill body
+  const body = step.request?.body;
+  document.getElementById('try-req-body').value = body ? (typeof body === 'string' ? body : JSON.stringify(body, null, 2)) : '';
+
+  // Pre-fill save name
+  const nameEl = document.getElementById('try-req-save-name');
+  if (nameEl && !nameEl.value) nameEl.value = step.name || '';
+}
+
+function _tryReqTab(tab) {
+  ['headers','body'].forEach(t => {
+    document.getElementById('try-req-panel-' + t).style.display = t === tab ? '' : 'none';
+    const btn = document.getElementById('try-req-tab-' + t);
+    if (btn) btn.classList.toggle('try-req-tab-active', t === tab);
+  });
+}
+
+function _tryRespTab(tab) {
+  ['body','headers'].forEach(t => {
+    document.getElementById('try-resp-panel-' + t).style.display = t === tab ? '' : 'none';
+    const btn = document.getElementById('try-resp-tab-' + t);
+    if (btn) btn.classList.toggle('try-req-tab-active', t === tab);
+  });
+}
+
+async function apiColTryRequestSend() {
+  const method  = document.getElementById('try-req-method').value;
+  const url     = document.getElementById('try-req-url').value.trim();
+  const envId   = document.getElementById('try-req-env')?.value ?? '';
+  const rawHdrs = document.getElementById('try-req-headers').value.trim();
+  const rawBody = document.getElementById('try-req-body').value.trim();
+
+  const errEl = document.getElementById('try-req-error');
+  if (!url) { errEl.style.display = ''; errEl.textContent = 'Please enter a URL before sending.'; return; }
+
+  errEl.style.display = 'none';
+  document.getElementById('try-req-response').style.display = 'none';
+  document.getElementById('try-req-save-row').style.display = 'none';
+  document.getElementById('try-req-loading').style.display = '';
+
+  // Parse headers from textarea lines
+  const headers = {};
+  rawHdrs.split('\n').forEach(line => {
+    const colon = line.indexOf(':');
+    if (colon > 0) headers[line.slice(0, colon).trim()] = line.slice(colon + 1).trim();
+  });
+
+  try {
+    const res = await fetch('/api/api-collections/try-request', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ method, url, headers, body: rawBody || null, environmentId: envId || null }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Request failed');
+
+    document.getElementById('try-req-loading').style.display = 'none';
+
+    // Detect unresolved variables in resolvedUrl AND resolvedRequestHeaders
+    const varWarn = document.getElementById('try-req-var-warn');
+    if (varWarn) {
+      const urlUnresolved  = (data.resolvedUrl || '').match(/\{\{(\w+)\}\}/g) || [];
+      const hdrUnresolved  = Object.values(data.resolvedRequestHeaders || {}).flatMap(v => (v || '').match(/\{\{(\w+)\}\}/g) || []);
+      const allUnresolved  = [...new Set([...urlUnresolved, ...hdrUnresolved])];
+      // Also detect decryption failure (sensitive var decryption returns '***' on error)
+      const decryptFailed  = Object.entries(data.resolvedRequestHeaders || {})
+        .filter(([, v]) => typeof v === 'string' && v.includes('***'))
+        .map(([k]) => k);
+      if (allUnresolved.length || decryptFailed.length) {
+        varWarn.style.display = '';
+        const msgs = [];
+        if (allUnresolved.length) msgs.push('Unresolved variables: ' + allUnresolved.join(', ') + ' — add these keys to the selected Environment.');
+        if (decryptFailed.length) msgs.push('Decryption failed for header(s): ' + decryptFailed.join(', ') + ' — re-save the sensitive variable in Admin → Environments.');
+        varWarn.textContent = '⚠ ' + msgs.join(' | ');
+      } else {
+        varWarn.style.display = 'none';
+      }
+    }
+
+    // ── Status 0 = backend-level error (invalid URL, timeout, connection refused) ──
+    if (data.status === 0) {
+      const badge = document.getElementById('try-req-status-badge');
+      badge.className = 'try-req-status-badge try-req-status-err';
+      badge.textContent = '0 Network Error';
+      document.getElementById('try-req-latency').textContent = data.durationMs ? data.durationMs + ' ms' : '';
+
+      // Show the actual error message in the body panel + hint about unresolved vars
+      let errBody = '⚠ Request could not be sent.\n\n';
+      if (data.error) errBody += 'Error: ' + data.error + '\n\n';
+      if (data.resolvedUrl) errBody += 'Resolved URL: ' + data.resolvedUrl + '\n\n';
+      errBody += 'Common causes:\n';
+      errBody += '• URL still contains {{variables}} — make sure the selected Environment has those variable keys defined.\n';
+      errBody += '• The server is unreachable (connection refused / timeout).\n';
+      errBody += '• HTTPS certificate error on a self-signed cert.\n';
+      document.getElementById('try-req-res-body').textContent = errBody;
+      document.getElementById('try-req-res-headers').textContent = '';
+      document.getElementById('try-req-response').style.display = '';
+      document.getElementById('try-req-save-row').style.display = 'none';
+      _tryRespTab('body');
+      return;
+    }
+
+    _tryReqLastResult = { method, url, headers, body: rawBody || null, environmentId: envId || null, response: data };
+
+    // Status badge
+    const badge = document.getElementById('try-req-status-badge');
+    const isOk  = data.status >= 200 && data.status < 300;
+    badge.className = 'try-req-status-badge ' + (isOk ? 'try-req-status-ok' : data.status >= 400 ? 'try-req-status-err' : 'try-req-status-redir');
+    badge.textContent = data.status + (data.statusText ? ' ' + data.statusText : '');
+    document.getElementById('try-req-latency').textContent = data.durationMs ? data.durationMs + ' ms' : '';
+
+    // Resolved URL hint (shown when different from input — variables were substituted)
+    if (data.resolvedUrl && data.resolvedUrl !== url) {
+      document.getElementById('try-req-latency').textContent +=
+        '  ·  🔗 ' + data.resolvedUrl.slice(0, 80) + (data.resolvedUrl.length > 80 ? '…' : '');
+    }
+
+    // Body — pretty-print if JSON
+    const rawBodyVal = typeof data.body === 'string' ? data.body : (data.bodyRaw ?? '');
+    let bodyText = rawBodyVal;
+    if (typeof data.body === 'object' && data.body !== null) {
+      bodyText = JSON.stringify(data.body, null, 2);
+    } else {
+      try { bodyText = JSON.stringify(JSON.parse(rawBodyVal), null, 2); } catch { /* keep raw */ }
+    }
+    document.getElementById('try-req-res-body').textContent = bodyText || '(empty response body)';
+
+    // Response headers
+    const respHdrs = data.headers || {};
+    document.getElementById('try-req-res-headers').textContent =
+      Object.entries(respHdrs).map(([k, v]) => k + ': ' + v).join('\n') || '(no headers)';
+
+    document.getElementById('try-req-response').style.display = '';
+    document.getElementById('try-req-save-row').style.display = 'flex';
+    _tryRespTab('body');
+  } catch (e) {
+    document.getElementById('try-req-loading').style.display = 'none';
+    errEl.style.display = '';
+    errEl.textContent = e.message;
+  }
+}
+
+async function apiColTryRequestSave() {
+  if (!_tryReqLastResult) return;
+  const targetColId = document.getElementById('try-req-save-col')?.value;
+  if (!targetColId) { alert('Please select a collection to save into.'); return; }
+
+  const r        = _tryReqLastResult;
+  const nameEl   = document.getElementById('try-req-save-name');
+  const stepName = (nameEl?.value.trim()) || (r.method + ' ' + r.url).slice(0, 60);
+
+  try {
+    const res = await fetch('/api/api-collections/' + encodeURIComponent(targetColId) + '/add-steps', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ steps: [{
+        id: '', name: stepName,
+        request: { method: r.method, url: r.url, headers: r.headers || {}, body: r.body || null },
+        assertions: [{ type: 'status', operator: 'equals', value: String(r.response?.status ?? 200), message: '' }],
+        variables: [],
+      }] }),
+    });
+    if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'Save failed'); }
+    closeModal('modal-try-request');
+    modAlert('api-col-list-alert', 'success', `"${stepName}" saved to collection.`);
+    await apiColLoad();
+  } catch (e) {
+    modAlert('api-col-list-alert', 'error', e.message);
   }
 }
 
@@ -11172,7 +12246,6 @@ function _apiColGraphRender(projection, isModal) {
     return;
   }
 
-  const isLarge = (projection.warnings || []).some(function(w) { return w.code === 'LARGE_GRAPH_WARNING'; });
   const elements = _apiColGraphBuildElements(projection);
 
   if (!isModal && _apiColGraphCy) { _apiColGraphCy.destroy(); _apiColGraphCy = null; }
@@ -11184,21 +12257,27 @@ function _apiColGraphRender(projection, isModal) {
     container.style.display = '';
   }
 
+  // Hide loading overlay in modal
+  if (isModal) {
+    const loadEl = document.getElementById('api-col-graph-modal-loading');
+    if (loadEl) loadEl.style.display = 'none';
+  }
+
   /* global cytoscape */
   const cy = cytoscape({
     container:            container,
     elements:             elements,
     style:                _apiColGraphCyStyles(),
-    layout:               _apiColGraphCyLayout(projection, isLarge),
+    layout:               _apiColGraphCyLayout(projection),
     zoom:                 1,
-    minZoom:              0.1,
-    maxZoom:              4,
+    minZoom:              0.08,
+    maxZoom:              5,
     userZoomingEnabled:   true,
     userPanningEnabled:   true,
     boxSelectionEnabled:  false,
   });
 
-  cy.on('layoutstop', function() { cy.fit(undefined, 40); });
+  cy.on('layoutstop', function() { cy.fit(undefined, 60); });
 
   if (!isModal) {
     cy.on('tap', 'node', function(evt) { _apiColGraphShowNodeDetail(evt.target.data()); });
@@ -11208,12 +12287,61 @@ function _apiColGraphRender(projection, isModal) {
     _apiColGraphRenderHierarchy(projection);
     _apiColGraphEnableToolbarBtns(true);
   } else {
+    cy.on('tap', 'node', function(evt) { _apiColGraphModalShowDetail(evt.target.data()); });
+    cy.on('tap', function(evt) { if (evt.target === cy) _apiColGraphModalHideDetail(); });
     _apiColGraphModalCy = cy;
+    // Update meta badge
+    const metaEl = document.getElementById('api-col-graph-modal-meta');
+    if (metaEl && projection.meta) metaEl.textContent = projection.meta.nodeCount + ' steps · ' + projection.meta.edgeCount + ' edges';
   }
+}
+
+// ── Topological-sort layout (no extra deps) ────────────────────────────────────
+// Computes x/y positions for a top-to-bottom ranked DAG.
+function _apiColGraphComputePositions(nodes, edges) {
+  const ids = nodes.map(n => n.id);
+  const inDeg = {}, children = {}, rank = {};
+  ids.forEach(id => { inDeg[id] = 0; children[id] = []; rank[id] = 0; });
+
+  for (const e of edges) {
+    if (ids.includes(e.source) && ids.includes(e.target)) {
+      inDeg[e.target] = (inDeg[e.target] || 0) + 1;
+      children[e.source].push(e.target);
+    }
+  }
+
+  // Kahn's BFS to compute ranks
+  const queue = ids.filter(id => inDeg[id] === 0);
+  while (queue.length) {
+    const cur = queue.shift();
+    for (const child of (children[cur] || [])) {
+      rank[child] = Math.max(rank[child], rank[cur] + 1);
+      inDeg[child]--;
+      if (inDeg[child] === 0) queue.push(child);
+    }
+  }
+
+  // Group by rank
+  const layers = {};
+  ids.forEach(id => { const r = rank[id]; (layers[r] = layers[r] || []).push(id); });
+
+  const H_GAP = 220, V_GAP = 120;
+  const positions = {};
+  for (const [r, layerIds] of Object.entries(layers)) {
+    const y = parseInt(r) * V_GAP;
+    const totalW = (layerIds.length - 1) * H_GAP;
+    layerIds.forEach((id, i) => {
+      positions[id] = { x: i * H_GAP - totalW / 2, y };
+    });
+  }
+  return positions;
 }
 
 function _apiColGraphBuildElements(projection) {
   const elements = [];
+
+  // Compute topo positions
+  const topoPos = _apiColGraphComputePositions(projection.nodes || [], projection.edges || []);
 
   const clusterNodeIds = new Set();
   for (const cluster of (projection.clusters || [])) {
@@ -11236,13 +12364,31 @@ function _apiColGraphBuildElements(projection) {
     }
     const classes = ['workflow-node'];
     if (node.disabled) classes.push('node-disabled');
-    classes.push(node.isAutoPositioned ? 'node-auto' : 'node-stored');
     classes.push('nodetype-' + (node.nodeType || 'HTTP').toLowerCase());
+
+    // Build richer label: step index + method + truncated URL
+    const raw  = node.label || node.id;
+    // Try to detect "METHOD /path" pattern in label
+    const methodMatch = raw.match(/^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+(.+)$/i);
+    let topLine = raw, bottomLine = '';
+    if (methodMatch) {
+      topLine    = methodMatch[1].toUpperCase();
+      const url  = methodMatch[2];
+      bottomLine = url.length > 28 ? '…' + url.slice(-26) : url;
+    } else if (raw.length > 30) {
+      topLine    = raw.slice(0, 28) + '…';
+    }
+    const displayLabel = bottomLine ? topLine + '\n' + bottomLine : topLine;
+
+    // Use stored position if available, else topo
+    const stored = node.position && !node.isAutoPositioned;
+    const pos = stored ? node.position : (topoPos[node.id] || { x: 0, y: 0 });
 
     elements.push({
       data: {
         id:               node.id,
-        label:            node.label || node.id,
+        label:            displayLabel,
+        rawLabel:         raw,
         nodeType:         node.nodeType,
         layer:            node.layer,
         indexWithinLayer: node.indexWithinLayer,
@@ -11250,11 +12396,11 @@ function _apiColGraphBuildElements(projection) {
         hierarchyPath:    node.hierarchyPath ? node.hierarchyPath.join(' › ') : '',
         disabled:         node.disabled,
         isAutoPositioned: node.isAutoPositioned,
-        posX:             node.position && node.position.x,
-        posY:             node.position && node.position.y,
+        posX:             pos.x,
+        posY:             pos.y,
         parent:           parent,
       },
-      position: { x: node.position ? node.position.x : 0, y: node.position ? node.position.y : 0 },
+      position: pos,
       classes:  classes.join(' '),
     });
   }
@@ -11274,48 +12420,50 @@ function _apiColGraphBuildElements(projection) {
 function _apiColGraphCyStyles() {
   return [
     { selector: 'node.workflow-node', style: {
-      shape: 'round-rectangle', width: 'label', height: 28, padding: '6px 10px',
-      'background-color': '#2a2a30', 'border-color': '#f59e0b', 'border-width': 1.5,
-      label: 'data(label)', 'font-size': 11, color: '#e2e8f0',
+      shape: 'round-rectangle',
+      width: 180, height: 52,
+      'background-color': '#1e2030',
+      'border-color': '#f59e0b', 'border-width': 2,
+      label: 'data(label)',
+      'font-size': 11, color: '#e2e8f0',
       'text-valign': 'center', 'text-halign': 'center',
-      'text-wrap': 'ellipsis', 'text-max-width': 160, 'min-width': 80, cursor: 'pointer',
+      'text-wrap': 'wrap', 'text-max-width': 165,
+      'line-height': 1.4,
+      cursor: 'pointer',
+      'transition-property': 'border-color, background-color, border-width',
+      'transition-duration': '0.15s',
     }},
-    { selector: 'node.nodetype-http',      style: { 'border-color': '#f59e0b' }},
-    { selector: 'node.nodetype-assertion', style: { 'border-color': '#10b981' }},
-    { selector: 'node.nodetype-extract',   style: { 'border-color': '#6366f1' }},
-    { selector: 'node.nodetype-condition', style: { 'border-color': '#f472b6' }},
-    { selector: 'node.nodetype-ai',        style: { 'border-color': '#e879f9' }},
-    { selector: 'node.node-disabled',      style: { opacity: 0.4, 'border-style': 'dashed' }},
-    { selector: 'node.node-auto',          style: { 'border-style': 'dashed', 'border-width': 1 }},
-    { selector: 'node:selected',           style: { 'border-color': '#ffffff', 'border-width': 2.5, 'background-color': '#3a3a44' }},
-    { selector: 'node:active',             style: { 'overlay-opacity': 0.1 }},
-    { selector: 'node.cluster-node',       style: {
-      'background-color': 'rgba(245,158,11,.06)', 'border-color': 'rgba(245,158,11,.3)',
-      'border-width': 1, 'border-style': 'dashed', label: 'data(label)',
-      'font-size': 10, color: '#6b7280', 'text-valign': 'top', 'text-halign': 'center', padding: 16,
+    { selector: 'node.workflow-node:hover',  style: { 'background-color': '#2a2d45', 'border-width': 2.5 }},
+    { selector: 'node.nodetype-http',        style: { 'border-color': '#f59e0b' }},
+    { selector: 'node.nodetype-assertion',   style: { 'border-color': '#10b981' }},
+    { selector: 'node.nodetype-extract',     style: { 'border-color': '#6366f1' }},
+    { selector: 'node.nodetype-condition',   style: { 'border-color': '#f472b6' }},
+    { selector: 'node.nodetype-transform',   style: { 'border-color': '#38bdf8' }},
+    { selector: 'node.nodetype-parallel',    style: { 'border-color': '#a78bfa' }},
+    { selector: 'node.nodetype-ai',          style: { 'border-color': '#e879f9' }},
+    { selector: 'node.nodetype-loop',        style: { 'border-color': '#34d399' }},
+    { selector: 'node.node-disabled',        style: { opacity: 0.38, 'border-style': 'dashed' }},
+    { selector: 'node:selected',             style: { 'border-color': '#fff', 'border-width': 3, 'background-color': '#2e3250' }},
+    { selector: 'node:active',               style: { 'overlay-opacity': 0.08 }},
+    { selector: 'node.cluster-node',         style: {
+      'background-color': 'rgba(245,158,11,.05)', 'border-color': 'rgba(245,158,11,.25)',
+      'border-width': 1.5, 'border-style': 'dashed', label: 'data(label)',
+      'font-size': 10, color: '#9ca3af', 'text-valign': 'top', 'text-halign': 'center', padding: 20,
     }},
-    { selector: 'edge.workflow-edge',  style: {
-      width: 1.5, 'line-color': '#555968', 'target-arrow-color': '#555968',
-      'target-arrow-shape': 'triangle', 'curve-style': 'bezier', 'arrow-scale': 0.8,
+    { selector: 'edge.workflow-edge', style: {
+      width: 2, 'line-color': '#4b5563', 'target-arrow-color': '#4b5563',
+      'target-arrow-shape': 'triangle', 'curve-style': 'bezier', 'arrow-scale': 0.9,
     }},
-    { selector: 'edge.edge-depends_on',    style: { 'line-color': '#f59e0b', 'target-arrow-color': '#f59e0b', width: 2 }},
-    { selector: 'edge.edge-inferred',      style: { 'line-style': 'dashed', 'line-color': '#555968', 'target-arrow-color': '#555968', width: 1.5 }},
-    { selector: 'edge.edge-heuristic',     style: { 'line-style': 'dotted', opacity: 0.6 }},
-    { selector: 'edge:selected',           style: { 'line-color': '#ffffff', 'target-arrow-color': '#ffffff' }},
+    { selector: 'edge.edge-depends_on',  style: { 'line-color': '#f59e0b', 'target-arrow-color': '#f59e0b', width: 2.5 }},
+    { selector: 'edge.edge-inferred',    style: { 'line-style': 'dashed', 'line-color': '#6b7280', 'target-arrow-color': '#6b7280' }},
+    { selector: 'edge.edge-heuristic',   style: { 'line-style': 'dotted', opacity: 0.55 }},
+    { selector: 'edge:selected',         style: { 'line-color': '#fff', 'target-arrow-color': '#fff' }},
   ];
 }
 
-function _apiColGraphCyLayout(projection, isLarge) {
-  const strategy = projection.meta && projection.meta.projectionStrategy;
-  if (strategy === 'stored') {
-    return { name: 'preset', animate: false, fit: true, padding: 40 };
-  }
-  return {
-    name: 'breadthfirst', directed: true,
-    spacingFactor: isLarge ? 1.2 : 1.5,
-    animate: false, padding: 40, avoidOverlap: true,
-    nodeDimensionsIncludeLabels: true,
-  };
+function _apiColGraphCyLayout(projection) {
+  // Always use preset with our topo-sorted positions
+  return { name: 'preset', animate: false, fit: true, padding: 60 };
 }
 
 // ── Toolbar ────────────────────────────────────────────────────────────────────
@@ -11469,32 +12617,228 @@ function apiColGraphSidebarToggle(show) {
 
 // ── Fullscreen modal ──────────────────────────────────────────────────────────
 function apiColGraphOpenModal(collectionId) {
-  var col = _apiCols.find(function(c) { return c.id === collectionId; });
-  var titleEl = document.getElementById('api-col-graph-modal-title');
-  if (titleEl) titleEl.textContent = (col ? col.name : 'Workflow') + ' — Graph';
-  document.getElementById('modal-api-col-graph').style.display = '';
+  const col = _apiCols.find(c => c.id === collectionId);
+  const titleEl = document.getElementById('api-col-graph-modal-title');
+  if (titleEl) titleEl.textContent = (col ? col.name : 'Workflow') + ' — Workflow Graph';
+
+  const metaEl = document.getElementById('api-col-graph-modal-meta');
+  if (metaEl) metaEl.textContent = '';
+
+  // Show modal + loading state
+  document.getElementById('modal-api-col-graph').style.display = 'flex';
+  const loadEl = document.getElementById('api-col-graph-modal-loading');
+  if (loadEl) loadEl.style.display = '';
+  _apiColGraphModalHideDetail();
+
+  // Destroy previous instance
+  if (_apiColGraphModalCy) { _apiColGraphModalCy.destroy(); _apiColGraphModalCy = null; }
+
+  const renderModal = function(p) { setTimeout(function() { _apiColGraphRender(p, true); }, 60); };
 
   if (_apiColGraphProjection && _apiColGraphColId === collectionId) {
-    setTimeout(function() { _apiColGraphRender(_apiColGraphProjection, true); }, 50);
+    renderModal(_apiColGraphProjection);
   } else {
     fetch('/api/workflows/' + encodeURIComponent(collectionId) + '/graph')
-      .then(function(r) { return r.json(); })
-      .then(function(p) {
-        _apiColGraphProjection = p;
-        _apiColGraphColId = collectionId;
-        setTimeout(function() { _apiColGraphRender(p, true); }, 50);
-      })
-      .catch(function(e) { console.error('Graph modal load error', e); });
+      .then(r => r.json())
+      .then(p => { _apiColGraphProjection = p; _apiColGraphColId = collectionId; renderModal(p); })
+      .catch(e => {
+        if (loadEl) loadEl.innerHTML = '<span style="color:#ef4444;font-size:13px">Failed to load graph: ' + escHtml(e.message) + '</span>';
+      });
   }
 }
 
 function apiColGraphModalClose() {
   document.getElementById('modal-api-col-graph').style.display = 'none';
   if (_apiColGraphModalCy) { _apiColGraphModalCy.destroy(); _apiColGraphModalCy = null; }
+  _apiColGraphModalHideDetail();
 }
 
 function apiColGraphModalFit() {
-  if (_apiColGraphModalCy) _apiColGraphModalCy.fit(undefined, 40);
+  if (_apiColGraphModalCy) _apiColGraphModalCy.fit(undefined, 60);
+}
+
+function _apiColGraphModalShowDetail(data) {
+  const panel = document.getElementById('api-col-graph-modal-detail');
+  const body  = document.getElementById('api-col-graph-modal-detail-body');
+  if (!panel || !body) return;
+  const rows = [
+    ['Name',     data.rawLabel || data.label],
+    ['Type',     data.nodeType || '—'],
+    ['Group',    data.visualGroup || '—'],
+    ['Path',     data.hierarchyPath || '—'],
+    ['Layer',    data.layer != null ? String(data.layer) : '—'],
+    ['Disabled', data.disabled ? 'Yes' : 'No'],
+  ];
+  body.innerHTML = rows.map(([k, v]) =>
+    '<div style="margin-bottom:10px"><div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:2px">' + k + '</div>' +
+    '<div style="font-size:13px;word-break:break-all">' + escHtml(v) + '</div></div>'
+  ).join('');
+  panel.style.display = '';
+}
+
+function _apiColGraphModalHideDetail() {
+  const panel = document.getElementById('api-col-graph-modal-detail');
+  if (panel) panel.style.display = 'none';
+}
+
+// ── Collection Analytics Modal ─────────────────────────────────────────────
+
+async function apiColAnalyticsOpen(colId, colName) {
+  const modal = document.getElementById('modal-col-analytics');
+  const subtitle = document.getElementById('col-analytics-subtitle');
+  const body = document.getElementById('col-analytics-body');
+  if (!modal) return;
+  subtitle.textContent = colName || colId;
+  body.innerHTML = '<div style="color:var(--neutral-400);text-align:center;padding:40px">Loading analytics…</div>';
+  modal.style.display = 'flex';
+  try {
+    const res = await fetch('/api/api-collections/' + encodeURIComponent(colId) + '/analytics?limit=20');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    body.innerHTML = _apiColRenderAnalytics(data);
+  } catch (err) {
+    body.innerHTML = '<div style="color:#ef4444;padding:20px">Failed to load analytics: ' + escHtml(String(err)) + '</div>';
+  }
+}
+
+function apiColAnalyticsClose() {
+  const modal = document.getElementById('modal-col-analytics');
+  if (modal) modal.style.display = 'none';
+}
+
+function _apiColRenderAnalytics(data) {
+  if (!data.summary || data.runs.length === 0) {
+    return '<div style="text-align:center;padding:60px;color:var(--neutral-400)">' +
+      '<div style="font-size:36px;margin-bottom:12px">📭</div>' +
+      '<div style="font-size:15px;font-weight:600;margin-bottom:6px">No run history yet</div>' +
+      '<div style="font-size:13px">Run this collection at least once to see analytics.</div>' +
+      '</div>';
+  }
+
+  const s = data.summary;
+  const runs = data.runs; // oldest to newest
+
+  // Summary cards
+  const passColor = s.avgPassRate >= 80 ? '#22c55e' : s.avgPassRate >= 50 ? '#f59e0b' : '#ef4444';
+  const cards = '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px">' +
+    _analyticsCard('Total Runs', s.totalRuns, '') +
+    _analyticsCard('Avg Pass Rate', s.avgPassRate + '%', passColor) +
+    _analyticsCard('Avg Duration', _fmtDuration(s.avgDurationMs), '') +
+    _analyticsCard('p95 Duration', _fmtDuration(s.p95DurationMs), '#f59e0b') +
+    '</div>';
+
+  // Pass rate bar chart
+  const bars = runs.map(function(r, i) {
+    const color = r.passRate >= 80 ? '#22c55e' : r.passRate >= 50 ? '#f59e0b' : '#ef4444';
+    const statusLabel = r.status === 'passed' ? 'PASS' : (r.status === 'failed' || r.status === 'error') ? 'FAIL' : r.status;
+    const date = r.startedAt ? r.startedAt.slice(0, 10) : '';
+    const tip = statusLabel + ' ' + date + ' - ' + r.passRate + '% pass - ' + _fmtDuration(r.durationMs);
+    return '<div style="display:flex;flex-direction:column;align-items:center;flex:1;min-width:0" title="' + escHtml(tip) + '">' +
+      '<div style="font-size:9px;color:var(--neutral-400);margin-bottom:2px">' + r.passRate + '%</div>' +
+      '<div style="width:100%;background:var(--neutral-100);border-radius:3px;height:80px;display:flex;align-items:flex-end">' +
+        '<div style="width:100%;height:' + Math.max(3, r.passRate) + '%;background:' + color + ';border-radius:3px"></div>' +
+      '</div>' +
+      '<div style="font-size:8px;color:var(--neutral-400);margin-top:3px">' + (i + 1) + '</div>' +
+    '</div>';
+  }).join('');
+
+  const chart = '<div style="margin-bottom:16px;padding:16px;border:1px solid var(--neutral-200);border-radius:8px">' +
+    '<div style="font-size:13px;font-weight:700;margin-bottom:10px;color:var(--neutral-700)">Pass Rate — Last ' + runs.length + ' Runs (oldest to newest)</div>' +
+    '<div style="display:flex;gap:4px;align-items:flex-end;height:110px;padding:0 4px">' + bars + '</div>' +
+    '<div style="display:flex;gap:16px;font-size:10px;color:var(--neutral-500);margin-top:14px">' +
+      '<span><span style="color:#22c55e">&#9632;</span> 80%+ pass</span>' +
+      '<span><span style="color:#f59e0b">&#9632;</span> 50-79%</span>' +
+      '<span><span style="color:#ef4444">&#9632;</span> below 50%</span>' +
+    '</div>' +
+  '</div>';
+
+  // Duration trend
+  const maxDur = Math.max.apply(null, runs.map(function(r) { return r.durationMs || 0; })) || 1;
+  const durBars = runs.map(function(r) {
+    const pct = Math.max(3, Math.round(((r.durationMs || 0) / maxDur) * 100));
+    const date = r.startedAt ? r.startedAt.slice(0, 10) : '';
+    return '<div style="flex:1;min-width:0;display:flex;flex-direction:column;align-items:center" title="' + escHtml(date + ' - ' + _fmtDuration(r.durationMs)) + '">' +
+      '<div style="width:100%;background:var(--neutral-100);border-radius:3px;height:50px;display:flex;align-items:flex-end">' +
+        '<div style="width:100%;height:' + pct + '%;background:#6366f1;border-radius:3px;opacity:.8"></div>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+
+  const durChart = '<div style="margin-bottom:16px;padding:16px;border:1px solid var(--neutral-200);border-radius:8px">' +
+    '<div style="font-size:13px;font-weight:700;margin-bottom:8px;color:var(--neutral-700)">Duration Trend</div>' +
+    '<div style="display:flex;gap:3px;align-items:flex-end;height:58px">' + durBars + '</div>' +
+    '<div style="font-size:11px;color:var(--neutral-400);margin-top:6px">' +
+      'Max: ' + _fmtDuration(maxDur) + '&nbsp;&nbsp;|&nbsp;&nbsp;Avg: ' + _fmtDuration(s.avgDurationMs) + '&nbsp;&nbsp;|&nbsp;&nbsp;p95: ' + _fmtDuration(s.p95DurationMs) +
+    '</div>' +
+  '</div>';
+
+  // Step failure heatmap
+  let stepSection = '';
+  if (data.stepStats && data.stepStats.length > 0) {
+    const stepRows = data.stepStats.map(function(st) {
+      const color = st.failRate >= 50 ? '#ef4444' : st.failRate >= 20 ? '#f59e0b' : '#22c55e';
+      const barW = Math.max(2, st.failRate);
+      return '<tr>' +
+        '<td style="font-size:12px;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escHtml(st.stepName) + '">' + escHtml(st.stepName) + '</td>' +
+        '<td style="text-align:center;font-size:12px">' + st.runs + '</td>' +
+        '<td style="text-align:center;font-size:12px;color:' + color + ';font-weight:700">' + st.failures + '</td>' +
+        '<td style="min-width:140px">' +
+          '<div style="display:flex;align-items:center;gap:6px">' +
+            '<div style="flex:1;background:var(--neutral-100);border-radius:3px;height:8px">' +
+              '<div style="width:' + barW + '%;height:100%;background:' + color + ';border-radius:3px"></div>' +
+            '</div>' +
+            '<span style="font-size:11px;color:' + color + ';font-weight:700;min-width:34px">' + st.failRate + '%</span>' +
+          '</div>' +
+        '</td>' +
+      '</tr>';
+    }).join('');
+    stepSection = '<div style="margin-bottom:16px;padding:16px;border:1px solid var(--neutral-200);border-radius:8px">' +
+      '<div style="font-size:13px;font-weight:700;margin-bottom:10px;color:var(--neutral-700)">Step Failure Heatmap ' +
+        '<span style="font-size:11px;font-weight:400;color:var(--neutral-400)">(top 10 by fail rate across last ' + s.totalRuns + ' runs)</span>' +
+      '</div>' +
+      '<table class="data-table" style="width:100%">' +
+        '<thead><tr><th>Step</th><th style="text-align:center">Runs</th><th style="text-align:center">Failures</th><th>Fail Rate</th></tr></thead>' +
+        '<tbody>' + stepRows + '</tbody>' +
+      '</table>' +
+    '</div>';
+  }
+
+  // Recent runs table
+  const runRows = data.runs.slice().reverse().slice(0, 15).map(function(r) {
+    const sc = r.status === 'passed' ? '#22c55e' : (r.status === 'failed' || r.status === 'error') ? '#ef4444' : '#9ca3af';
+    const icon = r.status === 'passed' ? '✓' : (r.status === 'failed' || r.status === 'error') ? '✗' : '⊘';
+    return '<tr>' +
+      '<td style="font-size:11px;color:var(--neutral-500)">' + (r.startedAt || '').slice(0, 16).replace('T', ' ') + '</td>' +
+      '<td style="text-align:center"><span style="color:' + sc + ';font-weight:700">' + icon + ' ' + r.status + '</span></td>' +
+      '<td style="text-align:center;font-size:12px">' + r.passed + '/' + r.totalSteps + '</td>' +
+      '<td style="text-align:center;font-size:12px">' + r.passRate + '%</td>' +
+      '<td style="text-align:right;font-size:12px">' + _fmtDuration(r.durationMs) + '</td>' +
+    '</tr>';
+  }).join('');
+
+  const runTable = '<div style="padding:16px;border:1px solid var(--neutral-200);border-radius:8px">' +
+    '<div style="font-size:13px;font-weight:700;margin-bottom:10px;color:var(--neutral-700)">Recent Runs</div>' +
+    '<table class="data-table" style="width:100%">' +
+      '<thead><tr><th>Started</th><th style="text-align:center">Status</th><th style="text-align:center">Steps</th><th style="text-align:center">Pass%</th><th style="text-align:right">Duration</th></tr></thead>' +
+      '<tbody>' + runRows + '</tbody>' +
+    '</table>' +
+  '</div>';
+
+  return cards + chart + durChart + stepSection + runTable;
+}
+
+function _analyticsCard(label, value, color) {
+  return '<div style="background:var(--surface-2);border:1px solid var(--neutral-200);border-radius:8px;padding:14px 16px">' +
+    '<div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--neutral-500);margin-bottom:4px">' + escHtml(label) + '</div>' +
+    '<div style="font-size:22px;font-weight:700;color:' + (color || 'var(--neutral-900)') + '">' + escHtml(String(value)) + '</div>' +
+  '</div>';
+}
+
+function _fmtDuration(ms) {
+  if (!ms || ms <= 0) return '—';
+  if (ms < 1000) return ms + 'ms';
+  if (ms < 60000) return (ms / 1000).toFixed(1) + 's';
+  return Math.floor(ms / 60000) + 'm ' + Math.round((ms % 60000) / 1000) + 's';
 }
 // API RUN RESULTS MODULE
 // ══════════════════════════════════════════════════════════════════════════════
@@ -11610,27 +12954,51 @@ let _apiRunsCurrentRun = null;
 
 function _apiRunsRenderDetail(run) {
   _apiRunsCurrentRun = run;
-  _execGraphReset(); // clear stale graph when new run loads
+  _execGraphReset();
   const statusColor = run.status === 'passed' ? '#22c55e' : run.status === 'failed' ? '#ef4444' : run.status === 'running' ? '#3b82f6' : '#f59e0b';
   const dur = run.startedAt && run.completedAt
     ? Math.round((new Date(run.completedAt) - new Date(run.startedAt)) / 1000) + 's'
     : '—';
 
+  const steps   = run.stepResults ?? [];
+  const total   = steps.length;
+  const passed  = steps.filter(s => s.status === 'passed').length;
+  const failed  = steps.filter(s => s.status === 'failed').length;
+  const errored = steps.filter(s => s.status === 'error').length;
+  const skipped = steps.filter(s => s.status === 'skipped').length;
+  const passRate = total > 0 ? Math.round((passed / total) * 100) : 0;
+  const barColor = passRate === 100 ? '#22c55e' : passRate >= 70 ? '#f59e0b' : '#ef4444';
+
+  // Update subtitle with run ID
+  const subtitleEl = document.getElementById('api-run-detail-subtitle');
+  if (subtitleEl) subtitleEl.textContent = 'Run ID: ' + run.id + (run.collectionId ? ' · Collection: ' + (run.collectionName || run.collectionId) : '');
+
   document.getElementById('api-run-detail-summary').innerHTML = `
-    <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;padding:12px;background:var(--surface-2);border-radius:8px;margin-bottom:12px">
-      <span style="font-weight:700;font-size:16px;color:${statusColor}">${run.status.toUpperCase()}</span>
-      <span>Duration: <strong>${dur}</strong></span>
-      <span>Steps: <strong>${(run.stepResults ?? []).length}</strong></span>
-      ${run.status === 'running' ? '<span class="badge badge-blue" style="animation:spin 1s linear infinite">⟳ Live</span>' : ''}
+    <div style="padding:14px 16px;background:var(--surface-2);border-radius:10px;margin-bottom:12px">
+      <div style="display:flex;gap:20px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+        <span style="font-weight:800;font-size:18px;color:${statusColor};letter-spacing:.02em">${run.status.toUpperCase()}</span>
+        ${run.status === 'running' ? '<span class="badge badge-blue" style="font-size:11px">⟳ Live</span>' : ''}
+        <span style="font-size:13px">⏱ <strong>${dur}</strong></span>
+        <span style="font-size:13px">📋 <strong>${total}</strong> steps</span>
+        <span style="font-size:13px;color:#22c55e">✓ <strong>${passed}</strong> passed</span>
+        ${failed  > 0 ? `<span style="font-size:13px;color:#ef4444">✗ <strong>${failed}</strong> failed</span>` : ''}
+        ${errored > 0 ? `<span style="font-size:13px;color:#f97316">⚠ <strong>${errored}</strong> error</span>` : ''}
+        ${skipped > 0 ? `<span style="font-size:13px;color:#9ca3af">⊘ <strong>${skipped}</strong> skipped</span>` : ''}
+        <span style="margin-left:auto;font-size:13px;font-weight:700;color:${barColor}">${passRate}% pass rate</span>
+      </div>
+      <!-- Pass rate progress bar -->
+      <div style="height:6px;background:var(--neutral-200);border-radius:3px;overflow:hidden">
+        <div style="height:100%;width:${passRate}%;background:${barColor};border-radius:3px;transition:width .4s"></div>
+      </div>
     </div>`;
 
   // Failure clustering (show when >1 failure)
-  const failed = (run.stepResults ?? []).filter(s => s.status === 'failed' || s.status === 'error');
+  const failedSteps = (run.stepResults ?? []).filter(s => s.status === 'failed' || s.status === 'error');
   const clusterEl = document.getElementById('api-run-clusters');
   if (clusterEl) {
-    if (failed.length > 1) {
+    if (failedSteps.length > 1) {
       const clusters = {};
-      for (const s of failed) {
+      for (const s of failedSteps) {
         const key = `${s.response?.status ?? 'error'}-${s.assertionResults?.find(a => !a.passed)?.field ?? s.error ?? 'unknown'}`;
         if (!clusters[key]) clusters[key] = { count: 0, label: `status ${s.response?.status ?? 'network error'}`, steps: [] };
         clusters[key].count++;
@@ -11649,43 +13017,10 @@ function _apiRunsRenderDetail(run) {
     }
   }
 
-  // Step results table
-  const stepTbody = document.getElementById('api-run-steps-tbody');
-  if (!stepTbody) return;
-  stepTbody.innerHTML = '';
-  for (const step of run.stepResults ?? []) {
-    const isTeardown = step.stepName?.includes('[teardown]') || false;
-    const sc = step.status === 'passed' ? '#22c55e' : step.status === 'failed' || step.status === 'error' ? '#ef4444' : step.status === 'degraded' ? '#f59e0b' : '#9ca3af';
-    const rowId = 'api-run-step-' + step.stepId;
-    const tr = document.createElement('tr');
-    tr.style.cursor = 'pointer';
-    tr.onclick = () => _apiRunsToggleStepDetail(step.stepId, step);
-    const contractBadge = (step.contractViolations?.length ?? 0) > 0
-      ? `<span class="badge badge-red" style="font-size:10px;cursor:pointer" title="${escHtml(step.contractViolations.join('\n'))}">⚠ ${step.contractViolations.length} contract</span>`
-      : '';
-    const diffBadge = step.response?.baselineDiff &&
-      (step.response.baselineDiff.statusChanged || step.response.baselineDiff.bodyDiff?.length || step.response.baselineDiff.headersAdded?.length || step.response.baselineDiff.headersRemoved?.length)
-      ? '<span class="badge badge-yellow" style="font-size:10px">~ diff</span>' : '';
-    tr.innerHTML = `
-      <td>
-        ${escHtml(step.stepName)}
-        ${isTeardown ? '<span class="badge badge-grey" style="font-size:10px;margin-left:4px">teardown</span>' : ''}
-        ${step.healingProposal ? '<span class="badge badge-yellow" title="' + escHtml(step.healingProposal) + '">💡 heal</span>' : ''}
-        ${diffBadge} ${contractBadge}
-      </td>
-      <td><span style="color:${sc};font-weight:600">${step.status}</span></td>
-      <td>${step.durationMs}ms</td>
-      <td>${step.assertionResults?.filter(a => a.passed).length ?? 0}/${step.assertionResults?.length ?? 0}</td>
-      <td><button class="tbl-btn" onclick="event.stopPropagation();_apiRunsToggleStepDetail('${step.stepId}', null)">▼</button></td>`;
-    stepTbody.appendChild(tr);
-
-    // Detail row (hidden by default)
-    const detailTr = document.createElement('tr');
-    detailTr.id = rowId;
-    detailTr.style.display = 'none';
-    detailTr.innerHTML = `<td colspan="5">${_buildStepDetailHtml(step)}</td>`;
-    stepTbody.appendChild(detailTr);
-  }
+  // Step results table — store steps for filter/search
+  _apiRunsAllSteps = run.stepResults ?? [];
+  apiRunsFilterSteps('__reset__');
+  _apiRunsRenderStepRows();
 
   // HAR tab
   _apiRunsRenderHar(run);
@@ -11773,6 +13108,85 @@ function _buildStepDetailHtml(step) {
     </div>`;
 }
 
+// ── Step filter / search state ─────────────────────────────────────────────
+let _apiRunsAllSteps = [];
+let _apiRunsActiveFilter = 'all';
+
+function apiRunsFilterSteps(filter) {
+  if (filter && filter !== '__reset__') {
+    _apiRunsActiveFilter = filter;
+    // Update pill active state
+    document.querySelectorAll('[data-filter]').forEach(b => b.classList.toggle('active', b.dataset.filter === filter));
+  }
+  if (filter === '__reset__') {
+    _apiRunsActiveFilter = 'all';
+    document.querySelectorAll('[data-filter]').forEach(b => b.classList.toggle('active', b.dataset.filter === 'all'));
+    const srch = document.getElementById('api-run-step-search');
+    if (srch) srch.value = '';
+  }
+  _apiRunsRenderStepRows();
+}
+
+function _apiRunsRenderStepRows() {
+  const stepTbody = document.getElementById('api-run-steps-tbody');
+  if (!stepTbody) return;
+  const search = (document.getElementById('api-run-step-search')?.value ?? '').toLowerCase();
+  const filtered = _apiRunsAllSteps.filter(s => {
+    if (_apiRunsActiveFilter !== 'all' && s.status !== _apiRunsActiveFilter) return false;
+    if (search && !s.stepName?.toLowerCase().includes(search)) return false;
+    return true;
+  });
+
+  const countEl = document.getElementById('api-run-step-count');
+  if (countEl) countEl.textContent = `Showing ${filtered.length} of ${_apiRunsAllSteps.length} steps`;
+
+  stepTbody.innerHTML = '';
+  filtered.forEach((step, idx) => {
+    const isTeardown = step.stepName?.includes('[teardown]') || false;
+    const sc = step.status === 'passed' ? '#22c55e' : step.status === 'failed' || step.status === 'error' ? '#ef4444' : step.status === 'degraded' ? '#f59e0b' : '#9ca3af';
+    const rowId = 'api-run-step-' + step.stepId;
+    const httpStatus = step.response?.status;
+    const httpColor = !httpStatus ? '#9ca3af' : httpStatus < 300 ? '#22c55e' : httpStatus < 500 ? '#f59e0b' : '#ef4444';
+    const assertTotal = step.assertionResults?.length ?? 0;
+    const assertPassed = step.assertionResults?.filter(a => a.passed).length ?? 0;
+    const assertColor = assertTotal === 0 ? '#9ca3af' : assertPassed === assertTotal ? '#22c55e' : '#ef4444';
+
+    const contractBadge = (step.contractViolations?.length ?? 0) > 0
+      ? `<span class="badge badge-red" style="font-size:10px" title="${escHtml(step.contractViolations.join('\n'))}">⚠ ${step.contractViolations.length} contract</span>` : '';
+    const diffBadge = step.response?.baselineDiff &&
+      (step.response.baselineDiff.statusChanged || step.response.baselineDiff.bodyDiff?.length || step.response.baselineDiff.headersAdded?.length || step.response.baselineDiff.headersRemoved?.length)
+      ? '<span class="badge badge-yellow" style="font-size:10px">~ diff</span>' : '';
+
+    const tr = document.createElement('tr');
+    tr.style.cursor = 'pointer';
+    tr.dataset.stepstatus = step.status;
+    tr.onclick = () => _apiRunsToggleStepDetail(step.stepId, step);
+    // Status pill with icon
+    const statusIcon = step.status === 'passed' ? '✓' : step.status === 'failed' ? '✗' : step.status === 'error' ? '⚠' : '⊘';
+    tr.innerHTML = `
+      <td style="font-size:11px;color:var(--neutral-400);text-align:center">${idx + 1}</td>
+      <td>
+        <span style="font-weight:500">${escHtml(step.stepName)}</span>
+        ${httpStatus ? `<span style="font-size:10px;color:${httpColor};margin-left:4px">[${httpStatus}]</span>` : ''}
+        ${isTeardown ? '<span class="badge badge-grey" style="font-size:10px;margin-left:4px">teardown</span>' : ''}
+        ${assertTotal === 0 && !isTeardown ? '<span class="badge badge-yellow" style="font-size:10px;margin-left:4px" title="No assertions configured — response contract not validated">⚠ No assertion</span>' : ''}
+        ${step.healingProposal ? `<span class="badge badge-yellow" style="font-size:10px" title="${escHtml(step.healingProposal)}">💡 heal</span>` : ''}
+        ${diffBadge}${contractBadge}
+      </td>
+      <td><span style="color:${sc};font-weight:700;font-size:12px">${statusIcon} ${step.status}</span></td>
+      <td style="font-size:12px">${step.durationMs != null ? step.durationMs + 'ms' : '—'}</td>
+      <td style="font-size:12px;color:${assertColor};font-weight:${assertTotal > 0 ? '600' : '400'}">${assertTotal > 0 ? assertPassed + '/' + assertTotal : '—'}</td>
+      <td><button class="tbl-btn" onclick="event.stopPropagation();_apiRunsToggleStepDetail('${step.stepId}', null)">▼</button></td>`;
+    stepTbody.appendChild(tr);
+
+    const detailTr = document.createElement('tr');
+    detailTr.id = rowId;
+    detailTr.style.display = 'none';
+    detailTr.innerHTML = `<td colspan="6">${_buildStepDetailHtml(step)}</td>`;
+    stepTbody.appendChild(detailTr);
+  });
+}
+
 const _apiRunsExpandedSteps = new Set();
 function _apiRunsToggleStepDetail(stepId, stepData) {
   const row = document.getElementById('api-run-step-' + stepId);
@@ -11787,21 +13201,114 @@ function _apiRunsToggleStepDetail(stepId, stepData) {
   }
 }
 
-function _apiRunsRenderHar(run) {
+let _apiRunsHarFilter = 'all';
+let _apiRunsHarSteps  = [];
+
+function apiRunsHarFilter(filter) {
+  _apiRunsHarFilter = filter;
+  document.querySelectorAll('[data-harfilter]').forEach(b => b.classList.toggle('active', b.dataset.harfilter === filter));
+  _apiRunsRenderHarRows();
+}
+
+function _apiRunsRenderHarRows() {
   const harTbody = document.getElementById('api-run-har-tbody');
   if (!harTbody) return;
+  const filtered = _apiRunsHarSteps.filter(step => {
+    if (!step.response) return false;
+    if (_apiRunsHarFilter === 'all') return true;
+    const s = step.response.status;
+    if (_apiRunsHarFilter === '2xx') return s >= 200 && s < 300;
+    if (_apiRunsHarFilter === '4xx') return s >= 400 && s < 500;
+    if (_apiRunsHarFilter === '5xx') return s >= 500;
+    return true;
+  });
+  const countEl = document.getElementById('api-run-har-count');
+  if (countEl) countEl.textContent = `${filtered.length} request${filtered.length !== 1 ? 's' : ''}`;
+
   harTbody.innerHTML = '';
-  for (const step of run.stepResults ?? []) {
-    if (!step.response) continue;
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td>${escHtml(step.stepName)}${step.isTeardown ? '<span class="teardown-badge">teardown</span>' : ''}</td>
+  filtered.forEach((step, idx) => {
+    const sc = step.response.status < 300 ? '#22c55e' : step.response.status < 500 ? '#f59e0b' : '#ef4444';
+    const detailId = 'har-detail-' + step.stepId;
+    const harTr = document.createElement('tr');
+    harTr.style.cursor = 'pointer';
+    harTr.onclick = () => _apiRunsHarToggle(detailId);
+    harTr.innerHTML = `
+      <td style="font-size:11px;color:var(--neutral-400);text-align:center">${idx + 1}</td>
+      <td style="font-weight:500">${escHtml(step.stepName)}</td>
       <td><span class="badge badge-blue" style="font-size:11px">${step.request?.method ?? ''}</span></td>
-      <td style="font-family:monospace;font-size:12px;max-width:220px;overflow:hidden;text-overflow:ellipsis">${escHtml(step.request?.url ?? '')}</td>
-      <td style="color:${step.response.status < 300 ? '#22c55e' : step.response.status < 500 ? '#f59e0b' : '#ef4444'}">${step.response.status}</td>
-      <td>${step.response.durationMs}ms</td>`;
-    harTbody.appendChild(tr);
-  }
+      <td style="font-family:monospace;font-size:11px;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(step.request?.url ?? '')}">${escHtml(step.request?.url ?? '')}</td>
+      <td style="font-weight:700;color:${sc}">${step.response.status}</td>
+      <td style="font-size:12px">${step.response.durationMs ?? '—'}ms</td>
+      <td>
+        <button class="tbl-btn" onclick="event.stopPropagation();_apiRunsCopyCurl('${detailId}')" title="Copy as cURL">cURL</button>
+        <button class="tbl-btn" onclick="event.stopPropagation();_apiRunsHarToggle('${detailId}')">▼</button>
+      </td>`;
+    harTbody.appendChild(harTr);
+
+    // Expandable body inspector row
+    const reqHeaders = Object.entries(step.request?.headers ?? {}).map(([k, v]) => `${k}: ${v}`).join('\n') || '(none)';
+    const resHeaders = Object.entries(step.response?.headers ?? {}).map(([k, v]) => `${k}: ${v}`).join('\n') || '(none)';
+    const resBody = typeof step.response?.body === 'string' ? step.response.body : JSON.stringify(step.response?.body, null, 2);
+    const reqBody = step.request?.body ? (typeof step.request.body === 'string' ? step.request.body : JSON.stringify(step.request.body, null, 2)) : '(no body)';
+
+    const detailTr = document.createElement('tr');
+    detailTr.id = detailId;
+    detailTr.dataset.stepJson = JSON.stringify(step);
+    detailTr.style.display = 'none';
+    detailTr.innerHTML = `<td colspan="7" style="padding:0">
+      <div style="background:var(--surface-2);padding:12px 16px;border-top:1px solid var(--neutral-200)">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+          <div>
+            <div style="font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--neutral-500);margin-bottom:6px">Request</div>
+            <div style="font-size:11px;font-weight:600;margin-bottom:4px">${escHtml((step.request?.method ?? '') + ' ' + (step.request?.url ?? ''))}</div>
+            <pre style="font-size:10px;background:var(--surface-1);padding:6px;border-radius:4px;max-height:120px;overflow:auto;margin:0 0 6px">${escHtml(reqHeaders)}</pre>
+            <pre style="font-size:10px;background:var(--surface-1);padding:6px;border-radius:4px;max-height:100px;overflow:auto;margin:0">${escHtml(reqBody)}</pre>
+          </div>
+          <div>
+            <div style="font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--neutral-500);margin-bottom:6px">Response <span style="color:${sc}">${step.response.status}</span></div>
+            <pre style="font-size:10px;background:var(--surface-1);padding:6px;border-radius:4px;max-height:120px;overflow:auto;margin:0 0 6px">${escHtml(resHeaders)}</pre>
+            <pre style="font-size:10px;background:var(--surface-1);padding:6px;border-radius:4px;max-height:140px;overflow:auto;margin:0">${escHtml(resBody ?? '')}</pre>
+          </div>
+        </div>
+      </div>
+    </td>`;
+    harTbody.appendChild(detailTr);
+  });
+}
+
+function _apiRunsHarToggle(detailId) {
+  const row = document.getElementById(detailId);
+  if (row) row.style.display = row.style.display === 'none' ? '' : 'none';
+}
+
+function _apiRunsCopyCurl(detailId) {
+  try {
+    // Retrieve step data stored on the detail row element
+    const detailRow = document.getElementById(detailId);
+    const stepJson = detailRow && detailRow.dataset.stepJson;
+    const step = stepJson ? JSON.parse(stepJson) : {};
+    const method = step.request?.method ?? 'GET';
+    const url    = step.request?.url ?? '';
+    const hdrs   = Object.entries(step.request?.headers ?? {}).map(([k, v]) => `-H '${k}: ${v}'`).join(' \\\n  ');
+    const body   = step.request?.body ? `-d '${typeof step.request.body === 'string' ? step.request.body : JSON.stringify(step.request.body)}'` : '';
+    const curl   = `curl -X ${method} '${url}' \\\n  ${hdrs}${body ? ' \\\n  ' + body : ''}`;
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(curl).then(() => showToast('cURL copied to clipboard', 'success'));
+    } else {
+      const ta = document.createElement('textarea');
+      ta.value = curl; ta.style.cssText = 'position:fixed;top:-9999px;left:-9999px';
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); showToast('cURL copied', 'success'); } catch { showToast('Could not copy', 'error'); }
+      document.body.removeChild(ta);
+    }
+  } catch { showToast('Could not build cURL', 'error'); }
+}
+
+function _apiRunsRenderHar(run) {
+  _apiRunsHarSteps  = run.stepResults ?? [];
+  _apiRunsHarFilter = 'all';
+  document.querySelectorAll('[data-harfilter]').forEach(b => b.classList.toggle('active', b.dataset.harfilter === 'all'));
+  _apiRunsRenderHarRows();
 }
 
 function _apiRunsStepTab(btn, containerId, tab) {
@@ -11817,6 +13324,42 @@ async function _apiRunsSetBaseline(stepId) {
   showToast('To capture a baseline: edit the step in the collection and enable "Capture Baseline", then run once. The baseline file will be saved automatically.', 'info');
 }
 
+function apiRunsCopySummary() {
+  const run = _apiRunsCurrentRun;
+  if (!run) return;
+  const steps   = run.stepResults ?? [];
+  const passed  = steps.filter(s => s.status === 'passed').length;
+  const failed  = steps.filter(s => s.status === 'failed').length;
+  const errored = steps.filter(s => s.status === 'error').length;
+  const dur = run.startedAt && run.completedAt
+    ? Math.round((new Date(run.completedAt) - new Date(run.startedAt)) / 1000) + 's' : '—';
+  const passRate = steps.length > 0 ? Math.round((passed / steps.length) * 100) : 0;
+  const lines = [
+    `API Run Summary`,
+    `Run ID: ${run.id}`,
+    `Status: ${run.status.toUpperCase()}`,
+    `Duration: ${dur}`,
+    `Steps: ${steps.length} total — ${passed} passed, ${failed} failed, ${errored} error`,
+    `Pass Rate: ${passRate}%`,
+    ``,
+    `Step Results:`,
+    ...steps.map((s, i) => `  ${i + 1}. ${s.stepName} — ${s.status}${s.response ? ' [' + s.response.status + ']' : ''} (${s.durationMs ?? '—'}ms)`),
+  ];
+  const text = lines.join('\n');
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(text).then(() => showToast('Run summary copied to clipboard', 'success'));
+  } else {
+    // HTTP fallback — create temp textarea
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;top:-9999px;left:-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); showToast('Run summary copied to clipboard', 'success'); } catch { showToast('Could not copy — please copy manually', 'error'); }
+    document.body.removeChild(ta);
+  }
+}
+
 function apiRunsCloseDetail() {
   clearInterval(_apiRunsPollTimer);
   closeModal('modal-api-run-detail');
@@ -11829,13 +13372,7 @@ function apiRunsTabSwitch(tab) {
   document.querySelectorAll('.api-run-tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   document.querySelectorAll('.api-run-tab-panel').forEach(p => p.style.display = p.dataset.tab === tab ? '' : 'none');
   if (tab === 'graph' && _apiRunsCurrentRun) _execGraphEnsureLoaded(_apiRunsCurrentRun);
-  if (tab === 'ai-insights' && _apiRunsCurrentRun) {
-    const panel = document.getElementById('ai-insights-panel-run');
-    if (panel && !panel.dataset.loaded) {
-      panel.dataset.loaded = '1';
-      _apiRunsRenderAiInsights(_apiRunsCurrentRun.id, _apiRunsCurrentRun.collectionId, panel);
-    }
-  }
+
   if (tab === 'timeline' && _apiRunsCurrentRunId) {
     const panel = document.getElementById('run-timeline-panel');
     if (panel && !panel.dataset.loaded) { panel.dataset.loaded = '1'; _apiRunsLoadTimeline(_apiRunsCurrentRunId, panel); }
@@ -11852,38 +13389,85 @@ async function _apiRunsLoadTimeline(runId, panel) {
   panel.innerHTML = '<div style="color:var(--text-muted)">Loading timeline…</div>';
   try {
     const res = await fetch('/api/api-runs/' + encodeURIComponent(runId) + '/timeline');
-    if (!res.ok) { panel.innerHTML = '<div style="color:#ef4444">Timeline not available for this run.</div>'; return; }
-    const data = await res.json();
-    const tl = data.timeline;
-    const events = tl.events || [];
-    if (!events.length) { panel.innerHTML = '<div style="color:var(--text-muted)">No timeline events recorded.</div>'; return; }
-
-    const maxDur = Math.max(...events.map(function(e) { return e.durationMs || 0; }), 1);
-    const colorMap = { 'node-started': '#3b82f6', 'node-completed': '#22c55e', 'node-failed': '#ef4444',
-      'node-skipped': '#9ca3af', 'node-retrying': '#f59e0b', 'assertion-failed': '#ef4444',
-      'variable-extracted': '#a78bfa', 'failure-propagated': '#ef4444' };
-
-    const rows = events.map(function(e) {
-      const col = colorMap[e.eventType] || '#9ca3af';
-      const pct = e.durationMs ? Math.max(4, Math.round((e.durationMs / maxDur) * 100)) : 0;
-      const bar = e.durationMs ? '<div style="height:6px;width:' + pct + '%;background:' + col + ';border-radius:3px;margin-top:3px"></div>' : '';
-      const ts = e.timestamp ? new Date(e.timestamp).toLocaleTimeString() : '';
-      const detail = e.detail ? ' <span style="color:var(--text-muted);font-size:11px">— ' + escHtml(e.detail) + '</span>' : '';
-      const dur = e.durationMs != null ? ' <span style="color:var(--text-muted);font-size:11px">' + e.durationMs + 'ms</span>' : '';
-      return '<div style="padding:4px 0;border-bottom:1px solid var(--border)">' +
-        '<div style="display:flex;align-items:center;gap:8px">' +
-          '<span style="font-size:10px;color:var(--text-muted);min-width:70px">' + ts + '</span>' +
-          '<span style="font-size:11px;font-weight:600;color:' + col + '">' + escHtml(e.eventType) + '</span>' +
-          '<span style="font-size:12px">' + escHtml(e.nodeName || '') + '</span>' + detail + dur +
-        '</div>' + bar + '</div>';
-    }).join('');
-
-    const src = data.source === 'synthesized-from-snapshot'
-      ? '<div style="color:#f59e0b;font-size:11px;margin-bottom:8px">&#x26A0; ' + escHtml(data.advisoryNote) + '</div>' : '';
-    panel.innerHTML = src + '<div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">' + events.length + ' events · ' + (tl.totalDurationMs || 0) + 'ms total</div>' + rows;
+    if (res.ok) {
+      const data = await res.json();
+      const events = (data.timeline && data.timeline.events) || [];
+      if (events.length) {
+        _apiRunsRenderTimelineEvents(panel, events, data);
+        return;
+      }
+    }
+    // Fallback: synthesize timeline from step results
+    _apiRunsSynthesizeTimeline(panel);
   } catch (e) {
-    panel.innerHTML = '<div style="color:#ef4444">Failed to load timeline: ' + escHtml(e.message) + '</div>';
+    _apiRunsSynthesizeTimeline(panel);
   }
+}
+
+function _apiRunsSynthesizeTimeline(panel) {
+  const run = _apiRunsCurrentRun;
+  const steps = run && run.stepResults || [];
+  if (!steps.length) { panel.innerHTML = '<div style="color:var(--text-muted)">No step data available.</div>'; return; }
+
+  const totalMs = steps.reduce(function(s, r) { return s + (r.durationMs || 0); }, 0);
+  const maxDur  = Math.max(...steps.map(function(s) { return s.durationMs || 0; }), 1);
+
+  const colorMap = { passed: '#22c55e', failed: '#ef4444', error: '#f97316', skipped: '#9ca3af', degraded: '#f59e0b' };
+
+  const rows = steps.map(function(step, idx) {
+    const col = colorMap[step.status] || '#9ca3af';
+    const dur = step.durationMs || 0;
+    const pct = Math.max(2, Math.round((dur / maxDur) * 100));
+    const assertSummary = step.assertionResults && step.assertionResults.length
+      ? step.assertionResults.filter(function(a) { return a.passed; }).length + '/' + step.assertionResults.length + ' assertions'
+      : '';
+    const httpBadge = step.response ? '<span style="color:' + (step.response.status < 300 ? '#22c55e' : step.response.status < 500 ? '#f59e0b' : '#ef4444') + ';font-weight:600;font-size:10px"> [' + step.response.status + ']</span>' : '';
+    return '<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--neutral-200)">' +
+      '<span style="font-size:10px;color:var(--neutral-400);min-width:24px;text-align:right">' + (idx + 1) + '</span>' +
+      '<span style="font-size:12px;min-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escHtml(step.stepName) + '">' + escHtml(step.stepName) + httpBadge + '</span>' +
+      '<div style="flex:1;background:var(--neutral-200);border-radius:3px;height:8px;overflow:hidden">' +
+        '<div style="height:100%;width:' + pct + '%;background:' + col + ';border-radius:3px"></div>' +
+      '</div>' +
+      '<span style="font-size:11px;color:var(--neutral-500);min-width:54px;text-align:right">' + dur + 'ms</span>' +
+      '<span style="font-size:10px;font-weight:600;color:' + col + ';min-width:50px">' + escHtml(step.status) + '</span>' +
+      '<span style="font-size:10px;color:var(--neutral-400)">' + assertSummary + '</span>' +
+    '</div>';
+  }).join('');
+
+  panel.innerHTML =
+    '<div style="font-size:11px;color:var(--neutral-500);margin-bottom:10px;padding:6px 8px;background:var(--neutral-100);border-radius:6px">' +
+      '&#x23F1; Execution waterfall — ' + steps.length + ' steps · ' + totalMs + 'ms total' +
+    '</div>' +
+    '<div style="display:flex;align-items:center;gap:8px;padding:4px 0;margin-bottom:4px;font-size:10px;font-weight:700;color:var(--neutral-500);text-transform:uppercase;letter-spacing:.06em">' +
+      '<span style="min-width:24px"></span><span style="min-width:140px">Step</span>' +
+      '<span style="flex:1">Duration (relative)</span><span style="min-width:54px;text-align:right">ms</span>' +
+      '<span style="min-width:50px">Status</span><span>Assertions</span>' +
+    '</div>' + rows;
+}
+
+function _apiRunsRenderTimelineEvents(panel, events, data) {
+  const maxDur = Math.max(...events.map(function(e) { return e.durationMs || 0; }), 1);
+  const colorMap = { 'node-started': '#3b82f6', 'node-completed': '#22c55e', 'node-failed': '#ef4444',
+    'node-skipped': '#9ca3af', 'node-retrying': '#f59e0b', 'assertion-failed': '#ef4444',
+    'variable-extracted': '#a78bfa', 'failure-propagated': '#ef4444' };
+  const rows = events.map(function(e) {
+    const col = colorMap[e.eventType] || '#9ca3af';
+    const pct = e.durationMs ? Math.max(4, Math.round((e.durationMs / maxDur) * 100)) : 0;
+    const bar = e.durationMs ? '<div style="height:6px;width:' + pct + '%;background:' + col + ';border-radius:3px;margin-top:3px"></div>' : '';
+    const ts = e.timestamp ? new Date(e.timestamp).toLocaleTimeString() : '';
+    const detail = e.detail ? ' <span style="color:var(--text-muted);font-size:11px">— ' + escHtml(e.detail) + '</span>' : '';
+    const dur = e.durationMs != null ? ' <span style="color:var(--text-muted);font-size:11px">' + e.durationMs + 'ms</span>' : '';
+    return '<div style="padding:4px 0;border-bottom:1px solid var(--border)">' +
+      '<div style="display:flex;align-items:center;gap:8px">' +
+        '<span style="font-size:10px;color:var(--text-muted);min-width:70px">' + ts + '</span>' +
+        '<span style="font-size:11px;font-weight:600;color:' + col + '">' + escHtml(e.eventType) + '</span>' +
+        '<span style="font-size:12px">' + escHtml(e.nodeName || '') + '</span>' + detail + dur +
+      '</div>' + bar + '</div>';
+  }).join('');
+  const tl = data.timeline;
+  const src = data.source === 'synthesized-from-snapshot'
+    ? '<div style="color:#f59e0b;font-size:11px;margin-bottom:8px">&#x26A0; ' + escHtml(data.advisoryNote || '') + '</div>' : '';
+  panel.innerHTML = src + '<div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">' + events.length + ' events · ' + (tl.totalDurationMs || 0) + 'ms total</div>' + rows;
 }
 
 // ── Debugger Engine — Variable Trace (Phase F) ───────────────────────────────
@@ -11892,7 +13476,7 @@ async function _apiRunsLoadVarTrace(runId, panel) {
   panel.innerHTML = '<div style="color:var(--text-muted)">Loading variable trace…</div>';
   try {
     const res = await fetch('/api/api-runs/' + encodeURIComponent(runId) + '/variable-trace');
-    if (!res.ok) { panel.innerHTML = '<div style="color:#ef4444">Variable trace not available (no snapshot for this run).</div>'; return; }
+    if (!res.ok) { _apiRunsSynthesizeVarTrace(panel); return; }
     const data = await res.json();
     const mutations = data.mutations || [];
     if (!mutations.length) { panel.innerHTML = '<div style="color:var(--text-muted)">No variable mutations recorded.</div>'; return; }
@@ -11924,8 +13508,60 @@ async function _apiRunsLoadVarTrace(runId, panel) {
         '<table class="data-table" style="margin-top:8px"><thead><tr><th>Variable</th><th>Value</th></tr></thead><tbody>' + finalRows + '</tbody></table>' +
       '</div>';
   } catch (e) {
-    panel.innerHTML = '<div style="color:#ef4444">Failed to load variable trace: ' + escHtml(e.message) + '</div>';
+    _apiRunsSynthesizeVarTrace(panel);
   }
+}
+
+function _apiRunsSynthesizeVarTrace(panel) {
+  const run = _apiRunsCurrentRun;
+  const steps = run && run.stepResults || [];
+
+  // Collect all extracted variables per step
+  const mutations = steps
+    .filter(function(s) { return s.extractedVariables && Object.keys(s.extractedVariables).length > 0; })
+    .map(function(s) { return { name: s.stepName, vars: s.extractedVariables }; });
+
+  // Final state = merge all extracted variables (last write wins)
+  const finalState = {};
+  steps.forEach(function(s) {
+    Object.assign(finalState, s.extractedVariables || {});
+  });
+
+  if (!mutations.length && !Object.keys(finalState).length) {
+    panel.innerHTML = '<div style="color:var(--text-muted);font-size:13px;padding:16px 0">' +
+      'No variables were extracted in this run. To capture variables, add an <strong>Extract Variable</strong> assertion on a step.' +
+      '</div>';
+    return;
+  }
+
+  const mutHtml = mutations.length
+    ? mutations.map(function(m) {
+        const rows = Object.entries(m.vars).map(function(kv) {
+          return '<tr><td style="font-family:monospace;font-size:11px;color:#a78bfa">' + escHtml(kv[0]) + '</td>' +
+            '<td style="font-family:monospace;font-size:11px;word-break:break-all">' + escHtml(String(kv[1])) + '</td></tr>';
+        }).join('');
+        return '<div style="margin-bottom:12px">' +
+          '<div style="font-size:12px;font-weight:600;margin-bottom:4px;color:var(--neutral-700)">&#x27A4; ' + escHtml(m.name) + '</div>' +
+          '<table class="data-table"><thead><tr><th>Variable</th><th>Extracted Value</th></tr></thead><tbody>' + rows + '</tbody></table>' +
+          '</div>';
+      }).join('')
+    : '<div style="color:var(--text-muted);font-size:12px">No variable mutations in this run.</div>';
+
+  const finalRows = Object.entries(finalState).map(function(kv) {
+    return '<tr><td style="font-family:monospace;font-size:11px;color:#a78bfa">' + escHtml(kv[0]) + '</td>' +
+      '<td style="font-family:monospace;font-size:11px;word-break:break-all">' + escHtml(String(kv[1])) + '</td></tr>';
+  }).join('');
+
+  panel.innerHTML =
+    '<div style="font-size:11px;color:var(--neutral-500);margin-bottom:10px;padding:6px 8px;background:var(--neutral-100);border-radius:6px">' +
+      '&#x1F4CA; Synthesized from step results — ' + mutations.length + ' step(s) extracted variables' +
+    '</div>' +
+    '<div style="margin-bottom:16px"><strong style="font-size:13px">Mutations by step</strong>' +
+      '<div style="margin-top:8px">' + mutHtml + '</div></div>' +
+    '<div><strong style="font-size:13px">Final variable state</strong>' +
+      '<table class="data-table" style="margin-top:8px"><thead><tr><th>Variable</th><th>Value</th></tr></thead><tbody>' +
+        (finalRows || '<tr><td colspan="2" style="color:var(--text-muted)">No variables captured</td></tr>') +
+      '</tbody></table></div>';
 }
 
 // ── AI Assertion Suggester (Phase F) ────────────────────────────────────────
@@ -12193,6 +13829,15 @@ function _execGraphRenderRunGraph(runGraph) {
   var nodeResults = runGraph.nodeResults || {};
   var isLive = runGraph.runStatus === 'running';
 
+  // Populate run meta in toolbar
+  var metaEl = document.getElementById('exec-graph-run-meta');
+  if (metaEl) {
+    var total = projection.nodes.length;
+    var passed = Object.values(nodeResults).filter(function(r) { return r && r.status === 'passed'; }).length;
+    var failed = Object.values(nodeResults).filter(function(r) { return r && r.status === 'failed'; }).length;
+    metaEl.textContent = ' · ' + total + ' steps · ✓' + passed + ' ✗' + failed;
+  }
+
   // Build element map using nodeResults (richer than plain stepResults)
   var elements = _execGraphBuildElementsFromNodeResults(projection, nodeResults);
 
@@ -12273,6 +13918,16 @@ function _execGraphRenderOverlay(run, projection) {
 
   var resultMap = _execGraphBuildResultMap(run);
   var isLive    = run.status === 'running';
+
+  // Populate run meta in toolbar
+  var metaEl2 = document.getElementById('exec-graph-run-meta');
+  if (metaEl2) {
+    var total2 = projection.nodes.length;
+    var stepResults = run.stepResults || [];
+    var passed2 = stepResults.filter(function(s) { return s.status === 'passed'; }).length;
+    var failed2 = stepResults.filter(function(s) { return s.status === 'failed'; }).length;
+    metaEl2.textContent = ' · ' + total2 + ' steps · ✓' + passed2 + ' ✗' + failed2;
+  }
 
   // Build Cytoscape elements with execution status overlay
   var elements = _execGraphBuildElements(projection, resultMap);
@@ -12871,16 +14526,16 @@ async function _apiRunsRenderAiInsights(runId, collectionId, container) {
           <div class="ai-prop-rationale">${_aiEscHtml(prop.rationale)}</div>
           ${diffRows ? '<table class="ai-prop-diff-table"><thead><tr><th>Field</th><th>Before</th><th>After</th></tr></thead><tbody>' + diffRows + '</tbody></table>' : ''}
           ${canAct ? '<div class="ai-prop-actions">' +
-            '<button class="ai-prop-approve-btn" onclick="_apiRunsApproveProposal(' + JSON.stringify(prop.id) + ', this)">Approve</button>' +
-            '<button class="ai-prop-reject-btn" onclick="_apiRunsRejectProposal(' + JSON.stringify(prop.id) + ', this)">Reject</button>' +
+            '<button class="ai-prop-approve-btn" onclick="_apiRunsApproveProposal(\'' + _aiEscHtml(prop.id) + '\', this)">Approve</button>' +
+            '<button class="ai-prop-reject-btn" onclick="_apiRunsRejectProposal(\'' + _aiEscHtml(prop.id) + '\', this)">Reject</button>' +
             '</div>' : ''}
         </li>`;
       }
       html += '</ul>';
     } else {
       html += '<p class="ai-empty">No proposals generated yet.</p>';
-      html += '<button class="ai-generate-proposals-btn" onclick="_apiRunsGenerateProposals(' +
-        JSON.stringify(collectionId) + ', this)">Generate Remediation Proposals</button>';
+      html += '<button class="ai-generate-proposals-btn" onclick="_apiRunsGenerateProposals(\'' +
+        _aiEscHtml(collectionId) + '\', this)">Generate Remediation Proposals</button>';
     }
     html += '</div>';
 
@@ -12899,11 +14554,28 @@ function _aiEscHtml(str) {
 }
 
 async function _apiRunsGenerateProposals(collectionId, btn) {
+  if (!collectionId || collectionId === 'undefined' || collectionId === 'null') {
+    showToast('Cannot generate proposals — collection ID not available for this run.', 'error');
+    return;
+  }
   btn.disabled = true;
-  btn.textContent = 'Generating…';
+  btn.textContent = '⟳ Generating…';
   try {
     var res = await fetch('/api/remediation/collections/' + encodeURIComponent(collectionId) + '/proposals', { method: 'POST' });
-    if (!res.ok) throw new Error(await res.text());
+    if (!res.ok) {
+      const errBody = await res.json().catch(function() { return {}; });
+      const errMsg = errBody.error || errBody.reason || res.statusText;
+      throw new Error('Server returned ' + res.status + ': ' + errMsg);
+    }
+    const result = await res.json();
+    const count = result.proposals ? result.proposals.length : 0;
+    if (count === 0) {
+      btn.disabled = false;
+      btn.textContent = 'Generate Remediation Proposals';
+      showToast('No actionable proposals could be generated. The current recommendations do not have step-level targets that map to remediation actions.', 'warning');
+      return;
+    }
+    showToast(count + ' remediation proposal' + (count === 1 ? '' : 's') + ' generated', 'success');
     var panel = document.getElementById('ai-insights-panel-run');
     if (panel) { panel.removeAttribute('data-loaded'); }
     if (_apiRunsCurrentRun && panel) {
@@ -12912,7 +14584,7 @@ async function _apiRunsGenerateProposals(collectionId, btn) {
   } catch (err) {
     btn.disabled = false;
     btn.textContent = 'Generate Remediation Proposals';
-    alert('Failed to generate proposals: ' + String(err));
+    showToast('Failed: ' + String(err), 'error');
   }
 }
 
@@ -13915,19 +15587,21 @@ async function _apiPluginsLoadExamples() {
   try {
     const res = await fetch('/api/plugins/examples');
     if (!res.ok) { tbody.innerHTML = '<tr><td colspan="4" style="color:#ef4444">Examples unavailable.</td></tr>'; return; }
-    const examples = await res.json();
-    if (!Array.isArray(examples) || !examples.length) {
+    const data = await res.json();
+    const examples = Array.isArray(data) ? data : (data.examples || []);
+    if (!examples.length) {
       tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-muted)">No example plugins available.</td></tr>';
       return;
     }
     tbody.innerHTML = examples.map(ex => {
-      const caps = (ex.capabilities || []).map(c => `<span class="badge">${escHtml(c)}</span>`).join(' ');
-      const manifest = escHtml(JSON.stringify(ex));
+      const manifest = ex.manifest || ex;
+      const caps = (manifest.capabilities || []).map(c => `<span class="badge">${escHtml(c)}</span>`).join(' ');
+      const manifestStr = escHtml(JSON.stringify(manifest));
       return `<tr>
         <td>${escHtml(ex.name || ex.id)}</td>
         <td style="color:var(--text-muted);font-size:12px">${escHtml(ex.description || '—')}</td>
         <td>${caps || '<span style="color:var(--text-muted)">—</span>'}</td>
-        <td><button class="tbl-btn" onclick="apiPluginRegisterExample('${manifest}')">Register</button></td>
+        <td><button class="tbl-btn" onclick="apiPluginRegisterExample('${manifestStr}')">Register</button></td>
       </tr>`;
     }).join('');
   } catch (e) {
@@ -13984,9 +15658,7 @@ async function graphEditorLoad() {
   const sel = document.getElementById('graph-col-select');
   if (!sel) return;
   sel.innerHTML = '<option value="">— Select Collection —</option>';
-  const cols = (typeof allApiCollections !== 'undefined' && Array.isArray(allApiCollections) && allApiCollections.length)
-    ? allApiCollections
-    : await fetch('/api/api-collections').then(r => r.ok ? r.json() : []).catch(() => []);
+  const cols = await fetch('/api/api-collections').then(r => r.ok ? r.json() : []).catch(() => []);
   (Array.isArray(cols) ? cols : []).forEach(c => {
     sel.innerHTML += `<option value="${escHtml(c.id)}">${escHtml(c.name)}</option>`;
   });
@@ -14230,9 +15902,7 @@ async function collabLoad() {
   const sel = document.getElementById('collab-col-select');
   if (!sel) return;
   sel.innerHTML = '<option value="">— Select Collection —</option>';
-  const cols = (typeof allApiCollections !== 'undefined' && Array.isArray(allApiCollections) && allApiCollections.length)
-    ? allApiCollections
-    : await fetch('/api/api-collections').then(r => r.ok ? r.json() : []).catch(() => []);
+  const cols = await fetch('/api/api-collections').then(r => r.ok ? r.json() : []).catch(() => []);
   (Array.isArray(cols) ? cols : []).forEach(c => {
     sel.innerHTML += `<option value="${escHtml(c.id)}">${escHtml(c.name)}</option>`;
   });
@@ -14462,9 +16132,7 @@ async function copilotLoad() {
   const sel = document.getElementById('copilot-col-select');
   if (!sel) return;
   sel.innerHTML = '<option value="">— Select Collection —</option>';
-  const cols = (typeof allApiCollections !== 'undefined' && Array.isArray(allApiCollections) && allApiCollections.length)
-    ? allApiCollections
-    : await fetch('/api/api-collections').then(r => r.ok ? r.json() : []).catch(() => []);
+  const cols = await fetch('/api/api-collections').then(r => r.ok ? r.json() : []).catch(() => []);
   (Array.isArray(cols) ? cols : []).forEach(c => {
     sel.innerHTML += `<option value="${escHtml(c.id)}">${escHtml(c.name)}</option>`;
   });

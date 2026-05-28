@@ -25,29 +25,148 @@ async function apiColLoad() {
 function _apiColRenderList() {
   const tbody = document.getElementById('api-col-tbody');
   if (!tbody) return;
-  tbody.innerHTML = '';
-  if (_apiCols.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted)">No collections yet</td></tr>';
+
+  // Reset select-all checkbox
+  const checkAll = document.getElementById('api-col-check-all');
+  if (checkAll) checkAll.checked = false;
+  _apiColUpdateBulkBar();
+
+  if (!_apiCols.length) {
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:24px">No collections yet — create one or import from Postman / OpenAPI.</td></tr>';
+    _apiColRenderPagination(0, 0);
     return;
   }
-  for (const col of _apiCols) {
-    const envName = _apiColEnvs.find(e => e.id === col.environmentId)?.name ?? '—';
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td>${escHtml(col.name)}</td>
-      <td>${escHtml(envName)}</td>
-      <td>${(col.steps ?? []).length} steps</td>
-      <td>${escHtml(col.executionMode ?? 'sequential')}</td>
-      <td>
-        <button class="tbl-btn" onclick="apiColEdit('${col.id}')">Edit</button>
-        <button class="tbl-btn run-btn" onclick="apiColRun('${col.id}')">▶ Run</button>
-        <button class="tbl-btn" onclick="apiColPrescan('${col.id}')">Pre-scan</button>
-        <button class="tbl-btn" onclick="apiColGraphOpenModal('${col.id}')" title="View workflow graph">&#9645; Graph</button>
-        <button class="tbl-btn del" onclick="apiColDelete('${col.id}','${escHtml(col.name)}')">Delete</button>
-      </td>`;
-    tbody.appendChild(tr);
+
+  const totalPages = Math.max(1, Math.ceil(_apiCols.length / _apiColPageSize));
+  if (_apiColPage >= totalPages) _apiColPage = totalPages - 1;
+  const pageStart = _apiColPage * _apiColPageSize;
+  const pageCols  = _apiCols.slice(pageStart, pageStart + _apiColPageSize);
+
+  const modeLabels = { sequential: '▶ Sequential', parallel: '⚡ Parallel', dag: '🔀 DAG', auto: '🔀 DAG (Auto)' };
+
+  tbody.innerHTML = pageCols.map((col, pageIdx) => {
+    const globalIdx = pageStart + pageIdx;
+    const envName   = _apiColEnvs.find(e => e.id === col.environmentId)?.name ?? '—';
+    const stepCount = (col.steps ?? []).length;
+    const mode      = col.executionMode ?? 'sequential';
+    const modeLabel = modeLabels[mode] ?? mode;
+    const lastRun   = (_apiColLastRuns ?? {})[col.id];
+    let runBadge    = '<span style="color:var(--text-muted);font-size:11px">—</span>';
+    if (lastRun) {
+      const cls  = lastRun.status === 'passed' ? 'col-run-pass' : lastRun.status === 'running' ? 'col-run-running' : 'col-run-fail';
+      const icon = lastRun.status === 'passed' ? '✅' : lastRun.status === 'running' ? '⏳' : '❌';
+      runBadge = `<span class="col-run-badge ${cls}">${icon} ${lastRun.status}</span>`;
+    }
+    const hasDeps   = (col.steps ?? []).some(s => (s.dependsOn ?? []).length > 0);
+    const showGraph = mode === 'dag' || mode === 'parallel' || hasDeps;
+    const id  = col.id;
+    const nm  = escHtml(col.name);
+    return `<tr>
+      <td style="text-align:center;width:36px"><input type="checkbox" class="api-col-row-cb" data-id="${id}" onchange="_apiColUpdateBulkBar()"/></td>
+      <td style="text-align:center;width:42px;color:var(--text-muted);font-size:12px">${globalIdx + 1}</td>
+      <td style="font-weight:600">${nm}</td>
+      <td style="color:var(--text-muted);font-size:12px">${escHtml(envName)}</td>
+      <td style="text-align:center">${stepCount}</td>
+      <td style="font-size:12px">${modeLabel}</td>
+      <td>${runBadge}</td>
+      <td class="tbl-actions">
+        <button class="tbl-btn" onclick="apiColRun('${id}')">▶ Run</button>
+        <button class="tbl-btn" onclick="apiColTryRequestOpen('${id}')">🧪 Try</button>
+        <button class="tbl-btn" onclick="apiColGenTestsOpen('${id}','${nm}')">✨ Suggest Tests</button>
+        ${showGraph ? `<button class="tbl-btn" onclick="apiColGraphOpenModal('${id}')">🔀 Graph</button>` : ''}
+        <button class="tbl-btn" onclick="apiColAnalyticsOpen('${id}','${nm}')">📊 Analytics</button>
+        <button class="tbl-btn" onclick="apiColPrescan('${id}')">🔍 Pre-scan</button>
+        <button class="tbl-btn" onclick="apiColEdit('${id}')">✏️ Edit</button>
+        <button class="tbl-btn del" onclick="apiColDelete('${id}','${nm}')">🗑</button>
+      </td>
+    </tr>`;
+  }).join('');
+
+  _apiColRenderPagination(totalPages, _apiCols.length);
+}
+
+// ── Bulk selection helpers ─────────────────────────────────────────────────────
+
+function apiColCheckAll(checked) {
+  document.querySelectorAll('.api-col-row-cb').forEach(cb => cb.checked = checked);
+  _apiColUpdateBulkBar();
+}
+
+function _apiColUpdateBulkBar() {
+  const checked = document.querySelectorAll('.api-col-row-cb:checked');
+  const total   = document.querySelectorAll('.api-col-row-cb').length;
+  const bar     = document.getElementById('api-col-bulk-bar');
+  const cnt     = document.getElementById('api-col-bulk-count');
+  const checkAll = document.getElementById('api-col-check-all');
+  if (bar)  bar.style.display  = checked.length > 0 ? 'flex' : 'none';
+  if (cnt)  cnt.textContent    = checked.length + ' collection' + (checked.length !== 1 ? 's' : '') + ' selected';
+  if (checkAll) {
+    checkAll.checked       = checked.length > 0 && checked.length === total;
+    checkAll.indeterminate = checked.length > 0 && checked.length < total;
   }
 }
+
+function apiColBulkClear() {
+  document.querySelectorAll('.api-col-row-cb').forEach(cb => cb.checked = false);
+  _apiColUpdateBulkBar();
+}
+
+function _apiColRenderPagination(totalPages, total) {
+  // Inject pagination row into tfoot (create if missing)
+  let tfoot = document.querySelector('#api-col-list-view table tfoot');
+  if (!tfoot) {
+    tfoot = document.createElement('tfoot');
+    document.querySelector('#api-col-list-view table')?.appendChild(tfoot);
+  }
+  if (total === 0) { tfoot.innerHTML = ''; return; }
+  const start = _apiColPage * _apiColPageSize + 1;
+  const end   = Math.min((_apiColPage + 1) * _apiColPageSize, total);
+  const rppOpts = [10, 25, 50, 100, 200].map(n =>
+    `<option value="${n}"${_apiColPageSize === n ? ' selected' : ''}>${n}</option>`
+  ).join('');
+  tfoot.innerHTML = `<tr><td colspan="8" style="padding:6px 4px">
+    <div class="lt-pagination">
+      <label style="font-size:12px;color:var(--text-muted)">Rows per page:
+        <select class="fm-input" style="padding:2px 6px;font-size:12px;width:auto" onchange="_apiColSetPageSize(+this.value)">${rppOpts}</select>
+      </label>
+      ${totalPages <= 1
+        ? `<span style="font-size:12px;color:var(--text-muted)">${start}–${end} of ${total}</span>`
+        : `<button class="tbl-btn" onclick="_apiColPageGo(-1)" ${_apiColPage === 0 ? 'disabled' : ''}>← Prev</button>
+           <span style="font-size:12px;color:var(--text-muted)">Page ${_apiColPage + 1} / ${totalPages} &nbsp;(${start}–${end} of ${total})</span>
+           <button class="tbl-btn" onclick="_apiColPageGo(1)" ${_apiColPage >= totalPages - 1 ? 'disabled' : ''}>Next →</button>`}
+    </div>
+  </td></tr>`;
+}
+
+async function apiColBulkDelete() {
+  const checked = Array.from(document.querySelectorAll('.api-col-row-cb:checked'));
+  if (!checked.length) return;
+  const ids   = checked.map(cb => cb.dataset.id);
+  const names = ids.map(id => _apiCols.find(c => c.id === id)?.name ?? id);
+  if (!confirm(`Delete ${ids.length} collection${ids.length !== 1 ? 's' : ''}?\n\n${names.join('\n')}\n\nThis cannot be undone.`)) return;
+
+  // Parallel delete — all requests fire simultaneously
+  const results = await Promise.allSettled(
+    ids.map(id => fetch(`/api/api-collections/${encodeURIComponent(id)}`, { method: 'DELETE' }))
+  );
+  const failed  = results.filter(r => r.status === 'rejected' || (r.status === 'fulfilled' && !r.value.ok)).length;
+  const deleted = ids.length - failed;
+  modAlert('api-col-list-alert', failed ? 'error' : 'success',
+    `${deleted} deleted${failed ? ', ' + failed + ' failed' : ''}.`);
+  await apiColLoad();
+}
+
+// cache for last run statuses — populated lazily
+let _apiColLastRuns = {};
+
+// Pagination state
+let _apiColPage     = 0;
+let _apiColPageSize = 10;
+
+function apiColSearch()     { _apiColPage = 0; _apiColRenderList(); }
+function apiColFilterMode() { _apiColPage = 0; _apiColRenderList(); }
+function _apiColPageGo(delta)     { _apiColPage += delta; _apiColRenderList(); }
+function _apiColSetPageSize(n)    { _apiColPageSize = n; _apiColPage = 0; _apiColRenderList(); }
 
 function apiColOpenNew() {
   _editingApiColId = null;
@@ -670,6 +789,438 @@ async function apiColDelete(id, name) {
   await apiColLoad();
 }
 
+const _GEN_TEST_CATEGORIES = [
+  'Positive','Negative','Security','Edge','Contract',
+  'Authorization','Boundary','Business Rules','Content-Type',
+  'Idempotency','Token Lifecycle','Unicode'
+];
+const _GEN_TEST_CATEGORY_ICONS = {
+  'Positive':'🟢','Negative':'🔴','Security':'🔒','Edge':'⚡','Contract':'🟣',
+  'Authorization':'🛡️','Boundary':'📐','Business Rules':'📋','Content-Type':'📄',
+  'Idempotency':'🔁','Token Lifecycle':'🔑','Unicode':'🌐'
+};
+let _genTestColId = '';
+let _genTestColName = '';
+
+function apiColGenTestsOpen(colId, colName) {
+  _genTestColId = colId;
+  _genTestColName = colName;
+  _genTestCases = [];
+  const sel = document.getElementById('gen-tests-category-select');
+  if (sel) sel.value = 'Negative';
+  const content = document.getElementById('gen-tests-content');
+  if (content) content.innerHTML = '<div style="color:var(--text-muted);padding:16px 0">Choose a category and click Suggest Tests to see recommendations.</div>';
+  const title = document.getElementById('gen-tests-modal-title');
+  if (title) title.textContent = '🧪 Suggest Tests — ' + colName;
+  _genTestsShowSelControls(false);
+  openModal('modal-gen-tests');
+}
+
+let _genTestCases = [];
+
+function _genTestsShowSelControls(show) {
+  ['btn-gen-tests-select-all','btn-gen-tests-deselect-all','btn-gen-tests-add'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = show ? '' : 'none';
+  });
+  const cnt = document.getElementById('gen-tests-sel-count');
+  if (cnt) cnt.textContent = '';
+}
+
+function _genTestsUpdateSelCount() {
+  const checked = document.querySelectorAll('#gen-tests-content input[type=checkbox]:checked').length;
+  const total   = document.querySelectorAll('#gen-tests-content input[type=checkbox]').length;
+  const cnt = document.getElementById('gen-tests-sel-count');
+  if (cnt) cnt.textContent = checked + ' of ' + total + ' selected';
+}
+
+function apiColGenTestsSelectAll()   { document.querySelectorAll('#gen-tests-content input[type=checkbox]').forEach(cb => cb.checked = true);  _genTestsUpdateSelCount(); }
+function apiColGenTestsDeselectAll() { document.querySelectorAll('#gen-tests-content input[type=checkbox]').forEach(cb => cb.checked = false); _genTestsUpdateSelCount(); }
+
+async function apiColGenTestsRun() {
+  const sel = document.getElementById('gen-tests-category-select');
+  const category = sel ? sel.value : 'Negative';
+  const content  = document.getElementById('gen-tests-content');
+  const aiBadge  = document.getElementById('gen-tests-ai-badge');
+  if (!content) return;
+
+  _genTestCases = [];
+  _genTestsShowSelControls(false);
+  if (aiBadge) aiBadge.style.display = 'none';
+  content.innerHTML = '<div style="color:var(--text-muted);padding:12px 0">⏳ Generating <strong>' + escHtml(category) + '</strong> tests… this may take a few seconds if AI is enabled.</div>';
+
+  try {
+    const col = _apiCols.find(c => c.id === _genTestColId);
+    const env = col ? _apiColEnvs.find(e => e.id === col.environmentId) : null;
+    const baseUrl = env ? (env.baseUrl || '') : '';
+
+    const res = await fetch('/api/ai-intelligence/collections/' + encodeURIComponent(_genTestColId) + '/generate-tests', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ category, baseUrl }),
+    });
+    if (!res.ok) { content.innerHTML = '<div style="color:#ef4444">Failed: ' + res.status + '</div>'; return; }
+
+    const suite = await res.json();
+    _genTestCases = suite.cases || [];
+
+    if (!_genTestCases.length) {
+      content.innerHTML = '<div style="color:var(--text-muted);padding:16px 0">No test suggestions generated. The collection may have no steps with request bodies.</div>';
+      return;
+    }
+
+    // Show AI badge if enhanced
+    if (suite.aiEnhanced && aiBadge) aiBadge.style.display = '';
+
+    // Show advisory note from backend if present
+    const advisory = suite.aiError
+      ? '<div class="advisory-banner advisory-banner-warn" style="margin-bottom:10px">ℹ️ ' + escHtml(suite.aiError) + '</div>'
+      : '';
+
+    const sevColor = { low:'#22c55e', medium:'#f59e0b', high:'#ef4444', critical:'#7c3aed' };
+
+    const rows = _genTestCases.map(function(c, idx) {
+      const sc  = sevColor[c.severity] || '#9ca3af';
+      const exp = (c.expectedStatusCodes || []).join(', ');
+      return '<tr>' +
+        '<td style="width:36px;text-align:center"><input type="checkbox" class="gen-test-cb" data-idx="' + idx + '" onchange="_genTestsUpdateSelCount()"/></td>' +
+        '<td><span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;background:' + sc + '22;color:' + sc + '">' + escHtml(c.severity) + '</span></td>' +
+        '<td style="font-size:11px;color:var(--text-muted)">' + escHtml(c.stepName) + '</td>' +
+        '<td>' +
+          '<div style="font-size:12px;font-weight:600">' + escHtml(c.title) + '</div>' +
+          (c.description ? '<div style="font-size:11px;color:var(--text-muted);margin-top:2px">' + escHtml(c.description) + '</div>' : '') +
+        '</td>' +
+        '<td style="font-size:11px;text-align:center"><code>' + escHtml(exp) + '</code></td>' +
+        '<td style="font-size:11px;color:var(--text-muted);max-width:220px">' + escHtml(c.expectedBehavior) + '</td>' +
+        '</tr>';
+    }).join('');
+
+    content.innerHTML =
+      advisory +
+      '<div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">' +
+        '<strong>' + _genTestCases.length + '</strong> suggestions for <strong>' + escHtml(category) + '</strong>' +
+        (suite.aiProvider ? ' <span style="color:var(--accent);font-size:11px">via ' + escHtml(suite.aiProvider) + '</span>' : '') +
+      '</div>' +
+      '<div style="overflow:auto;max-height:420px">' +
+        '<table class="data-table">' +
+          '<thead><tr><th style="width:36px"></th><th>Severity</th><th>Step</th><th>Test Description</th><th>Expected Status</th><th>What to verify</th></tr></thead>' +
+          '<tbody>' + rows + '</tbody>' +
+        '</table>' +
+      '</div>';
+
+    _genTestsShowSelControls(true);
+    _genTestsUpdateSelCount();
+  } catch (e) {
+    content.innerHTML = '<div style="color:#ef4444">Error: ' + escHtml(e.message) + '</div>';
+  }
+}
+
+async function apiColGenTestsAddSelected() {
+  const checked = Array.from(document.querySelectorAll('#gen-tests-content input[type=checkbox]:checked'));
+  if (!checked.length) { alert('Select at least one test to add.'); return; }
+  const selectedCases = checked.map(cb => _genTestCases[parseInt(cb.dataset.idx)]);
+
+  const btn = document.getElementById('btn-gen-tests-add');
+  if (btn) { btn.textContent = '⏳ Adding…'; btn.disabled = true; }
+
+  try {
+    const res = await fetch('/api/api-collections/' + encodeURIComponent(_genTestColId) + '/add-steps', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ steps: selectedCases.map(c => ({
+        id: '', name: c.title,
+        request: {
+          method:  c.suggestedRequest?.method  ?? 'GET',
+          url:     c.suggestedRequest?.url     ?? '',
+          headers: c.suggestedRequest?.headers ?? {},
+          body:    c.suggestedRequest?.body    ?? null,
+        },
+        assertions: (c.assertions ?? []).map(a => ({ type: 'status', operator: 'equals', value: String(c.expectedStatusCodes?.[0] ?? 200), message: a })),
+        variables: [],
+      })) }),
+    });
+    if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'Add failed'); }
+    const data = await res.json();
+    const cnt = data.addedCount ?? selectedCases.length;
+    closeModal('modal-gen-tests');
+    modAlert('api-col-list-alert', 'success', cnt + ' test step' + (cnt !== 1 ? 's' : '') + ' added to collection.');
+    await apiColLoad();
+  } catch (e) {
+    modAlert('api-col-list-alert', 'error', e.message);
+  } finally {
+    if (btn) { btn.textContent = '+ Add Selected to Collection'; btn.disabled = false; }
+  }
+}
+
+// ── Try a Request — standalone Postman-style request builder ──────────────────
+
+let _tryReqLastResult = null;  // last successful send result
+
+function apiColTryRequestOpen(preselectColId) {
+  _tryReqLastResult = null;
+
+  // Reset request fields
+  document.getElementById('try-req-method').value = 'GET';
+  document.getElementById('try-req-url').value = '';
+  document.getElementById('try-req-headers').value = '';
+  document.getElementById('try-req-body').value = '';
+
+  // Populate environment selector
+  const envSel = document.getElementById('try-req-env');
+  if (envSel) {
+    const preEnvId = preselectColId ? (_apiCols.find(c => c.id === preselectColId)?.environmentId ?? '') : '';
+    envSel.innerHTML = '<option value="">— No environment —</option>' +
+      _apiColEnvs.map(e => `<option value="${e.id}"${e.id === preEnvId ? ' selected' : ''}>${escHtml(e.name)}</option>`).join('');
+  }
+
+  // Populate "Load from collection step" — collection dropdown
+  const colSel = document.getElementById('try-req-col-select');
+  if (colSel) {
+    colSel.innerHTML = '<option value="">— choose a collection —</option>' +
+      _apiCols.map(c => `<option value="${c.id}"${c.id === preselectColId ? ' selected' : ''}>${escHtml(c.name)}</option>`).join('');
+    if (preselectColId) {
+      _tryReqPopulateSteps(preselectColId);
+    } else {
+      const stepSel = document.getElementById('try-req-step-select');
+      if (stepSel) { stepSel.innerHTML = '<option value="">— choose a step —</option>'; stepSel.disabled = true; }
+    }
+  }
+
+  // Populate "Save to collection" dropdown in footer
+  const saveSel = document.getElementById('try-req-save-col');
+  if (saveSel) {
+    saveSel.innerHTML = '<option value="">— choose a collection —</option>' +
+      _apiCols.map(c => `<option value="${c.id}"${c.id === preselectColId ? ' selected' : ''}>${escHtml(c.name)}</option>`).join('');
+  }
+
+  // Reset save name
+  const nameEl = document.getElementById('try-req-save-name');
+  if (nameEl) nameEl.value = '';
+
+  // Reset response / error
+  document.getElementById('try-req-response').style.display = 'none';
+  document.getElementById('try-req-loading').style.display = 'none';
+  document.getElementById('try-req-error').style.display = 'none';
+  document.getElementById('try-req-save-row').style.display = 'none';
+
+  _tryReqTab('headers');
+  _tryRespTab('body');
+  openModal('modal-try-request');
+}
+
+function _tryReqPopulateSteps(colId) {
+  const stepSel = document.getElementById('try-req-step-select');
+  if (!stepSel) return;
+  const col = _apiCols.find(c => c.id === colId);
+  if (!col || !(col.steps || []).length) {
+    stepSel.innerHTML = '<option value="">— no steps in this collection —</option>';
+    stepSel.disabled = true;
+    return;
+  }
+  stepSel.innerHTML = '<option value="">— choose a step to pre-fill —</option>' +
+    col.steps.map((s, i) =>
+      `<option value="${i}">${i + 1}. ${escHtml(s.request?.method ?? 'GET')} ${escHtml(s.request?.url ?? s.name ?? '')}</option>`
+    ).join('');
+  stepSel.disabled = false;
+}
+
+function _tryReqColSelected() {
+  const colId = document.getElementById('try-req-col-select')?.value ?? '';
+  _tryReqPopulateSteps(colId);
+  // Also sync environment
+  if (colId) {
+    const col = _apiCols.find(c => c.id === colId);
+    if (col && col.environmentId) {
+      const envSel = document.getElementById('try-req-env');
+      if (envSel) envSel.value = col.environmentId;
+    }
+  }
+}
+
+function _tryReqStepSelected() {
+  const colId   = document.getElementById('try-req-col-select')?.value ?? '';
+  const stepIdx = document.getElementById('try-req-step-select')?.value;
+  if (!colId || stepIdx === '' || stepIdx === undefined) return;
+  const col  = _apiCols.find(c => c.id === colId);
+  if (!col) return;
+  const step = col.steps[parseInt(stepIdx)];
+  if (!step) return;
+
+  // Pre-fill method + URL
+  document.getElementById('try-req-method').value = step.request?.method ?? 'GET';
+  document.getElementById('try-req-url').value    = step.request?.url ?? '';
+
+  // Pre-fill headers
+  const hdrs = step.request?.headers ?? {};
+  document.getElementById('try-req-headers').value = Object.entries(hdrs).map(([k, v]) => k + ': ' + v).join('\n');
+
+  // Pre-fill body
+  const body = step.request?.body;
+  document.getElementById('try-req-body').value = body ? (typeof body === 'string' ? body : JSON.stringify(body, null, 2)) : '';
+
+  // Pre-fill save name
+  const nameEl = document.getElementById('try-req-save-name');
+  if (nameEl && !nameEl.value) nameEl.value = step.name || '';
+}
+
+function _tryReqTab(tab) {
+  ['headers','body'].forEach(t => {
+    document.getElementById('try-req-panel-' + t).style.display = t === tab ? '' : 'none';
+    const btn = document.getElementById('try-req-tab-' + t);
+    if (btn) btn.classList.toggle('try-req-tab-active', t === tab);
+  });
+}
+
+function _tryRespTab(tab) {
+  ['body','headers'].forEach(t => {
+    document.getElementById('try-resp-panel-' + t).style.display = t === tab ? '' : 'none';
+    const btn = document.getElementById('try-resp-tab-' + t);
+    if (btn) btn.classList.toggle('try-req-tab-active', t === tab);
+  });
+}
+
+async function apiColTryRequestSend() {
+  const method  = document.getElementById('try-req-method').value;
+  const url     = document.getElementById('try-req-url').value.trim();
+  const envId   = document.getElementById('try-req-env')?.value ?? '';
+  const rawHdrs = document.getElementById('try-req-headers').value.trim();
+  const rawBody = document.getElementById('try-req-body').value.trim();
+
+  const errEl = document.getElementById('try-req-error');
+  if (!url) { errEl.style.display = ''; errEl.textContent = 'Please enter a URL before sending.'; return; }
+
+  errEl.style.display = 'none';
+  document.getElementById('try-req-response').style.display = 'none';
+  document.getElementById('try-req-save-row').style.display = 'none';
+  document.getElementById('try-req-loading').style.display = '';
+
+  // Parse headers from textarea lines
+  const headers = {};
+  rawHdrs.split('\n').forEach(line => {
+    const colon = line.indexOf(':');
+    if (colon > 0) headers[line.slice(0, colon).trim()] = line.slice(colon + 1).trim();
+  });
+
+  try {
+    const res = await fetch('/api/api-collections/try-request', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ method, url, headers, body: rawBody || null, environmentId: envId || null }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Request failed');
+
+    document.getElementById('try-req-loading').style.display = 'none';
+
+    // Detect unresolved variables in resolvedUrl AND resolvedRequestHeaders
+    const varWarn = document.getElementById('try-req-var-warn');
+    if (varWarn) {
+      const urlUnresolved  = (data.resolvedUrl || '').match(/\{\{(\w+)\}\}/g) || [];
+      const hdrUnresolved  = Object.values(data.resolvedRequestHeaders || {}).flatMap(v => (v || '').match(/\{\{(\w+)\}\}/g) || []);
+      const allUnresolved  = [...new Set([...urlUnresolved, ...hdrUnresolved])];
+      // Also detect decryption failure (sensitive var decryption returns '***' on error)
+      const decryptFailed  = Object.entries(data.resolvedRequestHeaders || {})
+        .filter(([, v]) => typeof v === 'string' && v.includes('***'))
+        .map(([k]) => k);
+      if (allUnresolved.length || decryptFailed.length) {
+        varWarn.style.display = '';
+        const msgs = [];
+        if (allUnresolved.length) msgs.push('Unresolved variables: ' + allUnresolved.join(', ') + ' — add these keys to the selected Environment.');
+        if (decryptFailed.length) msgs.push('Decryption failed for header(s): ' + decryptFailed.join(', ') + ' — re-save the sensitive variable in Admin → Environments.');
+        varWarn.textContent = '⚠ ' + msgs.join(' | ');
+      } else {
+        varWarn.style.display = 'none';
+      }
+    }
+
+    // ── Status 0 = backend-level error (invalid URL, timeout, connection refused) ──
+    if (data.status === 0) {
+      const badge = document.getElementById('try-req-status-badge');
+      badge.className = 'try-req-status-badge try-req-status-err';
+      badge.textContent = '0 Network Error';
+      document.getElementById('try-req-latency').textContent = data.durationMs ? data.durationMs + ' ms' : '';
+
+      // Show the actual error message in the body panel + hint about unresolved vars
+      let errBody = '⚠ Request could not be sent.\n\n';
+      if (data.error) errBody += 'Error: ' + data.error + '\n\n';
+      if (data.resolvedUrl) errBody += 'Resolved URL: ' + data.resolvedUrl + '\n\n';
+      errBody += 'Common causes:\n';
+      errBody += '• URL still contains {{variables}} — make sure the selected Environment has those variable keys defined.\n';
+      errBody += '• The server is unreachable (connection refused / timeout).\n';
+      errBody += '• HTTPS certificate error on a self-signed cert.\n';
+      document.getElementById('try-req-res-body').textContent = errBody;
+      document.getElementById('try-req-res-headers').textContent = '';
+      document.getElementById('try-req-response').style.display = '';
+      document.getElementById('try-req-save-row').style.display = 'none';
+      _tryRespTab('body');
+      return;
+    }
+
+    _tryReqLastResult = { method, url, headers, body: rawBody || null, environmentId: envId || null, response: data };
+
+    // Status badge
+    const badge = document.getElementById('try-req-status-badge');
+    const isOk  = data.status >= 200 && data.status < 300;
+    badge.className = 'try-req-status-badge ' + (isOk ? 'try-req-status-ok' : data.status >= 400 ? 'try-req-status-err' : 'try-req-status-redir');
+    badge.textContent = data.status + (data.statusText ? ' ' + data.statusText : '');
+    document.getElementById('try-req-latency').textContent = data.durationMs ? data.durationMs + ' ms' : '';
+
+    // Resolved URL hint (shown when different from input — variables were substituted)
+    if (data.resolvedUrl && data.resolvedUrl !== url) {
+      document.getElementById('try-req-latency').textContent +=
+        '  ·  🔗 ' + data.resolvedUrl.slice(0, 80) + (data.resolvedUrl.length > 80 ? '…' : '');
+    }
+
+    // Body — pretty-print if JSON
+    const rawBodyVal = typeof data.body === 'string' ? data.body : (data.bodyRaw ?? '');
+    let bodyText = rawBodyVal;
+    if (typeof data.body === 'object' && data.body !== null) {
+      bodyText = JSON.stringify(data.body, null, 2);
+    } else {
+      try { bodyText = JSON.stringify(JSON.parse(rawBodyVal), null, 2); } catch { /* keep raw */ }
+    }
+    document.getElementById('try-req-res-body').textContent = bodyText || '(empty response body)';
+
+    // Response headers
+    const respHdrs = data.headers || {};
+    document.getElementById('try-req-res-headers').textContent =
+      Object.entries(respHdrs).map(([k, v]) => k + ': ' + v).join('\n') || '(no headers)';
+
+    document.getElementById('try-req-response').style.display = '';
+    document.getElementById('try-req-save-row').style.display = 'flex';
+    _tryRespTab('body');
+  } catch (e) {
+    document.getElementById('try-req-loading').style.display = 'none';
+    errEl.style.display = '';
+    errEl.textContent = e.message;
+  }
+}
+
+async function apiColTryRequestSave() {
+  if (!_tryReqLastResult) return;
+  const targetColId = document.getElementById('try-req-save-col')?.value;
+  if (!targetColId) { alert('Please select a collection to save into.'); return; }
+
+  const r        = _tryReqLastResult;
+  const nameEl   = document.getElementById('try-req-save-name');
+  const stepName = (nameEl?.value.trim()) || (r.method + ' ' + r.url).slice(0, 60);
+
+  try {
+    const res = await fetch('/api/api-collections/' + encodeURIComponent(targetColId) + '/add-steps', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ steps: [{
+        id: '', name: stepName,
+        request: { method: r.method, url: r.url, headers: r.headers || {}, body: r.body || null },
+        assertions: [{ type: 'status', operator: 'equals', value: String(r.response?.status ?? 200), message: '' }],
+        variables: [],
+      }] }),
+    });
+    if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'Save failed'); }
+    closeModal('modal-try-request');
+    modAlert('api-col-list-alert', 'success', `"${stepName}" saved to collection.`);
+    await apiColLoad();
+  } catch (e) {
+    modAlert('api-col-list-alert', 'error', e.message);
+  }
+}
+
 async function apiColRun(id) {
   const col = _apiCols.find(c => c.id === id);
   if (!col) return;
@@ -975,7 +1526,6 @@ function _apiColGraphRender(projection, isModal) {
     return;
   }
 
-  const isLarge = (projection.warnings || []).some(function(w) { return w.code === 'LARGE_GRAPH_WARNING'; });
   const elements = _apiColGraphBuildElements(projection);
 
   if (!isModal && _apiColGraphCy) { _apiColGraphCy.destroy(); _apiColGraphCy = null; }
@@ -987,21 +1537,27 @@ function _apiColGraphRender(projection, isModal) {
     container.style.display = '';
   }
 
+  // Hide loading overlay in modal
+  if (isModal) {
+    const loadEl = document.getElementById('api-col-graph-modal-loading');
+    if (loadEl) loadEl.style.display = 'none';
+  }
+
   /* global cytoscape */
   const cy = cytoscape({
     container:            container,
     elements:             elements,
     style:                _apiColGraphCyStyles(),
-    layout:               _apiColGraphCyLayout(projection, isLarge),
+    layout:               _apiColGraphCyLayout(projection),
     zoom:                 1,
-    minZoom:              0.1,
-    maxZoom:              4,
+    minZoom:              0.08,
+    maxZoom:              5,
     userZoomingEnabled:   true,
     userPanningEnabled:   true,
     boxSelectionEnabled:  false,
   });
 
-  cy.on('layoutstop', function() { cy.fit(undefined, 40); });
+  cy.on('layoutstop', function() { cy.fit(undefined, 60); });
 
   if (!isModal) {
     cy.on('tap', 'node', function(evt) { _apiColGraphShowNodeDetail(evt.target.data()); });
@@ -1011,12 +1567,61 @@ function _apiColGraphRender(projection, isModal) {
     _apiColGraphRenderHierarchy(projection);
     _apiColGraphEnableToolbarBtns(true);
   } else {
+    cy.on('tap', 'node', function(evt) { _apiColGraphModalShowDetail(evt.target.data()); });
+    cy.on('tap', function(evt) { if (evt.target === cy) _apiColGraphModalHideDetail(); });
     _apiColGraphModalCy = cy;
+    // Update meta badge
+    const metaEl = document.getElementById('api-col-graph-modal-meta');
+    if (metaEl && projection.meta) metaEl.textContent = projection.meta.nodeCount + ' steps · ' + projection.meta.edgeCount + ' edges';
   }
+}
+
+// ── Topological-sort layout (no extra deps) ────────────────────────────────────
+// Computes x/y positions for a top-to-bottom ranked DAG.
+function _apiColGraphComputePositions(nodes, edges) {
+  const ids = nodes.map(n => n.id);
+  const inDeg = {}, children = {}, rank = {};
+  ids.forEach(id => { inDeg[id] = 0; children[id] = []; rank[id] = 0; });
+
+  for (const e of edges) {
+    if (ids.includes(e.source) && ids.includes(e.target)) {
+      inDeg[e.target] = (inDeg[e.target] || 0) + 1;
+      children[e.source].push(e.target);
+    }
+  }
+
+  // Kahn's BFS to compute ranks
+  const queue = ids.filter(id => inDeg[id] === 0);
+  while (queue.length) {
+    const cur = queue.shift();
+    for (const child of (children[cur] || [])) {
+      rank[child] = Math.max(rank[child], rank[cur] + 1);
+      inDeg[child]--;
+      if (inDeg[child] === 0) queue.push(child);
+    }
+  }
+
+  // Group by rank
+  const layers = {};
+  ids.forEach(id => { const r = rank[id]; (layers[r] = layers[r] || []).push(id); });
+
+  const H_GAP = 220, V_GAP = 120;
+  const positions = {};
+  for (const [r, layerIds] of Object.entries(layers)) {
+    const y = parseInt(r) * V_GAP;
+    const totalW = (layerIds.length - 1) * H_GAP;
+    layerIds.forEach((id, i) => {
+      positions[id] = { x: i * H_GAP - totalW / 2, y };
+    });
+  }
+  return positions;
 }
 
 function _apiColGraphBuildElements(projection) {
   const elements = [];
+
+  // Compute topo positions
+  const topoPos = _apiColGraphComputePositions(projection.nodes || [], projection.edges || []);
 
   const clusterNodeIds = new Set();
   for (const cluster of (projection.clusters || [])) {
@@ -1039,13 +1644,31 @@ function _apiColGraphBuildElements(projection) {
     }
     const classes = ['workflow-node'];
     if (node.disabled) classes.push('node-disabled');
-    classes.push(node.isAutoPositioned ? 'node-auto' : 'node-stored');
     classes.push('nodetype-' + (node.nodeType || 'HTTP').toLowerCase());
+
+    // Build richer label: step index + method + truncated URL
+    const raw  = node.label || node.id;
+    // Try to detect "METHOD /path" pattern in label
+    const methodMatch = raw.match(/^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+(.+)$/i);
+    let topLine = raw, bottomLine = '';
+    if (methodMatch) {
+      topLine    = methodMatch[1].toUpperCase();
+      const url  = methodMatch[2];
+      bottomLine = url.length > 28 ? '…' + url.slice(-26) : url;
+    } else if (raw.length > 30) {
+      topLine    = raw.slice(0, 28) + '…';
+    }
+    const displayLabel = bottomLine ? topLine + '\n' + bottomLine : topLine;
+
+    // Use stored position if available, else topo
+    const stored = node.position && !node.isAutoPositioned;
+    const pos = stored ? node.position : (topoPos[node.id] || { x: 0, y: 0 });
 
     elements.push({
       data: {
         id:               node.id,
-        label:            node.label || node.id,
+        label:            displayLabel,
+        rawLabel:         raw,
         nodeType:         node.nodeType,
         layer:            node.layer,
         indexWithinLayer: node.indexWithinLayer,
@@ -1053,11 +1676,11 @@ function _apiColGraphBuildElements(projection) {
         hierarchyPath:    node.hierarchyPath ? node.hierarchyPath.join(' › ') : '',
         disabled:         node.disabled,
         isAutoPositioned: node.isAutoPositioned,
-        posX:             node.position && node.position.x,
-        posY:             node.position && node.position.y,
+        posX:             pos.x,
+        posY:             pos.y,
         parent:           parent,
       },
-      position: { x: node.position ? node.position.x : 0, y: node.position ? node.position.y : 0 },
+      position: pos,
       classes:  classes.join(' '),
     });
   }
@@ -1077,48 +1700,50 @@ function _apiColGraphBuildElements(projection) {
 function _apiColGraphCyStyles() {
   return [
     { selector: 'node.workflow-node', style: {
-      shape: 'round-rectangle', width: 'label', height: 28, padding: '6px 10px',
-      'background-color': '#2a2a30', 'border-color': '#f59e0b', 'border-width': 1.5,
-      label: 'data(label)', 'font-size': 11, color: '#e2e8f0',
+      shape: 'round-rectangle',
+      width: 180, height: 52,
+      'background-color': '#1e2030',
+      'border-color': '#f59e0b', 'border-width': 2,
+      label: 'data(label)',
+      'font-size': 11, color: '#e2e8f0',
       'text-valign': 'center', 'text-halign': 'center',
-      'text-wrap': 'ellipsis', 'text-max-width': 160, 'min-width': 80, cursor: 'pointer',
+      'text-wrap': 'wrap', 'text-max-width': 165,
+      'line-height': 1.4,
+      cursor: 'pointer',
+      'transition-property': 'border-color, background-color, border-width',
+      'transition-duration': '0.15s',
     }},
-    { selector: 'node.nodetype-http',      style: { 'border-color': '#f59e0b' }},
-    { selector: 'node.nodetype-assertion', style: { 'border-color': '#10b981' }},
-    { selector: 'node.nodetype-extract',   style: { 'border-color': '#6366f1' }},
-    { selector: 'node.nodetype-condition', style: { 'border-color': '#f472b6' }},
-    { selector: 'node.nodetype-ai',        style: { 'border-color': '#e879f9' }},
-    { selector: 'node.node-disabled',      style: { opacity: 0.4, 'border-style': 'dashed' }},
-    { selector: 'node.node-auto',          style: { 'border-style': 'dashed', 'border-width': 1 }},
-    { selector: 'node:selected',           style: { 'border-color': '#ffffff', 'border-width': 2.5, 'background-color': '#3a3a44' }},
-    { selector: 'node:active',             style: { 'overlay-opacity': 0.1 }},
-    { selector: 'node.cluster-node',       style: {
-      'background-color': 'rgba(245,158,11,.06)', 'border-color': 'rgba(245,158,11,.3)',
-      'border-width': 1, 'border-style': 'dashed', label: 'data(label)',
-      'font-size': 10, color: '#6b7280', 'text-valign': 'top', 'text-halign': 'center', padding: 16,
+    { selector: 'node.workflow-node:hover',  style: { 'background-color': '#2a2d45', 'border-width': 2.5 }},
+    { selector: 'node.nodetype-http',        style: { 'border-color': '#f59e0b' }},
+    { selector: 'node.nodetype-assertion',   style: { 'border-color': '#10b981' }},
+    { selector: 'node.nodetype-extract',     style: { 'border-color': '#6366f1' }},
+    { selector: 'node.nodetype-condition',   style: { 'border-color': '#f472b6' }},
+    { selector: 'node.nodetype-transform',   style: { 'border-color': '#38bdf8' }},
+    { selector: 'node.nodetype-parallel',    style: { 'border-color': '#a78bfa' }},
+    { selector: 'node.nodetype-ai',          style: { 'border-color': '#e879f9' }},
+    { selector: 'node.nodetype-loop',        style: { 'border-color': '#34d399' }},
+    { selector: 'node.node-disabled',        style: { opacity: 0.38, 'border-style': 'dashed' }},
+    { selector: 'node:selected',             style: { 'border-color': '#fff', 'border-width': 3, 'background-color': '#2e3250' }},
+    { selector: 'node:active',               style: { 'overlay-opacity': 0.08 }},
+    { selector: 'node.cluster-node',         style: {
+      'background-color': 'rgba(245,158,11,.05)', 'border-color': 'rgba(245,158,11,.25)',
+      'border-width': 1.5, 'border-style': 'dashed', label: 'data(label)',
+      'font-size': 10, color: '#9ca3af', 'text-valign': 'top', 'text-halign': 'center', padding: 20,
     }},
-    { selector: 'edge.workflow-edge',  style: {
-      width: 1.5, 'line-color': '#555968', 'target-arrow-color': '#555968',
-      'target-arrow-shape': 'triangle', 'curve-style': 'bezier', 'arrow-scale': 0.8,
+    { selector: 'edge.workflow-edge', style: {
+      width: 2, 'line-color': '#4b5563', 'target-arrow-color': '#4b5563',
+      'target-arrow-shape': 'triangle', 'curve-style': 'bezier', 'arrow-scale': 0.9,
     }},
-    { selector: 'edge.edge-depends_on',    style: { 'line-color': '#f59e0b', 'target-arrow-color': '#f59e0b', width: 2 }},
-    { selector: 'edge.edge-inferred',      style: { 'line-style': 'dashed', 'line-color': '#555968', 'target-arrow-color': '#555968', width: 1.5 }},
-    { selector: 'edge.edge-heuristic',     style: { 'line-style': 'dotted', opacity: 0.6 }},
-    { selector: 'edge:selected',           style: { 'line-color': '#ffffff', 'target-arrow-color': '#ffffff' }},
+    { selector: 'edge.edge-depends_on',  style: { 'line-color': '#f59e0b', 'target-arrow-color': '#f59e0b', width: 2.5 }},
+    { selector: 'edge.edge-inferred',    style: { 'line-style': 'dashed', 'line-color': '#6b7280', 'target-arrow-color': '#6b7280' }},
+    { selector: 'edge.edge-heuristic',   style: { 'line-style': 'dotted', opacity: 0.55 }},
+    { selector: 'edge:selected',         style: { 'line-color': '#fff', 'target-arrow-color': '#fff' }},
   ];
 }
 
-function _apiColGraphCyLayout(projection, isLarge) {
-  const strategy = projection.meta && projection.meta.projectionStrategy;
-  if (strategy === 'stored') {
-    return { name: 'preset', animate: false, fit: true, padding: 40 };
-  }
-  return {
-    name: 'breadthfirst', directed: true,
-    spacingFactor: isLarge ? 1.2 : 1.5,
-    animate: false, padding: 40, avoidOverlap: true,
-    nodeDimensionsIncludeLabels: true,
-  };
+function _apiColGraphCyLayout(projection) {
+  // Always use preset with our topo-sorted positions
+  return { name: 'preset', animate: false, fit: true, padding: 60 };
 }
 
 // ── Toolbar ────────────────────────────────────────────────────────────────────
@@ -1272,30 +1897,226 @@ function apiColGraphSidebarToggle(show) {
 
 // ── Fullscreen modal ──────────────────────────────────────────────────────────
 function apiColGraphOpenModal(collectionId) {
-  var col = _apiCols.find(function(c) { return c.id === collectionId; });
-  var titleEl = document.getElementById('api-col-graph-modal-title');
-  if (titleEl) titleEl.textContent = (col ? col.name : 'Workflow') + ' — Graph';
-  document.getElementById('modal-api-col-graph').style.display = '';
+  const col = _apiCols.find(c => c.id === collectionId);
+  const titleEl = document.getElementById('api-col-graph-modal-title');
+  if (titleEl) titleEl.textContent = (col ? col.name : 'Workflow') + ' — Workflow Graph';
+
+  const metaEl = document.getElementById('api-col-graph-modal-meta');
+  if (metaEl) metaEl.textContent = '';
+
+  // Show modal + loading state
+  document.getElementById('modal-api-col-graph').style.display = 'flex';
+  const loadEl = document.getElementById('api-col-graph-modal-loading');
+  if (loadEl) loadEl.style.display = '';
+  _apiColGraphModalHideDetail();
+
+  // Destroy previous instance
+  if (_apiColGraphModalCy) { _apiColGraphModalCy.destroy(); _apiColGraphModalCy = null; }
+
+  const renderModal = function(p) { setTimeout(function() { _apiColGraphRender(p, true); }, 60); };
 
   if (_apiColGraphProjection && _apiColGraphColId === collectionId) {
-    setTimeout(function() { _apiColGraphRender(_apiColGraphProjection, true); }, 50);
+    renderModal(_apiColGraphProjection);
   } else {
     fetch('/api/workflows/' + encodeURIComponent(collectionId) + '/graph')
-      .then(function(r) { return r.json(); })
-      .then(function(p) {
-        _apiColGraphProjection = p;
-        _apiColGraphColId = collectionId;
-        setTimeout(function() { _apiColGraphRender(p, true); }, 50);
-      })
-      .catch(function(e) { console.error('Graph modal load error', e); });
+      .then(r => r.json())
+      .then(p => { _apiColGraphProjection = p; _apiColGraphColId = collectionId; renderModal(p); })
+      .catch(e => {
+        if (loadEl) loadEl.innerHTML = '<span style="color:#ef4444;font-size:13px">Failed to load graph: ' + escHtml(e.message) + '</span>';
+      });
   }
 }
 
 function apiColGraphModalClose() {
   document.getElementById('modal-api-col-graph').style.display = 'none';
   if (_apiColGraphModalCy) { _apiColGraphModalCy.destroy(); _apiColGraphModalCy = null; }
+  _apiColGraphModalHideDetail();
 }
 
 function apiColGraphModalFit() {
-  if (_apiColGraphModalCy) _apiColGraphModalCy.fit(undefined, 40);
+  if (_apiColGraphModalCy) _apiColGraphModalCy.fit(undefined, 60);
+}
+
+function _apiColGraphModalShowDetail(data) {
+  const panel = document.getElementById('api-col-graph-modal-detail');
+  const body  = document.getElementById('api-col-graph-modal-detail-body');
+  if (!panel || !body) return;
+  const rows = [
+    ['Name',     data.rawLabel || data.label],
+    ['Type',     data.nodeType || '—'],
+    ['Group',    data.visualGroup || '—'],
+    ['Path',     data.hierarchyPath || '—'],
+    ['Layer',    data.layer != null ? String(data.layer) : '—'],
+    ['Disabled', data.disabled ? 'Yes' : 'No'],
+  ];
+  body.innerHTML = rows.map(([k, v]) =>
+    '<div style="margin-bottom:10px"><div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:2px">' + k + '</div>' +
+    '<div style="font-size:13px;word-break:break-all">' + escHtml(v) + '</div></div>'
+  ).join('');
+  panel.style.display = '';
+}
+
+function _apiColGraphModalHideDetail() {
+  const panel = document.getElementById('api-col-graph-modal-detail');
+  if (panel) panel.style.display = 'none';
+}
+
+// ── Collection Analytics Modal ─────────────────────────────────────────────
+
+async function apiColAnalyticsOpen(colId, colName) {
+  const modal = document.getElementById('modal-col-analytics');
+  const subtitle = document.getElementById('col-analytics-subtitle');
+  const body = document.getElementById('col-analytics-body');
+  if (!modal) return;
+  subtitle.textContent = colName || colId;
+  body.innerHTML = '<div style="color:var(--neutral-400);text-align:center;padding:40px">Loading analytics…</div>';
+  modal.style.display = 'flex';
+  try {
+    const res = await fetch('/api/api-collections/' + encodeURIComponent(colId) + '/analytics?limit=20');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    body.innerHTML = _apiColRenderAnalytics(data);
+  } catch (err) {
+    body.innerHTML = '<div style="color:#ef4444;padding:20px">Failed to load analytics: ' + escHtml(String(err)) + '</div>';
+  }
+}
+
+function apiColAnalyticsClose() {
+  const modal = document.getElementById('modal-col-analytics');
+  if (modal) modal.style.display = 'none';
+}
+
+function _apiColRenderAnalytics(data) {
+  if (!data.summary || data.runs.length === 0) {
+    return '<div style="text-align:center;padding:60px;color:var(--neutral-400)">' +
+      '<div style="font-size:36px;margin-bottom:12px">📭</div>' +
+      '<div style="font-size:15px;font-weight:600;margin-bottom:6px">No run history yet</div>' +
+      '<div style="font-size:13px">Run this collection at least once to see analytics.</div>' +
+      '</div>';
+  }
+
+  const s = data.summary;
+  const runs = data.runs; // oldest to newest
+
+  // Summary cards
+  const passColor = s.avgPassRate >= 80 ? '#22c55e' : s.avgPassRate >= 50 ? '#f59e0b' : '#ef4444';
+  const cards = '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px">' +
+    _analyticsCard('Total Runs', s.totalRuns, '') +
+    _analyticsCard('Avg Pass Rate', s.avgPassRate + '%', passColor) +
+    _analyticsCard('Avg Duration', _fmtDuration(s.avgDurationMs), '') +
+    _analyticsCard('p95 Duration', _fmtDuration(s.p95DurationMs), '#f59e0b') +
+    '</div>';
+
+  // Pass rate bar chart
+  const bars = runs.map(function(r, i) {
+    const color = r.passRate >= 80 ? '#22c55e' : r.passRate >= 50 ? '#f59e0b' : '#ef4444';
+    const statusLabel = r.status === 'passed' ? 'PASS' : (r.status === 'failed' || r.status === 'error') ? 'FAIL' : r.status;
+    const date = r.startedAt ? r.startedAt.slice(0, 10) : '';
+    const tip = statusLabel + ' ' + date + ' - ' + r.passRate + '% pass - ' + _fmtDuration(r.durationMs);
+    return '<div style="display:flex;flex-direction:column;align-items:center;flex:1;min-width:0" title="' + escHtml(tip) + '">' +
+      '<div style="font-size:9px;color:var(--neutral-400);margin-bottom:2px">' + r.passRate + '%</div>' +
+      '<div style="width:100%;background:var(--neutral-100);border-radius:3px;height:80px;display:flex;align-items:flex-end">' +
+        '<div style="width:100%;height:' + Math.max(3, r.passRate) + '%;background:' + color + ';border-radius:3px"></div>' +
+      '</div>' +
+      '<div style="font-size:8px;color:var(--neutral-400);margin-top:3px">' + (i + 1) + '</div>' +
+    '</div>';
+  }).join('');
+
+  const chart = '<div style="margin-bottom:16px;padding:16px;border:1px solid var(--neutral-200);border-radius:8px">' +
+    '<div style="font-size:13px;font-weight:700;margin-bottom:10px;color:var(--neutral-700)">Pass Rate — Last ' + runs.length + ' Runs (oldest to newest)</div>' +
+    '<div style="display:flex;gap:4px;align-items:flex-end;height:110px;padding:0 4px">' + bars + '</div>' +
+    '<div style="display:flex;gap:16px;font-size:10px;color:var(--neutral-500);margin-top:14px">' +
+      '<span><span style="color:#22c55e">&#9632;</span> 80%+ pass</span>' +
+      '<span><span style="color:#f59e0b">&#9632;</span> 50-79%</span>' +
+      '<span><span style="color:#ef4444">&#9632;</span> below 50%</span>' +
+    '</div>' +
+  '</div>';
+
+  // Duration trend
+  const maxDur = Math.max.apply(null, runs.map(function(r) { return r.durationMs || 0; })) || 1;
+  const durBars = runs.map(function(r) {
+    const pct = Math.max(3, Math.round(((r.durationMs || 0) / maxDur) * 100));
+    const date = r.startedAt ? r.startedAt.slice(0, 10) : '';
+    return '<div style="flex:1;min-width:0;display:flex;flex-direction:column;align-items:center" title="' + escHtml(date + ' - ' + _fmtDuration(r.durationMs)) + '">' +
+      '<div style="width:100%;background:var(--neutral-100);border-radius:3px;height:50px;display:flex;align-items:flex-end">' +
+        '<div style="width:100%;height:' + pct + '%;background:#6366f1;border-radius:3px;opacity:.8"></div>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+
+  const durChart = '<div style="margin-bottom:16px;padding:16px;border:1px solid var(--neutral-200);border-radius:8px">' +
+    '<div style="font-size:13px;font-weight:700;margin-bottom:8px;color:var(--neutral-700)">Duration Trend</div>' +
+    '<div style="display:flex;gap:3px;align-items:flex-end;height:58px">' + durBars + '</div>' +
+    '<div style="font-size:11px;color:var(--neutral-400);margin-top:6px">' +
+      'Max: ' + _fmtDuration(maxDur) + '&nbsp;&nbsp;|&nbsp;&nbsp;Avg: ' + _fmtDuration(s.avgDurationMs) + '&nbsp;&nbsp;|&nbsp;&nbsp;p95: ' + _fmtDuration(s.p95DurationMs) +
+    '</div>' +
+  '</div>';
+
+  // Step failure heatmap
+  let stepSection = '';
+  if (data.stepStats && data.stepStats.length > 0) {
+    const stepRows = data.stepStats.map(function(st) {
+      const color = st.failRate >= 50 ? '#ef4444' : st.failRate >= 20 ? '#f59e0b' : '#22c55e';
+      const barW = Math.max(2, st.failRate);
+      return '<tr>' +
+        '<td style="font-size:12px;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escHtml(st.stepName) + '">' + escHtml(st.stepName) + '</td>' +
+        '<td style="text-align:center;font-size:12px">' + st.runs + '</td>' +
+        '<td style="text-align:center;font-size:12px;color:' + color + ';font-weight:700">' + st.failures + '</td>' +
+        '<td style="min-width:140px">' +
+          '<div style="display:flex;align-items:center;gap:6px">' +
+            '<div style="flex:1;background:var(--neutral-100);border-radius:3px;height:8px">' +
+              '<div style="width:' + barW + '%;height:100%;background:' + color + ';border-radius:3px"></div>' +
+            '</div>' +
+            '<span style="font-size:11px;color:' + color + ';font-weight:700;min-width:34px">' + st.failRate + '%</span>' +
+          '</div>' +
+        '</td>' +
+      '</tr>';
+    }).join('');
+    stepSection = '<div style="margin-bottom:16px;padding:16px;border:1px solid var(--neutral-200);border-radius:8px">' +
+      '<div style="font-size:13px;font-weight:700;margin-bottom:10px;color:var(--neutral-700)">Step Failure Heatmap ' +
+        '<span style="font-size:11px;font-weight:400;color:var(--neutral-400)">(top 10 by fail rate across last ' + s.totalRuns + ' runs)</span>' +
+      '</div>' +
+      '<table class="data-table" style="width:100%">' +
+        '<thead><tr><th>Step</th><th style="text-align:center">Runs</th><th style="text-align:center">Failures</th><th>Fail Rate</th></tr></thead>' +
+        '<tbody>' + stepRows + '</tbody>' +
+      '</table>' +
+    '</div>';
+  }
+
+  // Recent runs table
+  const runRows = data.runs.slice().reverse().slice(0, 15).map(function(r) {
+    const sc = r.status === 'passed' ? '#22c55e' : (r.status === 'failed' || r.status === 'error') ? '#ef4444' : '#9ca3af';
+    const icon = r.status === 'passed' ? '✓' : (r.status === 'failed' || r.status === 'error') ? '✗' : '⊘';
+    return '<tr>' +
+      '<td style="font-size:11px;color:var(--neutral-500)">' + (r.startedAt || '').slice(0, 16).replace('T', ' ') + '</td>' +
+      '<td style="text-align:center"><span style="color:' + sc + ';font-weight:700">' + icon + ' ' + r.status + '</span></td>' +
+      '<td style="text-align:center;font-size:12px">' + r.passed + '/' + r.totalSteps + '</td>' +
+      '<td style="text-align:center;font-size:12px">' + r.passRate + '%</td>' +
+      '<td style="text-align:right;font-size:12px">' + _fmtDuration(r.durationMs) + '</td>' +
+    '</tr>';
+  }).join('');
+
+  const runTable = '<div style="padding:16px;border:1px solid var(--neutral-200);border-radius:8px">' +
+    '<div style="font-size:13px;font-weight:700;margin-bottom:10px;color:var(--neutral-700)">Recent Runs</div>' +
+    '<table class="data-table" style="width:100%">' +
+      '<thead><tr><th>Started</th><th style="text-align:center">Status</th><th style="text-align:center">Steps</th><th style="text-align:center">Pass%</th><th style="text-align:right">Duration</th></tr></thead>' +
+      '<tbody>' + runRows + '</tbody>' +
+    '</table>' +
+  '</div>';
+
+  return cards + chart + durChart + stepSection + runTable;
+}
+
+function _analyticsCard(label, value, color) {
+  return '<div style="background:var(--surface-2);border:1px solid var(--neutral-200);border-radius:8px;padding:14px 16px">' +
+    '<div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--neutral-500);margin-bottom:4px">' + escHtml(label) + '</div>' +
+    '<div style="font-size:22px;font-weight:700;color:' + (color || 'var(--neutral-900)') + '">' + escHtml(String(value)) + '</div>' +
+  '</div>';
+}
+
+function _fmtDuration(ms) {
+  if (!ms || ms <= 0) return '—';
+  if (ms < 1000) return ms + 'ms';
+  if (ms < 60000) return (ms / 1000).toFixed(1) + 's';
+  return Math.floor(ms / 60000) + 'm ' + Math.round((ms % 60000) / 1000) + 's';
 }

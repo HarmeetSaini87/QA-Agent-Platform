@@ -6,12 +6,15 @@ function workerHealthInit(panel) {
 }
 
 function workerHealthLoad() {
-  authFetch('/api/worker-pool/health')
-    .then(function(r) { return r.json(); })
+  fetch('/api/worker-pool/health')
+    .then(function(r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    })
     .then(function(report) { workerHealthRenderReport(report); })
     .catch(function(e) {
       var el = document.getElementById('worker-health-content');
-      if (el) el.innerHTML = '<div class="alert alert-danger">Failed to load worker health: ' + escHtml(String(e)) + '</div>';
+      if (el) el.innerHTML = '<div style="color:#f87171;padding:12px;">Failed to load worker health: ' + escHtml(String(e)) + '</div>';
     });
 }
 

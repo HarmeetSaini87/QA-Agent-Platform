@@ -32,6 +32,9 @@ const FILES_TO_COPY  = ['playwright.config.ts', 'tsconfig.json'];
 // start-server.bat excluded: prod bat must cd into qa-agent-platform, not dev.
 // These files are prod-specific and must never be overwritten by promote.
 const DIRS_TO_COPY   = ['src', 'scripts', 'docs', 'recorder-extension'];
+// tests/ is intentionally excluded from promotion.
+// tests/api-testing/ and tests/ui-testing/ are dev-only QA test suites for the platform itself.
+// They must never be copied to prod — prod has its own tests/ folder for the Web Automation engine.
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 

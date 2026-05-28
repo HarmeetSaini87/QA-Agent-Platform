@@ -1,0 +1,79 @@
+{
+  "info": {
+    "name": "HTTPBin Test Collection",
+    "_postman_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "description": "Public HTTPBin API for API Testing test suite",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "GET /get",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "https://httpbin.org/get",
+          "protocol": "https",
+          "host": ["httpbin", "org"],
+          "path": ["get"]
+        }
+      }
+    },
+    {
+      "name": "POST /post JSON",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"name\": \"test\", \"value\": 42}"
+        },
+        "url": {
+          "raw": "https://httpbin.org/post",
+          "protocol": "https",
+          "host": ["httpbin", "org"],
+          "path": ["post"]
+        }
+      }
+    },
+    {
+      "name": "GET /status/200",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "https://httpbin.org/status/200",
+          "protocol": "https",
+          "host": ["httpbin", "org"],
+          "path": ["status", "200"]
+        }
+      }
+    },
+    {
+      "name": "GET /headers",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "X-Test-Header", "value": "qa-platform" }],
+        "url": {
+          "raw": "https://httpbin.org/headers",
+          "protocol": "https",
+          "host": ["httpbin", "org"],
+          "path": ["headers"]
+        }
+      }
+    },
+    {
+      "name": "GET /delay/1",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "https://httpbin.org/delay/1",
+          "protocol": "https",
+          "host": ["httpbin", "org"],
+          "path": ["delay", "1"]
+        }
+      }
+    }
+  ]
+}

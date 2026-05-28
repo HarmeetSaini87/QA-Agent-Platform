@@ -107,18 +107,22 @@ if (!(Test-Path $envFile)) {
 
 # -- Step 6: Verify Playwright browsers ---------------------------------------
 
-Write-Log "Checking Playwright browser..."
-$pwChromePath = Join-Path $env:LOCALAPPDATA "ms-playwright"
-if (!(Test-Path $pwChromePath)) {
-    Write-Log "Playwright browsers not installed - running install..." "WARN"
+Write-Log "Checking Playwright browsers..."
+
+# Always use the project-local browser cache so any service account can find them
+$PW_BROWSERS_PATH = Join-Path $INSTALL_DIR ".playwright-browsers"
+$env:PLAYWRIGHT_BROWSERS_PATH = $PW_BROWSERS_PATH
+
+if (!(Test-Path $PW_BROWSERS_PATH)) {
+    Write-Log "Playwright browsers not found at $PW_BROWSERS_PATH - running install..." "WARN"
     try {
-        npx playwright install chromium 2>&1 | Tee-Object -FilePath $LOG_FILE -Append
-        Write-Log "Playwright chromium installed."
+        npx playwright install chromium firefox webkit 2>&1 | Tee-Object -FilePath $LOG_FILE -Append
+        Write-Log "Playwright browsers (chromium, firefox, webkit) installed."
     } catch {
         Write-Log "Playwright browser install failed. Suite runs may fail." "WARN"
     }
 } else {
-    Write-Log "Playwright browsers found."
+    Write-Log "Playwright browsers found at $PW_BROWSERS_PATH"
 }
 
 # -- Step 7: Start server with auto-restart ------------------------------------

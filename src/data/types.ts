@@ -556,6 +556,14 @@ export interface ApiAuthConfig {
   oauth2CC?: { tokenUrl: string; clientId: string; clientSecret: string; scope?: string };
 }
 
+export interface ApiEnvironmentPingResult {
+  reachable: boolean;
+  statusCode: number | null;
+  latencyMs: number;
+  testedAt: string;
+  error?: string;
+}
+
 export interface ApiEnvironment {
   id: string;
   projectId?: string;
@@ -563,6 +571,10 @@ export interface ApiEnvironment {
   baseUrl: string;
   variables: ApiVariable[];
   authConfig?: ApiAuthConfig;
+  description?: string;
+  envType?: 'development' | 'staging' | 'production' | 'custom';
+  tags?: string[];
+  lastPingResult?: ApiEnvironmentPingResult;
 }
 
 export interface ApiRequest {

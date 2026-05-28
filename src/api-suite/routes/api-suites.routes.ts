@@ -10,9 +10,11 @@ import type { ApiSuite } from '../contracts/api-suite.contracts';
 import type { ApiCollection, ApiEnvironment } from '../../data/types';
 
 export function registerApiSuiteRoutes(app: Express): void {
-  // LIST
-  app.get('/api/api-suites', requireAuth, (_req: Request, res: Response) => {
-    res.json(readAll<ApiSuite>(API_SUITES));
+  // LIST — optional ?projectId= filter
+  app.get('/api/api-suites', requireAuth, (req: Request, res: Response) => {
+    const all = readAll<ApiSuite>(API_SUITES);
+    const projectId = req.query.projectId as string | undefined;
+    res.json(projectId ? all.filter(s => s.projectId === projectId) : all);
   });
 
   // GET one

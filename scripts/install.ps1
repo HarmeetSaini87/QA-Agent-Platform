@@ -1,5 +1,5 @@
 ##############################################################################
-#  install.ps1  —  QA Agent Platform  —  One-Command Installer
+#  install.ps1   -  QA Agent Platform   -  One-Command Installer
 #  Version: 1.0  |  2026-04-19
 #
 #  Run this ONCE on the customer server as Administrator:
@@ -26,7 +26,7 @@
 $ErrorActionPreference = "Stop"
 $ProgressPreference    = "SilentlyContinue"   # faster Invoke-WebRequest
 
-# ── Colour helpers ────────────────────────────────────────────────────────────
+# -- Colour helpers ------------------------------------------------------------
 function Info  { param($m) Write-Host "  $m" -ForegroundColor Cyan   }
 function Ok    { param($m) Write-Host "  [OK]  $m" -ForegroundColor Green  }
 function Warn  { param($m) Write-Host "  [!]   $m" -ForegroundColor Yellow }
@@ -40,12 +40,12 @@ function Banner {
     Write-Host "$line`n" -ForegroundColor Cyan
 }
 
-Banner "QA Agent Platform — Installation Wizard"
+Banner "QA Agent Platform  - Installation Wizard"
 Write-Host "  This script installs and configures the platform end-to-end."
 Write-Host "  It will prompt for a few settings then run automatically.`n"
 
-# ── Collect settings upfront ──────────────────────────────────────────────────
-Banner "Step 0 — Configuration"
+# -- Collect settings upfront --------------------------------------------------
+Banner "Step 0  - Configuration"
 
 # Source folder (where the zip was extracted / where this script lives)
 $SCRIPT_DIR  = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -54,7 +54,12 @@ $SOURCE_DIR  = Split-Path -Parent $SCRIPT_DIR   # one level up from scripts\
 # Install path
 $defaultInstall = "C:\qa-agent-platform"
 $rawPath = Read-Host "  Install path [$defaultInstall]"
-$INSTALL_DIR = if ($rawPath.Trim()) { $rawPath.Trim() } else { $defaultInstall }
+$rawPathTrimmed = if ($rawPath.Trim()) { $rawPath.Trim() } else { $defaultInstall }
+# Normalize: "E:TestForge" -> "E:\TestForge"  (missing backslash after drive letter)
+if ($rawPathTrimmed -match '^([A-Za-z]):([^\\].*)$') {
+    $rawPathTrimmed = "$($Matches[1]):\$($Matches[2])"
+}
+$INSTALL_DIR = $rawPathTrimmed
 
 # Port
 $rawPort = Read-Host "  Server port [3000]"
@@ -71,13 +76,13 @@ $ORG_NAME = if ($rawOrg.Trim()) { $rawOrg.Trim() } else { "QA Platform" }
 Write-Host ""
 Info "Install path : $INSTALL_DIR"
 Info "Port         : $PORT"
-Info "Hostname     : $(if ($HOSTNAME) { $HOSTNAME } else { '(none — use IP:port)' })"
+Info "Hostname     : $(if ($HOSTNAME) { $HOSTNAME } else { '(none  - use IP:port)' })"
 Info "Org name     : $ORG_NAME"
 Write-Host ""
 $confirm = Read-Host "  Proceed? (Y/n)"
 if ($confirm -and $confirm.ToUpper() -ne "Y") { Write-Host "Cancelled."; exit 0 }
 
-# ── Log setup ─────────────────────────────────────────────────────────────────
+# -- Log setup ----------------------------------------------------------------─
 $LOG_DIR  = Join-Path $INSTALL_DIR "logs"
 $LOG_FILE = Join-Path $LOG_DIR "install.log"
 New-Item -ItemType Directory -Path $INSTALL_DIR -Force | Out-Null
@@ -97,7 +102,7 @@ try {
     if ($v -match "v(\d+)") {
         $major = [int]$Matches[1]
         if ($major -ge 18) { Ok "Node.js $v already installed."; $nodeOk = $true }
-        else { Warn "Node.js $v is too old (need ≥ 18). Will install LTS." }
+        else { Warn "Node.js $v is too old (need >= 18). Will install LTS." }
     }
 } catch { Warn "Node.js not found. Will install." }
 
@@ -171,11 +176,13 @@ if (-not $nssmFound) {
 Step 3 "Copying platform files to $INSTALL_DIR..."
 
 # If source and install are the same, skip copy
-if ((Resolve-Path $SOURCE_DIR -ErrorAction SilentlyContinue).Path -eq (Resolve-Path $INSTALL_DIR -ErrorAction SilentlyContinue).Path 2>$null) {
-    Ok "Already in install directory — no copy needed."
+if ((Resolve-Path $SOURCE_DIR -ErrorAction SilentlyContinue).Path -eq (Resolve-Path $INSTALL_DIR -ErrorAction SilentlyContinue).Path) {
+    Ok "Already in install directory  - no copy needed."
     Log "Source == install dir, skipped copy."
 } else {
-    $EXCLUDES = @("node_modules","dist","data","results","test-results","logs",".git")
+    # Also exclude the source folder name itself — prevents recursive copy when install dir is a parent of source dir
+    $sourceDirName = Split-Path -Leaf $SOURCE_DIR
+    $EXCLUDES = @("node_modules","dist","data","results","test-results","logs",".git",".env",".env.example",".playwright-browsers",$sourceDirName)
     $items = Get-ChildItem $SOURCE_DIR -Force | Where-Object { $EXCLUDES -notcontains $_.Name }
     foreach ($item in $items) {
         $dest = Join-Path $INSTALL_DIR $item.Name
@@ -202,15 +209,17 @@ Step 4 "Creating .env configuration file..."
 
 $envFile = Join-Path $INSTALL_DIR ".env"
 if (Test-Path $envFile) {
-    Warn ".env already exists — skipping to preserve existing secrets."
+    Warn ".env already exists  - skipping to preserve existing secrets."
     Log ".env already exists, skipped."
 } else {
-    # Generate two secure random secrets
-    $secret1 = [System.Convert]::ToBase64String([System.Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
-    $secret2 = [System.Convert]::ToBase64String([System.Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
+    # Generate two secure random secrets (compatible with Windows PowerShell 5.1 / .NET Framework 4.x)
+    $rng     = [System.Security.Cryptography.RNGCryptoServiceProvider]::new()
+    $bytes1  = New-Object byte[] 32; $rng.GetBytes($bytes1); $secret1 = [System.Convert]::ToBase64String($bytes1)
+    $bytes2  = New-Object byte[] 32; $rng.GetBytes($bytes2); $secret2 = [System.Convert]::ToBase64String($bytes2)
+    $rng.Dispose()
 
     $envContent = @"
-# QA Agent Platform — Environment Configuration
+# QA Agent Platform - Environment Configuration
 # Generated by installer on $(Get-Date -f "yyyy-MM-dd HH:mm:ss")
 # -------------------------------------------------------
 
@@ -219,7 +228,7 @@ UI_PORT=$PORT
 APP_ENV=production
 APP_ENV_LABEL=$ORG_NAME
 
-# Security — DO NOT share these values
+# Security  - DO NOT share these values
 SESSION_SECRET=$secret1
 QA_SECRET_KEY=$secret2
 
@@ -229,6 +238,9 @@ TEST_RESULTS_DIR=./test-results
 RESULTS_DIR=./results
 REPORTS_DIR=./reports
 TEST_PLANS_DIR=./test-plans
+
+# Playwright browser cache (project-local  - works for any service account)
+PLAYWRIGHT_BROWSERS_PATH=./.playwright-browsers
 
 # Test execution
 HEADLESS=true
@@ -241,7 +253,7 @@ APP_BASE_URL=https://your-application-url.com
 # Session cookie name (unique per installation)
 SESSION_COOKIE_NAME=qa-platform.sid
 
-# ── Email / SMTP Notifications (optional) ───────────────────────────────────
+# -- Email / SMTP Notifications (optional) ----------------------------------─
 # Uncomment and fill in to enable email alerts for failed runs, healing events, etc.
 # SMTP_HOST=smtp.yourcompany.com
 # SMTP_PORT=587
@@ -252,10 +264,11 @@ SESSION_COOKIE_NAME=qa-platform.sid
 # NOTIFY_ON_FAIL=true
 # NOTIFY_ON_HEAL=false
 
-# ── Logging ──────────────────────────────────────────────────────────────────
+# -- Logging ------------------------------------------------------------------
 # Log level: debug | info | warn | error  (default: info)
 LOG_LEVEL=info
 "@
+    if (-not $envFile) { $envFile = Join-Path $INSTALL_DIR ".env" }
     $envContent | Out-File -FilePath $envFile -Encoding UTF8
     Ok ".env created with secure random secrets."
     Log ".env written."
@@ -266,9 +279,15 @@ LOG_LEVEL=info
 ##############################################################################
 Step 5 "Installing Node.js dependencies (npm install)..."
 Set-Location $INSTALL_DIR
-$npmOut = npm install 2>&1
+if (-not (Test-Path (Join-Path $INSTALL_DIR "package.json"))) {
+    Fail "package.json not found in $INSTALL_DIR  - file copy may have failed. Check $LOG_FILE."
+}
+$npmOut = npm install --loglevel=error 2>&1
 $npmOut | Add-Content $LOG_FILE -Encoding UTF8
-if ($LASTEXITCODE -ne 0) { Fail "npm install failed. Check $LOG_FILE for details." }
+if ($LASTEXITCODE -ne 0) {
+    $npmOut | ForEach-Object { Write-Host "  $_" -ForegroundColor Red }
+    Fail "npm install failed. See output above or check $LOG_FILE for details."
+}
 Ok "npm install completed."
 
 ##############################################################################
@@ -281,21 +300,36 @@ if ($LASTEXITCODE -ne 0) { Fail "Build failed. Contact the vendor with the conte
 Ok "Build succeeded."
 
 ##############################################################################
-# [7] Playwright browsers — installed to machine-wide ProgramData path
+# [7] Playwright browsers  - installed to machine-wide ProgramData path
 #     so the Windows Service (LOCAL SYSTEM) can find them regardless of
 #     which user account runs the service.
 ##############################################################################
 Step 7 "Installing Playwright browsers (chromium, firefox, webkit)..."
-# Install into project folder — self-contained, works for any service account or user
 $PW_BROWSERS_PATH = Join-Path $INSTALL_DIR ".playwright-browsers"
 $env:PLAYWRIGHT_BROWSERS_PATH = $PW_BROWSERS_PATH
-$pwOut = npx playwright install chromium firefox webkit 2>&1
-$pwOut | Add-Content $LOG_FILE -Encoding UTF8
-if ($LASTEXITCODE -ne 0) {
-    Warn "Playwright browser install had warnings — check $LOG_FILE"
-    Warn "To retry: cd '$INSTALL_DIR'; `$env:PLAYWRIGHT_BROWSERS_PATH='$PW_BROWSERS_PATH'; npx playwright install chromium firefox webkit"
+
+# Count browser engine folders  - a real install has at least 3 (chromium-*, firefox-*, webkit-*)
+$browserCount = 0
+if (Test-Path $PW_BROWSERS_PATH) {
+    $browserCount = (Get-ChildItem $PW_BROWSERS_PATH -Directory | Where-Object { $_.Name -match "^(chromium|firefox|webkit|chrome|ffmpeg)-" }).Count
+}
+
+if ($browserCount -ge 3) {
+    Ok "Browsers already present ($browserCount engines found in $PW_BROWSERS_PATH)  - skipping download."
+    Ok "Pre-bundled cross-browser support: Chromium, Firefox, WebKit all ready."
 } else {
-    Ok "Playwright browsers installed to $PW_BROWSERS_PATH"
+    Info "Downloading browsers  - this can take 5-15 minutes depending on connection speed..."
+    Info "You will see download progress below:"
+    Write-Host ""
+    npx playwright install chromium firefox webkit
+    $pwExit = $LASTEXITCODE
+    Write-Host ""
+    if ($pwExit -ne 0) {
+        Warn "Playwright browser install had warnings  - check $LOG_FILE"
+        Warn "To retry: cd '$INSTALL_DIR'; `$env:PLAYWRIGHT_BROWSERS_PATH='$PW_BROWSERS_PATH'; npx playwright install chromium firefox webkit"
+    } else {
+        Ok "Playwright browsers installed to $PW_BROWSERS_PATH"
+    }
 }
 
 ##############################################################################
@@ -306,10 +340,13 @@ Step 8 "Registering Windows Service..."
 $SERVICE_NAME  = "QAAgentPlatform"
 $STARTUP_SCRIPT = Join-Path $INSTALL_DIR "scripts\start-qa-platform.ps1"
 
-# Remove existing service if present
-$existing = & $nssmPath status $SERVICE_NAME 2>&1
-if ($existing -notmatch "Can't open service") {
-    Warn "Existing service found — removing..."
+# Check if service already exists  - suppress error output since "Can't open service" is normal on fresh install
+$existing = $null
+try { $existing = & $nssmPath status $SERVICE_NAME 2>&1 } catch {}
+$serviceExists = ($existing -and ($existing -notmatch "Can't open service") -and ($existing -notmatch "The specified service does not exist"))
+
+if ($serviceExists) {
+    Warn "Existing service found  - removing..."
     & $nssmPath stop   $SERVICE_NAME 2>&1 | Out-Null
     & $nssmPath remove $SERVICE_NAME confirm 2>&1 | Out-Null
     Start-Sleep 2
@@ -321,7 +358,7 @@ if ($existing -notmatch "Can't open service") {
 
 & $nssmPath set $SERVICE_NAME AppDirectory      $INSTALL_DIR
 & $nssmPath set $SERVICE_NAME DisplayName       "QA Agent Platform"
-& $nssmPath set $SERVICE_NAME Description       "QA Agent Platform — AI Test Automation ($ORG_NAME)"
+& $nssmPath set $SERVICE_NAME Description       "QA Agent Platform  - AI Test Automation ($ORG_NAME)"
 & $nssmPath set $SERVICE_NAME Start             SERVICE_AUTO_START
 & $nssmPath set $SERVICE_NAME AppStdout         (Join-Path $LOG_DIR "service.log")
 & $nssmPath set $SERVICE_NAME AppStderr         (Join-Path $LOG_DIR "service-error.log")
@@ -368,22 +405,22 @@ if ($HOSTNAME) {
 # [11] Start service
 ##############################################################################
 Step 11 "Starting the service..."
-& $nssmPath start $SERVICE_NAME 2>&1 | Out-Null
-Start-Sleep 6   # give Node.js time to boot
+try { & $nssmPath start $SERVICE_NAME 2>&1 | Out-Null } catch {}
+Start-Sleep 10   # give Node.js time to boot (npm + playwright check)
 
 # Verify HTTP
 $url = "http://localhost:$PORT"
 try {
     $r = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 15
     if ($r.StatusCode -eq 200) {
-        Ok "Server is UP — HTTP $($r.StatusCode)"
+        Ok "Server is UP  - HTTP $($r.StatusCode)"
         Log "Server verified at $url"
     } else {
-        Warn "Server responded HTTP $($r.StatusCode) — check $LOG_DIR\service-error.log"
+        Warn "Server responded HTTP $($r.StatusCode)  - check $LOG_DIR\service-error.log"
     }
 } catch {
     Warn "Server did not respond in time. Check $LOG_DIR\service-error.log"
-    Warn "If browser access works the server is fine — this is a timing issue."
+    Warn "If browser access works the server is fine  - this is a timing issue."
 }
 
 ##############################################################################

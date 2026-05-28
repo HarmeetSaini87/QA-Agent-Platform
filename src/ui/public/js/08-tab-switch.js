@@ -25,6 +25,15 @@ function onModuleTabSwitch(tab) {
   if (tab === 'api-collections') apiColLoad();
   if (tab === 'api-runs') apiRunsLoad();
   if (tab === 'api-flakiness') flakinessLoad();
+  if (tab === 'api-suites') apiSuitesInit();
+  if (tab === 'api-replay' && !_panelLoaded.has('api-replay')) { if (typeof apiReplayInit === 'function') apiReplayInit(); }
+  if (tab === 'worker-health') { if (typeof workerHealthInit === 'function') { var _whPanel = document.getElementById('panel-worker-health'); if (_whPanel) workerHealthInit(_whPanel); } }
+  if (tab === 'governance') { if (typeof governanceInit === 'function') { var _govPanel = document.getElementById('panel-governance'); if (_govPanel) governanceInit(_govPanel); } }
+  if (tab === 'api-plugins') { if (typeof apiPluginsLoad === 'function') apiPluginsLoad(); }
+  if (tab === 'api-graph') { if (typeof graphEditorLoad === 'function') graphEditorLoad(); }
+  if (tab === 'api-collab') { if (typeof collabLoad === 'function') collabLoad(); }
+  if (tab === 'api-copilot') { if (typeof copilotLoad === 'function') copilotLoad(); }
+  if (tab === 'perf-dashboard') { if (typeof perfLoad === 'function') perfLoad(); }
   if (tab === 'admin' && !_panelLoaded.has('admin')) adminSubTab('users', document.querySelector('.sub-tab'));
   _panelLoaded.add(tab);
 
@@ -86,7 +95,7 @@ async function projDropdownLoad() {
 }
 
 // Panels that require a project to be selected before any interaction
-const PROJECT_SCOPED_TABS = new Set(['scripts', 'suites', 'locators', 'functions', 'commondata', 'history', 'flaky', 'analytics', 'visual', 'locator-health', 'api-envs', 'api-collections', 'api-runs', 'api-flakiness']);
+const PROJECT_SCOPED_TABS = new Set(['scripts', 'suites', 'locators', 'functions', 'commondata', 'history', 'flaky', 'analytics', 'visual', 'locator-health', 'api-envs', 'api-collections', 'api-runs', 'api-flakiness', 'api-suites']);
 
 const _PROJ_BANNER_ID = 'proj-required-banner';
 
@@ -141,6 +150,7 @@ function onProjectChange() {
   apiEnvLoad();
   apiColLoad();
   apiRunsLoad();
+  if (typeof apiSuitesLoad === 'function') apiSuitesLoad();
 }
 
 function _toggleModuleAddButtons(enabled) {

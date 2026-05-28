@@ -4,7 +4,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { requireAuth, requireAdmin } from '../../auth/middleware';
 import { logAudit } from '../../auth/audit';
-import { validateLicenseKey, validateLicFile, storeLicense, loadStoredLicense, getLicensePayload, refreshLicenseCache, clearLicenseCache, isAutoTrial, trialDaysRemaining, getSeatsUsed, getSeatUsageRatio, transferLicense, getMachineId, checkMachineBinding } from '../../utils/licenseManager';
+import { validateLicenseKey, validateLicFile, storeLicense, loadStoredLicense, getLicensePayload, refreshLicenseCache, clearLicenseCache, isAutoTrial, trialDaysRemaining, getSeatsUsed, getSeatUsageRatio, transferLicense, getMachineId, getMachineIdComponents, checkMachineBinding } from '../../utils/licenseManager';
 
 const licUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 64 * 1024 } });
 
@@ -97,15 +97,30 @@ export function registerLicenseRoutes(app: express.Application, sessionStore: an
   });
 
   app.get('/api/admin/license/machine', requireAuth, requireAdmin, (_req: Request, res: Response) => {
-    const current = getMachineId();
-    const stored = loadStoredLicense();
-    const bound = stored?.machineId ?? null;
+    const components = getMachineIdComponents();
+    const current    = components.machineId;
+    const stored     = loadStoredLicense();
+    const bound      = stored?.machineId ?? null;
+    const signals    = [components.windowsMachineGuid, components.biosUuid, components.volumeSerial, components.stableMAC].filter(Boolean);
+    const stability  = signals.length >= 3 ? 'excellent' : signals.length === 2 ? 'good' : signals.length === 1 ? 'fair' : 'weak';
     res.json({
-      currentMachineId: current,
+      currentMachineId:     current,
       currentMachineIdHint: current.slice(0, 8) + '…',
-      boundMachineId: bound,
-      boundMachineIdHint: bound ? bound.slice(0, 8) + '…' : null,
-      match: bound ? bound === current : null,
+      boundMachineId:       bound,
+      boundMachineIdHint:   bound ? bound.slice(0, 8) + '…' : null,
+      match:                bound ? bound === current : null,
+      components: {
+        windowsMachineGuid: components.windowsMachineGuid || null,
+        biosUuid:           components.biosUuid           || null,
+        volumeSerial:       components.volumeSerial       || null,
+        stableMAC:          components.stableMAC          || null,
+        hostname:           components.hostname,
+        cpuModel:           components.cpuModel,
+        platform:           components.platform,
+        arch:               components.arch,
+      },
+      signalCount: signals.length,
+      stability,
     });
   });
 

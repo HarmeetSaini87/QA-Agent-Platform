@@ -105,7 +105,9 @@ function resolveToken(token: string): string {
   const inner = m[1].trim();
   if (/^random\.text\((\d+)\)$/.test(inner)) {
     const len = inner.match(/\d+/)![0];
-    return `Math.random().toString(36).substring(2, 2 + ${len})`;
+    // OLD: Math.random().toString(36) can produce fewer than N chars for small random values
+    // return `Math.random().toString(36).substring(2, 2 + ${len})`;
+    return `Array.from({length:${len}},()=>'abcdefghijklmnopqrstuvwxyz0123456789'[Math.floor(Math.random()*36)]).join('')`;
   }
   if (/^random\.number\((\d+),(\d+)\)$/.test(inner)) {
     const [, min, max] = inner.match(/(\d+),(\d+)/)!;
@@ -2395,6 +2397,9 @@ export function generateDebugSpec(input: DebugCodegenInput): string {
   lines.push(`const __GATE       = \`\${__SS_DIR}/gate.json\`;`);
   lines.push(`const __ERROR      = \`\${__SS_DIR}/error.json\`;`);
   lines.push(`_fs.mkdirSync(__SS_DIR, { recursive: true });`);
+  // Running environment base URL — required by ASSERT URL normalisation in self-heal inline switch
+  const _dbgEnvBase = (environment?.url || project.appUrl || '').replace(/\/$/, '');
+  lines.push(`const __ENV_BASE_URL = '${_dbgEnvBase.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}';`);
   lines.push(``);
 
   // ── __debugPause helper — file-based IPC ───────────────────────────────────
@@ -2787,7 +2792,12 @@ export function generateDebugSpec(input: DebugCodegenInput): string {
     lines.push(`        let __retryCount_${step.order} = 0;`);
     lines.push(`        let __patchedLoc_${step.order}  = __gate_${step.order}.locator ?? '${loc.replace(/'/g, "\\'")}';`);
     lines.push(`        let __patchedLt_${step.order}   = __gate_${step.order}.locatorType ?? '${lt}';`);
-    lines.push(`        let __patchedVal_${step.order}  = __gate_${step.order}.value ?? '${dispVal.replace(/'/g, "\\'")}';`);
+    // OLD: always quoted dispVal as string — dynamic tokens emitted as literal e.g. '[dynamic: {{random.text(8)}}]'
+    // lines.push(`        let __patchedVal_${step.order}  = __gate_${step.order}.value ?? '${dispVal.replace(/'/g, "\\'")}';`);
+    const patchedValDefault = step.valueMode === 'dynamic'
+      ? valueExpr(step, dataMap)
+      : `'${dispVal.replace(/'/g, "\\'")}'`;
+    lines.push(`        let __patchedVal_${step.order}  = __gate_${step.order}.value ?? ${patchedValDefault};`);
     // frameContext: bake in the step's frame context at generation time; allow override via gate (Apply & Retry)
     const fcLiteral = stepFc ? `'${stepFc.replace(/'/g, "\\'")}'` : 'null';
     lines.push(`        let __patchedFc_${step.order}   = __gate_${step.order}.frameContext ?? ${fcLiteral};`);

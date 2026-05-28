@@ -61,6 +61,16 @@ export interface GraphClusterProjection {
   readonly source: 'folder' | 'tag' | 'hint';
 }
 
+/** Phase E Step 1: Frontend rendering guidance for large graphs. Advisory — never alters projection data. */
+export interface VirtualizationReadiness {
+  /** True when node count exceeds the rendering warning threshold. */
+  readonly shouldVirtualize: boolean;
+  /** Suggested page size for deferred node rendering. */
+  readonly recommendedPageSize: number;
+  /** True when hierarchy collapse is recommended to reduce initial node count. */
+  readonly collapseHierarchyByDefault: boolean;
+}
+
 export type ProjectionWarningCode =
   | 'LEGACY_NODE_PROJECTION'
   | 'MISSING_LAYER_FALLBACK'
@@ -86,6 +96,8 @@ export interface ProjectionMeta {
   readonly edgeCount: number;
   readonly hasHierarchy: boolean;
   readonly hasAiReadiness: boolean;
+  /** Phase E Step 1: Frontend rendering hints for large graph virtualization. Optional — absent for small graphs. */
+  readonly virtualizationReadiness?: VirtualizationReadiness;
 }
 
 export interface GraphProjection {
