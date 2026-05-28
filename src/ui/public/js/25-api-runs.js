@@ -3,8 +3,79 @@
 
 let _apiRunsCollectionId = null;
 let _apiRunsList = [];
+let _apiRunsPage = 0;
+let _apiRunsPageSize = 10;
 let _apiRunsPollTimer = null;
 let _apiRunsCurrentRunId = null;
+
+function _apiRunsRelTime(iso) {
+  const diff = Date.now() - new Date(iso);
+  if (diff < 60000) return 'just now';
+  if (diff < 3600000) return Math.floor(diff / 60000) + 'm ago';
+  if (diff < 86400000) return Math.floor(diff / 3600000) + 'h ago';
+  return Math.floor(diff / 86400000) + 'd ago';
+}
+
+function _apiRunsDateMatches(run, filter) {
+  if (!filter) return true;
+  const started = new Date(run.startedAt);
+  const now = new Date();
+  if (filter === 'today') return started.toDateString() === now.toDateString();
+  if (filter === '7d') return (now - started) <= 7 * 86400000;
+  if (filter === '30d') return (now - started) <= 30 * 86400000;
+  return true;
+}
+
+function _apiRunsPassRateCell(passed, total) {
+  if (!total) return '<td>—</td>';
+  const pct = Math.round((passed / total) * 100);
+  const color = pct >= 80 ? '#22c55e' : pct >= 50 ? '#f59e0b' : '#ef4444';
+  return `<td style="width:120px">
+    <div style="display:flex;align-items:center;gap:6px">
+      <div style="flex:1;height:6px;background:var(--border);border-radius:3px;overflow:hidden">
+        <div style="width:${pct}%;height:100%;background:${color};border-radius:3px"></div>
+      </div>
+      <span style="font-size:11px;color:var(--text-muted);min-width:32px;text-align:right">${pct}%</span>
+    </div>
+  </td>`;
+}
+
+function _apiRunsPageGo(delta) {
+  _apiRunsPage += delta;
+  _apiRunsRenderList();
+}
+
+function _apiRunsSetPageSize(n) {
+  _apiRunsPageSize = n;
+  _apiRunsPage = 0;
+  _apiRunsRenderList();
+}
+
+function _apiRunsRenderPagination(totalPages, total) {
+  const table = document.querySelector('#api-runs-tbody')?.closest('table');
+  if (!table) return;
+  let tfoot = table.querySelector('tfoot');
+  if (!tfoot) { tfoot = document.createElement('tfoot'); table.appendChild(tfoot); }
+  if (total === 0) { tfoot.innerHTML = ''; return; }
+  const start = _apiRunsPage * _apiRunsPageSize + 1;
+  const end   = Math.min((_apiRunsPage + 1) * _apiRunsPageSize, total);
+  const rppOpts = [10, 25, 50, 100, 200].map(n =>
+    `<option value="${n}"${_apiRunsPageSize === n ? ' selected' : ''}>${n}</option>`
+  ).join('');
+  tfoot.innerHTML = `<tr><td colspan="9" style="padding:6px 4px">
+    <div class="lt-pagination">
+      <label style="font-size:12px;color:var(--text-muted)">Rows per page:
+        <select class="fm-input" style="padding:2px 6px;font-size:12px;width:auto"
+          onchange="_apiRunsSetPageSize(+this.value)">${rppOpts}</select>
+      </label>
+      ${totalPages <= 1
+        ? `<span style="font-size:12px;color:var(--text-muted)">${start}–${end} of ${total}</span>`
+        : `<button class="tbl-btn" onclick="_apiRunsPageGo(-1)" ${_apiRunsPage === 0 ? 'disabled' : ''}>← Prev</button>
+           <span style="font-size:12px;color:var(--text-muted)">Page ${_apiRunsPage + 1} / ${totalPages} &nbsp;(${start}–${end} of ${total})</span>
+           <button class="tbl-btn" onclick="_apiRunsPageGo(1)" ${_apiRunsPage >= totalPages - 1 ? 'disabled' : ''}>Next →</button>`}
+    </div>
+  </td></tr>`;
+}
 
 async function apiRunsLoad(collectionId, focusRunId) {
   _apiRunsCollectionId = collectionId ?? _apiRunsCollectionId;
