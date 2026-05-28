@@ -1211,14 +1211,52 @@
         <!-- graph modal moved to root level below -->
 
         <!-- ── Tab: API Runs ───────────────────────────────────────────────── -->
+        <!-- ── Tab: API Runs ───────────────────────────────────────────────── -->
         <div class="panel" id="panel-api-runs">
           <div class="card">
-            <div class="card-title">API Run Results</div>
+            <div class="card-title">
+              API Runs
+              <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+                <input id="api-runs-search" class="filter-input" style="width:200px"
+                  placeholder="Search collection…" oninput="_apiRunsPage=0;_apiRunsRenderList()" />
+                <select id="api-runs-filter-status" class="fm-input" style="font-size:12px"
+                  onchange="_apiRunsPage=0;_apiRunsRenderList()">
+                  <option value="">All Statuses</option>
+                  <option value="passed">Passed</option>
+                  <option value="failed">Failed</option>
+                  <option value="error">Error</option>
+                  <option value="running">Running</option>
+                </select>
+                <select id="api-runs-filter-date" class="fm-input" style="font-size:12px"
+                  onchange="_apiRunsPage=0;_apiRunsRenderList()">
+                  <option value="">All Dates</option>
+                  <option value="today">Today</option>
+                  <option value="7d">Last 7 Days</option>
+                  <option value="30d">Last 30 Days</option>
+                </select>
+              </div>
+            </div>
             <div id="api-runs-list-alert"></div>
-            <table class="data-table">
-              <thead><tr><th>Status</th><th>Started</th><th>Duration</th><th>Steps</th><th>Pass/Fail/Skip</th><th></th></tr></thead>
-              <tbody id="api-runs-tbody"></tbody>
-            </table>
+            <div class="lt-wrap">
+              <div class="lt-body-wrap">
+                <table class="data-table lt-fixed">
+                  <thead>
+                    <tr>
+                      <th style="width:42px;text-align:center">Sr.</th>
+                      <th>Collection Name</th>
+                      <th>Environment</th>
+                      <th>Started</th>
+                      <th>Duration</th>
+                      <th style="text-align:center">Steps</th>
+                      <th style="width:120px">Pass Rate</th>
+                      <th style="text-align:center">Status</th>
+                      <th style="width:80px"></th>
+                    </tr>
+                  </thead>
+                  <tbody id="api-runs-tbody"></tbody>
+                </table>
+              </div>
+            </div>
           </div>
         </div><!-- /panel-api-runs -->
         <div class="panel" id="panel-api-flakiness">
