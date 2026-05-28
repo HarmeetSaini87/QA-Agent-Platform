@@ -408,9 +408,13 @@ export function registerApiTestingRoutes(app: express.Application): void {
     }
     runs.sort((a, b) => b.startedAt.localeCompare(a.startedAt));
     // OLD: res.json(runs.slice(0, 50));
+    const allCols = readAll<ApiCollection>(API_COLLECTIONS);
+    const allEnvs = readAll<ApiEnvironment>(API_ENVS);
+    const colMap = new Map(allCols.map(c => [c.id, c]));
+    const envMap = new Map(allEnvs.map(e => [e.id, e]));
     const enriched = runs.slice(0, 200).map(r => {
-      const col = findById<ApiCollection>(API_COLLECTIONS, r.collectionId);
-      const env = col ? findById<ApiEnvironment>(API_ENVS, col.environmentId) : null;
+      const col = colMap.get(r.collectionId);
+      const env = col ? envMap.get(col.environmentId) : null;
       return { ...r, collectionName: col?.name ?? r.collectionId, environmentName: env?.name ?? '—' };
     });
     res.json(enriched);
