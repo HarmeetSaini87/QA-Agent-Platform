@@ -12845,8 +12845,79 @@ function _fmtDuration(ms) {
 
 let _apiRunsCollectionId = null;
 let _apiRunsList = [];
+let _apiRunsPage = 0;
+let _apiRunsPageSize = 10;
 let _apiRunsPollTimer = null;
 let _apiRunsCurrentRunId = null;
+
+function _apiRunsRelTime(iso) {
+  const diff = Date.now() - new Date(iso);
+  if (diff < 60000) return 'just now';
+  if (diff < 3600000) return Math.floor(diff / 60000) + 'm ago';
+  if (diff < 86400000) return Math.floor(diff / 3600000) + 'h ago';
+  return Math.floor(diff / 86400000) + 'd ago';
+}
+
+function _apiRunsDateMatches(run, filter) {
+  if (!filter) return true;
+  const started = new Date(run.startedAt);
+  const now = new Date();
+  if (filter === 'today') return started.toDateString() === now.toDateString();
+  if (filter === '7d') return (now - started) <= 7 * 86400000;
+  if (filter === '30d') return (now - started) <= 30 * 86400000;
+  return true;
+}
+
+function _apiRunsPassRateCell(passed, total) {
+  if (!total) return '<td>—</td>';
+  const pct = Math.round((passed / total) * 100);
+  const color = pct >= 80 ? '#22c55e' : pct >= 50 ? '#f59e0b' : '#ef4444';
+  return `<td style="width:120px">
+    <div style="display:flex;align-items:center;gap:6px">
+      <div style="flex:1;height:6px;background:var(--border);border-radius:3px;overflow:hidden">
+        <div style="width:${pct}%;height:100%;background:${color};border-radius:3px"></div>
+      </div>
+      <span style="font-size:11px;color:var(--text-muted);min-width:32px;text-align:right">${pct}%</span>
+    </div>
+  </td>`;
+}
+
+function _apiRunsPageGo(delta) {
+  _apiRunsPage += delta;
+  _apiRunsRenderList();
+}
+
+function _apiRunsSetPageSize(n) {
+  _apiRunsPageSize = n;
+  _apiRunsPage = 0;
+  _apiRunsRenderList();
+}
+
+function _apiRunsRenderPagination(totalPages, total) {
+  const table = document.querySelector('#api-runs-tbody')?.closest('table');
+  if (!table) return;
+  let tfoot = table.querySelector('tfoot');
+  if (!tfoot) { tfoot = document.createElement('tfoot'); table.appendChild(tfoot); }
+  if (total === 0) { tfoot.innerHTML = ''; return; }
+  const start = _apiRunsPage * _apiRunsPageSize + 1;
+  const end   = Math.min((_apiRunsPage + 1) * _apiRunsPageSize, total);
+  const rppOpts = [10, 25, 50, 100, 200].map(n =>
+    `<option value="${n}"${_apiRunsPageSize === n ? ' selected' : ''}>${n}</option>`
+  ).join('');
+  tfoot.innerHTML = `<tr><td colspan="9" style="padding:6px 4px">
+    <div class="lt-pagination">
+      <label style="font-size:12px;color:var(--text-muted)">Rows per page:
+        <select class="fm-input" style="padding:2px 6px;font-size:12px;width:auto"
+          onchange="_apiRunsSetPageSize(+this.value)">${rppOpts}</select>
+      </label>
+      ${totalPages <= 1
+        ? `<span style="font-size:12px;color:var(--text-muted)">${start}–${end} of ${total}</span>`
+        : `<button class="tbl-btn" onclick="_apiRunsPageGo(-1)" ${_apiRunsPage === 0 ? 'disabled' : ''}>← Prev</button>
+           <span style="font-size:12px;color:var(--text-muted)">Page ${_apiRunsPage + 1} / ${totalPages} &nbsp;(${start}–${end} of ${total})</span>
+           <button class="tbl-btn" onclick="_apiRunsPageGo(1)" ${_apiRunsPage >= totalPages - 1 ? 'disabled' : ''}>Next →</button>`}
+    </div>
+  </td></tr>`;
+}
 
 async function apiRunsLoad(collectionId, focusRunId) {
   _apiRunsCollectionId = collectionId ?? _apiRunsCollectionId;
@@ -12860,6 +12931,7 @@ async function apiRunsLoad(collectionId, focusRunId) {
     if (_apiRunsCollectionId) {
       await _apiRunsFetchFlakiness(_apiRunsCollectionId);
     }
+    _apiRunsPage = 0;
     _apiRunsRenderList();
     if (focusRunId) {
       setTimeout(() => apiRunsViewDetail(focusRunId), 800);
@@ -12872,43 +12944,86 @@ async function apiRunsLoad(collectionId, focusRunId) {
 function _apiRunsRenderList() {
   const tbody = document.getElementById('api-runs-tbody');
   if (!tbody) return;
-  tbody.innerHTML = '';
-  if (_apiRunsList.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted)">No runs yet</td></tr>';
+
+  // Read filter values
+  const search = (document.getElementById('api-runs-search')?.value || '').toLowerCase();
+  const statusFilter = document.getElementById('api-runs-filter-status')?.value || '';
+  const dateFilter = document.getElementById('api-runs-filter-date')?.value || '';
+
+  // Filter
+  const filtered = _apiRunsList.filter(r => {
+    if (search && !(r.collectionName || r.collectionId || '').toLowerCase().includes(search)) return false;
+    if (statusFilter && r.status !== statusFilter) return false;
+    if (!_apiRunsDateMatches(r, dateFilter)) return false;
+    return true;
+  });
+
+  // Pagination
+  const totalPages = Math.max(1, Math.ceil(filtered.length / _apiRunsPageSize));
+  if (_apiRunsPage >= totalPages) _apiRunsPage = totalPages - 1;
+  const pageStart = _apiRunsPage * _apiRunsPageSize;
+  const pageRows  = filtered.slice(pageStart, pageStart + _apiRunsPageSize);
+
+  // Empty state
+  if (pageRows.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--text-muted)">No runs match the current filters.</td></tr>`;
+    _apiRunsRenderPagination(totalPages, filtered.length);
     return;
   }
-  const hotspotSet = new Set(_apiRunsFlakinessReport ? (_apiRunsFlakinessReport.hotspots || []) : []);
 
-  for (const run of _apiRunsList) {
-    const passed  = run.stepResults?.filter(s => s.status === 'passed').length ?? 0;
-    const failed  = run.stepResults?.filter(s => s.status === 'failed' || s.status === 'error').length ?? 0;
-    const skipped = run.stepResults?.filter(s => s.status === 'skipped').length ?? 0;
-    const total   = run.stepResults?.length ?? 0;
-    const dur = run.startedAt && run.completedAt
-      ? Math.round((new Date(run.completedAt) - new Date(run.startedAt)) / 1000) + 's'
-      : '—';
-    const badgeColor = run.status === 'passed' ? '#22c55e' : run.status === 'failed' ? '#ef4444' : run.status === 'running' ? '#3b82f6' : '#f59e0b';
-    const badge = run.status === 'running'
-      ? `<span class="badge" style="background:${badgeColor};color:#fff">⟳ running</span>`
-      : `<span class="badge" style="background:${badgeColor};color:#fff">${run.status}</span>`;
+  tbody.innerHTML = pageRows.map((r, i) => {
+    const sr = pageStart + i + 1;
+    const colName = r.collectionName || r.collectionId || '—';
+    const envName = r.environmentName || '—';
 
-    // Flaky indicator: mark run if any failed step is a known hotspot
-    const hasFlaky = run.stepResults?.some(s => hotspotSet.has(s.stepId) && s.status !== 'passed');
-    const flakyBadge = hasFlaky ? ' <span class="api-run-flaky-badge">⚡ flaky</span>' : '';
+    // Duration
+    let durStr = '—';
+    if (r.completedAt && r.startedAt) {
+      const ms = new Date(r.completedAt) - new Date(r.startedAt);
+      if (ms >= 60000) {
+        durStr = Math.floor(ms / 60000) + 'm ' + Math.floor((ms % 60000) / 1000) + 's';
+      } else {
+        durStr = (ms / 1000).toFixed(1) + 's';
+      }
+    } else if (r.startedAt) {
+      const sumMs = (r.stepResults || []).reduce((acc, s) => acc + (s.durationMs || 0), 0);
+      if (sumMs > 0) {
+        durStr = sumMs >= 60000
+          ? Math.floor(sumMs / 60000) + 'm ' + Math.floor((sumMs % 60000) / 1000) + 's'
+          : (sumMs / 1000).toFixed(1) + 's';
+      }
+    }
 
-    const tr = document.createElement('tr');
-    tr.style.cursor = 'pointer';
-    if (hasFlaky) tr.classList.add('api-run-hotspot-row');
-    tr.onclick = () => apiRunsViewDetail(run.id);
-    tr.innerHTML = `
-      <td>${badge}${flakyBadge}</td>
-      <td style="font-size:12px">${run.startedAt ? new Date(run.startedAt).toLocaleString() : '—'}</td>
-      <td>${dur}</td>
-      <td>${total}</td>
-      <td><span style="color:#22c55e">${passed}✓</span> <span style="color:#ef4444">${failed}✗</span> <span style="color:#9ca3af">${skipped}⊘</span></td>
-      <td><button class="tbl-btn" onclick="event.stopPropagation();apiRunsViewDetail('${run.id}')">View</button></td>`;
-    tbody.appendChild(tr);
-  }
+    // Steps counts (exclude teardown steps)
+    const steps = (r.stepResults || []).filter(s => !s.isTeardown);
+    const total  = steps.length;
+    const passed = steps.filter(s => s.status === 'passed').length;
+    const stepsStr = total > 0 ? `${passed} / ${total}` : '—';
+
+    // Status badge
+    const statusColors = { passed: '#22c55e', failed: '#ef4444', error: '#f59e0b', running: '#3b82f6' };
+    const statusColor = statusColors[r.status] || '#6b7280';
+    const isRunning = r.status === 'running';
+    const statusBadge = `<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;color:#fff;background:${statusColor};${isRunning ? 'animation:pulse 1.5s infinite;' : ''}">${r.status}</span>`;
+
+    // Started (relative + full on hover)
+    const startedRel  = r.startedAt ? _apiRunsRelTime(r.startedAt) : '—';
+    const startedFull = r.startedAt ? new Date(r.startedAt).toLocaleString() : '';
+
+    return `<tr>
+      <td style="text-align:center;color:var(--text-muted);font-size:12px">${sr}</td>
+      <td style="font-weight:500">${colName}</td>
+      <td style="color:var(--text-muted);font-size:12px">${envName}</td>
+      <td title="${startedFull}" style="font-size:12px;color:var(--text-muted)">${startedRel}</td>
+      <td style="font-size:12px">${durStr}</td>
+      <td style="text-align:center;font-size:12px">${stepsStr}</td>
+      ${_apiRunsPassRateCell(passed, total)}
+      <td style="text-align:center">${statusBadge}</td>
+      <td><button class="tbl-btn" onclick="apiRunsViewDetail('${r.id}')">View</button></td>
+    </tr>`;
+  }).join('');
+
+  _apiRunsRenderPagination(totalPages, filtered.length);
 }
 
 async function apiRunsViewDetail(runId) {
