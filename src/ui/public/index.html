@@ -3462,14 +3462,14 @@
         <div id="api-run-clusters"></div>
         <!-- Tab bar -->
         <div class="sub-tabs" style="margin-bottom:8px">
-          <button class="api-run-tab-btn sub-tab active" data-tab="steps" onclick="apiRunsTabSwitch('steps')">&#9776; Steps</button>
+          <button class="api-run-tab-btn sub-tab active" data-tab="steps" onclick="apiRunsTabSwitch('steps')">&#9776; Requests</button>
           <button class="api-run-tab-btn sub-tab" data-tab="graph" onclick="apiRunsTabSwitch('graph')">&#9645; Execution Graph</button>
           <button class="api-run-tab-btn sub-tab" data-tab="har" onclick="apiRunsTabSwitch('har')">&#127760; HAR / Network</button>
           <button class="api-run-tab-btn sub-tab" data-tab="timeline" onclick="apiRunsTabSwitch('timeline')">&#x23F1; Timeline</button>
           <button class="api-run-tab-btn sub-tab" data-tab="var-trace" onclick="apiRunsTabSwitch('var-trace')">&#x1F4CA; Var Trace</button>
         </div>
 
-        <!-- Steps tab -->
+        <!-- Requests tab -->
         <div class="api-run-tab-panel" data-tab="steps">
           <!-- Filter toolbar -->
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
@@ -3480,11 +3480,11 @@
               <button class="run-step-filter-btn" data-filter="error" onclick="apiRunsFilterSteps('error')">&#9888; Error</button>
               <button class="run-step-filter-btn" data-filter="skipped" onclick="apiRunsFilterSteps('skipped')">&#8960; Skipped</button>
             </div>
-            <input id="api-run-step-search" class="fm-input" placeholder="Search step name…" style="width:200px;font-size:12px;padding:4px 8px" oninput="apiRunsFilterSteps()">
+            <input id="api-run-step-search" class="fm-input" placeholder="Search request name…" style="width:200px;font-size:12px;padding:4px 8px" oninput="apiRunsFilterSteps()">
             <span id="api-run-step-count" style="font-size:11px;color:var(--neutral-500);margin-left:auto"></span>
           </div>
           <table class="data-table">
-            <thead><tr><th style="width:32px">#</th><th>Step</th><th>Test Status</th><th>Duration</th><th>Assertions</th><th style="width:36px"></th></tr></thead>
+            <thead><tr><th style="width:32px">#</th><th>Request</th><th>Test Status</th><th>Duration</th><th>Assertions</th><th style="width:36px"></th></tr></thead>
             <tbody id="api-run-steps-tbody"></tbody>
           </table>
         </div>

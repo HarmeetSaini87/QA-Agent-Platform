@@ -272,7 +272,7 @@ function _apiRunsRenderDetail(run) {
 
   // Update subtitle with run ID
   const subtitleEl = document.getElementById('api-run-detail-subtitle');
-  if (subtitleEl) subtitleEl.textContent = 'Run ID: ' + run.id + (run.collectionId ? ' · Collection: ' + (run.collectionName || run.collectionId) : '');
+  if (subtitleEl) subtitleEl.textContent = 'Run ID: ' + run.id + (run.collectionName ? ' · ' + run.collectionName : '');
 
   document.getElementById('api-run-detail-summary').innerHTML = `
     <div style="padding:14px 16px;background:var(--surface-2);border-radius:10px;margin-bottom:12px">
@@ -280,7 +280,7 @@ function _apiRunsRenderDetail(run) {
         <span style="font-weight:800;font-size:18px;color:${statusColor};letter-spacing:.02em">${run.status.toUpperCase()}</span>
         ${run.status === 'running' ? '<span class="badge badge-blue" style="font-size:11px">⟳ Live</span>' : ''}
         <span style="font-size:13px">⏱ <strong>${dur}</strong></span>
-        <span style="font-size:13px">📋 <strong>${total}</strong> steps</span>
+        <span style="font-size:13px">📋 <strong>${total}</strong> requests</span>
         <span style="font-size:13px;color:#22c55e">✓ <strong>${passed}</strong> passed</span>
         ${failed  > 0 ? `<span style="font-size:13px;color:#ef4444">✗ <strong>${failed}</strong> failed</span>` : ''}
         ${errored > 0 ? `<span style="font-size:13px;color:#f97316">⚠ <strong>${errored}</strong> error</span>` : ''}
@@ -307,7 +307,7 @@ function _apiRunsRenderDetail(run) {
       }
       const clusterHtml = Object.entries(clusters).map(([, c]) =>
         `<div style="padding:8px 12px;background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.3);border-radius:6px;margin-bottom:6px;color:var(--text);font-size:13px">
-           <span style="color:#ef4444;font-weight:700">${c.count} step${c.count > 1 ? 's' : ''} failed</span>
+           <span style="color:#ef4444;font-weight:700">${c.count} request${c.count > 1 ? 's' : ''} failed</span>
            <span style="color:var(--text-muted)"> → ${c.label}:</span>
            <span style="color:var(--text)"> ${c.steps.join(', ')}</span>
          </div>`
@@ -398,12 +398,12 @@ function _buildStepDetailHtml(step) {
         <div data-steppanel="jira" style="display:none;padding:10px;">
           ${step.status !== 'passed'
             ? `<button class="btn btn-sm" style="margin-bottom:8px;" onclick="_apiRunsFileDefect(_apiRunsCurrentRun&&_apiRunsCurrentRun.id,'${step.stepId}')">🐛 File Defect in Jira</button>`
-            : '<div style="color:var(--text-muted);font-size:12px;">Step passed — no defect to file.</div>'}
+            : '<div style="color:var(--text-muted);font-size:12px;">Request passed — no defect to file.</div>'}
           <div id="jira-defect-ref-${step.stepId}" style="margin-top:6px;"></div>
           <div id="jira-heal-panel-${step.stepId}" style="margin-top:10px;"></div>
         </div>
         <div data-steppanel="suggest" style="display:none;padding:10px">
-          <div id="suggest-panel-${step.stepId}"><span style="color:var(--text-muted);font-size:12px">Click "Suggest" to generate assertion suggestions for this step.</span></div>
+          <div id="suggest-panel-${step.stepId}"><span style="color:var(--text-muted);font-size:12px">Click "Suggest" to generate assertion suggestions for this request.</span></div>
         </div>
       </div>
     </div>`;
@@ -439,7 +439,7 @@ function _apiRunsRenderStepRows() {
   });
 
   const countEl = document.getElementById('api-run-step-count');
-  if (countEl) countEl.textContent = `Showing ${filtered.length} of ${_apiRunsAllSteps.length} steps`;
+  if (countEl) countEl.textContent = `Showing ${filtered.length} of ${_apiRunsAllSteps.length} requests`;
 
   stepTbody.innerHTML = '';
   filtered.forEach((step, idx) => {
