@@ -12850,6 +12850,10 @@ let _apiRunsPageSize = 10;
 let _apiRunsPollTimer = null;
 let _apiRunsCurrentRunId = null;
 
+function _apiRunsEsc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
 function _apiRunsRelTime(iso) {
   const diff = Date.now() - new Date(iso);
   if (diff < 60000) return 'just now';
@@ -12860,6 +12864,7 @@ function _apiRunsRelTime(iso) {
 
 function _apiRunsDateMatches(run, filter) {
   if (!filter) return true;
+  if (!run.startedAt) return false;
   const started = new Date(run.startedAt);
   const now = new Date();
   if (filter === 'today') return started.toDateString() === now.toDateString();
@@ -12941,9 +12946,12 @@ async function apiRunsLoad(collectionId, focusRunId) {
   }
 }
 
+// OLD _apiRunsRenderList: 6-column simple loop with flakiness hotspot badge, no filtering/pagination.
+// Replaced with enterprise 9-column table render (2026-05-28).
 function _apiRunsRenderList() {
   const tbody = document.getElementById('api-runs-tbody');
   if (!tbody) return;
+  if (_apiRunsPage < 0) _apiRunsPage = 0;
 
   // Read filter values
   const search = (document.getElementById('api-runs-search')?.value || '').toLowerCase();
@@ -13004,7 +13012,15 @@ function _apiRunsRenderList() {
     const statusColors = { passed: '#22c55e', failed: '#ef4444', error: '#f59e0b', running: '#3b82f6' };
     const statusColor = statusColors[r.status] || '#6b7280';
     const isRunning = r.status === 'running';
-    const statusBadge = `<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;color:#fff;background:${statusColor};${isRunning ? 'animation:pulse 1.5s infinite;' : ''}">${r.status}</span>`;
+    const statusBadge = `<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;color:#fff;background:${statusColor};${isRunning ? 'animation:pulse 1.5s infinite;' : ''}">${_apiRunsEsc(r.status)}</span>`;
+
+    // Flakiness hotspot indicator (restored from old render)
+    let flakyBadge = '';
+    if (typeof _apiRunsFlakinessReport !== 'undefined' && _apiRunsFlakinessReport?.hotspots) {
+      const hotspotSet = new Set(_apiRunsFlakinessReport.hotspots.map(h => h.stepId));
+      const hasFlaky = (r.stepResults || []).some(s => hotspotSet.has(s.stepId) && s.status !== 'passed');
+      if (hasFlaky) flakyBadge = ' <span title="Contains flaky steps" style="font-size:10px;color:#f59e0b">⚡</span>';
+    }
 
     // Started (relative + full on hover)
     const startedRel  = r.startedAt ? _apiRunsRelTime(r.startedAt) : '—';
@@ -13012,18 +13028,28 @@ function _apiRunsRenderList() {
 
     return `<tr>
       <td style="text-align:center;color:var(--text-muted);font-size:12px">${sr}</td>
-      <td style="font-weight:500">${colName}</td>
-      <td style="color:var(--text-muted);font-size:12px">${envName}</td>
-      <td title="${startedFull}" style="font-size:12px;color:var(--text-muted)">${startedRel}</td>
+      <td style="font-weight:500">${_apiRunsEsc(colName)}</td>
+      <td style="color:var(--text-muted);font-size:12px">${_apiRunsEsc(envName)}</td>
+      <td title="${_apiRunsEsc(startedFull)}" style="font-size:12px;color:var(--text-muted)">${startedRel}</td>
       <td style="font-size:12px">${durStr}</td>
       <td style="text-align:center;font-size:12px">${stepsStr}</td>
       ${_apiRunsPassRateCell(passed, total)}
-      <td style="text-align:center">${statusBadge}</td>
-      <td><button class="tbl-btn" onclick="apiRunsViewDetail('${r.id}')">View</button></td>
+      <td style="text-align:center">${statusBadge}${flakyBadge}</td>
+      <td><button class="tbl-btn" data-run-id="${_apiRunsEsc(r.id)}">View</button></td>
     </tr>`;
   }).join('');
 
   _apiRunsRenderPagination(totalPages, filtered.length);
+
+  // delegated handler for View buttons
+  const tbodyEl = document.getElementById('api-runs-tbody');
+  if (tbodyEl && !tbodyEl._runsClickBound) {
+    tbodyEl._runsClickBound = true;
+    tbodyEl.addEventListener('click', e => {
+      const btn = e.target.closest('[data-run-id]');
+      if (btn) apiRunsViewDetail(btn.dataset.runId);
+    });
+  }
 }
 
 async function apiRunsViewDetail(runId) {
