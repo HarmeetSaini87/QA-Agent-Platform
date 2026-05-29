@@ -39,6 +39,11 @@ const MANIFEST = [
   '28-api-replay.js',
   '29-worker-health.js',
   '30-governance.js',
+  '31-api-plugins.js',
+  '32-api-graph-editor.js',
+  '33-api-collaboration.js',
+  '34-api-copilot.js',
+  '35-api-performance.js',
 ];
 
 function build() {
