@@ -179,7 +179,7 @@ function _apiRunsRenderList() {
     if (typeof _apiRunsFlakinessReport !== 'undefined' && _apiRunsFlakinessReport?.hotspots) {
       const hotspotSet = new Set(_apiRunsFlakinessReport.hotspots.map(h => h.stepId));
       const hasFlaky = (r.stepResults || []).some(s => hotspotSet.has(s.stepId) && s.status !== 'passed');
-      if (hasFlaky) flakyBadge = ' <span title="Contains flaky steps" style="font-size:10px;color:#f59e0b">⚡</span>';
+      if (hasFlaky) flakyBadge = ' <span title="Contains flaky requests" style="font-size:10px;color:#f59e0b">⚡</span>';
     }
 
     // Started (relative + full on hover)
@@ -620,9 +620,9 @@ function _apiRunsStepTab(btn, containerId, tab) {
 }
 
 async function _apiRunsSetBaseline(stepId) {
-  if (!confirm('Set current response as baseline for this step?')) return;
-  // Trigger a "captureBaseline" re-run is complex — instead tell user to set captureBaseline:true on the step
-  showToast('To capture a baseline: edit the step in the collection and enable "Capture Baseline", then run once. The baseline file will be saved automatically.', 'info');
+  if (!confirm('Set current response as baseline for this request?')) return;
+  // Trigger a "captureBaseline" re-run is complex — instead tell user to set captureBaseline:true on the request
+  showToast('To capture a baseline: edit the request in the collection and enable "Capture Baseline", then run once. The baseline file will be saved automatically.', 'info');
 }
 
 function apiRunsCopySummary() {
@@ -640,10 +640,10 @@ function apiRunsCopySummary() {
     `Run ID: ${run.id}`,
     `Status: ${run.status.toUpperCase()}`,
     `Duration: ${dur}`,
-    `Steps: ${steps.length} total — ${passed} passed, ${failed} failed, ${errored} error`,
+    `Requests: ${steps.length} total — ${passed} passed, ${failed} failed, ${errored} error`,
     `Pass Rate: ${passRate}%`,
     ``,
-    `Step Results:`,
+    `Request Results:`,
     ...steps.map((s, i) => `  ${i + 1}. ${s.stepName} — ${s.status}${s.response ? ' [' + s.response.status + ']' : ''} (${s.durationMs ?? '—'}ms)`),
   ];
   const text = lines.join('\n');
@@ -708,7 +708,7 @@ async function _apiRunsLoadTimeline(runId, panel) {
 function _apiRunsSynthesizeTimeline(panel) {
   const run = _apiRunsCurrentRun;
   const steps = run && run.stepResults || [];
-  if (!steps.length) { panel.innerHTML = '<div style="color:var(--text-muted)">No step data available.</div>'; return; }
+  if (!steps.length) { panel.innerHTML = '<div style="color:var(--text-muted)">No request data available.</div>'; return; }
 
   const totalMs = steps.reduce(function(s, r) { return s + (r.durationMs || 0); }, 0);
   const maxDur  = Math.max(...steps.map(function(s) { return s.durationMs || 0; }), 1);

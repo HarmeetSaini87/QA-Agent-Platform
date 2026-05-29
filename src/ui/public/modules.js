@@ -10935,7 +10935,7 @@ function _renderApiColSteps() {
   if (!container) return;
   container.innerHTML = '';
   if (_apiColSteps.length === 0) {
-    container.innerHTML = '<div style="color:var(--text-muted);padding:8px">No steps yet — add below</div>';
+    container.innerHTML = '<div style="color:var(--text-muted);padding:8px">No requests yet — add below</div>';
     return;
   }
   _apiColSteps.forEach((step, i) => {
@@ -10944,7 +10944,7 @@ function _renderApiColSteps() {
     div.style.cssText = 'border:1px solid var(--border);border-radius:6px;margin-bottom:8px;padding:8px';
     div.innerHTML = `
       <div style="display:flex;align-items:center;gap:8px;cursor:pointer" onclick="_apiColStepToggle(${i})">
-        <span style="font-size:11px;font-weight:600;color:var(--text-muted);min-width:48px">Step ${i + 1}</span>
+        <span style="font-size:11px;font-weight:600;color:var(--text-muted);min-width:48px">Request ${i + 1}</span>
         <span style="flex:1;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
           ${escHtml(step.name)}
           <span style="font-size:11px;color:var(--text-muted);margin-left:6px">${escHtml(step.request?.method ?? 'GET')} ${escHtml(step.request?.url ?? '')}</span>
@@ -10954,7 +10954,7 @@ function _renderApiColSteps() {
       <div id="api-step-body-${i}" style="display:none;padding-top:10px;border-top:1px solid var(--border);margin-top:8px">
         <!-- Name row -->
         <div style="margin-bottom:8px">
-          <input class="fm-input" value="${escHtml(step.name)}" oninput="_apiColStepField(${i},'name',this.value)" placeholder="Step name"/>
+          <input class="fm-input" value="${escHtml(step.name)}" oninput="_apiColStepField(${i},'name',this.value)" placeholder="Request name"/>
         </div>
         <!-- Method + URL bar -->
         <div style="display:flex;gap:0;margin-bottom:10px;border:1px solid var(--border);border-radius:6px;overflow:hidden">
@@ -11010,7 +11010,7 @@ function _renderApiColSteps() {
                 <span>Variable Name</span><span>Set To</span><span>Value / Source</span><span></span>
               </div>
               <div id="api-step-prevars-${i}"></div>
-              <div style="font-size:11px;color:var(--text-muted);margin-top:6px">💡 Use <code>{{varName}}</code> in URL, Headers, Body of any later step</div>
+              <div style="font-size:11px;color:var(--text-muted);margin-top:6px">💡 Use <code>{{varName}}</code> in URL, Headers, Body of any later request</div>
             </div>
           </div>
 
@@ -11047,7 +11047,7 @@ function _renderApiColSteps() {
             <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-secondary,#1a1a1a);cursor:pointer" onclick="_apiColRuleToggle('flow-rules-${i}')">
               <div style="display:flex;align-items:center;gap:8px">
                 <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#f59e0b">③ Flow Control</span>
-                <span style="font-size:11px;color:var(--text-muted)">Conditionally jump to another step</span>
+                <span style="font-size:11px;color:var(--text-muted)">Conditionally jump to another request</span>
               </div>
               <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();_apiColFlowAdd(${i})">+ Add Rule</button>
             </div>
@@ -11056,7 +11056,7 @@ function _renderApiColSteps() {
                 <span>Check</span><span>Operator</span><span>Value</span><span>Then go to</span><span></span>
               </div>
               <div id="api-step-flow-${i}"></div>
-              <div style="font-size:11px;color:var(--text-muted);margin-top:6px">💡 Like <code>postman.setNextRequest()</code> — no code needed. Example: if statusCode equals 401 → go to "Re-Authenticate" step. If no rules match, collection runs sequentially by default.</div>
+              <div style="font-size:11px;color:var(--text-muted);margin-top:6px">💡 Like <code>postman.setNextRequest()</code> — no code needed. Example: if statusCode equals 401 → go to "Re-Authenticate" request. If no rules match, collection runs sequentially by default.</div>
             </div>
           </div>
         </div>
@@ -11066,14 +11066,14 @@ function _renderApiColSteps() {
             <div>
               <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px">
                 Timeout (ms)
-                <span title="How long to wait for this step's HTTP response before marking it as failed. Default: 30000ms (30s). Increase for slow APIs (e.g. report generation). Decrease to fail fast on health checks." style="cursor:help;color:var(--text-muted);font-weight:400"> ⓘ</span>
+                <span title="How long to wait for this request's HTTP response before marking it as failed. Default: 30000ms (30s). Increase for slow APIs (e.g. report generation). Decrease to fail fast on health checks." style="cursor:help;color:var(--text-muted);font-weight:400"> ⓘ</span>
               </label>
               <input class="fm-input" type="number" value="${step.execution?.timeoutMs ?? ''}" oninput="_apiColStepExecField(${i},'timeoutMs',+this.value)" placeholder="30000 (default)"/>
             </div>
             <div>
               <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px">
                 Run Condition
-                <span title="JavaScript expression evaluated before this step runs. If false, step is SKIPPED (not failed). Variables from previous steps are available as plain values — e.g. write: capturedRole === 'admin'  or  bookingId !== ''  Tip: UC6 in the demo collection uses this to skip the update step when the user is not admin." style="cursor:help;color:var(--text-muted);font-weight:400"> ⓘ</span>
+                <span title="JavaScript expression evaluated before this request runs. If false, request is SKIPPED (not failed). Variables from previous requests are available as plain values — e.g. write: capturedRole === 'admin'  or  bookingId !== ''  Tip: UC6 in the demo collection uses this to skip the update request when the user is not admin." style="cursor:help;color:var(--text-muted);font-weight:400"> ⓘ</span>
               </label>
               <input class="fm-input" value="${escHtml(step.execution?.condition ?? '')}" oninput="_apiColStepExecField(${i},'condition',this.value)" placeholder="e.g. capturedRole === 'admin'"/>
             </div>
@@ -11082,7 +11082,7 @@ function _renderApiColSteps() {
             <div>
               <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px">
                 On Failure
-                <span title="What to do when this step fails its assertions:&#10;• continue — run the next step regardless (default when collection onFailure=continue)&#10;• abort — stop the entire collection run immediately&#10;• abort-group — stop steps in the same execution group, but other groups keep running&#10;• skip-dependents — skip all steps that depend on this step's extracted variables" style="cursor:help;color:var(--text-muted);font-weight:400"> ⓘ</span>
+                <span title="What to do when this request fails its assertions:&#10;• continue — run the next request regardless (default when collection onFailure=continue)&#10;• abort — stop the entire collection run immediately&#10;• abort-group — stop requests in the same execution group, but other groups keep running&#10;• skip-dependents — skip all requests that depend on this request's extracted variables" style="cursor:help;color:var(--text-muted);font-weight:400"> ⓘ</span>
               </label>
               <select class="fm-input" onchange="_apiColStepExecField(${i},'onFailure',this.value)">
                 ${['continue','abort','abort-group','skip-dependents'].map(v => `<option value="${v}" ${(step.execution?.onFailure??'')===v?'selected':''}>${v}</option>`).join('')}
@@ -11091,7 +11091,7 @@ function _renderApiColSteps() {
             <div>
               <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px">
                 Retry On
-                <span title="Automatically retry this step when these conditions occur:&#10;• 5xx — server errors (500, 502, 503, 504)&#10;• 429 — rate limited (too many requests)&#10;• network — connection refused, timeout, DNS failure&#10;Set Max Retries and Delay below. Retries do NOT apply to POST/PUT/PATCH unless you also check Idempotent." style="cursor:help;color:var(--text-muted);font-weight:400"> ⓘ</span>
+                <span title="Automatically retry this request when these conditions occur:&#10;• 5xx — server errors (500, 502, 503, 504)&#10;• 429 — rate limited (too many requests)&#10;• network — connection refused, timeout, DNS failure&#10;Set Max Retries and Delay below. Retries do NOT apply to POST/PUT/PATCH unless you also check Idempotent." style="cursor:help;color:var(--text-muted);font-weight:400"> ⓘ</span>
               </label>
               <div style="display:flex;gap:8px;flex-wrap:wrap">
                 ${['5xx','429','network'].map(v => `<label style="font-size:11px;display:flex;align-items:center;gap:3px"><input type="checkbox" ${(step.execution?.retryPolicy?.retryOn??[]).includes(v)?'checked':''} onchange="_apiColToggleRetryOn(${i},'${v}',this.checked)"/> ${v}</label>`).join('')}
@@ -11125,13 +11125,13 @@ function _renderApiColSteps() {
             </div>
           </div>
           <div style="display:flex;gap:24px;padding-top:8px;border-top:1px solid var(--border)">
-            <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer" title="Teardown steps run AFTER all normal test steps complete — whether the collection passed or failed. Use for cleanup: deleting test data created during the run (e.g. DELETE /booking/{{bookingId}}). A teardown step failing does not affect the collection's overall pass/fail status. UC8 in the demo collection is an example teardown.">
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer" title="Teardown requests run AFTER all normal test requests complete — whether the collection passed or failed. Use for cleanup: deleting test data created during the run (e.g. DELETE /booking/{{bookingId}}). A teardown request failing does not affect the collection's overall pass/fail status. UC8 in the demo collection is an example teardown.">
               <input type="checkbox" ${step.execution?.teardown ? 'checked' : ''} onchange="_apiColStepExecField(${i},'teardown',this.checked)"/>
-              Teardown step <span style="color:var(--text-muted);font-size:11px">— runs after all tests, used for cleanup (e.g. DELETE created data)</span>
+              Teardown request <span style="color:var(--text-muted);font-size:11px">— runs after all tests, used for cleanup (e.g. DELETE created data)</span>
             </label>
           </div>
           <div style="display:flex;gap:24px;padding-top:8px;margin-top:8px">
-            <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer" title="Saves this step's response as the baseline snapshot. On future runs, the response is automatically compared against this saved baseline. Any changes (new fields, removed fields, value changes, status changes) are shown in the Diff tab of the run results. Use this to detect accidental API changes — like a contract test. Once set, run again without this checked to see the diff.">
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer" title="Saves this request's response as the baseline snapshot. On future runs, the response is automatically compared against this saved baseline. Any changes (new fields, removed fields, value changes, status changes) are shown in the Diff tab of the run results. Use this to detect accidental API changes — like a contract test. Once set, run again without this checked to see the diff.">
               <input type="checkbox" ${step.captureBaseline ? 'checked' : ''} onchange="_apiColStepField(${i},'captureBaseline',this.checked)"/>
               Capture Baseline <span style="color:var(--text-muted);font-size:11px">— saves response snapshot; future runs diff against it to detect API changes</span>
             </label>
@@ -11369,7 +11369,7 @@ function _apiColExtractRender(i) {
   if (!container) return;
   const extracts = _apiColSteps[i].extractVariables ?? [];
   if (extracts.length === 0) {
-    container.innerHTML = '<div style="color:var(--text-muted);font-size:12px;padding:4px 2px">No extractions — add one to chain this step\'s response into the next step.</div>';
+    container.innerHTML = '<div style="color:var(--text-muted);font-size:12px;padding:4px 2px">No extractions — add one to chain this request\'s response into the next request.</div>';
     return;
   }
   container.innerHTML = extracts.map((ex, ei) => `
@@ -11463,7 +11463,7 @@ function _apiColStepHeaderRemove(i, hi) { _apiColSteps[i].request.headers.splice
 function apiColAddStep() {
   _apiColSteps.push({
     id: 'step-' + Date.now(),
-    name: 'New Step',
+    name: 'New Request',
     request: { method: 'GET', url: '', bodyType: 'none' },
     assertions: [], extractVariables: [], execution: {}, dependsOn: [],
   });
@@ -11594,7 +11594,7 @@ async function apiColGenTestsRun() {
     _genTestCases = suite.cases || [];
 
     if (!_genTestCases.length) {
-      content.innerHTML = '<div style="color:var(--text-muted);padding:16px 0">No test suggestions generated. The collection may have no steps with request bodies.</div>';
+      content.innerHTML = '<div style="color:var(--text-muted);padding:16px 0">No test suggestions generated. The collection may have no requests with request bodies.</div>';
       return;
     }
 
@@ -11632,7 +11632,7 @@ async function apiColGenTestsRun() {
       '</div>' +
       '<div style="overflow:auto;max-height:420px">' +
         '<table class="data-table">' +
-          '<thead><tr><th style="width:36px"></th><th>Severity</th><th>Step</th><th>Test Description</th><th>Expected Status</th><th>What to verify</th></tr></thead>' +
+          '<thead><tr><th style="width:36px"></th><th>Severity</th><th>Request</th><th>Test Description</th><th>Expected Status</th><th>What to verify</th></tr></thead>' +
           '<tbody>' + rows + '</tbody>' +
         '</table>' +
       '</div>';
@@ -11671,7 +11671,7 @@ async function apiColGenTestsAddSelected() {
     const data = await res.json();
     const cnt = data.addedCount ?? selectedCases.length;
     closeModal('modal-gen-tests');
-    modAlert('api-col-list-alert', 'success', cnt + ' test step' + (cnt !== 1 ? 's' : '') + ' added to collection.');
+    modAlert('api-col-list-alert', 'success', cnt + ' test request' + (cnt !== 1 ? 's' : '') + ' added to collection.');
     await apiColLoad();
   } catch (e) {
     modAlert('api-col-list-alert', 'error', e.message);
@@ -11741,11 +11741,11 @@ function _tryReqPopulateSteps(colId) {
   if (!stepSel) return;
   const col = _apiCols.find(c => c.id === colId);
   if (!col || !(col.steps || []).length) {
-    stepSel.innerHTML = '<option value="">— no steps in this collection —</option>';
+    stepSel.innerHTML = '<option value="">— no requests in this collection —</option>';
     stepSel.disabled = true;
     return;
   }
-  stepSel.innerHTML = '<option value="">— choose a step to pre-fill —</option>' +
+  stepSel.innerHTML = '<option value="">— choose a request to pre-fill —</option>' +
     col.steps.map((s, i) =>
       `<option value="${i}">${i + 1}. ${escHtml(s.request?.method ?? 'GET')} ${escHtml(s.request?.url ?? s.name ?? '')}</option>`
     ).join('');
@@ -12011,7 +12011,7 @@ function _apiColShowPrescanResults(results) {
   content.innerHTML = `
     <table style="width:100%;border-collapse:collapse">
       <thead><tr>
-        <th style="text-align:left;padding:6px 8px;border-bottom:1px solid var(--border)">Step</th>
+        <th style="text-align:left;padding:6px 8px;border-bottom:1px solid var(--border)">Request</th>
         <th style="text-align:left;padding:6px 8px;border-bottom:1px solid var(--border)">Health</th>
         <th style="text-align:left;padding:6px 8px;border-bottom:1px solid var(--border)">Duration</th>
         <th style="text-align:left;padding:6px 8px;border-bottom:1px solid var(--border)">Status</th>
@@ -12143,7 +12143,7 @@ async function _apiColImportConfirm(col, modalId, alertId) {
     if (!res.ok) throw new Error(data.error || 'Save failed');
     closeModal(modalId);
     await apiColLoad();
-    modAlert('api-col-list-alert', 'success', `Collection "${col.name}" imported (${col.steps?.length ?? 0} steps)`);
+    modAlert('api-col-list-alert', 'success', `Collection "${col.name}" imported (${col.steps?.length ?? 0} requests)`);
   } catch (e) {
     modAlert(alertId, 'error', e.message);
   }
@@ -12210,7 +12210,7 @@ function _apiColGraphPopulateSelect() {
   const sel = document.getElementById('api-col-graph-select');
   if (!sel) return;
   const opts = _apiCols.map(c =>
-    '<option value="' + c.id + '">' + escHtml(c.name) + ' (' + (c.steps ?? []).length + ' steps)</option>'
+    '<option value="' + c.id + '">' + escHtml(c.name) + ' (' + (c.steps ?? []).length + ' requests)</option>'
   ).join('');
   sel.innerHTML = '<option value="">— select a collection —</option>' + opts;
 }
@@ -12252,7 +12252,7 @@ function _apiColGraphRender(projection, isModal) {
   if (!isModal) _apiColGraphShowWarnings(projection.warnings);
 
   if (!projection.nodes || projection.nodes.length === 0) {
-    if (!isModal) _apiColGraphSetState('This collection has no steps to visualize.');
+    if (!isModal) _apiColGraphSetState('This collection has no requests to visualize.');
     return;
   }
 
@@ -12302,7 +12302,7 @@ function _apiColGraphRender(projection, isModal) {
     _apiColGraphModalCy = cy;
     // Update meta badge
     const metaEl = document.getElementById('api-col-graph-modal-meta');
-    if (metaEl && projection.meta) metaEl.textContent = projection.meta.nodeCount + ' steps · ' + projection.meta.edgeCount + ' edges';
+    if (metaEl && projection.meta) metaEl.textContent = projection.meta.nodeCount + ' requests · ' + projection.meta.edgeCount + ' edges';
   }
 }
 
@@ -12803,11 +12803,11 @@ function _apiColRenderAnalytics(data) {
       '</tr>';
     }).join('');
     stepSection = '<div style="margin-bottom:16px;padding:16px;border:1px solid var(--neutral-200);border-radius:8px">' +
-      '<div style="font-size:13px;font-weight:700;margin-bottom:10px;color:var(--neutral-700)">Step Failure Heatmap ' +
+      '<div style="font-size:13px;font-weight:700;margin-bottom:10px;color:var(--neutral-700)">Request Failure Heatmap ' +
         '<span style="font-size:11px;font-weight:400;color:var(--neutral-400)">(top 10 by fail rate across last ' + s.totalRuns + ' runs)</span>' +
       '</div>' +
       '<table class="data-table" style="width:100%">' +
-        '<thead><tr><th>Step</th><th style="text-align:center">Runs</th><th style="text-align:center">Failures</th><th>Fail Rate</th></tr></thead>' +
+        '<thead><tr><th>Request</th><th style="text-align:center">Runs</th><th style="text-align:center">Failures</th><th>Fail Rate</th></tr></thead>' +
         '<tbody>' + stepRows + '</tbody>' +
       '</table>' +
     '</div>';
@@ -12829,7 +12829,7 @@ function _apiColRenderAnalytics(data) {
   const runTable = '<div style="padding:16px;border:1px solid var(--neutral-200);border-radius:8px">' +
     '<div style="font-size:13px;font-weight:700;margin-bottom:10px;color:var(--neutral-700)">Recent Runs</div>' +
     '<table class="data-table" style="width:100%">' +
-      '<thead><tr><th>Started</th><th style="text-align:center">Status</th><th style="text-align:center">Steps</th><th style="text-align:center">Pass%</th><th style="text-align:right">Duration</th></tr></thead>' +
+      '<thead><tr><th>Started</th><th style="text-align:center">Status</th><th style="text-align:center">Requests</th><th style="text-align:center">Pass%</th><th style="text-align:right">Duration</th></tr></thead>' +
       '<tbody>' + runRows + '</tbody>' +
     '</table>' +
   '</div>';
@@ -13031,7 +13031,7 @@ function _apiRunsRenderList() {
     if (typeof _apiRunsFlakinessReport !== 'undefined' && _apiRunsFlakinessReport?.hotspots) {
       const hotspotSet = new Set(_apiRunsFlakinessReport.hotspots.map(h => h.stepId));
       const hasFlaky = (r.stepResults || []).some(s => hotspotSet.has(s.stepId) && s.status !== 'passed');
-      if (hasFlaky) flakyBadge = ' <span title="Contains flaky steps" style="font-size:10px;color:#f59e0b">⚡</span>';
+      if (hasFlaky) flakyBadge = ' <span title="Contains flaky requests" style="font-size:10px;color:#f59e0b">⚡</span>';
     }
 
     // Started (relative + full on hover)
@@ -13472,9 +13472,9 @@ function _apiRunsStepTab(btn, containerId, tab) {
 }
 
 async function _apiRunsSetBaseline(stepId) {
-  if (!confirm('Set current response as baseline for this step?')) return;
-  // Trigger a "captureBaseline" re-run is complex — instead tell user to set captureBaseline:true on the step
-  showToast('To capture a baseline: edit the step in the collection and enable "Capture Baseline", then run once. The baseline file will be saved automatically.', 'info');
+  if (!confirm('Set current response as baseline for this request?')) return;
+  // Trigger a "captureBaseline" re-run is complex — instead tell user to set captureBaseline:true on the request
+  showToast('To capture a baseline: edit the request in the collection and enable "Capture Baseline", then run once. The baseline file will be saved automatically.', 'info');
 }
 
 function apiRunsCopySummary() {
@@ -13492,10 +13492,10 @@ function apiRunsCopySummary() {
     `Run ID: ${run.id}`,
     `Status: ${run.status.toUpperCase()}`,
     `Duration: ${dur}`,
-    `Steps: ${steps.length} total — ${passed} passed, ${failed} failed, ${errored} error`,
+    `Requests: ${steps.length} total — ${passed} passed, ${failed} failed, ${errored} error`,
     `Pass Rate: ${passRate}%`,
     ``,
-    `Step Results:`,
+    `Request Results:`,
     ...steps.map((s, i) => `  ${i + 1}. ${s.stepName} — ${s.status}${s.response ? ' [' + s.response.status + ']' : ''} (${s.durationMs ?? '—'}ms)`),
   ];
   const text = lines.join('\n');
@@ -13560,7 +13560,7 @@ async function _apiRunsLoadTimeline(runId, panel) {
 function _apiRunsSynthesizeTimeline(panel) {
   const run = _apiRunsCurrentRun;
   const steps = run && run.stepResults || [];
-  if (!steps.length) { panel.innerHTML = '<div style="color:var(--text-muted)">No step data available.</div>'; return; }
+  if (!steps.length) { panel.innerHTML = '<div style="color:var(--text-muted)">No request data available.</div>'; return; }
 
   const totalMs = steps.reduce(function(s, r) { return s + (r.durationMs || 0); }, 0);
   const maxDur  = Math.max(...steps.map(function(s) { return s.durationMs || 0; }), 1);
