@@ -9268,6 +9268,17 @@ function _renderLicensePanel(data, machine, audit, sessions) {
     : `${data.seatsUsed} / ${data.seats} seats`;
   seatsChip.className = 'lic-chip lic-chip-blue';
 
+  const projChip = document.getElementById('lic-projects-chip');
+  if (projChip) {
+    const mp = data.features?.maxProjects ?? -1;
+    if (mp !== -1) {
+      projChip.textContent = `${mp} projects max`;
+      projChip.style.display = '';
+    } else {
+      projChip.style.display = 'none';
+    }
+  }
+
   const featList = document.getElementById('lic-features-list');
   const f = data.features || {};
   const ov = data.featureOverrides || {};   // P4-01: vendor-signed overrides
@@ -9398,16 +9409,16 @@ function _renderLicensePanel(data, machine, audit, sessions) {
                 <th style="padding:4px 6px;border-bottom:1px solid rgba(255,255,255,.07)"></th>
               </tr></thead>
               <tbody>
-                ${activeSessions.map(s => `<tr>
+                ${(window._licSessions = activeSessions, activeSessions.map((s, idx) => `<tr>
                   <td style="padding:5px 6px;color:var(--text-secondary);font-weight:${s.isCurrent ? '600' : '400'}">${_escHtml(s.username || '—')}${s.isCurrent ? ' <span style="font-size:.68rem;color:#60a5fa">(you)</span>' : ''}</td>
                   <td style="padding:5px 6px"><span class="badge badge-${s.role || 'tester'}">${_escHtml(s.role || '—')}</span></td>
                   <td style="padding:5px 6px;color:var(--text-muted)">${s.loginAt ? new Date(s.loginAt).toLocaleTimeString() : '—'}</td>
                   <td style="padding:5px 6px;color:var(--text-muted)">${s.lastActivity ? new Date(s.lastActivity).toLocaleTimeString() : '—'}</td>
                   <td style="padding:5px 6px;color:var(--text-muted)">${_escHtml(s.ip || '—')}</td>
                   <td style="padding:5px 6px">
-                    ${s.isCurrent ? '' : `<button class="tbl-btn del" onclick="licenseRevokeSession('${_escHtml(s.sessionId)}','${_escHtml(s.username || '')}')" title="Force logout">Revoke</button>`}
+                    ${s.isCurrent ? '' : `<button class="tbl-btn del" onclick="licenseRevokeSession(${idx})" title="Force logout">Revoke</button>`}
                   </td>
-                </tr>`).join('')}
+                </tr>`)).join('')}
               </tbody>
             </table>`}
       </div>`;
@@ -9490,9 +9501,15 @@ async function licenseActivateFile() {
 }
 
 // P2-02: Force-logout a session (frees a seat)
-async function licenseRevokeSession(sessionId, username) {
-  if (!confirm(`Force-logout ${username || 'this user'}? Their current work may be lost.`)) return;
-  const res = await fetch(`/api/admin/license/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' });
+async function licenseRevokeSession(idx) {
+  const s = (window._licSessions || [])[idx];
+  if (!s) { alert('Session not found — please refresh and try again.'); return; }
+  if (!confirm(`Force-logout ${s.username || 'this user'}? Their current work may be lost.`)) return;
+  const res = await fetch(`/api/admin/license/sessions/${encodeURIComponent(s.sessionId)}`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ userId: s.userId }),
+  });
   const data = await res.json();
   if (!res.ok) { alert(data.error || 'Failed to revoke session'); return; }
   licenseLoad();

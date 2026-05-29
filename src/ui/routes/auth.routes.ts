@@ -27,7 +27,13 @@ export function registerAuthRoutes(app: express.Application): void {
     req.session.username = user.username;
     req.session.role = user.role;
     req.session.loginAt = new Date().toISOString();
-    (req.session as unknown as Record<string, unknown>).ip = req.ip ?? null;
+    (req.session as any).sessionId = req.sessionID;
+    // Capture real client IP — fallback chain for reverse proxy / direct connection
+    const clientIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim()
+      || req.ip
+      || (req.socket as any)?.remoteAddress
+      || null;
+    (req.session as unknown as Record<string, unknown>).ip = clientIp;
     recordLogin(user.id);
     res.json({ success: true, role: user.role, username: user.username });
   });

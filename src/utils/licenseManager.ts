@@ -528,8 +528,13 @@ export function isAutoTrial(): boolean {
 export function trialDaysRemaining(): number {
   const p = getLicensePayload();
   if (!p || p.tier !== 'trial') return 0;
-  const ms = new Date(p.expiresAt).getTime() - Date.now();
-  return Math.max(0, Math.ceil(ms / (1000 * 60 * 60 * 24)));
+  const now     = new Date();
+  const expires = new Date(p.expiresAt);
+  // Calendar-day diff — drops at midnight, not at exact activation time
+  // OLD: Math.ceil on raw ms — stayed at 14 on day 2 if activated late at night
+  const todayMidnight   = new Date(now.getFullYear(),     now.getMonth(),     now.getDate());
+  const expiresMidnight = new Date(expires.getFullYear(), expires.getMonth(), expires.getDate());
+  return Math.max(0, Math.round((expiresMidnight.getTime() - todayMidnight.getTime()) / 86400000));
 }
 
 // Periodic expiry enforcement — call from server on an interval.
@@ -567,6 +572,9 @@ export function isFeatureEnabled(feature: keyof LicensePayload['features']): boo
 // Rehydrated from SQLite sessions on server startup via syncSeatsFromSessions().
 
 const _userSessions = new Map<string, number>();
+// Flag: true until syncSeatsFromSessions() has been called at least once.
+// Prevents race condition where logins arrive before the map is rehydrated.
+let _seatSyncPending = true;
 
 export function recordLogin(userId: string): void {
   _userSessions.set(userId, (_userSessions.get(userId) ?? 0) + 1);
@@ -582,10 +590,16 @@ export function getSeatsUsed(): number {
   return _userSessions.size;
 }
 
+export function getActiveUserIds(): Set<string> {
+  return new Set(_userSessions.keys());
+}
+
 export function isSeatAvailable(userId: string): boolean {
   const p = getLicensePayload();
   if (!p) return true;
   if (p.seats === -1) return true;
+  // Block all new logins until seat map is rehydrated from SQLite after server restart
+  if (_seatSyncPending) return false;
   if (_userSessions.has(userId)) return true;
   return _userSessions.size < p.seats;
 }
@@ -597,6 +611,7 @@ export function syncSeatsFromSessions(activeUserIds: string[]): void {
   for (const uid of activeUserIds) {
     _userSessions.set(uid, (_userSessions.get(uid) ?? 0) + 1);
   }
+  _seatSyncPending = false;  // seat map is now reliable — allow logins
 }
 
 // P2-04: Returns fraction of seats used (0–1). -1 if unlimited.

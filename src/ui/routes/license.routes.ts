@@ -4,7 +4,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { requireAuth, requireAdmin } from '../../auth/middleware';
 import { logAudit } from '../../auth/audit';
-import { validateLicenseKey, validateLicFile, storeLicense, loadStoredLicense, getLicensePayload, refreshLicenseCache, clearLicenseCache, isAutoTrial, trialDaysRemaining, getSeatsUsed, getSeatUsageRatio, transferLicense, getMachineId, getMachineIdComponents, checkMachineBinding } from '../../utils/licenseManager';
+import { validateLicenseKey, validateLicFile, storeLicense, loadStoredLicense, getLicensePayload, refreshLicenseCache, clearLicenseCache, isAutoTrial, trialDaysRemaining, getSeatsUsed, getSeatUsageRatio, transferLicense, getMachineId, getMachineIdComponents, checkMachineBinding, recordLogout, getActiveUserIds } from '../../utils/licenseManager';
 
 const licUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 64 * 1024 } });
 
@@ -15,7 +15,11 @@ export function registerLicenseRoutes(app: express.Application, sessionStore: an
     const p = stored.payload;
     const now = new Date();
     const expires = new Date(p.expiresAt);
-    const daysLeft = Math.ceil((expires.getTime() - now.getTime()) / 86400000);
+    // Calendar-day diff: strip time component so count drops at midnight regardless of activation time
+    // OLD: Math.ceil on raw ms — stayed at 14 on day 2 if activated late at night
+    const todayMidnight   = new Date(now.getFullYear(),     now.getMonth(),     now.getDate());
+    const expiresMidnight = new Date(expires.getFullYear(), expires.getMonth(), expires.getDate());
+    const daysLeft = Math.max(0, Math.round((expiresMidnight.getTime() - todayMidnight.getTime()) / 86400000));
     res.json({
       activated: true,
       tier: p.tier,
@@ -139,19 +143,36 @@ export function registerLicenseRoutes(app: express.Application, sessionStore: an
   app.get('/api/admin/license/sessions', requireAuth, requireAdmin, (req: Request, res: Response) => {
     sessionStore.all!((err: any, sessions: any) => {
       if (err) { res.status(500).json({ error: 'Failed to read sessions' }); return; }
-      const rows = Object.entries(sessions ?? {}).map(([sid, raw]) => {
-        const s = raw as Record<string, unknown>;
+      // Build set of userIds from sessions (handles array or object return from connect-sqlite3)
+      const sqliteUserIds = new Set<string>();
+      const rawList: any[] = Array.isArray(sessions) ? sessions : Object.values(sessions ?? {});
+      rawList.forEach((raw: any) => { if (raw?.userId) sqliteUserIds.add(raw.userId); });
+
+      // Reconcile: remove from in-memory seat map any userId with no SQLite session left
+      // (handles case where user's session expired/was cleaned but map wasn't updated)
+      for (const uid of getActiveUserIds()) {
+        if (!sqliteUserIds.has(uid)) recordLogout(uid);
+      }
+
+      // connect-sqlite3 may return array OR object — normalise to array of {sid, data} pairs
+      const sessionEntries: Array<{ sid: string; data: Record<string, unknown> }> = Array.isArray(sessions)
+        ? sessions.map((item: any) => ({ sid: item.sid ?? item.id ?? String(item), data: item }))
+        : Object.entries(sessions ?? {}).map(([sid, data]) => ({ sid, data: data as Record<string, unknown> }));
+
+      const rows = sessionEntries.map(({ data: s }) => {
+        // sessionId stored in session data at login time (auth.routes.ts)
+        const realSid = (s.sessionId as string) ?? null;
         return {
-          sessionId: sid,
+          sessionId: realSid,
           userId: s.userId ?? null,
           username: s.username ?? null,
           role: s.role ?? null,
           loginAt: s.loginAt ?? null,
           lastActivity: s.lastActivity ?? null,
           ip: s.ip ?? null,
-          isCurrent: sid === req.sessionID,
+          isCurrent: realSid === req.sessionID,
         };
-      }).filter(s => s.userId);
+      }).filter(s => s.userId && s.sessionId);
       res.json({ sessions: rows, seatsUsed: getSeatsUsed(), seatRatio: getSeatUsageRatio() });
     });
   });
@@ -159,8 +180,11 @@ export function registerLicenseRoutes(app: express.Application, sessionStore: an
   app.delete('/api/admin/license/sessions/:sessionId', requireAuth, requireAdmin, (req: Request, res: Response) => {
     const { sessionId } = req.params;
     if (sessionId === req.sessionID) { res.status(400).json({ error: 'Cannot revoke your own session' }); return; }
+    // userId passed from UI (avoids unreliable sessionStore.get lookup)
+    const userId = (req.body as any)?.userId as string | undefined;
     sessionStore.destroy!(sessionId, (err: Error | undefined) => {
       if (err) { res.status(500).json({ error: 'Failed to destroy session' }); return; }
+      if (userId) recordLogout(userId);
       res.json({ success: true });
     });
   });
@@ -178,7 +202,7 @@ export function registerLicenseRoutes(app: express.Application, sessionStore: an
     }
   });
 
-  app.get('/api/admin/license/seat-report', requireAuth, requireAdmin, (_req: Request, res: Response) => {
+  app.get('/api/admin/license/seat-report', requireAuth, requireAdmin, async (_req: Request, res: Response) => {
     const USERS_FILE = path.resolve('data', 'users.json');
     const AUDIT_FILE = path.resolve('data', 'audit.json');
     try {
@@ -190,24 +214,41 @@ export function registerLicenseRoutes(app: express.Application, sessionStore: an
         ? JSON.parse(fs.readFileSync(AUDIT_FILE, 'utf-8'))
         : [];
 
+      // OLD: checked action === 'LOGIN' but actual action is 'LOGIN_SUCCESS'
       const loginCounts: Record<string, number> = {};
       for (const e of auditEvents) {
-        if (e.action === 'LOGIN' && typeof e.userId === 'string') {
+        if (e.action === 'LOGIN_SUCCESS' && typeof e.userId === 'string') {
           loginCounts[e.userId] = (loginCounts[e.userId] ?? 0) + 1;
         }
       }
 
+      // Build set of currently active session userIds for accurate "Seat Used" column
+      // OLD: used array index (i < p.seats) which is positional and wrong
+      const activeUserIds = new Set<string>();
+      await new Promise<void>(resolve => {
+        sessionStore.all!((err: any, sessions: any) => {
+          if (!err && sessions) {
+            Object.values(sessions).forEach((s: any) => {
+              if (s?.userId) activeUserIds.add(s.userId);
+            });
+          }
+          resolve();
+        });
+      });
+
       const p = getLicensePayload();
       const csvRows = [
         ['Username', 'Email', 'Role', 'Active', 'Last Login', 'Login Count', 'Seat Used'],
-        ...users.map((u, i) => [
+        ...users.map((u) => [
           u.username,
           u.email,
           u.role,
           u.isActive ? 'Yes' : 'No',
           u.lastLogin ? new Date(u.lastLogin).toLocaleString() : 'Never',
           String(loginCounts[u.id] ?? 0),
-          p && p.seats !== -1 ? (i < p.seats ? 'Yes' : 'No') : 'Unlimited',
+          p && p.seats !== -1
+            ? (activeUserIds.has(u.id) ? 'Yes (active)' : 'No')
+            : 'Unlimited',
         ]),
       ];
 
