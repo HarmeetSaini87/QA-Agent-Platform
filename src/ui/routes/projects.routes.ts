@@ -4,6 +4,7 @@ import { config } from '../../framework/config';
 import { readAll, upsert, findById, remove, writeAll, LOCATORS, PROJECTS, COMPONENTS, SCRIPTS, FUNCTIONS } from '../../data/store';
 import type { Locator, Project, ProjectEnvironment, ComponentDef, Subcomponent, TestScript, CommonFunction } from '../../data/types';
 import { requireAuth, requireAdmin, requireEditor, sanitizeInput } from '../../auth/middleware';
+import { getLicensePayload } from '../../utils/licenseManager';
 import { logAudit } from '../../auth/audit';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -17,6 +18,16 @@ export function registerProjectsRoutes(app: express.Application): void {
     const { name, description, tcIdPrefix, environments, jiraProjectKey } = req.body as any;
     if (!name) { res.status(400).json({ error: 'Project name is required' }); return; }
     const existing = readAll<Project>('projects'); if (existing.find(p => p.name === name.trim())) { res.status(409).json({ error: 'Project name already exists' }); return; }
+    // Enforce maxProjects license gate
+    const licPayload = getLicensePayload();
+    const maxProjects = licPayload?.features?.maxProjects ?? -1;
+    if (maxProjects !== -1) {
+      const activeCount = existing.filter(p => p.isActive).length;
+      if (activeCount >= maxProjects) {
+        res.status(403).json({ error: `Project limit reached. Your license allows ${maxProjects} project${maxProjects === 1 ? '' : 's'}.` });
+        return;
+      }
+    }
     const normJiraKey = jiraProjectKey ? String(jiraProjectKey).trim().toUpperCase().replace(/[^A-Z0-9]/g, '') : undefined;
     const project: Project = { id: uuidv4(), name: sanitizeInput(name), description: sanitizeInput(description ?? ''), tcIdPrefix: sanitizeInput(tcIdPrefix || 'TC'), tcIdCounter: 1, environments: (environments ?? []) as ProjectEnvironment[], isActive: true, createdAt: new Date().toISOString(), createdBy: req.session.username!, ...(normJiraKey ? { jiraProjectKey: normJiraKey } : {}) };
     upsert('projects', project); logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'PROJECT_CREATED', resourceType: 'project', resourceId: project.id, details: project.name, ip: req.ip ?? null });

@@ -269,7 +269,8 @@ function featuresForTier(tier: ParsedKey['tier']): LicensePayload['features'] {
       return { recorder: true, debugger: true, scheduler: true, sso: true,  apiAccess: false, whiteLabel: false, auditDays: 90, maxProjects: -1 };
     case 'trial':
       // Full features except SSO/API/white-label — 30-day evaluation, no machine binding
-      return { recorder: true, debugger: true, scheduler: true, sso: false, apiAccess: false, whiteLabel: false, auditDays: 7, maxProjects: -1 };
+      // OLD: maxProjects: -1 — trial incorrectly allowed unlimited projects
+      return { recorder: true, debugger: true, scheduler: true, sso: false, apiAccess: false, whiteLabel: false, auditDays: 7, maxProjects: 3 };
     case 'starter':
     default:
       return { recorder: true, debugger: true, scheduler: false, sso: false, apiAccess: false, whiteLabel: false, auditDays: 30, maxProjects: 1 };
