@@ -13589,10 +13589,10 @@ function _apiRunsSynthesizeTimeline(panel) {
 
   panel.innerHTML =
     '<div style="font-size:11px;color:var(--neutral-500);margin-bottom:10px;padding:6px 8px;background:var(--neutral-100);border-radius:6px">' +
-      '&#x23F1; Execution waterfall — ' + steps.length + ' steps · ' + totalMs + 'ms total' +
+      '&#x23F1; Execution waterfall — ' + steps.length + ' requests · ' + totalMs + 'ms total' +
     '</div>' +
     '<div style="display:flex;align-items:center;gap:8px;padding:4px 0;margin-bottom:4px;font-size:10px;font-weight:700;color:var(--neutral-500);text-transform:uppercase;letter-spacing:.06em">' +
-      '<span style="min-width:24px"></span><span style="min-width:140px">Step</span>' +
+      '<span style="min-width:24px"></span><span style="min-width:140px">Request</span>' +
       '<span style="flex:1">Duration (relative)</span><span style="min-width:54px;text-align:right">ms</span>' +
       '<span style="min-width:50px">Status</span><span>Assertions</span>' +
     '</div>' + rows;
