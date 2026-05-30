@@ -5,7 +5,7 @@
 const _panelLoaded = new Set();
 
 // Tabs where the project dropdown is irrelevant and should be hidden
-const _HIDE_PROJ_DROPDOWN_TABS = new Set(['projects', 'admin']);
+const _HIDE_PROJ_DROPDOWN_TABS = new Set(['projects', 'admin', 'worker-health']);
 
 function onModuleTabSwitch(tab) {
   if (tab === 'admin') usersLoad();
@@ -24,12 +24,13 @@ function onModuleTabSwitch(tab) {
   if (tab === 'api-envs') apiEnvLoad();
   if (tab === 'api-collections') apiColLoad();
   if (tab === 'api-runs') apiRunsLoad();
-  if (tab === 'api-flakiness') flakinessLoad();
+  if (tab === 'api-flakiness') flakinessPageInit();
   if (tab === 'api-suites') apiSuitesInit();
   if (tab === 'api-replay' && !_panelLoaded.has('api-replay')) { if (typeof apiReplayInit === 'function') apiReplayInit(); }
   if (tab === 'worker-health') { if (typeof workerHealthInit === 'function') { var _whPanel = document.getElementById('panel-worker-health'); if (_whPanel) workerHealthInit(_whPanel); } }
   if (tab === 'governance') { if (typeof governanceInit === 'function') { var _govPanel = document.getElementById('panel-governance'); if (_govPanel) governanceInit(_govPanel); } }
-  if (tab === 'api-plugins') { if (typeof apiPluginsLoad === 'function') apiPluginsLoad(); }
+  // OLD: Plugin tab trigger removed — plugin ecosystem deactivated 2026-05-30
+  // if (tab === 'api-plugins') { if (typeof apiPluginsLoad === 'function') apiPluginsLoad(); }
   if (tab === 'api-graph') { if (typeof graphEditorLoad === 'function') graphEditorLoad(); }
   if (tab === 'api-collab') { if (typeof collabLoad === 'function') collabLoad(); }
   if (tab === 'api-copilot') { if (typeof copilotLoad === 'function') copilotLoad(); }

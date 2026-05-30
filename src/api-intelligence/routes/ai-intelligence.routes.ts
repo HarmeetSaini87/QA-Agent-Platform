@@ -12,6 +12,7 @@ import { generateTestsWithAi } from '../engines/ai-test-generator';
 import { suggestAssertions } from '../engines/assertion-suggester';
 import { loadRunResult } from '../../api-runtime/artifact-engine/run-store';
 import { logApiAudit } from '../../api-governance/audit.helper';
+import { listDomains, getDomainPack } from '../domain-assertions/domain-assertion-library';
 import { loadReplaySession } from '../../api-observability/replay-event-store';
 import { loadRunsForCollection, getReport } from '../../api-flakiness/flakiness-service';
 import { listProposalsByCollection } from '../../api-remediation/proposal-store';
@@ -143,6 +144,20 @@ router.post('/steps/:stepId/suggest-assertions', requireAuth, async (req: Reques
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// GET /api/ai-intelligence/domain-assertions
+// Returns list of all available domain packs (metadata only, no assertions)
+router.get('/domain-assertions', requireAuth, (_req: Request, res: Response) => {
+  res.json({ domains: listDomains() });
+});
+
+// GET /api/ai-intelligence/domain-assertions/:domainId
+// Returns full domain pack including assertions array
+router.get('/domain-assertions/:domainId', requireAuth, (req: Request, res: Response) => {
+  const pack = getDomainPack(req.params.domainId);
+  if (!pack) return res.status(404).json({ error: `Domain "${req.params.domainId}" not found. Available: general-rest, ecommerce, fintech, salesforce-crm, paginated-api` });
+  res.json(pack);
 });
 
 export function registerAiIntelligenceRoutes(app: Express): void {

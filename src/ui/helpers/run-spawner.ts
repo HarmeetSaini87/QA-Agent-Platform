@@ -8,6 +8,7 @@ import { readAll, upsert, writeAll, findById, LOCATORS, FUNCTIONS, SCRIPTS, SETT
 import type { TestScript, ScriptStep, CommonFunction, ComponentDef, DefectRecord, BrowserName, Locator } from '../../data/types';
 import type { RunRecord, LogLevel, HealEvent, TestEvent } from './types';
 import { broadcast } from './ws-broadcast';
+import { execHealthStart, execHealthUpdate, execHealthComplete } from '../../utils/exec-health-store';
 import { onRunComplete } from './run-queue';
 import { readQuarantine, upsertQuarantineEntry, restoreQuarantineEntry, emitFlakeNotification, getEffectiveFlakinessConfig, generateTestId, groupRunsByTestId } from './quarantine';
 import { DEFAULT_FLAKINESS_CONFIG, analyzeFlakiness, CURRENT_ENGINE_VERSION } from '../../utils/flakinessEngine';
@@ -424,6 +425,7 @@ export function attachDefectInfo<T extends RunRecord>(record: T): T {
 export function spawnRunWithSpec(record: RunRecord, specPath: string, headed?: boolean, retries = 0, browsers: BrowserName[] = ['chromium'], traceMode: 'on' | 'retain-on-failure' | 'off' = 'on'): void {
   const { runId } = record;
   broadcast(runId, { type: 'run:start', runId, planId: record.planId, startedAt: record.startedAt });
+  execHealthStart({ runId, type: 'ui-test', name: record.suiteName ?? 'UI Test', startedAt: record.startedAt });
   const relPath = path.relative(path.resolve('.'), specPath).replace(/\\/g, '/');
   const outputDir = path.join(config.paths.testResults, runId).replace(/\\/g, '/');
   const relOutputDir = path.relative(path.resolve('.'), path.resolve(outputDir)).replace(/\\/g, '/');
@@ -488,6 +490,7 @@ export function spawnRunWithSpec(record: RunRecord, specPath: string, headed?: b
         if (pendingTids) { const idx = record.tests.length - 1; if (pendingTids[idx]) { ev.testId = pendingTids[idx]; delete pendingTids[idx]; } }
         broadcast(runId, { type: 'run:test', runId, name, status, durationMs, browser });
         broadcast(runId, { type: 'run:stats', runId, passed: record.passed, failed: record.failed, total: record.total, completed: record.tests.length });
+        execHealthUpdate(runId, record.passed, record.failed, record.total);
       }
       const ceMatch = plain.match(RE_CONSOLE_ERRORS);
       if (ceMatch) { const testIdx = parseInt(ceMatch[1], 10); try { const errors: string[] = JSON.parse(ceMatch[2]); (record as any).__pendingConsoleErrors = (record as any).__pendingConsoleErrors || {}; (record as any).__pendingConsoleErrors[testIdx] = errors; } catch { /* malformed JSON */ } }
@@ -513,6 +516,7 @@ export function spawnRunWithSpec(record: RunRecord, specPath: string, headed?: b
     attachStepsFromJson(record, jsonReportPath);
     attachHealEvents(record);
     broadcast(runId, { type: 'run:done', runId, passed: record.passed, failed: record.failed, total: record.total, exitCode: code });
+    execHealthComplete(runId, code === 0 ? 'passed' : 'failed', record.passed, record.failed, record.total);
     logger.info(`[suite run] ${runId} done — exit ${code} (${record.passed}✔ ${record.failed}✘)`);
     const runFile = path.join(config.paths.results, `run-${runId}.json`);
     fs.mkdirSync(config.paths.results, { recursive: true });

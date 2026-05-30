@@ -26,6 +26,7 @@ import type { RunRecord, DebugSession } from './helpers/types';
 import { requireAuth, requireAdmin, requireEditor, requireAuthOrApiKey, sanitizeInput } from '../auth/middleware';
 import { validateLicenseKey, validateLicFile, storeLicense, loadStoredLicense, getLicensePayload, refreshLicenseCache, clearLicenseCache, isAutoTrial, trialDaysRemaining, AUTO_TRIAL_DAYS, isFeatureEnabled, checkMachineBinding, checkExpiryTick, getMachineId, getSeatsUsed, getSeatUsageRatio, recordLogin, recordLogout, isSeatAvailable, transferLicense, activateAutoTrial, checkStoredLicFile } from '../utils/licenseManager';
 import { broadcast, subscribe, unsubscribe } from './helpers/ws-broadcast';
+import { execHealthGetSnapshot } from '../utils/exec-health-store';
 
 // Shared mutable state
 import { runs, debugSessions, debugPollers, cronJobs } from './helpers/state';
@@ -54,6 +55,7 @@ import { registerFlakyRoutes } from './routes/flaky.routes';
 import { registerSchedulesRoutes } from './routes/schedules.routes';
 import { registerLicenseRoutes } from './routes/license.routes';
 import { registerApiTestingRoutes } from './routes/api-testing.routes';
+import { registerDataFileRoutes } from './routes/data-file.routes';
 import { registerWorkflowGraphRoutes } from '../workflow-graph/routes/workflow-graph.routes';
 import { registerFlakinessRoutes } from '../api-flakiness/routes/api-flakiness.routes';
 import { registerApiDefectsRoutes } from '../api-defects/routes/api-defects.routes';
@@ -71,7 +73,8 @@ import { registerSecurityRoutes } from '../api-security/routes/security.routes';
 import { registerGraphEditorRoutes } from '../api-graph-editor/routes/graph-editor.routes';
 import { registerCloudRoutes } from '../api-cloud/routes/cloud.routes';
 import { registerAnalyticsRoutes as registerEnterpriseAnalyticsRoutes } from '../api-analytics/routes/analytics.routes';
-import { registerPluginRoutes } from '../api-plugins/routes/plugins.routes';
+// OLD: Plugin ecosystem removed — concluded no user value; replaced by native assertion operators + domain library
+// import { registerPluginRoutes } from '../api-plugins/routes/plugins.routes';
 import { registerCollaborationRoutes } from '../api-collaboration/routes/collaboration.routes';
 import { registerCopilotRoutes } from '../api-copilot/routes/copilot.routes';
 import { registerAutonomousRoutes } from '../api-autonomous/routes/autonomous.routes';
@@ -221,6 +224,10 @@ app.get('/api/env', (_req: Request, res: Response) => {
 });
 registerTraceRoutes(app);
 
+app.get('/api/execution-health', requireAuth, (_req: Request, res: Response) => {
+  res.json(execHealthGetSnapshot());
+});
+
 // ── All routes below require authentication ──────────────────────────────────
 app.use('/api', (_req: Request, res: Response, next: NextFunction) => { res.setHeader('Cache-Control', 'no-store'); next(); });
 // OLD: app.use('/api', requireAuth) — blanket auth on all /api routes
@@ -251,6 +258,7 @@ registerFlakyRoutes(app);
 registerSchedulesRoutes(app);
 registerLicenseRoutes(app, sessionStore);
 registerApiTestingRoutes(app);
+registerDataFileRoutes(app);
 registerWorkflowGraphRoutes(app);
 registerFlakinessRoutes(app);
 registerApiDefectsRoutes(app);
@@ -268,7 +276,7 @@ registerSecurityRoutes(app);
 registerGraphEditorRoutes(app);
 registerCloudRoutes(app);
 registerEnterpriseAnalyticsRoutes(app);
-registerPluginRoutes(app);
+// OLD: registerPluginRoutes(app); — plugin ecosystem deactivated
 registerCollaborationRoutes(app);
 registerCopilotRoutes(app);
 registerAutonomousRoutes(app);

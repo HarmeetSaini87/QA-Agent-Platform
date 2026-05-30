@@ -111,7 +111,7 @@
           <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
           </svg>
-          <span>Flaky Tests</span>
+          <span>Script Flakiness</span>
         </div>
         <div class="nav-item" data-tab="analytics">
           <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -136,6 +136,10 @@
           </svg>
           <span>Locator Health</span>
         </div>
+        <div class="nav-item" data-tab="worker-health">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07M8.46 8.46a5 5 0 0 0 0 7.07"/></svg>
+          <span>Execution Health</span>
+        </div>
 
         <div class="nav-section-label">API Testing</div>
         <div class="nav-item" data-tab="api-envs">
@@ -156,12 +160,23 @@
           </svg>
           <span>API Runs</span>
         </div>
-        <div class="nav-item" data-tab="api-flakiness">&#x26A1; API Flakiness</div>
-        <div class="nav-item" data-tab="api-suites">⚡ API Suites</div>
-        <div class="nav-item" data-tab="api-replay">🔍 Replay</div>
-        <div class="nav-item" data-tab="worker-health">⚙️ Workers</div>
-        <div class="nav-item" data-tab="governance">&#x1F3DB;&#xFE0F; Governance</div>
+        <div class="nav-item" data-tab="api-flakiness">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="2,14 6,6 10,18 14,4 18,14 22,10" />
+          </svg>
+          <span>API Flakiness</span>
+        </div>
+        <div class="nav-item" data-tab="api-suites">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="12 2 2 7 12 12 22 7 12 2"/>
+            <polyline points="2 17 12 22 22 17"/>
+            <polyline points="2 12 12 17 22 12"/>
+          </svg>
+          <span>API Suites</span>
+        </div>
+        <!-- OLD: Plugin nav tab removed — plugin ecosystem deactivated, replaced by native assertion operators + domain library
         <div class="nav-item" data-tab="api-plugins">&#x1F9E9; Plugins</div>
+        -->
         <div class="nav-item" data-tab="api-graph">&#x1F5FA;&#xFE0F; Graph Editor</div>
         <div class="nav-item" data-tab="api-collab">&#x1F4AC; Collaboration</div>
         <div class="nav-item" data-tab="api-copilot">&#x1F916; Copilot</div>
@@ -218,7 +233,7 @@
         <span class="topbar-title" id="topbar-title">Test Script Builder</span>
         <div class="topbar-actions" style="display:flex;align-items:center;gap:10px">
           <!-- Project Selector — scopes all resources -->
-          <div style="display:flex;align-items:center;gap:6px">
+          <div id="project-selector-wrap" style="display:flex;align-items:center;gap:6px">
             <label style="font-size:12px;font-weight:600;color:var(--neutral-500);white-space:nowrap">Project <span
                 class="req">*</span></label>
             <select id="global-project-select" class="fm-select" style="min-width:180px;font-size:12.5px"
@@ -841,7 +856,7 @@
         <div class="panel" id="panel-flaky">
           <div class="card">
             <div class="card-title" style="display:flex;align-items:center;gap:10px">
-              <span>Flaky Tests</span>
+              <span>Script Flakiness</span>
               <button class="btn btn-sm btn-outline" onclick="flakyLoad()" style="margin-left:auto">↻ Refresh</button>
             </div>
 
@@ -902,6 +917,9 @@
                 </table>
               </div>
             </div>
+
+            <!-- Pagination bar -->
+            <div id="flaky-pagination" style="display:none;margin-top:12px;padding:8px 4px"></div>
 
             <div id="flaky-empty" style="display:none;text-align:center;padding:48px;color:#858585">
               <div style="font-size:32px;margin-bottom:8px">✅</div>
@@ -1262,29 +1280,88 @@
           </div>
         </div><!-- /panel-api-runs -->
         <div class="panel" id="panel-api-flakiness">
-          <div class="panel-header">
-            <h2>API Flakiness Analytics</h2>
-            <div style="display:flex;gap:8px;align-items:center;">
-              <button class="btn btn-sm" onclick="flakinessRecompute()">↺ Recompute</button>
+          <div class="card">
+            <div class="card-title" style="display:flex;align-items:center;gap:10px">
+              <span>API Flakiness Analytics</span>
+              <button class="btn btn-sm btn-outline" onclick="flakinessRecompute()" id="flakiness-recompute-btn" style="margin-left:auto">↺ Recompute</button>
+            </div>
+
+            <!-- Controls row -->
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+              <label style="font-size:12px;color:var(--neutral-400)">Collection:</label>
+              <select id="flakiness-col-filter" class="fm-input" style="width:220px;font-size:12px;height:30px" onchange="flakinessLoad()">
+                <option value="">— Select a collection —</option>
+              </select>
+              <label style="font-size:12px;color:var(--neutral-400)">Sort:</label>
+              <select id="flakiness-sort" class="fm-input" style="width:160px;font-size:12px;height:30px" onchange="flakinessApplyFilters()">
+                <option value="score">Flakiness Score ▼</option>
+                <option value="failrate">Fail Rate ▼</option>
+                <option value="runs">Most Runs</option>
+                <option value="name">Name A–Z</option>
+              </select>
+              <button class="btn btn-sm btn-outline" id="flakiness-top10-btn" onclick="flakinessToggleTop10()" title="Show top 10 flaky requests">Top 10</button>
+            </div>
+
+            <!-- Filter pills -->
+            <div id="flakiness-filter-tabs" style="display:none;margin-bottom:10px">
+              <button class="flaky-filter-btn active" data-filter="all"         onclick="flakinessSetFilter('all')">All</button>
+              <button class="flaky-filter-btn"        data-filter="critical"    onclick="flakinessSetFilter('critical')">Critical</button>
+              <button class="flaky-filter-btn"        data-filter="unstable"    onclick="flakinessSetFilter('unstable')">Unstable</button>
+              <button class="flaky-filter-btn"        data-filter="stable"      onclick="flakinessSetFilter('stable')">Stable</button>
+              <button class="flaky-filter-btn"        data-filter="insufficient" onclick="flakinessSetFilter('insufficient')">Insufficient Data</button>
+            </div>
+
+            <!-- Summary bar -->
+            <div id="flakiness-summary-bar" style="display:none;margin-bottom:14px"></div>
+
+            <div id="flakiness-alert"></div>
+
+            <!-- Table -->
+            <div class="lt-wrap" id="flakiness-table-wrap" style="display:none">
+              <div class="lt-body-wrap">
+                <table class="data-table lt-fixed" id="flakiness-table">
+                  <thead>
+                    <tr>
+                      <th style="width:220px">Request Name</th>
+                      <th style="width:90px">Status</th>
+                      <th style="width:130px">Flakiness Score</th>
+                      <th style="width:70px">Fail Rate</th>
+                      <th style="width:130px">Failure Type</th>
+                      <th style="width:220px">Suggested Action</th>
+                      <th style="width:55px">Runs</th>
+                      <th style="width:70px">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody id="flakiness-step-tbody"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Empty / loading states -->
+            <div id="flakiness-empty" style="text-align:center;padding:48px;color:#858585">
+              <div style="font-size:32px;margin-bottom:8px">⚡</div>
+              <div style="font-size:15px;font-weight:600;color:var(--neutral-300)">Select a collection to view flakiness analytics</div>
+              <div style="font-size:13px;color:var(--neutral-500);margin-top:4px">Choose a collection from the dropdown above.</div>
+            </div>
+            <div id="flakiness-no-data" style="display:none;text-align:center;padding:48px;color:#858585">
+              <div style="font-size:32px;margin-bottom:8px">✅</div>
+              <div style="font-size:15px;font-weight:600;color:var(--neutral-300)">No flaky requests detected</div>
+              <div style="font-size:13px;color:var(--neutral-500);margin-top:4px">All requests in this collection are consistent.</div>
+            </div>
+            <div id="flakiness-loading" style="display:none;text-align:center;padding:40px;color:#858585">
+              <div style="font-size:13px">Computing flakiness analytics…</div>
             </div>
           </div>
-          <div id="flakiness-alert"></div>
-          <div id="flakiness-empty" style="display:none;color:var(--text-muted);padding:20px;">Select a collection to view flakiness analytics.</div>
-          <div id="flakiness-loading" style="display:none;color:var(--text-muted);padding:8px;">Computing…</div>
-          <div id="flakiness-content" style="display:none;">
-            <div id="flakiness-summary" style="margin-bottom:16px;"></div>
-            <h3 style="font-size:13px;margin:0 0 8px 0;color:var(--text-muted);">⚡ Flaky Hotspots</h3>
-            <div id="flakiness-hotspots" style="margin-bottom:16px;"></div>
-            <h3 style="font-size:13px;margin:0 0 8px 0;color:var(--text-muted);">🗂 Failure Clusters</h3>
-            <div id="flakiness-clusters" style="margin-bottom:16px;"></div>
-            <h3 style="font-size:13px;margin:0 0 8px 0;color:var(--text-muted);">Request Breakdown</h3>
-            <table class="data-table" style="width:100%;">
-              <thead><tr>
-                <th>Request</th><th>Fail Rate</th><th>Flakiness</th><th>Signature</th><th>Runs</th>
-              </tr></thead>
-              <tbody id="flakiness-step-tbody"></tbody>
-            </table>
+
+          <!-- Slide-out detail panel -->
+          <div id="flakiness-drawer" style="display:none;position:fixed;top:0;right:0;width:420px;height:100vh;background:var(--afl-drawer-bg);border-left:1px solid var(--afl-border);z-index:1100;overflow-y:auto;box-shadow:-4px 0 24px rgba(0,0,0,0.18);">
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--afl-border);">
+              <div style="font-size:14px;font-weight:600;color:var(--afl-text)" id="flakiness-drawer-title">Request Detail</div>
+              <button onclick="flakinessCloseDrawer()" style="background:none;border:none;color:var(--afl-muted);font-size:18px;cursor:pointer;line-height:1;">✕</button>
+            </div>
+            <div id="flakiness-drawer-body" style="padding:20px;"></div>
           </div>
+          <div id="flakiness-drawer-overlay" onclick="flakinessCloseDrawer()" style="display:none;position:fixed;inset:0;z-index:1099;background:rgba(0,0,0,0.25);"></div>
         </div><!-- /panel-api-flakiness -->
 
         <!-- ── Tab: API Suites ───────────────────────────────────────────── -->
@@ -1297,46 +1374,129 @@
               </div>
             </div>
             <div id="api-suites-alert"></div>
-            <!-- Filter row -->
-            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:center">
-              <input id="api-suites-filter-name" class="filter-input" style="width:220px" placeholder="Filter by name…" oninput="apiSuitesRender()">
-              <select id="api-suites-filter-status" class="filter-input" style="width:150px" onchange="apiSuitesRender()">
-                <option value="">All Statuses</option>
-                <option value="active">Active</option>
-                <option value="archived">Archived</option>
-              </select>
-              <button class="btn btn-secondary btn-sm" onclick="apiSuitesLoad()" title="Refresh">&#8635; Refresh</button>
+            <div id="api-suites-list-area">
+              <!-- Filter row -->
+              <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:center">
+                <input id="api-suites-filter-name" class="filter-input" style="width:220px" placeholder="Filter by name…" oninput="apiSuitesRender()">
+                <select id="api-suites-filter-status" class="filter-input" style="width:150px" onchange="apiSuitesRender()">
+                  <option value="">All Statuses</option>
+                  <option value="active">Active</option>
+                  <option value="archived">Archived</option>
+                </select>
+                <button class="btn btn-secondary btn-sm" onclick="apiSuitesLoad()" title="Refresh">&#8635; Refresh</button>
+              </div>
+              <!-- Table -->
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th style="width:36px">#</th>
+                    <th>Name</th>
+                    <th>Environment</th>
+                    <th>Collections</th>
+                    <th>Lifecycle</th>
+                    <th>On Failure</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="api-suites-tbody"></tbody>
+              </table>
+              <!-- Pagination -->
+              <div id="api-suites-pagination" style="display:none;margin-top:12px;padding:8px 4px"></div>
             </div>
-            <!-- Table -->
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Collections</th>
-                  <th>Environment</th>
-                  <th>Lifecycle</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody id="api-suites-tbody"></tbody>
-            </table>
             <!-- Detail panel (shown in-place when viewing a suite) -->
             <div id="api-suites-detail" style="display:none"></div>
           </div>
         </div><!-- /panel-api-suites -->
-        <div class="panel" id="panel-api-replay">
-          <div id="api-replay-alert"></div>
-          <div id="api-replay-content"></div>
-        </div><!-- /panel-api-replay -->
 
         <div class="panel" id="panel-worker-health">
-          <div id="worker-health-alert"></div>
-          <div id="worker-health-content"></div>
-        </div><!-- /panel-worker-health -->
-        <div class="panel" id="panel-governance">
-        </div><!-- /panel-governance -->
+          <div class="card">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+              <div>
+                <h3 style="margin:0 0 4px;">Execution Health</h3>
+                <p style="margin:0;font-size:12px;color:var(--text-muted);">Global real-time view of all active and recent runs — UI tests, API collections, and API suites across all projects.</p>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span id="exec-health-live-dot" style="width:8px;height:8px;border-radius:50%;background:#6b7280;display:inline-block;"></span>
+                <span id="exec-health-live-label" style="font-size:11px;color:var(--text-muted);">Idle</span>
+                <button class="tbl-btn" onclick="execHealthRefresh()">↺ Refresh</button>
+              </div>
+            </div>
 
-        <!-- ── Tab: API Plugins ──────────────────────────────────────────── -->
+            <!-- Stat cards -->
+            <div id="exec-health-stats" style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px;"></div>
+
+            <!-- Active Runs -->
+            <div style="margin-bottom:24px;">
+              <h4 style="margin:0 0 10px;font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;">Active Runs</h4>
+              <div style="overflow-x:auto;border:1px solid var(--border,#2d2d3f);border-radius:6px;">
+                <table style="width:100%;border-collapse:collapse;font-size:13px;">
+                  <thead>
+                    <tr style="background:var(--table-header-bg,rgba(0,0,0,.15));">
+                      <th style="padding:8px 12px;text-align:left;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;border-bottom:1px solid var(--border,#2d2d3f);white-space:nowrap;">Run ID</th>
+                      <th style="padding:8px 12px;text-align:left;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;border-bottom:1px solid var(--border,#2d2d3f);white-space:nowrap;">Type</th>
+                      <th style="padding:8px 12px;text-align:left;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;border-bottom:1px solid var(--border,#2d2d3f);">Name</th>
+                      <th style="padding:8px 12px;text-align:left;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;border-bottom:1px solid var(--border,#2d2d3f);white-space:nowrap;">Status</th>
+                      <th style="padding:8px 12px;text-align:left;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;border-bottom:1px solid var(--border,#2d2d3f);min-width:140px;">Progress</th>
+                      <th style="padding:8px 12px;text-align:left;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;border-bottom:1px solid var(--border,#2d2d3f);white-space:nowrap;">Pass Rate</th>
+                      <th style="padding:8px 12px;text-align:left;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;border-bottom:1px solid var(--border,#2d2d3f);white-space:nowrap;">Elapsed</th>
+                    </tr>
+                  </thead>
+                  <tbody id="exec-health-active-tbody">
+                    <tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:20px;font-size:12px;">No active runs</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Recent Runs -->
+            <div>
+              <div style="margin-bottom:10px;">
+                <h4 style="margin:0 0 8px;font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;">Recent Runs <span id="exec-health-count-label" style="font-weight:400;text-transform:none;letter-spacing:0;"></span></h4>
+                <div style="display:flex;align-items:center;gap:8px;">
+                  <input id="exec-health-filter-name" type="text" placeholder="Filter by name…" class="fm-input" style="width:150px;font-size:12px;padding:4px 8px;" oninput="execHealthApplyFilter()">
+                  <select id="exec-health-filter-type" class="fm-select" style="font-size:12px;padding:4px 8px;" onchange="execHealthApplyFilter()">
+                    <option value="">All Types</option>
+                    <option value="ui-test">UI Test</option>
+                    <option value="api-collection">API Collection</option>
+                    <option value="api-suite">API Suite</option>
+                  </select>
+                  <select id="exec-health-filter-status" class="fm-select" style="font-size:12px;padding:4px 8px;" onchange="execHealthApplyFilter()">
+                    <option value="">All Statuses</option>
+                    <option value="passed">Passed</option>
+                    <option value="failed">Failed</option>
+                    <option value="error">Error</option>
+                  </select>
+                  <button class="tbl-btn" onclick="execHealthResetFilter()">✕ Clear</button>
+                </div>
+              </div>
+              <div style="overflow-x:auto;border:1px solid var(--border,#2d2d3f);border-radius:6px;">
+                <table style="width:100%;border-collapse:collapse;font-size:13px;">
+                  <thead>
+                    <tr style="background:var(--table-header-bg,rgba(0,0,0,.15));">
+                      <th style="padding:8px 12px;text-align:left;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;border-bottom:1px solid var(--border,#2d2d3f);white-space:nowrap;">Run ID</th>
+                      <th style="padding:8px 12px;text-align:left;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;border-bottom:1px solid var(--border,#2d2d3f);white-space:nowrap;">Type</th>
+                      <th style="padding:8px 12px;text-align:left;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;border-bottom:1px solid var(--border,#2d2d3f);">Name</th>
+                      <th style="padding:8px 12px;text-align:left;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;border-bottom:1px solid var(--border,#2d2d3f);white-space:nowrap;">Status</th>
+                      <th style="padding:8px 12px;text-align:center;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;border-bottom:1px solid var(--border,#2d2d3f);white-space:nowrap;">Passed</th>
+                      <th style="padding:8px 12px;text-align:center;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;border-bottom:1px solid var(--border,#2d2d3f);white-space:nowrap;">Failed</th>
+                      <th style="padding:8px 12px;text-align:center;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;border-bottom:1px solid var(--border,#2d2d3f);white-space:nowrap;">Total</th>
+                      <th style="padding:8px 12px;text-align:left;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;border-bottom:1px solid var(--border,#2d2d3f);white-space:nowrap;">Pass Rate</th>
+                      <th style="padding:8px 12px;text-align:left;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;border-bottom:1px solid var(--border,#2d2d3f);white-space:nowrap;">Started</th>
+                      <th style="padding:8px 12px;text-align:left;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;border-bottom:1px solid var(--border,#2d2d3f);white-space:nowrap;">Duration</th>
+                    </tr>
+                  </thead>
+                  <tbody id="exec-health-recent-tbody">
+                    <tr><td colspan="10" style="text-align:center;color:var(--text-muted);padding:20px;font-size:12px;">No recent runs</td></tr>
+                  </tbody>
+                  <tfoot id="exec-health-tfoot"></tfoot>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div><!-- /panel-worker-health -->
+
+        <!-- OLD: Plugin Ecosystem panel removed — deactivated 2026-05-30; replaced by native assertion operators + domain library
         <div class="panel" id="panel-api-plugins">
           <div class="card">
             <div class="card-title">
@@ -1352,7 +1512,6 @@
               <thead><tr><th>Name</th><th>Plugin ID</th><th>Version</th><th>Capabilities</th><th>Status</th><th>Actions</th></tr></thead>
               <tbody id="api-plugins-tbody"><tr><td colspan="6" style="text-align:center;color:var(--text-muted)">Loading…</td></tr></tbody>
             </table>
-
             <h3 style="font-size:14px;margin:24px 0 4px">Example Plugins</h3>
             <div style="color:var(--text-muted);font-size:12px;margin-bottom:8px">Advisory only — register to explore the plugin system. Never auto-registered.</div>
             <table class="data-table">
@@ -1360,7 +1519,8 @@
               <tbody id="api-plugins-examples-tbody"><tr><td colspan="4" style="text-align:center;color:var(--text-muted)">Loading examples…</td></tr></tbody>
             </table>
           </div>
-        </div><!-- /panel-api-plugins -->
+        </div>
+        -->
 
         <div class="panel" id="panel-api-graph">
           <div class="card">
@@ -1584,16 +1744,23 @@
                 Audit Log
                 <button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="auditLoad()">↻ Refresh</button>
               </div>
+              <!-- Filter bar -->
+              <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:center">
+                <input id="audit-filter-action" class="filter-input" style="width:200px" placeholder="Filter by action…" oninput="auditApplyFilter()">
+                <input id="audit-filter-user" class="filter-input" style="width:160px" placeholder="Filter by user…" oninput="auditApplyFilter()">
+                <button class="btn btn-secondary btn-sm" onclick="auditResetFilter()">Reset</button>
+              </div>
               <div class="lt-wrap">
                 <div class="lt-body-wrap">
                   <table class="data-table lt-fixed">
                     <thead>
                       <tr>
                         <th style="min-width:160px">Time</th>
-                        <th style="min-width:120px">User</th>
-                        <th style="min-width:180px">Action</th>
-                        <th style="min-width:220px">Resource</th>
-                        <th style="min-width:120px">IP</th>
+                        <th style="min-width:100px">User</th>
+                        <th style="min-width:200px">Action</th>
+                        <th style="min-width:130px">Module</th>
+                        <th style="min-width:100px">IP</th>
+                        <th style="min-width:180px">Details</th>
                       </tr>
                     </thead>
                     <tbody id="audit-tbody"></tbody>
@@ -3468,6 +3635,7 @@
           <button class="api-run-tab-btn sub-tab" data-tab="har" onclick="apiRunsTabSwitch('har')">&#127760; HAR / Network</button>
           <button class="api-run-tab-btn sub-tab" data-tab="timeline" onclick="apiRunsTabSwitch('timeline')">&#x23F1; Timeline</button>
           <button class="api-run-tab-btn sub-tab" data-tab="var-trace" onclick="apiRunsTabSwitch('var-trace')">&#x1F4CA; Var Trace</button>
+          <button class="api-run-tab-btn sub-tab" data-tab="observability" onclick="apiRunsTabSwitch('observability')">&#x1F50D; Observability</button>
         </div>
 
         <!-- Requests tab -->
@@ -3548,6 +3716,8 @@
         <div class="api-run-tab-panel" data-tab="timeline" style="display:none;padding:12px" id="run-timeline-panel"></div>
         <!-- Variable Trace tab — lazy-loaded -->
         <div class="api-run-tab-panel" data-tab="var-trace" style="display:none;padding:12px" id="run-var-trace-panel"></div>
+        <!-- Observability tab — lazy-loaded -->
+        <div class="api-run-tab-panel" data-tab="observability" style="display:none;padding:12px" id="run-observability-panel"></div>
       </div>
       <div class="modal-footer" style="justify-content:space-between">
         <button class="btn btn-secondary btn-sm" onclick="apiRunsCopySummary()" title="Copy run summary to clipboard">&#128203; Copy Summary</button>
@@ -3567,7 +3737,7 @@
         <!-- Category + Generate bar -->
         <div style="display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
           <label style="font-weight:600;font-size:13px;white-space:nowrap">Test Category:</label>
-          <select id="gen-tests-category-select" class="fm-input" style="width:230px">
+          <select id="gen-tests-category-select" class="fm-input" style="width:260px" onchange="_genTestsCategoryChanged()">
             <option value="Positive">🟢 Positive — happy path checks</option>
             <option value="Negative" selected>🔴 Negative — invalid inputs</option>
             <option value="Security">🔒 Security — auth &amp; injection</option>
@@ -3580,6 +3750,12 @@
             <option value="Idempotency">🔁 Idempotency — repeat calls</option>
             <option value="Token Lifecycle">🔑 Token Lifecycle — expiry &amp; refresh</option>
             <option value="Unicode">🌐 Unicode — special characters</option>
+            <option disabled>──────────────────────</option>
+            <option value="__suggest_assertions__">💡 Suggest Assertions — from recent run</option>
+          </select>
+          <!-- Run picker — shown only when Suggest Assertions category is selected -->
+          <select id="gen-tests-run-select" class="fm-input" style="width:220px;display:none">
+            <option value="">Loading runs…</option>
           </select>
           <button class="btn btn-primary btn-sm" onclick="apiColGenTestsRun()" id="btn-gen-tests-run">🔍 Suggest Tests</button>
           <span id="gen-tests-ai-badge" style="display:none" class="smart-badge smart-badge-url">🤖 AI</span>

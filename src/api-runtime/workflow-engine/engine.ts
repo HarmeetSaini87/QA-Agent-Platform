@@ -45,6 +45,8 @@ import { getParallelEligibilityAnalyser } from './parallel-eligibility';
 // Phase C Step 4: failure classification
 import { getFailureClassifier } from './failure-classifier';
 import type { VariableMap } from '../../shared-core/contracts/variable.contract';
+// Flow Control Engine — evaluates per-step flowRules after each HTTP response
+import { evaluateFlowRules } from '../flow-control/flow-control-engine';
 
 // â”€â”€ Rate limiter (token bucket) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -194,7 +196,12 @@ export class WorkflowEngine {
 
     // â”€â”€ Wave loop â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-    for (const wave of waves) {
+    // Flow Control: track repeat counts per step to enforce max-repeat ceiling
+    const repeatCounts = new Map<string, number>();
+    let flowStop = false;
+
+    for (let _waveIdx = 0; _waveIdx < waves.length && !flowStop; _waveIdx++) {
+      const wave = waves[_waveIdx];
       const waveSteps = wave.filter(s => !state.abortedIds.has(s.id));
 
       // nodeType guard â€” Phase B/C handles HTTP nodes only
@@ -350,9 +357,70 @@ export class WorkflowEngine {
         return result;
       });
 
-      // Process results â€” fail/stop/skipDependents
+      // Process results — fail/stop/skipDependents + flow control
       for (const result of results) {
         state.stepResults.push(result);
+
+        // ── Flow Control evaluation ───────────────────────────────────────────
+        const step4fc = waveSteps.find(s => s.id === result.stepId);
+        if (step4fc && (step4fc as ApiTestStep & { flowRules?: unknown[] }).flowRules?.length) {
+          const decision = evaluateFlowRules(
+            (step4fc as ApiTestStep & { flowRules?: import('../../data/types').FlowRule[] }).flowRules,
+            result.response,
+          );
+          // Attach decision reason to result for observability (non-breaking addition)
+          if (decision.action !== 'default') {
+            (result as ApiStepResult & { flowDecisionReason?: string }).flowDecisionReason = decision.reason;
+          }
+          if (decision.action === 'stop') {
+            // Abort all remaining steps
+            for (const s of testSteps) {
+              if (!state.stepResults.find(r => r.stepId === s.id)) {
+                state.abortedIds.add(s.id);
+                state.scheduler.markSkipped(s.id, 'dependency-failed');
+                state.nodeStatuses.set(s.id, 'skipped');
+              }
+            }
+            flowStop = true;
+            break;
+          } else if (decision.action === 'jump') {
+            const targetName = decision.target as string;
+            const targetStep = testSteps.find(s => s.name === targetName);
+            if (targetStep && !state.stepResults.find(r => r.stepId === targetStep.id)) {
+              // Rebuild remaining waves starting from the wave containing the target
+              const remainingIdx = _waveIdx + 1;
+              const flatRemaining = waves.slice(remainingIdx).flat();
+              const targetWaveIdx = waves.findIndex((w, wi) =>
+                wi >= remainingIdx && w.some(s => s.id === targetStep.id),
+              );
+              if (targetWaveIdx !== -1) {
+                // Splice waves so next iteration picks up from the target wave
+                waves.splice(remainingIdx, targetWaveIdx - remainingIdx);
+              }
+              // Abort steps between current position and target that won't run
+              for (const s of flatRemaining) {
+                if (s.id !== targetStep.id &&
+                    !state.stepResults.find(r => r.stepId === s.id) &&
+                    waves.slice(remainingIdx).every(w => !w.some(ws => ws.id === s.id))) {
+                  state.abortedIds.add(s.id);
+                }
+              }
+            }
+          } else if (decision.action === 'repeat') {
+            const maxRepeats = typeof decision.target === 'number' ? decision.target : 3;
+            const done = repeatCounts.get(result.stepId) ?? 0;
+            if (done < maxRepeats - 1) {
+              repeatCounts.set(result.stepId, done + 1);
+              // Re-insert this wave (containing the step) right after the current wave
+              waves.splice(_waveIdx + 1, 0, [step4fc]);
+            }
+          }
+          // 'continue' and 'default' — no structural change, execution proceeds normally
+        }
+        // ── End Flow Control ──────────────────────────────────────────────────
+
+        if (flowStop) break;
+
         if (result.status === 'failed' || result.status === 'error') {
           state.collectionFailed = true;
           const onFail =
@@ -448,7 +516,7 @@ export class WorkflowEngine {
         );
       }
 
-      if (state.abortedIds.size > 0 && collection.onFailure === 'stop') break;
+      if (state.abortedIds.size > 0 && collection.onFailure === 'stop') { flowStop = true; break; }
     }
 
     // â”€â”€ Teardown (always runs) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

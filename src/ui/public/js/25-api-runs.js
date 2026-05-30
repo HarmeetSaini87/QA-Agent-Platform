@@ -186,9 +186,10 @@ function _apiRunsRenderList() {
     const startedRel  = r.startedAt ? _apiRunsRelTime(r.startedAt) : '—';
     const startedFull = r.startedAt ? new Date(r.startedAt).toLocaleString() : '';
 
+    const dataFileBadge = r.dataFileName ? `<span title="Data file: ${_apiRunsEsc(r.dataFileName)}" style="font-size:10px;background:#6366f1;color:#fff;padding:1px 5px;border-radius:8px;margin-left:4px">📂 ${_apiRunsEsc(r.dataFileName)} (${r.iterationCount||0} rows)</span>` : '';
     return `<tr>
       <td style="text-align:center;color:var(--text-muted);font-size:12px">${sr}</td>
-      <td style="font-weight:500">${_apiRunsEsc(colName)}</td>
+      <td style="font-weight:500">${_apiRunsEsc(colName)}${dataFileBadge}</td>
       <td style="color:var(--text-muted);font-size:12px">${_apiRunsEsc(envName)}</td>
       <td title="${_apiRunsEsc(startedFull)}" style="font-size:12px;color:var(--text-muted)">${startedRel}</td>
       <td style="font-size:12px">${durStr}</td>
@@ -220,6 +221,8 @@ async function apiRunsViewDetail(runId) {
   if (tlPanel) { tlPanel.dataset.loaded = ''; tlPanel.innerHTML = ''; }
   const vtPanel = document.getElementById('run-var-trace-panel');
   if (vtPanel) { vtPanel.dataset.loaded = ''; vtPanel.innerHTML = ''; }
+  const obsPanel = document.getElementById('run-observability-panel');
+  if (obsPanel) { obsPanel.dataset.loaded = ''; obsPanel.innerHTML = ''; }
   await _apiRunsFetchAndRender(runId);
   openModal('modal-api-run-detail');
 }
@@ -316,6 +319,41 @@ function _apiRunsRenderDetail(run) {
     } else {
       clusterEl.innerHTML = '';
     }
+  }
+
+  // Data File iteration summary banner
+  const iterBannerEl = document.getElementById('api-run-iteration-banner') || (() => {
+    const el = document.createElement('div');
+    el.id = 'api-run-iteration-banner';
+    document.getElementById('api-run-detail-summary')?.after(el);
+    return el;
+  })();
+  if (run.iterationCount > 1 && run.iterationSummary?.length) {
+    const iters = run.iterationSummary;
+    const iterPassed = iters.filter(it => it.status === 'passed').length;
+    const rows = iters.map((it, i) => {
+      const sc = it.status === 'passed' ? '#22c55e' : '#ef4444';
+      return `<tr style="font-size:12px">
+        <td style="padding:3px 8px">${i + 1}</td>
+        <td style="padding:3px 8px;color:var(--text-muted)">${_apiRunsEsc(it.rowIdentifier ?? '')}</td>
+        <td style="padding:3px 8px"><span style="color:${sc};font-weight:700">${it.status}</span></td>
+        <td style="padding:3px 8px;color:var(--text-muted)">${it.durationMs ? (it.durationMs/1000).toFixed(1)+'s' : '—'}</td>
+      </tr>`;
+    }).join('');
+    iterBannerEl.innerHTML = `
+      <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:12px 16px;margin-bottom:12px">
+        <div style="font-weight:700;margin-bottom:8px;font-size:13px">📂 ${_apiRunsEsc(run.dataFileName || 'Data File')} — ${run.iterationCount} iterations &nbsp;·&nbsp; ${iterPassed}/${run.iterationCount} passed</div>
+        <table style="width:100%;border-collapse:collapse">
+          <thead><tr style="font-size:11px;color:var(--text-muted)"><th style="text-align:left;padding:3px 8px">#</th><th style="text-align:left;padding:3px 8px">Row</th><th style="padding:3px 8px;text-align:left">Status</th><th style="padding:3px 8px;text-align:left">Duration</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+        <div style="margin-top:10px;display:flex;gap:8px">
+          <button class="tbl-btn" onclick="_apiRunsExportSummaryCsv()">📊 Export Summary CSV</button>
+          <button class="tbl-btn" onclick="_apiRunsExportDetailCsv()">📋 Export Step Detail CSV</button>
+        </div>
+      </div>`;
+  } else {
+    iterBannerEl.innerHTML = '';
   }
 
   // Step results table — store steps for filter/search
@@ -442,7 +480,20 @@ function _apiRunsRenderStepRows() {
   if (countEl) countEl.textContent = `Showing ${filtered.length} of ${_apiRunsAllSteps.length} requests`;
 
   stepTbody.innerHTML = '';
+  let _lastIterIdx = -1;
   filtered.forEach((step, idx) => {
+    // Insert iteration group header when iterationIndex changes (data-driven runs only)
+    if (step.iterationIndex !== undefined && step.iterationIndex !== _lastIterIdx) {
+      _lastIterIdx = step.iterationIndex;
+      const iterRow = document.createElement('tr');
+      const sc = (() => {
+        const sum = _apiRunsCurrentRun?.iterationSummary?.[step.iterationIndex];
+        return sum?.status === 'passed' ? '#22c55e' : '#ef4444';
+      })();
+      iterRow.innerHTML = `<td colspan="8" style="padding:6px 10px;background:var(--bg-accent);border-top:2px solid var(--border);font-size:12px;font-weight:700;color:${sc}">
+        Row ${step.iterationIndex + 1}${step.rowIdentifier ? ' — ' + _apiRunsEsc(step.rowIdentifier) : ''}</td>`;
+      stepTbody.appendChild(iterRow);
+    }
     const isTeardown = step.stepName?.includes('[teardown]') || false;
     const sc = step.status === 'passed' ? '#22c55e' : step.status === 'failed' || step.status === 'error' ? '#ef4444' : step.status === 'degraded' ? '#f59e0b' : '#9ca3af';
     const rowId = 'api-run-step-' + step.stepId;
@@ -682,6 +733,10 @@ function apiRunsTabSwitch(tab) {
     const panel = document.getElementById('run-var-trace-panel');
     if (panel && !panel.dataset.loaded) { panel.dataset.loaded = '1'; _apiRunsLoadVarTrace(_apiRunsCurrentRunId, panel); }
   }
+  if (tab === 'observability' && _apiRunsCurrentRunId) {
+    const panel = document.getElementById('run-observability-panel');
+    if (panel && !panel.dataset.loaded) { panel.dataset.loaded = '1'; _apiRunsLoadObservability(_apiRunsCurrentRunId, panel); }
+  }
 }
 
 // ── Debugger Engine — Timeline (Phase F) ────────────────────────────────────
@@ -865,44 +920,145 @@ function _apiRunsSynthesizeVarTrace(panel) {
       '</tbody></table></div>';
 }
 
-// ── AI Assertion Suggester (Phase F) ────────────────────────────────────────
+// ── AI Assertion Suggester (Phase III) ──────────────────────────────────────
 
 async function _apiRunsLoadSuggestPanel(stepId) {
   const panel = document.getElementById('suggest-panel-' + stepId);
   if (!panel || panel.dataset.loaded) return;
   panel.dataset.loaded = '1';
   const runId = _apiRunsCurrentRunId;
-  if (!runId) { panel.innerHTML = '<div style="color:#ef4444">No active run.</div>'; return; }
-  panel.innerHTML = '<div style="color:var(--text-muted)">Generating suggestions…</div>';
+  const run   = _apiRunsCurrentRun;
+  if (!runId) { panel.innerHTML = '<div style="color:var(--danger);font-size:12px">No active run.</div>'; return; }
+  panel.innerHTML = '<div style="color:var(--text-muted);font-size:12px">Analysing response and generating suggestions…</div>';
   try {
-    const res = await fetch('/api/ai-intelligence/steps/' + encodeURIComponent(stepId) + '/suggest-assertions', {
+    // Fetch collection to get existing assertions for this step (dedup checkpoint)
+    var existingAssertionKeys = new Set();
+    if (run && run.collectionId) {
+      try {
+        var colRes = await fetch('/api/api-collections/' + encodeURIComponent(run.collectionId));
+        if (colRes.ok) {
+          var col = await colRes.json();
+          var colStep = (col.steps || []).find(function(s) { return s.id === stepId; });
+          if (colStep && Array.isArray(colStep.assertions)) {
+            colStep.assertions.forEach(function(a) {
+              existingAssertionKeys.add(a.field + '::' + a.operator);
+            });
+          }
+        }
+      } catch (e) { /* non-fatal — skip dedup if collection fetch fails */ }
+    }
+
+    var res = await fetch('/api/ai-intelligence/steps/' + encodeURIComponent(stepId) + '/suggest-assertions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ runId: runId }),
     });
-    if (!res.ok) { panel.innerHTML = '<div style="color:#ef4444">No suggestions available for this step.</div>'; return; }
-    const data = await res.json();
-    const suggestions = data.suggestions || [];
-    if (!suggestions.length) { panel.innerHTML = '<div style="color:var(--text-muted)">No suggestions generated.</div>'; return; }
+    if (!res.ok) { panel.innerHTML = '<div style="color:var(--danger);font-size:12px">No suggestions available for this request.</div>'; return; }
+    var data = await res.json();
+    var allSuggestions = data.suggestions || [];
 
-    const rows = suggestions.map(function(s) {
-      return '<tr>' +
-        '<td style="font-size:11px">' + escHtml(s.type || '') + '</td>' +
-        '<td style="font-family:monospace;font-size:11px">' + escHtml(s.field || '—') + '</td>' +
-        '<td style="font-family:monospace;font-size:11px">' + escHtml(s.operator || '—') + '</td>' +
-        '<td style="font-family:monospace;font-size:11px">' + escHtml(JSON.stringify(s.expectedValue != null ? s.expectedValue : '—')) + '</td>' +
-        '<td style="font-size:11px;color:var(--text-muted)">' + escHtml(s.rationale || '') + '</td>' +
-        '</tr>';
-    }).join('');
+    // Dedup: filter out suggestions whose field+operator already exist in step assertions
+    var suggestions = allSuggestions.filter(function(s) {
+      return !existingAssertionKeys.has(s.field + '::' + s.operator);
+    });
+    var skippedCount = allSuggestions.length - suggestions.length;
 
-    panel.innerHTML =
-      '<div style="color:#f59e0b;font-size:11px;margin-bottom:8px">&#x26A0; Advisory only — review before adding to collection.</div>' +
-      '<table class="data-table">' +
-        '<thead><tr><th>Type</th><th>Field</th><th>Operator</th><th>Expected</th><th>Rationale</th></tr></thead>' +
-        '<tbody>' + rows + '</tbody>' +
-      '</table>';
+    if (!suggestions.length) {
+      panel.innerHTML = '<div style="color:var(--text-muted);font-size:12px">'
+        + (skippedCount > 0
+          ? 'All ' + skippedCount + ' suggested assertion' + (skippedCount > 1 ? 's are' : ' is') + ' already added to this request.'
+          : 'No suggestions generated for this request.')
+        + '</div>';
+      return;
+    }
+
+    var domainBadge = data.detectedDomain
+      ? '<span style="background:rgba(167,139,250,.15);color:#a78bfa;border-radius:4px;padding:2px 8px;font-size:10px;font-weight:600">Domain detected: ' + escHtml(data.detectedDomain) + '</span>'
+      : '';
+    var skippedNote = skippedCount > 0
+      ? '<span style="color:var(--text-muted);font-size:11px">' + skippedCount + ' already added — hidden</span>'
+      : '';
+
+    var targetOrder = ['status','header','responseTime','body','array','domain'];
+    var grouped = {};
+    targetOrder.forEach(function(t) { grouped[t] = []; });
+    suggestions.forEach(function(s) {
+      var t = s.target || 'body';
+      if (!grouped[t]) grouped[t] = [];
+      grouped[t].push(s);
+    });
+
+    var targetLabels = { status:'Status Code', header:'Headers', responseTime:'Response Time SLA', body:'Body Fields (Observed)', array:'Arrays (Observed)', domain:'Domain-Aware Suggestions' };
+    var targetColors = { status:'var(--success)', header:'#38bdf8', responseTime:'#fb923c', body:'var(--neutral-900)', array:'#a78bfa', domain:'#f59e0b' };
+
+    var html = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">'
+      + '<span style="color:var(--warning);font-size:11px">&#x26A0; Advisory — based on actual observed response. Review before saving.</span>'
+      + (domainBadge ? domainBadge : '')
+      + (skippedNote ? '<span style="margin-left:auto">' + skippedNote + '</span>' : '<span style="margin-left:auto;font-size:11px;color:var(--text-muted)">' + suggestions.length + ' new suggestions</span>')
+      + '</div>';
+
+    targetOrder.forEach(function(t) {
+      var group = grouped[t];
+      if (!group || !group.length) return;
+      html += '<div style="margin-bottom:12px">'
+        + '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:' + (targetColors[t]||'var(--text-muted)') + ';margin-bottom:5px">' + (targetLabels[t]||t) + '</div>'
+        + '<table class="data-table" style="font-size:11px">'
+        + '<thead><tr><th>Field</th><th>Operator</th><th>Expected Value</th><th>Confidence</th><th>Rationale</th><th></th></tr></thead><tbody>'
+        + group.map(function(s) {
+            var confColor = s.confidence >= 85 ? 'var(--success)' : s.confidence >= 70 ? '#fb923c' : 'var(--text-muted)';
+            var payloadStr = encodeURIComponent(JSON.stringify(s.assertionPayload || {}));
+            var colId = (run && run.collectionId) ? encodeURIComponent(run.collectionId) : '';
+            return '<tr>'
+              + '<td style="font-family:monospace;word-break:break-all">' + escHtml(s.field || '—') + '</td>'
+              + '<td>' + escHtml(s.operator || '—') + '</td>'
+              + '<td style="font-family:monospace">' + escHtml(s.expectedValue != null ? String(s.expectedValue) : '—') + '</td>'
+              + '<td style="color:' + confColor + ';font-weight:600">' + (s.confidence||0) + '%</td>'
+              + '<td style="color:var(--text-muted);max-width:200px;white-space:normal">' + escHtml(s.rationale || '') + '</td>'
+              + '<td><button class="tbl-btn" style="white-space:nowrap;color:var(--success)" '
+              +   'onclick="_apiRunsAddSuggestion(\'' + escHtml(stepId) + '\',\'' + escHtml(colId) + '\',decodeURIComponent(\'' + payloadStr + '\'))">+ Add</button></td>'
+              + '</tr>';
+          }).join('')
+        + '</tbody></table></div>';
+    });
+
+    panel.innerHTML = html;
   } catch (e) {
-    panel.innerHTML = '<div style="color:#ef4444">Failed: ' + escHtml(e.message) + '</div>';
+    panel.innerHTML = '<div style="color:var(--danger);font-size:12px">Failed: ' + escHtml(e.message) + '</div>';
+  }
+}
+
+async function _apiRunsAddSuggestion(stepId, collectionId, payloadJson) {
+  var payload;
+  try { payload = JSON.parse(payloadJson); } catch { showToast('error', 'Invalid assertion payload.'); return; }
+  if (!payload || !payload.field) return;
+  if (!collectionId) { showToast('error', 'Cannot determine collection — reload the run and try again.'); return; }
+
+  var assertion = { field: payload.field, operator: payload.operator, expected: payload.expected, severity: payload.severity || 'high', weight: payload.weight || 7 };
+
+  try {
+    // Fetch current collection, inject assertion into the matching request, PUT back
+    var colRes = await fetch('/api/api-collections/' + collectionId);
+    if (!colRes.ok) throw new Error('Collection fetch failed');
+    var col = await colRes.json();
+    var step = (col.steps || []).find(function(s) { return s.id === stepId; });
+    if (!step) throw new Error('Request not found in collection');
+    if (!Array.isArray(step.assertions)) step.assertions = [];
+    // Guard: skip if already present
+    var alreadyExists = step.assertions.some(function(a) { return a.field === assertion.field && a.operator === assertion.operator; });
+    if (alreadyExists) { showToast('info', 'This assertion is already on the request.'); return; }
+    step.assertions.push(assertion);
+    var saveRes = await fetch('/api/api-collections/' + collectionId, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(col),
+    });
+    if (!saveRes.ok) throw new Error('Save failed (' + saveRes.status + ')');
+    showToast('success', 'Assertion saved to request "' + escHtml(step.name || step.id) + '".');
+    // Refresh suggest panel so the added assertion no longer appears
+    var panel = document.getElementById('suggest-panel-' + stepId);
+    if (panel) { delete panel.dataset.loaded; _apiRunsLoadSuggestPanel(stepId); }
+  } catch (e) {
+    showToast('error', 'Failed to save assertion: ' + e.message);
   }
 }
 
@@ -1924,4 +2080,239 @@ async function _apiRunsRejectProposal(proposalId, btn) {
     btn.disabled = false;
     alert('Rejection failed: ' + String(err));
   }
+}
+
+// ── Observability Tab (integrated from Replay page) ───────────────────────────
+
+async function _apiRunsLoadObservability(runId, panel) {
+  panel.innerHTML = '<div style="color:var(--text-muted);font-size:13px;padding:12px;">Loading observability data…</div>';
+  try {
+    var res = await fetch('/api/api-runs/' + encodeURIComponent(runId) + '/observability');
+    if (!res.ok) {
+      panel.innerHTML = '<div style="color:var(--text-muted);font-size:13px;padding:12px;">No observability data available for this run.</div>';
+      return;
+    }
+    var summary = await res.json();
+    _apiRunsRenderObservability(runId, summary, panel);
+  } catch (e) {
+    panel.innerHTML = '<div style="color:var(--flaky-danger);font-size:13px;padding:12px;">Error loading observability: ' + escHtml(e.message) + '</div>';
+  }
+}
+
+function _apiRunsRenderObservability(runId, summary, panel) {
+  var replay = summary.replay || {};
+  var stats = replay.stats || {};
+
+  var statusBadge = summary.status === 'passed'
+    ? '<span class="badge badge-green">PASSED</span>'
+    : '<span class="badge badge-red">FAILED</span>';
+
+  var html =
+    // Summary header
+    '<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap">'
+    + statusBadge
+    + '<span style="font-size:12px;color:var(--text-muted)">'
+    + escHtml((summary.startedAt || '').replace('T',' ').slice(0,19))
+    + ' &middot; ' + (summary.stepCount || 0) + ' steps'
+    + (summary.hasSnapshot ? ' &middot; <span style="color:var(--brand)">snapshot</span>' : '')
+    + (summary.hasTimeline ? ' &middot; <span style="color:var(--brand)">timeline</span>' : '')
+    + '</span>'
+    + '</div>'
+
+    // Stat cards
+    + '<div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:20px">'
+    + _obsCard(stats.requestsSent || 0,       'Requests Sent',       'var(--neutral-600)')
+    + _obsCard(stats.assertionsPassed || 0,   'Assertions Passed',   '#16a34a')
+    + _obsCard(stats.assertionsFailed || 0,   'Assertions Failed',   '#dc2626')
+    + _obsCard(stats.retriesTriggered || 0,   'Retries',             '#b45309')
+    + _obsCard(stats.teardownEvents || 0,     'Teardown Events',     'var(--brand)')
+    + _obsCard(stats.failuresPropagated || 0, 'Failures Propagated', '#dc2626')
+    + '</div>'
+
+    // Inner tab bar — Snapshot removed (limited standalone value)
+    + '<div style="display:flex;gap:6px;margin-bottom:12px;border-bottom:1px solid var(--neutral-200);padding-bottom:8px">'
+    + '<button class="tbl-btn obs-inner-tab active" onclick="_obsLoadEvents(' + JSON.stringify(runId) + ')">Replay Events (' + (replay.eventCount || 0) + ')</button>'
+    + '</div>'
+    + '<div id="obs-inner-content-' + escHtml(runId) + '"></div>';
+
+  panel.innerHTML = html;
+
+  // Auto-load events
+  _obsLoadEvents(runId);
+}
+
+function _obsCard(value, label, color) {
+  return '<div style="padding:10px 16px;border:1px solid var(--neutral-200);border-radius:8px;min-width:110px;text-align:center">'
+    + '<div style="font-size:20px;font-weight:700;color:' + color + '">' + value + '</div>'
+    + '<div style="font-size:11px;color:var(--text-muted);margin-top:2px">' + escHtml(label) + '</div>'
+    + '</div>';
+}
+
+function _obsTab(btn, tab, runId) {
+  btn.closest('div').querySelectorAll('.obs-inner-tab').forEach(function(b) { b.classList.remove('active'); });
+  btn.classList.add('active');
+  if (tab === 'events') _obsLoadEvents(runId);
+  else if (tab === 'snapshot') _obsLoadSnapshot(runId);
+}
+
+async function _obsLoadEvents(runId) {
+  var el = document.getElementById('obs-inner-content-' + runId);
+  if (!el) return;
+  el.innerHTML = '<div style="color:var(--text-muted);font-size:12px;">Loading replay events…</div>';
+  try {
+    var res = await fetch('/api/api-runs/' + encodeURIComponent(runId) + '/replay-events');
+    if (!res.ok) { el.innerHTML = '<div style="color:var(--text-muted);font-size:12px;padding:8px;">No replay events available.</div>'; return; }
+    var session = await res.json();
+    // Filter out bookkeeping events — step-completed adds no user value
+    var events = (session.events || []).filter(function(ev) {
+      var k = ev.kind || '';
+      return k !== 'step-completed' && k !== 'step-started';
+    });
+    if (!events.length) { el.innerHTML = '<div style="color:var(--text-muted);font-size:12px;padding:8px;">No replay events recorded for this run.</div>'; return; }
+
+    el.innerHTML = '<div style="max-height:400px;overflow-y:auto">'
+      + '<table class="data-table" style="margin:0">'
+      + '<thead style="position:sticky;top:0;z-index:2"><tr>'
+        + '<th style="width:130px">Event</th>'
+        + '<th style="width:150px">Request</th>'
+        + '<th>Detail</th>'
+        + '<th style="width:80px;text-align:center">Result</th>'
+        + '<th style="width:80px;text-align:right">Duration</th>'
+      + '</tr></thead>'
+      + '<tbody>'
+      + events.map(function(ev) {
+          var kind = ev.kind || '';
+          var eventBadge = _obsEventBadge(kind);
+          var detail = _obsEventDetail(ev);
+          var result = _obsResultBadge(ev);
+          var dur = ev.durationMs != null ? ev.durationMs + 'ms' : '—';
+          return '<tr>'
+            + '<td>' + eventBadge + '</td>'
+            + '<td style="font-size:12px;font-weight:500">' + escHtml(ev.stepName || '—') + '</td>'
+            + '<td style="font-size:12px;color:var(--text-muted)">' + detail + '</td>'
+            + '<td style="text-align:center">' + result + '</td>'
+            + '<td style="text-align:right;font-size:12px;color:var(--text-muted)">' + dur + '</td>'
+            + '</tr>';
+        }).join('')
+      + '</tbody></table></div>';
+  } catch (e) {
+    el.innerHTML = '<div style="color:var(--flaky-danger);font-size:12px;">Error: ' + escHtml(e.message) + '</div>';
+  }
+}
+
+function _obsEventBadge(kind) {
+  var label, bg, color;
+  if (kind === 'request-sent')        { label = '→ Request Sent';    bg = 'rgba(37,99,235,.1)';   color = '#2563eb'; }
+  else if (kind === 'response-received') { label = '← Response';     bg = 'rgba(124,58,237,.1)';  color = '#7c3aed'; }
+  else if (kind === 'assertion-passed')  { label = '✓ Assertion';    bg = 'rgba(22,163,74,.1)';   color = '#16a34a'; }
+  else if (kind === 'assertion-failed')  { label = '✗ Assertion';    bg = 'rgba(220,38,38,.1)';   color = '#dc2626'; }
+  else if (kind === 'variable-extracted'){ label = '⬇ Variable';     bg = 'rgba(180,83,9,.1)';    color = '#b45309'; }
+  else if (kind === 'failure-propagated'){ label = '✗ Failure';      bg = 'rgba(220,38,38,.12)';  color = '#dc2626'; }
+  else if (kind === 'step-skipped')      { label = '⊘ Skipped';      bg = 'rgba(107,114,128,.1)'; color = '#6b7280'; }
+  else if (kind === 'retry-triggered')   { label = '↺ Retry';        bg = 'rgba(180,83,9,.1)';    color = '#b45309'; }
+  else                                   { label = escHtml(kind.replace(/-/g,' ')); bg = 'rgba(107,114,128,.08)'; color = 'var(--text-muted)'; }
+  return '<span style="font-size:11px;padding:2px 7px;border-radius:4px;font-weight:600;white-space:nowrap;background:' + bg + ';color:' + color + '">' + label + '</span>';
+}
+
+function _obsEventDetail(ev) {
+  if (ev.request)    return escHtml(ev.request.method + ' ' + ev.request.url);
+  if (ev.assertion)  return (ev.assertion.passed ? '✓ ' : '✗ ') + escHtml(ev.assertion.type) + (ev.assertion.message ? ': ' + escHtml(ev.assertion.message) : '');
+  if (ev.variable)   return escHtml(ev.variable.key) + ' = ' + escHtml(ev.variable.maskedValue);
+  if (ev.failure)    return escHtml(ev.failure.reason);
+  if (ev.skipReason) return escHtml(ev.skipReason);
+  return '—';
+}
+
+function _obsResultBadge(ev) {
+  if (!ev.response) return '<span style="color:var(--text-muted);font-size:11px">—</span>';
+  var status = ev.response.status;
+  var bg = status >= 500 ? 'rgba(220,38,38,.1)'
+    : status >= 400 ? 'rgba(180,83,9,.1)'
+    : status >= 200 ? 'rgba(22,163,74,.1)'
+    : 'rgba(107,114,128,.1)';
+  var color = status >= 500 ? '#dc2626'
+    : status >= 400 ? '#b45309'
+    : status >= 200 ? '#16a34a'
+    : '#6b7280';
+  return '<span style="font-size:11px;padding:2px 7px;border-radius:4px;font-weight:700;background:' + bg + ';color:' + color + '">' + status + '</span>';
+}
+
+async function _obsLoadSnapshot(runId) {
+  var el = document.getElementById('obs-inner-content-' + runId);
+  if (!el) return;
+  el.innerHTML = '<div style="color:var(--text-muted);font-size:12px;">Loading snapshot…</div>';
+  try {
+    var res = await fetch('/api/api-runs/' + encodeURIComponent(runId) + '/observability');
+    var obs = res.ok ? await res.json() : null;
+    var snap = obs && obs.snapshotSummary;
+    if (!snap) { el.innerHTML = '<div style="color:var(--text-muted);font-size:12px;padding:8px;">No snapshot available for this run.</div>'; return; }
+    el.innerHTML = '<div style="padding:12px;border:1px solid var(--neutral-200);border-radius:6px;font-size:12px">'
+      + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'
+      + _obsSnapshotRow('Captured at', (snap.capturedAt || '').replace('T',' ').slice(0,19))
+      + _obsSnapshotRow('Completed nodes', snap.completedNodeIds)
+      + _obsSnapshotRow('Failed nodes', snap.failedNodeIds)
+      + _obsSnapshotRow('Skipped nodes', snap.skippedNodeIds)
+      + '</div>'
+      + '</div>';
+  } catch (e) {
+    el.innerHTML = '<div style="color:var(--flaky-danger);font-size:12px;">Error: ' + escHtml(e.message) + '</div>';
+  }
+}
+
+// ── Data File CSV Exports ──────────────────────────────────────────────────────
+
+function _apiRunsCsvEscape(v) {
+  const s = String(v ?? '');
+  return s.includes(',') || s.includes('"') || s.includes('\n') ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+
+function _apiRunsCsvDownload(filename, rows) {
+  const csv = rows.map(r => r.map(_apiRunsCsvEscape).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+}
+
+function _apiRunsExportSummaryCsv() {
+  const run = _apiRunsCurrentRun;
+  if (!run) return;
+  const iters = run.iterationSummary || [];
+  const header = ['Row', 'Identifier', 'Status', 'Duration (ms)'];
+  const rows = [header, ...iters.map((it, i) => [
+    i + 1,
+    it.rowIdentifier ?? '',
+    it.status,
+    it.durationMs ?? 0,
+  ])];
+  _apiRunsCsvDownload(`run-summary-${run.id}.csv`, rows);
+}
+
+function _apiRunsExportDetailCsv() {
+  const run = _apiRunsCurrentRun;
+  if (!run) return;
+  const steps = run.stepResults || [];
+  const header = ['Row', 'Row Identifier', 'Step Name', 'Status', 'HTTP Status', 'Duration (ms)', 'Assertion Failures'];
+  const rows = [header, ...steps.map(s => {
+    const failedAsserts = (s.assertionResults || []).filter(a => !a.passed).map(a => a.message).join('; ');
+    return [
+      s.iterationIndex !== undefined ? s.iterationIndex + 1 : 1,
+      s.rowIdentifier ?? '',
+      s.stepName ?? s.stepId,
+      s.status,
+      s.response?.status ?? '',
+      s.durationMs ?? 0,
+      failedAsserts,
+    ];
+  })];
+  _apiRunsCsvDownload(`run-detail-${run.id}.csv`, rows);
+}
+
+function _obsSnapshotRow(label, value) {
+  return '<div style="padding:8px;border:1px solid var(--neutral-200);border-radius:6px">'
+    + '<div style="font-size:11px;color:var(--text-muted);margin-bottom:2px">' + escHtml(label) + '</div>'
+    + '<div style="font-weight:600">' + escHtml(String(value ?? '—')) + '</div>'
+    + '</div>';
 }

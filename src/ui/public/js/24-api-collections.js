@@ -80,7 +80,7 @@ function _apiColRenderList() {
       <td style="font-size:12px">${modeLabel}</td>
       <td>${runBadge}</td>
       <td class="tbl-actions">
-        <button class="tbl-btn" onclick="apiColRun('${id}')">▶ Run</button>
+        <button class="tbl-btn" onclick="_apiColRunOpen('${id}')">▶ Run</button>
         <button class="tbl-btn" onclick="apiColTryRequestOpen('${id}')">🧪 Try</button>
         <button class="tbl-btn" onclick="apiColGenTestsOpen('${id}','${nm}')">✨ Suggest Tests</button>
         ${showGraph ? `<button class="tbl-btn" onclick="apiColGraphOpenModal('${id}')">🔀 Graph</button>` : ''}
@@ -281,16 +281,17 @@ function _renderApiColSteps() {
             <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-secondary,#1a1a1a);cursor:pointer" onclick="_apiColRuleToggle('pre-vars-${i}')">
               <div style="display:flex;align-items:center;gap:8px">
                 <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--accent)">① Before Request</span>
-                <span style="font-size:11px;color:var(--text-muted)">Set variables before sending</span>
+                <span style="font-size:11px;color:var(--text-muted)">Runs before the HTTP call — set or override variables</span>
+                <span title="Use this section to inject or override variables before this request fires. Examples:&#10;• Set authToken = {{envToken}} to inject a token from environment&#10;• Set userId = 42 to hardcode a test value&#10;• Set timestamp = {{$now}} to stamp the request time&#10;Variables set here are available as {{varName}} in this request's URL, Headers, and Body." style="cursor:help;color:var(--text-muted);font-size:13px">ⓘ</span>
               </div>
-              <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();_apiColPreVarAdd(${i})">+ Add Rule</button>
+              <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();_apiColPreVarAdd(${i})">+ Add Variable</button>
             </div>
             <div id="pre-vars-${i}" style="padding:8px 12px">
-              <div style="display:grid;grid-template-columns:1fr 110px 1fr 22px;gap:4px;font-size:11px;color:var(--text-muted);font-weight:600;margin-bottom:4px">
-                <span>Variable Name</span><span>Set To</span><span>Value / Source</span><span></span>
+              <div style="display:grid;grid-template-columns:1fr 200px 1fr 22px;gap:4px;font-size:11px;color:var(--text-muted);font-weight:600;margin-bottom:4px">
+                <span>Variable Name</span><span>How to set it</span><span>Value</span><span></span>
               </div>
               <div id="api-step-prevars-${i}"></div>
-              <div style="font-size:11px;color:var(--text-muted);margin-top:6px">💡 Use <code>{{varName}}</code> in URL, Headers, Body of any later request</div>
+              <div style="font-size:11px;color:var(--text-muted);margin-top:6px">💡 Variables set here are available as <code>{{varName}}</code> in this request's URL, Headers, and Body — and in all later requests too.</div>
             </div>
           </div>
 
@@ -299,11 +300,13 @@ function _renderApiColSteps() {
             <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-secondary,#1a1a1a);cursor:pointer" onclick="_apiColRuleToggle('post-rules-${i}')">
               <div style="display:flex;align-items:center;gap:8px">
                 <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#4ade80">② After Response</span>
-                <span style="font-size:11px;color:var(--text-muted)">Extract values &amp; assert conditions</span>
+                <span style="font-size:11px;color:var(--text-muted)">Runs after the HTTP response — extract data &amp; validate</span>
+                <span title="Use this section to:&#10;• Extract — pull values out of the response (e.g. save userId from JSON body) so later requests can use them as {{userId}}&#10;• Assert — validate the response meets your expectations (status code, headers, body fields). Assertions that fail mark the request as FAILED in the run report." style="cursor:help;color:var(--text-muted);font-size:13px">ⓘ</span>
               </div>
               <div style="display:flex;gap:6px" onclick="event.stopPropagation()">
                 <button class="btn btn-secondary btn-sm" onclick="_apiColExtractAdd(${i})">+ Extract</button>
                 <button class="btn btn-secondary btn-sm" onclick="_apiColAssertAdd(${i})">+ Assert</button>
+                <button class="btn btn-secondary btn-sm" style="color:#a78bfa;border-color:#a78bfa" onclick="_domainAssertOpen(${i})" title="Load pre-built assertion templates for your API domain (eCommerce, Fintech, Salesforce, etc.)">Load Domain Template</button>
               </div>
             </div>
             <div id="post-rules-${i}" style="padding:8px 12px">
@@ -322,21 +325,18 @@ function _renderApiColSteps() {
             </div>
           </div>
 
-          <!-- Section 3: Flow Control — Next Step -->
+          <!-- Section 3: Flow Control — No-Code Rule Builder -->
           <div style="border:1px solid var(--border);border-radius:6px;overflow:hidden">
             <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-secondary,#1a1a1a);cursor:pointer" onclick="_apiColRuleToggle('flow-rules-${i}')">
               <div style="display:flex;align-items:center;gap:8px">
                 <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#f59e0b">③ Flow Control</span>
-                <span style="font-size:11px;color:var(--text-muted)">Conditionally jump to another request</span>
+                <span style="font-size:11px;color:var(--text-muted)">Control what happens after this request runs</span>
               </div>
               <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();_apiColFlowAdd(${i})">+ Add Rule</button>
             </div>
             <div id="flow-rules-${i}" style="padding:8px 12px">
-              <div style="display:grid;grid-template-columns:130px 140px 1fr 130px 22px;gap:4px;font-size:11px;color:var(--text-muted);font-weight:600;margin-bottom:4px">
-                <span>Check</span><span>Operator</span><span>Value</span><span>Then go to</span><span></span>
-              </div>
               <div id="api-step-flow-${i}"></div>
-              <div style="font-size:11px;color:var(--text-muted);margin-top:6px">💡 Like <code>postman.setNextRequest()</code> — no code needed. Example: if statusCode equals 401 → go to "Re-Authenticate" request. If no rules match, collection runs sequentially by default.</div>
+              <div style="font-size:11px;color:var(--text-muted);margin-top:6px">💡 No code needed. Rules are evaluated in order — first match wins. Actions: <strong>Skip to next</strong> (continue), <strong>Stop</strong> the collection, <strong>Jump</strong> to a specific request, or <strong>Repeat</strong> this request up to N times. Uncheck "condition is met" to make a rule always apply.</div>
             </div>
           </div>
         </div>
@@ -450,40 +450,122 @@ function _apiColRuleToggle(id) {
 }
 
 // ── Pre-request: Set Variables ──────────────────────────────────────────────
+
+
 function _apiColPreVarAdd(i) {
   if (!_apiColSteps[i].preVars) _apiColSteps[i].preVars = [];
   _apiColSteps[i].preVars.push({ name: '', setTo: 'literal', value: '' });
   _apiColPreVarsRender(i);
 }
+
 function _apiColPreVarsRender(i) {
   const c = document.getElementById('api-step-prevars-' + i);
   if (!c) return;
   const vars = _apiColSteps[i].preVars ?? [];
-  if (!vars.length) { c.innerHTML = '<div style="color:var(--text-muted);font-size:12px;padding:4px 0">No rules — click + Add Rule to set a variable before this request.</div>'; return; }
-  c.innerHTML = vars.map((v, vi) => `
-    <div style="display:grid;grid-template-columns:1fr 110px 1fr 22px;gap:4px;margin-bottom:4px;align-items:center">
-      <input class="fm-input" style="font-size:12px" placeholder="e.g. authToken" value="${escHtml(v.name)}" oninput="_apiColPreVarField(${i},${vi},'name',this.value)"/>
-      <select class="fm-input" style="font-size:12px" onchange="_apiColPreVarField(${i},${vi},'setTo',this.value)">
-        <option value="literal" ${v.setTo==='literal'?'selected':''}>Literal</option>
-        <option value="collectionVar" ${v.setTo==='collectionVar'?'selected':''}>Collection Var</option>
-        <option value="envVar" ${v.setTo==='envVar'?'selected':''}>Env Var</option>
+  if (!vars.length) {
+    c.innerHTML = '<div style="color:var(--text-muted);font-size:12px;padding:4px 0">No pre-request variables added yet — click + Add Variable.</div>';
+    return;
+  }
+  c.innerHTML = vars.map((v, vi) => {
+    // Value/source cell — changes based on setTo mode
+    let valueCell;
+    if (v.setTo === 'generate') {
+      const _dynTokens = (typeof scriptKeywords !== 'undefined' && scriptKeywords.dynamicTokens) ? scriptKeywords.dynamicTokens : [];
+      let _dynOpts = '<option value="">— choose token —</option>';
+      let _curGrp = null;
+      for (const t of _dynTokens) {
+        const grp = t.group || '';
+        if (grp && grp !== _curGrp) {
+          if (_curGrp !== null) _dynOpts += '</optgroup>';
+          _dynOpts += `<optgroup label="${escHtml(grp)}">`;
+          _curGrp = grp;
+        }
+        _dynOpts += `<option value="${escHtml(t.token)}"${v.value === t.token ? ' selected' : ''}>${escHtml(t.label)}</option>`;
+      }
+      if (_curGrp !== null) _dynOpts += '</optgroup>';
+      valueCell = `<select class="fm-input" style="font-size:12px" onchange="_apiColPreVarField(${i},${vi},'value',this.value)">${_dynOpts}</select>`;
+    } else if (v.setTo === 'collectionVar') {
+      valueCell = `<input class="fm-input" style="font-size:12px" placeholder="{{varName}} — name of the variable to copy" value="${escHtml(v.value)}" oninput="_apiColPreVarField(${i},${vi},'value',this.value)"/>`;
+    } else if (v.setTo === 'envVar') {
+      valueCell = `<input class="fm-input" style="font-size:12px" placeholder="{{ENV_VAR}} — environment variable name" value="${escHtml(v.value)}" oninput="_apiColPreVarField(${i},${vi},'value',this.value)"/>`;
+    } else {
+      // literal / fixed value
+      valueCell = `<input class="fm-input" style="font-size:12px" placeholder="Enter a fixed value, e.g. true or 42" value="${escHtml(v.value)}" oninput="_apiColPreVarField(${i},${vi},'value',this.value)"/>`;
+    }
+    return `<div style="display:grid;grid-template-columns:1fr 200px 1fr 22px;gap:4px;margin-bottom:4px;align-items:center">
+      <input class="fm-input" style="font-size:12px" placeholder="Variable name, e.g. authToken" value="${escHtml(v.name)}" oninput="_apiColPreVarField(${i},${vi},'name',this.value)"/>
+      <select class="fm-input" style="font-size:12px" onchange="_apiColPreVarField(${i},${vi},'setTo',this.value)" title="How should this variable's value be set?">
+        <option value="literal"       ${(v.setTo||'literal')==='literal'      ?'selected':''}>Fixed Value</option>
+        <option value="collectionVar" ${v.setTo==='collectionVar'?'selected':''}>From another variable (Collection Variable)</option>
+        <option value="envVar"        ${v.setTo==='envVar'       ?'selected':''}>From environment</option>
+        <option value="generate"      ${v.setTo==='generate'     ?'selected':''}>Generate (random)</option>
       </select>
-      <input class="fm-input" style="font-size:12px" placeholder="${v.setTo==='literal'?'value':v.setTo==='collectionVar'?'{{varName}}':'{{ENV_VAR}}'}" value="${escHtml(v.value)}" oninput="_apiColPreVarField(${i},${vi},'value',this.value)"/>
-      <button class="tbl-btn del" onclick="_apiColPreVarRemove(${i},${vi})">✕</button>
-    </div>`).join('');
+      ${valueCell}
+      <button class="tbl-btn del" onclick="_apiColPreVarRemove(${i},${vi})" title="Remove">✕</button>
+    </div>`;
+  }).join('');
 }
-function _apiColPreVarField(i, vi, f, val) { _apiColSteps[i].preVars[vi][f] = val; if (f === 'setTo') _apiColPreVarsRender(i); }
+
+function _apiColPreVarField(i, vi, f, val) {
+  _apiColSteps[i].preVars[vi][f] = val;
+  if (f === 'setTo') { _apiColSteps[i].preVars[vi].value = ''; _apiColPreVarsRender(i); }
+}
 function _apiColPreVarRemove(i, vi) { _apiColSteps[i].preVars.splice(vi, 1); _apiColPreVarsRender(i); }
 
 // ── Post-response: Assertions ───────────────────────────────────────────────
 const _ASSERT_FIELDS = [
-  { label: 'Status Code', value: 'statusCode' },
-  { label: 'Response Time (ms)', value: 'responseTime' },
-  { label: 'Body (JSON path)', value: 'body' },
-  { label: 'Header', value: 'header' },
-  { label: 'Body contains', value: 'bodyContains' },
-  { label: 'Body is valid JSON', value: 'bodyIsJson' },
+  { label: 'Status Code',               value: 'statusCode',      hasPath: false },
+  { label: 'Response Time (ms)',         value: 'responseTime',    hasPath: false },
+  { label: 'Body (JSON path / array)',   value: 'body',            hasPath: true,  pathPlaceholder: 'Path e.g. $.data or $.items[0].id' },
+  { label: 'Body (array length)',        value: 'bodyArrayLength', hasPath: true,  pathPlaceholder: 'Array path e.g. $.items' },
+  { label: 'Body (field count)',         value: 'bodyFieldCount',  hasPath: true,  pathPlaceholder: 'Object path e.g. $.user' },
+  { label: 'Header',                     value: 'header',          hasPath: true,  pathPlaceholder: 'Header name e.g. content-type' },
+  { label: 'Cookie',                     value: 'cookie',          hasPath: true,  pathPlaceholder: 'Cookie name e.g. sessionId' },
+  { label: 'Body contains',             value: 'bodyContains',    hasPath: false, lockedOperator: 'contains' },
+  { label: 'Body is valid JSON',         value: 'bodyIsJson',      hasPath: false, lockedOperator: 'equals',   lockedExpected: 'true' },
+  { label: 'Response size (bytes)',      value: 'responseSize',    hasPath: false },
+  { label: 'HTTP version',              value: 'httpVersion',     hasPath: false },
 ];
+
+// Derive the Check field type from the stored field string (handles all encoded formats)
+function _assertFieldType(field) {
+  if (!field || field === 'statusCode' || field === 'status') return 'statusCode';
+  if (field === 'responseTime') return 'responseTime';
+  if (field === 'bodyContains') return 'bodyContains';
+  if (field === 'bodyIsJson')   return 'bodyIsJson';
+  if (field === 'responseSize') return 'responseSize';
+  if (field === 'httpVersion')  return 'httpVersion';
+  if (field === 'body')         return 'body';
+  if (field.startsWith('@arrayLength:')) return 'bodyArrayLength';
+  if (field.startsWith('@fieldCount:'))  return 'bodyFieldCount';
+  if (field.startsWith('header.') || field === 'header') return 'header';
+  if (field.startsWith('cookie.') || field === 'cookie') return 'cookie';
+  if (field.startsWith('$')) return 'body';  // direct JSONPath
+  return 'statusCode';
+}
+
+// Extract the path portion from an encoded field string
+function _assertFieldPath(field) {
+  if (field.startsWith('@arrayLength:')) return field.slice(13);
+  if (field.startsWith('@fieldCount:'))  return field.slice(12);
+  if (field.startsWith('header.'))       return field.slice(7);
+  if (field.startsWith('cookie.'))       return field.slice(7);
+  if (field.startsWith('$'))             return field;  // body JSONPath stored directly
+  return '';
+}
+
+// Encode fieldType + path back into a single field string for storage
+function _assertFieldEncode(fieldType, path) {
+  const p = (path || '').trim();
+  switch (fieldType) {
+    case 'body':            return p || 'body';
+    case 'bodyArrayLength': return p ? '@arrayLength:' + p : '@arrayLength:';
+    case 'bodyFieldCount':  return p ? '@fieldCount:' + p  : '@fieldCount:';
+    case 'header':          return p ? 'header.' + p       : 'header';
+    case 'cookie':          return p ? 'cookie.' + p       : 'cookie';
+    default:                return fieldType;
+  }
+}
 const _ASSERT_OPS = [
   { label: 'equals', value: 'equals' },
   { label: 'not equals', value: 'notEquals' },
@@ -496,6 +578,12 @@ const _ASSERT_OPS = [
   { label: 'exists', value: 'exists' },
   { label: 'not exists', value: 'notExists' },
   { label: 'is empty', value: 'isEmpty' },
+  // Array operators
+  { label: 'array length equals', value: 'arrayLengthEquals' },
+  { label: 'array length > N', value: 'arrayLengthGreaterThan' },
+  { label: 'array length < N', value: 'arrayLengthLessThan' },
+  { label: 'array not empty', value: 'arrayNotEmpty' },
+  { label: 'array contains', value: 'arrayContains' },
 ];
 function _apiColAssertAdd(i) {
   if (!_apiColSteps[i].assertions) _apiColSteps[i].assertions = [];
@@ -507,55 +595,307 @@ function _apiColAssertRender(i) {
   if (!c) return;
   const assertions = _apiColSteps[i].assertions ?? [];
   if (!assertions.length) { c.innerHTML = '<div style="color:var(--text-muted);font-size:12px;padding:4px 0">No assertions — click + Assert to validate the response.</div>'; return; }
-  const noExpected = ['exists','notExists','isEmpty'];
-  c.innerHTML = assertions.map((a, ai) => `
-    <div style="display:grid;grid-template-columns:150px 140px 1fr 90px 22px;gap:4px;margin-bottom:4px;align-items:center">
-      <select class="fm-input" style="font-size:12px" onchange="_apiColAssertField(${i},${ai},'field',this.value)">
-        ${_ASSERT_FIELDS.map(f => `<option value="${f.value}" ${a.field===f.value?'selected':''}>${f.label}</option>`).join('')}
-      </select>
-      <select class="fm-input" style="font-size:12px" onchange="_apiColAssertField(${i},${ai},'operator',this.value)">
-        ${_ASSERT_OPS.map(o => `<option value="${o.value}" ${a.operator===o.value?'selected':''}>${o.label}</option>`).join('')}
-      </select>
-      <input class="fm-input" style="font-size:12px" placeholder="Expected value or {{var}}" value="${escHtml(String(a.expected ?? ''))}" ${noExpected.includes(a.operator)?'disabled style="font-size:12px;opacity:0.4"':''} oninput="_apiColAssertField(${i},${ai},'expected',this.value)"/>
+  const noExpected = ['exists','notExists','isEmpty','arrayNotEmpty'];
+  c.innerHTML = assertions.map((a, ai) => {
+    const ft = _assertFieldType(a.field);
+    const fp = _assertFieldPath(a.field);
+    const fieldDef = _ASSERT_FIELDS.find(f => f.value === ft) || _ASSERT_FIELDS[0];
+    const fieldDropdown = `<select class="fm-input" style="font-size:12px" onchange="_apiColAssertFieldType(${i},${ai},this.value)">
+      ${_ASSERT_FIELDS.map(f => `<option value="${f.value}" ${ft===f.value?'selected':''}>${f.label}</option>`).join('')}
+    </select>`;
+    const checkCell = fieldDef.hasPath
+      ? `<div style="display:flex;flex-direction:column;gap:2px">
+           ${fieldDropdown}
+           <input class="fm-input" style="font-size:11px;color:var(--text-muted)" placeholder="${escHtml(fieldDef.pathPlaceholder||'')}" value="${escHtml(fp)}" oninput="_apiColAssertFieldPath(${i},${ai},this.value)"/>
+         </div>`
+      : fieldDropdown;
+    // Operator cell — locked for bodyContains (contains) and bodyIsJson (equals)
+    const operatorCell = fieldDef.lockedOperator
+      ? `<div class="fm-input" style="font-size:12px;opacity:0.55;display:flex;align-items:center;cursor:not-allowed;user-select:none">${fieldDef.lockedOperator}</div>`
+      : `<select class="fm-input" style="font-size:12px" onchange="_apiColAssertField(${i},${ai},'operator',this.value)">
+           ${_ASSERT_OPS.map(o => `<option value="${o.value}" ${a.operator===o.value?'selected':''}>${o.label}</option>`).join('')}
+         </select>`;
+    // Expected cell — locked for bodyIsJson (true), disabled for no-expected operators
+    const isLocked   = fieldDef.lockedExpected !== undefined;
+    const isDisabled = isLocked || noExpected.includes(a.operator);
+    const dispVal    = isLocked ? fieldDef.lockedExpected : escHtml(String(a.expected ?? ''));
+    const expectedCell = `<input class="fm-input" style="font-size:12px${isDisabled?';opacity:0.4':''}" placeholder="Expected value or {{var}}" value="${dispVal}" ${isDisabled?'disabled':''} oninput="_apiColAssertField(${i},${ai},'expected',this.value)"/>`;
+    return `<div style="display:grid;grid-template-columns:150px 140px 1fr 90px 22px;gap:4px;margin-bottom:4px;align-items:${fieldDef.hasPath?'start':'center'}">
+      ${checkCell}
+      ${operatorCell}
+      ${expectedCell}
       <select class="fm-input" style="font-size:12px" onchange="_apiColAssertField(${i},${ai},'severity',this.value)">
         ${['critical','high','medium','low','soft'].map(s => `<option ${a.severity===s?'selected':''}>${s}</option>`).join('')}
       </select>
       <button class="tbl-btn del" onclick="_apiColAssertRemove(${i},${ai})">✕</button>
-    </div>`).join('');
+    </div>`;
+  }).join('');
+}
+// Change Check field type — reset path, auto-set locked operator/expected, re-render
+function _apiColAssertFieldType(i, ai, ft) {
+  _apiColSteps[i].assertions[ai].field = _assertFieldEncode(ft, '');
+  const fieldDef = _ASSERT_FIELDS.find(f => f.value === ft);
+  if (fieldDef?.lockedOperator) _apiColSteps[i].assertions[ai].operator = fieldDef.lockedOperator;
+  if (fieldDef?.lockedExpected !== undefined) _apiColSteps[i].assertions[ai].expected = fieldDef.lockedExpected;
+  _apiColAssertRender(i);
+}
+// Update path portion of field — encode type + new path without re-render (live typing)
+function _apiColAssertFieldPath(i, ai, path) {
+  const ft = _assertFieldType(_apiColSteps[i].assertions[ai].field);
+  _apiColSteps[i].assertions[ai].field = _assertFieldEncode(ft, path);
 }
 function _apiColAssertField(i, ai, f, val) { _apiColSteps[i].assertions[ai][f] = val; if (f === 'operator') _apiColAssertRender(i); }
 function _apiColAssertRemove(i, ai) { _apiColSteps[i].assertions.splice(ai, 1); _apiColAssertRender(i); }
 
-// ── Flow Control: Next Step ─────────────────────────────────────────────────
+// ── Domain Assertion Library ────────────────────────────────────────────────
+
+let _domainAssertStepIdx = -1;
+let _domainAssertDomains = [];
+
+async function _domainAssertOpen(i) {
+  _domainAssertStepIdx = i;
+  let modal = document.getElementById('domain-assert-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'domain-assert-modal';
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:9999';
+    modal.innerHTML = `
+      <div style="background:var(--bg-primary,#111);border:1px solid var(--border);border-radius:10px;width:820px;max-width:96vw;max-height:90vh;display:flex;flex-direction:column;position:relative">
+        <!-- Header -->
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--border);flex-shrink:0">
+          <span style="font-size:15px;font-weight:700;color:#a78bfa">Load Domain Assertion Template</span>
+          <button class="tbl-btn" onclick="_domainAssertClose()" style="font-size:16px;padding:2px 8px">✕</button>
+        </div>
+        <!-- Body: two columns -->
+        <div style="display:flex;flex:1;overflow:hidden;min-height:0">
+          <!-- Left: domain list -->
+          <div style="width:240px;flex-shrink:0;padding:12px;border-right:1px solid var(--border);overflow-y:auto">
+            <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Select Domain</div>
+            <div id="domain-assert-list" style="display:flex;flex-direction:column;gap:6px"></div>
+          </div>
+          <!-- Right: preview -->
+          <div style="flex:1;padding:12px;overflow-y:auto;display:flex;flex-direction:column;gap:10px">
+            <div id="domain-assert-preview" style="display:none;flex:1">
+              <div style="color:var(--text-muted);font-size:12px">Click a domain on the left to preview its assertions.</div>
+            </div>
+            <div id="domain-assert-placeholder" style="color:var(--text-muted);font-size:12px;margin-top:20px">
+              Select a domain on the left to see the pre-built assertion pack. Assertions are <strong style="color:var(--text)">appended</strong> to your existing ones.
+            </div>
+          </div>
+        </div>
+        <!-- Footer -->
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 18px;border-top:1px solid var(--border);flex-shrink:0">
+          <div style="font-size:11px;color:#f59e0b">Advisory: review expected values before saving.</div>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-secondary" onclick="_domainAssertClose()">Cancel</button>
+            <button class="btn btn-primary" id="domain-assert-apply-btn" style="background:#7c3aed;border-color:#7c3aed;display:none" onclick="_domainAssertApply()">Apply Assertions</button>
+          </div>
+        </div>
+      </div>`;
+    document.body.appendChild(modal);
+  }
+  modal.style.display = 'flex';
+  document.getElementById('domain-assert-apply-btn').style.display = 'none';
+  document.getElementById('domain-assert-preview').style.display = 'none';
+  modal._selectedDomain = null;
+  const list = document.getElementById('domain-assert-list');
+  list.innerHTML = '<div style="color:var(--text-muted);font-size:12px">Loading domains…</div>';
+  try {
+    const res = await fetch('/api/ai-intelligence/domain-assertions');
+    if (!res.ok) { list.innerHTML = '<div style="color:#ef4444">Failed to load domains.</div>'; return; }
+    const data = await res.json();
+    _domainAssertDomains = data.domains || [];
+    list.innerHTML = _domainAssertDomains.map(d => `
+      <div class="domain-card" data-id="${escHtml(d.id)}" onclick="_domainAssertSelect('${escHtml(d.id)}')"
+           style="border:1px solid var(--border);border-radius:6px;padding:8px 10px;cursor:pointer;transition:border-color .15s,background .15s">
+        <div style="font-weight:600;font-size:12px;color:#a78bfa">${escHtml(d.name)}</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:2px;line-height:1.3">${escHtml(d.description)}</div>
+      </div>`).join('');
+  } catch { list.innerHTML = '<div style="color:#ef4444">Error loading domains.</div>'; }
+}
+
+async function _domainAssertSelect(domainId) {
+  document.querySelectorAll('.domain-card').forEach(c => {
+    c.style.borderColor = c.dataset.id === domainId ? '#a78bfa' : 'var(--border)';
+    c.style.background = c.dataset.id === domainId ? 'rgba(167,139,250,.08)' : '';
+  });
+  const modal = document.getElementById('domain-assert-modal');
+  modal._selectedDomain = domainId;
+  const preview = document.getElementById('domain-assert-preview');
+  const placeholder = document.getElementById('domain-assert-placeholder');
+  if (placeholder) placeholder.style.display = 'none';
+  preview.style.display = 'block';
+  preview.innerHTML = '<div style="color:var(--text-muted);font-size:12px">Loading…</div>';
+  document.getElementById('domain-assert-apply-btn').style.display = 'none';
+  try {
+    const res = await fetch(`/api/ai-intelligence/domain-assertions/${encodeURIComponent(domainId)}`);
+    if (!res.ok) { preview.innerHTML = '<div style="color:#ef4444">Failed to load pack.</div>'; return; }
+    const pack = await res.json();
+    preview.innerHTML = `
+      <div style="font-size:12px;font-weight:700;color:var(--text-muted);margin-bottom:8px">${escHtml(pack.name)} — ${pack.assertions.length} assertions</div>
+      <div style="display:grid;grid-template-columns:1fr 100px 1fr 65px;gap:4px;font-size:11px;font-weight:700;color:var(--text-muted);padding:0 0 4px;border-bottom:1px solid var(--border);margin-bottom:4px">
+        <span>Check Field</span><span>Operator</span><span>Expected</span><span>Severity</span>
+      </div>
+      ${pack.assertions.map(a => `
+        <div style="display:grid;grid-template-columns:1fr 100px 1fr 65px;gap:4px;padding:5px 0;border-bottom:1px solid rgba(255,255,255,.04);font-size:11px;align-items:center">
+          <span style="color:#e2e8f0;word-break:break-all">${escHtml(a.field)}</span>
+          <span style="color:#94a3b8">${escHtml(a.operator)}</span>
+          <span style="color:#94a3b8">${a.expected !== undefined ? escHtml(String(a.expected)) : '<em style="opacity:.4">—</em>'}</span>
+          <span style="color:${a.severity==='critical'?'#f87171':a.severity==='high'?'#fb923c':a.severity==='medium'?'#facc15':'#94a3b8'};font-size:10px;font-weight:600">${escHtml(a.severity||'medium')}</span>
+        </div>`).join('')}`;
+    document.getElementById('domain-assert-apply-btn').style.display = 'inline-block';
+    modal._assertionPack = pack.assertions;
+  } catch (e) { preview.innerHTML = `<div style="color:#ef4444">Error: ${e.message}</div>`; }
+}
+
+function _domainAssertApply() {
+  const modal = document.getElementById('domain-assert-modal');
+  const assertions = modal._assertionPack;
+  const i = _domainAssertStepIdx;
+  if (!assertions || i < 0) return;
+  if (!_apiColSteps[i].assertions) _apiColSteps[i].assertions = [];
+  _apiColSteps[i].assertions.push(...assertions);
+  _apiColAssertRender(i);
+  _domainAssertClose();
+  showToast('success', `${assertions.length} domain assertions added. Review expected values before saving.`);
+}
+
+function _domainAssertClose() {
+  const modal = document.getElementById('domain-assert-modal');
+  if (modal) modal.style.display = 'none';
+}
+
+// ── Flow Control: No-Code Rule Builder ─────────────────────────────────────
+// Data schema: FlowRule = { condition?: { field, operator, value }, action, target? }
+// action: '__stop__' | '__continue__' | '__jump__' | '__repeat__'
+// target: step name (jump) | repeat count as string (repeat)
+
 function _apiColFlowAdd(i) {
   if (!_apiColSteps[i].flowRules) _apiColSteps[i].flowRules = [];
-  _apiColSteps[i].flowRules.push({ check: 'statusCode', operator: 'equals', value: '200', nextStep: '' });
+  _apiColSteps[i].flowRules.push({
+    condition: { field: 'statusCode', operator: 'equals', value: '200' },
+    action: '__continue__',
+  });
   _apiColFlowRender(i);
 }
+
 function _apiColFlowRender(i) {
   const c = document.getElementById('api-step-flow-' + i);
   if (!c) return;
   const rules = _apiColSteps[i].flowRules ?? [];
-  if (!rules.length) { c.innerHTML = '<div style="color:var(--text-muted);font-size:12px;padding:4px 0">No flow rules — collection runs sequentially by default.</div>'; return; }
-  const stepOpts = _apiColSteps.map((s, si) => `<option value="${escHtml(s.name)}" ${rules[0]?.nextStep===s.name?'selected':''}>${si+1}. ${escHtml(s.name)}</option>`).join('');
-  const stopOpts = `<option value="__stop__">⛔ Stop collection</option><option value="__continue__">▶ Continue next</option>`;
-  c.innerHTML = rules.map((r, ri) => `
-    <div style="display:grid;grid-template-columns:130px 140px 1fr 130px 22px;gap:4px;margin-bottom:4px;align-items:center">
-      <select class="fm-input" style="font-size:12px" onchange="_apiColFlowField(${i},${ri},'check',this.value)">
-        ${_ASSERT_FIELDS.map(f => `<option value="${f.value}" ${r.check===f.value?'selected':''}>${f.label}</option>`).join('')}
-      </select>
-      <select class="fm-input" style="font-size:12px" onchange="_apiColFlowField(${i},${ri},'operator',this.value)">
-        ${_ASSERT_OPS.map(o => `<option value="${o.value}" ${r.operator===o.value?'selected':''}>${o.label}</option>`).join('')}
-      </select>
-      <input class="fm-input" style="font-size:12px" placeholder="Value or {{var}}" value="${escHtml(r.value ?? '')}" oninput="_apiColFlowField(${i},${ri},'value',this.value)"/>
-      <select class="fm-input" style="font-size:12px" onchange="_apiColFlowField(${i},${ri},'nextStep',this.value)">
-        ${stopOpts}
-        ${_apiColSteps.map((s, si) => si !== i ? `<option value="${escHtml(s.name)}" ${r.nextStep===s.name?'selected':''}>${si+1}. ${escHtml(s.name)}</option>` : '').join('')}
-      </select>
-      <button class="tbl-btn del" onclick="_apiColFlowRemove(${i},${ri})">✕</button>
-    </div>`).join('');
+  if (!rules.length) {
+    c.innerHTML = '<div style="color:var(--text-muted);font-size:12px;padding:4px 0">No rules added — collection runs sequentially by default.</div>';
+    return;
+  }
+  c.innerHTML = rules.map((r, ri) => {
+    // Condition section
+    const hasCondition = !!r.condition;
+    const field = r.condition?.field || 'statusCode';
+    const ft = _assertFieldType(field);
+    const fp = _assertFieldPath(field);
+    const fieldDef = _ASSERT_FIELDS.find(f => f.value === ft) || _ASSERT_FIELDS[0];
+
+    const condCheckDropdown = `<select class="fm-input" style="font-size:12px" onchange="_apiColFlowCheckType(${i},${ri},this.value)">
+      ${_ASSERT_FIELDS.map(f => `<option value="${f.value}" ${ft===f.value?'selected':''}>${f.label}</option>`).join('')}
+    </select>`;
+    const condCheckCell = fieldDef.hasPath
+      ? `<div style="display:flex;flex-direction:column;gap:2px">${condCheckDropdown}
+           <input class="fm-input" style="font-size:11px;color:var(--text-muted)" placeholder="${escHtml(fieldDef.pathPlaceholder||'')}" value="${escHtml(fp)}" oninput="_apiColFlowCheckPath(${i},${ri},this.value)"/>
+         </div>`
+      : condCheckDropdown;
+    const condOpCell = fieldDef.lockedOperator
+      ? `<div class="fm-input" style="font-size:12px;opacity:0.55;display:flex;align-items:center;cursor:not-allowed;user-select:none">${fieldDef.lockedOperator}</div>`
+      : `<select class="fm-input" style="font-size:12px" onchange="_apiColFlowCondField(${i},${ri},'operator',this.value)">
+           ${_ASSERT_OPS.map(o => `<option value="${o.value}" ${(r.condition?.operator||'equals')===o.value?'selected':''}>${o.label}</option>`).join('')}
+         </select>`;
+    const isValLocked = fieldDef.lockedExpected !== undefined;
+    const condValCell = `<input class="fm-input" style="font-size:12px${isValLocked?';opacity:0.4':''}" placeholder="Value or {{var}}" value="${isValLocked ? escHtml(fieldDef.lockedExpected) : escHtml(r.condition?.value ?? '')}" ${isValLocked?'disabled':''} oninput="_apiColFlowCondField(${i},${ri},'value',this.value)"/>`;
+
+    const condBlock = hasCondition
+      ? `<div style="display:grid;grid-template-columns:140px 140px 1fr;gap:4px;align-items:${fieldDef.hasPath?'start':'center'}">
+           ${condCheckCell}${condOpCell}${condValCell}
+         </div>`
+      : `<div style="color:var(--text-muted);font-size:12px;font-style:italic">Always (no condition)</div>`;
+
+    // Action section
+    const action = r.action || '__continue__';
+    const actionOpts = [
+      { v: '__continue__', label: '▶ Skip to next request' },
+      { v: '__stop__',     label: '⛔ Stop collection' },
+      { v: '__jump__',     label: '↩ Jump to request...' },
+      { v: '__repeat__',   label: '🔁 Repeat this request' },
+    ];
+    const actionDropdown = `<select class="fm-input" style="font-size:12px;flex:1" onchange="_apiColFlowActionChange(${i},${ri},this.value)">
+      ${actionOpts.map(a => `<option value="${a.v}" ${action===a.v?'selected':''}>${a.label}</option>`).join('')}
+    </select>`;
+    let targetCell = '';
+    if (action === '__jump__') {
+      targetCell = `<select class="fm-input" style="font-size:12px;flex:1" onchange="_apiColFlowSetTarget(${i},${ri},this.value)">
+        <option value="">— pick request —</option>
+        ${_apiColSteps.map((s, si) => `<option value="${escHtml(s.name)}" ${r.target===s.name?'selected':''}>${si+1}. ${escHtml(s.name)}${si===i?' (this request)':''}</option>`).join('')}
+      </select>`;
+    } else if (action === '__repeat__') {
+      const maxR = parseInt(r.target, 10);
+      targetCell = `<div style="display:flex;align-items:center;gap:4px;flex:1">
+        <span style="font-size:12px;color:var(--text-muted);white-space:nowrap">up to</span>
+        <input class="fm-input" type="number" min="1" max="10" style="width:60px;font-size:12px" value="${isNaN(maxR)?3:maxR}" oninput="_apiColFlowSetTarget(${i},${ri},this.value)"/>
+        <span style="font-size:12px;color:var(--text-muted);white-space:nowrap">times</span>
+      </div>`;
+    }
+
+    return `<div style="border:1px solid var(--border);border-radius:6px;padding:8px 10px;margin-bottom:6px;background:var(--bg-secondary,#1a1a1a)">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
+        <span style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px">If</span>
+        <label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer">
+          <input type="checkbox" ${hasCondition?'checked':''} onchange="_apiColFlowToggleCond(${i},${ri},this.checked)"/>
+          condition is met
+        </label>
+        <span style="flex:1"></span>
+        <button class="tbl-btn del" onclick="_apiColFlowRemove(${i},${ri})" title="Remove rule">✕</button>
+      </div>
+      <div style="padding:4px 0 8px 18px">${condBlock}</div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <span style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px">Then</span>
+        ${actionDropdown}
+        ${targetCell}
+      </div>
+    </div>`;
+  }).join('');
 }
-function _apiColFlowField(i, ri, f, val) { _apiColSteps[i].flowRules[ri][f] = val; }
+
+function _apiColFlowCheckType(i, ri, ft) {
+  if (!_apiColSteps[i].flowRules[ri].condition) _apiColSteps[i].flowRules[ri].condition = { field: ft, operator: 'equals', value: '' };
+  const encoded = _assertFieldEncode(ft, '');
+  _apiColSteps[i].flowRules[ri].condition.field = encoded;
+  const fieldDef = _ASSERT_FIELDS.find(f => f.value === ft);
+  if (fieldDef?.lockedOperator) _apiColSteps[i].flowRules[ri].condition.operator = fieldDef.lockedOperator;
+  if (fieldDef?.lockedExpected !== undefined) _apiColSteps[i].flowRules[ri].condition.value = fieldDef.lockedExpected;
+  _apiColFlowRender(i);
+}
+function _apiColFlowCheckPath(i, ri, path) {
+  if (!_apiColSteps[i].flowRules[ri].condition) return;
+  const ft = _assertFieldType(_apiColSteps[i].flowRules[ri].condition.field || 'statusCode');
+  _apiColSteps[i].flowRules[ri].condition.field = _assertFieldEncode(ft, path);
+}
+function _apiColFlowCondField(i, ri, f, val) {
+  if (!_apiColSteps[i].flowRules[ri].condition) _apiColSteps[i].flowRules[ri].condition = { field: 'statusCode', operator: 'equals', value: '' };
+  _apiColSteps[i].flowRules[ri].condition[f] = val;
+}
+function _apiColFlowToggleCond(i, ri, checked) {
+  if (checked) {
+    _apiColSteps[i].flowRules[ri].condition = { field: 'statusCode', operator: 'equals', value: '200' };
+  } else {
+    delete _apiColSteps[i].flowRules[ri].condition;
+  }
+  _apiColFlowRender(i);
+}
+function _apiColFlowActionChange(i, ri, action) {
+  _apiColSteps[i].flowRules[ri].action = action;
+  if (action === '__repeat__') _apiColSteps[i].flowRules[ri].target = '3';
+  else if (action !== '__jump__') delete _apiColSteps[i].flowRules[ri].target;
+  _apiColFlowRender(i);
+}
+function _apiColFlowSetTarget(i, ri, val) { _apiColSteps[i].flowRules[ri].target = val; }
 function _apiColFlowRemove(i, ri) { _apiColSteps[i].flowRules.splice(ri, 1); _apiColFlowRender(i); }
 function _apiColParamAdd(i) {
   if (!_apiColSteps[i].request) _apiColSteps[i].request = {};
@@ -816,6 +1156,7 @@ function apiColGenTestsOpen(colId, colName) {
   _genTestColId = colId;
   _genTestColName = colName;
   _genTestCases = [];
+  _genAssertSuggestions = [];
   const sel = document.getElementById('gen-tests-category-select');
   if (sel) sel.value = 'Negative';
   const content = document.getElementById('gen-tests-content');
@@ -823,10 +1164,43 @@ function apiColGenTestsOpen(colId, colName) {
   const title = document.getElementById('gen-tests-modal-title');
   if (title) title.textContent = '🧪 Suggest Tests — ' + colName;
   _genTestsShowSelControls(false);
+  // Hide run picker on open
+  const runSel = document.getElementById('gen-tests-run-select');
+  if (runSel) runSel.style.display = 'none';
   openModal('modal-gen-tests');
 }
 
+// Called when category dropdown changes
+async function _genTestsCategoryChanged() {
+  const sel = document.getElementById('gen-tests-category-select');
+  const runSel = document.getElementById('gen-tests-run-select');
+  if (!sel || !runSel) return;
+  if (sel.value !== '__suggest_assertions__') {
+    runSel.style.display = 'none';
+    return;
+  }
+  // Show run picker and load recent runs for this collection
+  runSel.style.display = '';
+  runSel.innerHTML = '<option value="">Loading runs…</option>';
+  try {
+    const projectQs = (typeof currentProjectId !== 'undefined' && currentProjectId) ? '&projectId=' + encodeURIComponent(currentProjectId) : '';
+    const res = await fetch('/api/api-runs?collectionId=' + encodeURIComponent(_genTestColId) + projectQs);
+    if (!res.ok) { runSel.innerHTML = '<option value="">Failed to load runs</option>'; return; }
+    const runs = await res.json();
+    const list = Array.isArray(runs) ? runs : (runs.runs || runs.results || []);
+    if (!list.length) { runSel.innerHTML = '<option value="">No runs found — run the collection first</option>'; return; }
+    runSel.innerHTML = list.map(function(r) {
+      const d = r.startedAt ? new Date(r.startedAt).toLocaleString() : r.id;
+      const status = r.status === 'passed' ? '✅' : r.status === 'failed' ? '❌' : '⏱';
+      return '<option value="' + escHtml(r.id) + '">' + status + ' ' + escHtml(d) + '</option>';
+    }).join('');
+  } catch (e) {
+    runSel.innerHTML = '<option value="">Error: ' + escHtml(e.message) + '</option>';
+  }
+}
+
 let _genTestCases = [];
+let _genAssertSuggestions = []; // [{stepId, stepName, assertionPayload, ...}] for assert-from-run mode
 
 function _genTestsShowSelControls(show) {
   ['btn-gen-tests-select-all','btn-gen-tests-deselect-all','btn-gen-tests-add'].forEach(id => {
@@ -854,7 +1228,91 @@ async function apiColGenTestsRun() {
   const aiBadge  = document.getElementById('gen-tests-ai-badge');
   if (!content) return;
 
+  // ── Suggest Assertions from recent run ──────────────────────────────────────
+  if (category === '__suggest_assertions__') {
+    const runSel = document.getElementById('gen-tests-run-select');
+    const runId  = runSel ? runSel.value : '';
+    if (!runId) { content.innerHTML = '<div style="color:var(--warning);padding:12px 0">Select a run from the dropdown first.</div>'; return; }
+    _genAssertSuggestions = [];
+    _genTestCases = [];
+    _genTestsShowSelControls(false);
+    if (aiBadge) aiBadge.style.display = 'none';
+    content.innerHTML = '<div style="color:var(--text-muted);padding:12px 0">⏳ Analysing run and generating assertion suggestions…</div>';
+    try {
+      // Fetch collection to know all steps and their existing assertions
+      const colRes = await fetch('/api/api-collections/' + encodeURIComponent(_genTestColId));
+      if (!colRes.ok) throw new Error('Could not load collection');
+      const col = await colRes.json();
+      const steps = col.steps || [];
+
+      // For each step, fetch assertion suggestions from the run
+      const allRows = [];
+      for (const step of steps) {
+        let data;
+        try {
+          const sRes = await fetch('/api/ai-intelligence/steps/' + encodeURIComponent(step.id) + '/suggest-assertions', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ runId }),
+          });
+          if (!sRes.ok) continue;
+          data = await sRes.json();
+        } catch { continue; }
+
+        const existingKeys = new Set((step.assertions || []).map(a => a.field + '::' + a.operator));
+        const newSuggestions = (data.suggestions || []).filter(s => !existingKeys.has(s.field + '::' + s.operator));
+        if (!newSuggestions.length) continue;
+
+        newSuggestions.forEach(function(s) {
+          _genAssertSuggestions.push({ stepId: step.id, stepName: step.name, suggestion: s });
+          allRows.push({ stepId: step.id, stepName: step.name, suggestion: s });
+        });
+      }
+
+      if (!allRows.length) {
+        content.innerHTML = '<div style="color:var(--text-muted);padding:16px 0">No new assertion suggestions — all observed assertions are already added to every request.</div>';
+        return;
+      }
+
+      const sevColor = { critical:'#ef4444', high:'#fb923c', medium:'#f59e0b', low:'#22c55e', soft:'#9ca3af' };
+      const confColor = function(c) { return c >= 85 ? '#22c55e' : c >= 70 ? '#fb923c' : '#9ca3af'; };
+      const targetLabel = { status:'Status', header:'Header', responseTime:'Resp Time', body:'Body', array:'Array', domain:'Domain' };
+
+      const rows = allRows.map(function(row, idx) {
+        const s = row.suggestion;
+        const sc = sevColor[(s.assertionPayload && s.assertionPayload.severity) || 'medium'] || '#9ca3af';
+        return '<tr>' +
+          '<td style="width:36px;text-align:center"><input type="checkbox" class="gen-test-cb" data-idx="' + idx + '" onchange="_genTestsUpdateSelCount()"/></td>' +
+          '<td style="font-size:11px;color:var(--text-muted)">' + escHtml(row.stepName) + '</td>' +
+          '<td><span style="display:inline-block;padding:2px 6px;border-radius:8px;font-size:10px;font-weight:700;background:' + sc + '22;color:' + sc + '">' + escHtml((s.assertionPayload && s.assertionPayload.severity) || 'medium') + '</span></td>' +
+          '<td style="font-size:11px;color:var(--text-muted)">' + escHtml(targetLabel[s.target] || s.target) + '</td>' +
+          '<td style="font-family:monospace;font-size:11px">' + escHtml(s.field || '—') + '</td>' +
+          '<td style="font-size:11px">' + escHtml(s.operator || '—') + '</td>' +
+          '<td style="font-family:monospace;font-size:11px">' + escHtml(s.expectedValue != null ? String(s.expectedValue) : '—') + '</td>' +
+          '<td style="color:' + confColor(s.confidence||0) + ';font-size:11px;font-weight:600">' + (s.confidence||0) + '%</td>' +
+          '<td style="font-size:11px;color:var(--text-muted);max-width:180px;white-space:normal">' + escHtml(s.rationale || '') + '</td>' +
+          '</tr>';
+      }).join('');
+
+      content.innerHTML =
+        '<div style="font-size:12px;color:var(--text-muted);margin-bottom:8px"><strong>' + allRows.length + '</strong> new assertion suggestion' + (allRows.length !== 1 ? 's' : '') + ' across <strong>' + new Set(allRows.map(r => r.stepId)).size + '</strong> request' + (new Set(allRows.map(r => r.stepId)).size !== 1 ? 's' : '') + '</div>' +
+        '<div style="overflow:auto;max-height:420px">' +
+          '<table class="data-table">' +
+            '<thead><tr><th style="width:36px"></th><th>Request</th><th>Severity</th><th>Type</th><th>Field</th><th>Operator</th><th>Expected</th><th>Confidence</th><th>Rationale</th></tr></thead>' +
+            '<tbody>' + rows + '</tbody>' +
+          '</table>' +
+        '</div>';
+
+      _genTestsShowSelControls(true);
+      _genTestsUpdateSelCount();
+    } catch (e) {
+      content.innerHTML = '<div style="color:#ef4444">Error: ' + escHtml(e.message) + '</div>';
+    }
+    return; // skip regular test generation below
+  }
+  // ── End Suggest Assertions ──────────────────────────────────────────────────
+
   _genTestCases = [];
+  _genAssertSuggestions = [];
   _genTestsShowSelControls(false);
   if (aiBadge) aiBadge.style.display = 'none';
   content.innerHTML = '<div style="color:var(--text-muted);padding:12px 0">⏳ Generating <strong>' + escHtml(category) + '</strong> tests… this may take a few seconds if AI is enabled.</div>';
@@ -926,12 +1384,47 @@ async function apiColGenTestsRun() {
 
 async function apiColGenTestsAddSelected() {
   const checked = Array.from(document.querySelectorAll('#gen-tests-content input[type=checkbox]:checked'));
-  if (!checked.length) { alert('Select at least one test to add.'); return; }
-  const selectedCases = checked.map(cb => _genTestCases[parseInt(cb.dataset.idx)]);
-
+  if (!checked.length) { alert('Select at least one item to add.'); return; }
   const btn = document.getElementById('btn-gen-tests-add');
   if (btn) { btn.textContent = '⏳ Adding…'; btn.disabled = true; }
 
+  // ── Mode: Add assertion suggestions ─────────────────────────────────────────
+  if (_genAssertSuggestions.length) {
+    const selected = checked.map(cb => _genAssertSuggestions[parseInt(cb.dataset.idx)]);
+    try {
+      const colRes = await fetch('/api/api-collections/' + encodeURIComponent(_genTestColId));
+      if (!colRes.ok) throw new Error('Could not load collection');
+      const col = await colRes.json();
+      let addedCount = 0;
+      selected.forEach(function(row) {
+        const step = (col.steps || []).find(function(s) { return s.id === row.stepId; });
+        if (!step) return;
+        if (!Array.isArray(step.assertions)) step.assertions = [];
+        const p = row.suggestion.assertionPayload;
+        if (!p) return;
+        const already = step.assertions.some(function(a) { return a.field === p.field && a.operator === p.operator; });
+        if (already) return;
+        step.assertions.push({ field: p.field, operator: p.operator, expected: p.expected, severity: p.severity || 'high', weight: p.weight || 7 });
+        addedCount++;
+      });
+      const saveRes = await fetch('/api/api-collections/' + encodeURIComponent(_genTestColId), {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(col),
+      });
+      if (!saveRes.ok) throw new Error('Save failed (' + saveRes.status + ')');
+      closeModal('modal-gen-tests');
+      modAlert('api-col-list-alert', 'success', addedCount + ' assertion' + (addedCount !== 1 ? 's' : '') + ' added to collection requests.');
+      await apiColLoad();
+    } catch (e) {
+      modAlert('api-col-list-alert', 'error', e.message);
+    } finally {
+      if (btn) { btn.textContent = '+ Add Selected to Collection'; btn.disabled = false; }
+    }
+    return;
+  }
+
+  // ── Mode: Add test cases (existing behaviour) ────────────────────────────────
+  const selectedCases = checked.map(cb => _genTestCases[parseInt(cb.dataset.idx)]);
   try {
     const res = await fetch('/api/api-collections/' + encodeURIComponent(_genTestColId) + '/add-steps', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -1232,6 +1725,7 @@ async function apiColTryRequestSave() {
 }
 
 async function apiColRun(id) {
+  // OLD: direct run without data file dialog — kept as fallback, main path now uses _apiColRunOpen
   const col = _apiCols.find(c => c.id === id);
   if (!col) return;
   try {
@@ -1246,6 +1740,274 @@ async function apiColRun(id) {
     if (typeof apiRunsLoad === 'function') apiRunsLoad(id, data.runId || data.id);
   } catch (e) {
     modAlert('api-col-list-alert', 'error', e.message);
+  }
+}
+
+// ── Run Dialog (Data File Runner) ─────────────────────────────────────────────
+
+let _apiRunDialogColId = null;
+let _apiRunDialogFileId = null;   // currently selected saved file id
+let _apiRunDialogFileName = null; // display name
+let _apiRunDialogRows = 0;
+let _apiRunDialogColumns = [];
+
+function _apiColRunOpen(id) {
+  const col = _apiCols.find(c => c.id === id);
+  if (!col) return;
+  _apiRunDialogColId = id;
+  _apiRunDialogFileId = null;
+  _apiRunDialogFileName = null;
+  _apiRunDialogRows = 0;
+  _apiRunDialogColumns = [];
+
+  // Build modal HTML if not present
+  if (!document.getElementById('modal-api-run-dialog')) {
+    const div = document.createElement('div');
+    div.innerHTML = `
+<div id="modal-api-run-dialog" class="modal-backdrop" style="display:none;z-index:1200">
+  <div class="modal-box" style="max-width:600px">
+    <div class="modal-header">
+      <h3 id="run-dlg-title">▶ Run Collection</h3>
+      <button class="modal-close" onclick="_apiColRunClose()">✕</button>
+    </div>
+    <div class="modal-body" style="padding:16px">
+      <div style="margin-bottom:16px">
+        <label style="font-weight:600;display:block;margin-bottom:6px">📂 Data File <span style="font-weight:400;color:var(--text-muted)">(optional — runs once per row)</span></label>
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+          <select id="run-dlg-file-select" style="flex:1" onchange="_apiRunDlgSelectFile(this.value)">
+            <option value="">— select a saved file or upload new —</option>
+          </select>
+          <button class="tbl-btn" onclick="_apiRunDlgUploadClick()" title="Upload new CSV / JSON">⬆ Upload</button>
+          <input type="file" id="run-dlg-file-input" accept=".csv,.json" style="display:none" onchange="_apiRunDlgFileChosen(this)">
+        </div>
+        <div id="run-dlg-file-preview" style="display:none;background:var(--bg-secondary);border:1px solid var(--border);border-radius:6px;padding:10px;font-size:13px">
+          <div id="run-dlg-file-info" style="margin-bottom:6px;color:var(--text-muted)"></div>
+          <div id="run-dlg-preview-table"></div>
+          <div style="margin-top:8px;display:flex;align-items:center;gap:8px">
+            <label style="font-size:12px;font-weight:600">Save as:</label>
+            <input id="run-dlg-save-name" type="text" class="form-input" style="flex:1;padding:3px 6px;font-size:12px" placeholder="Name for reuse…">
+            <button class="tbl-btn" onclick="_apiRunDlgSaveFile()" id="run-dlg-save-btn">💾 Save</button>
+          </div>
+          <button class="tbl-btn del" onclick="_apiRunDlgClearFile()" style="margin-top:6px;font-size:11px">✕ Remove file</button>
+        </div>
+      </div>
+      <div style="margin-bottom:14px;display:flex;align-items:center;gap:10px">
+        <label style="font-weight:600;font-size:13px">If a row fails:</label>
+        <select id="run-dlg-stop-on-fail" style="font-size:13px">
+          <option value="false">Continue to next row</option>
+          <option value="true">Stop</option>
+        </select>
+      </div>
+      <div id="run-dlg-iteration-note" style="display:none;color:var(--accent);font-size:13px;margin-bottom:12px"></div>
+      <div id="run-dlg-uploading" style="display:none;color:var(--text-muted);font-size:13px">⏳ Uploading…</div>
+      <div id="run-dlg-error" style="display:none;color:var(--danger);font-size:13px"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-secondary" onclick="_apiColRunClose()">Cancel</button>
+      <button class="btn-primary" id="run-dlg-run-btn" onclick="_apiColRunExecute()">▶ Run Collection</button>
+    </div>
+  </div>
+</div>`;
+    document.body.appendChild(div.firstElementChild);
+  }
+
+  document.getElementById('run-dlg-title').textContent = `▶ Run — ${col.name}`;
+  document.getElementById('run-dlg-file-preview').style.display = 'none';
+  document.getElementById('run-dlg-iteration-note').style.display = 'none';
+  document.getElementById('run-dlg-error').style.display = 'none';
+  document.getElementById('run-dlg-run-btn').textContent = '▶ Run Collection';
+  document.getElementById('run-dlg-save-name').value = '';
+
+  _apiRunDlgLoadSavedFiles();
+  document.getElementById('modal-api-run-dialog').style.display = 'flex';
+}
+
+function _apiColRunClose() {
+  const m = document.getElementById('modal-api-run-dialog');
+  if (m) m.style.display = 'none';
+}
+
+async function _apiRunDlgLoadSavedFiles() {
+  if (!currentProjectId) return;
+  try {
+    const res = await fetch(`/api/data-files?projectId=${encodeURIComponent(currentProjectId)}`);
+    const files = res.ok ? await res.json() : [];
+    const sel = document.getElementById('run-dlg-file-select');
+    sel.innerHTML = '<option value="">— select a saved file or upload new —</option>';
+    for (const f of files) {
+      const opt = document.createElement('option');
+      opt.value = f.id;
+      opt.textContent = `${f.name} (${f.rowCount} rows — ${(f.columns||[]).join(', ')})`;
+      sel.appendChild(opt);
+    }
+    // Re-select previously chosen file
+    if (_apiRunDialogFileId) sel.value = _apiRunDialogFileId;
+  } catch { /* ignore */ }
+}
+
+async function _apiRunDlgSelectFile(fileId) {
+  if (!fileId) {
+    _apiRunDialogFileId = null;
+    document.getElementById('run-dlg-file-preview').style.display = 'none';
+    document.getElementById('run-dlg-iteration-note').style.display = 'none';
+    document.getElementById('run-dlg-run-btn').textContent = '▶ Run Collection';
+    return;
+  }
+  try {
+    const res = await fetch(`/api/data-files/${encodeURIComponent(fileId)}`);
+    if (!res.ok) throw new Error('Not found');
+    const data = await res.json();
+    _apiRunDialogFileId = data.id;
+    _apiRunDialogFileName = data.name;
+    _apiRunDialogRows = data.rowCount;
+    _apiRunDialogColumns = data.columns || [];
+    _apiRunDlgShowPreview(data);
+  } catch (e) {
+    _apiRunDlgShowError('Failed to load file: ' + e.message);
+  }
+}
+
+function _apiRunDlgShowPreview(data) {
+  const preview = data.preview || (data.rows || []).slice(0, 3);
+  const cols = data.columns || [];
+  let tbl = `<div style="color:var(--text-muted);font-size:12px;margin-bottom:4px">✔ ${data.rowCount} rows — columns: <strong>${cols.join(' | ')}</strong></div>`;
+  if (preview.length && cols.length) {
+    tbl += `<table style="width:100%;font-size:11px;border-collapse:collapse"><thead><tr>`;
+    for (const c of cols) tbl += `<th style="border:1px solid var(--border);padding:3px 6px;background:var(--bg-accent)">${escHtml(c)}</th>`;
+    tbl += '</tr></thead><tbody>';
+    for (const row of preview) {
+      tbl += '<tr>';
+      for (const c of cols) tbl += `<td style="border:1px solid var(--border);padding:3px 6px">${escHtml(String(row[c] ?? ''))}</td>`;
+      tbl += '</tr>';
+    }
+    tbl += '</tbody></table>';
+  }
+  document.getElementById('run-dlg-file-info').innerHTML = '';
+  document.getElementById('run-dlg-preview-table').innerHTML = tbl;
+  document.getElementById('run-dlg-file-preview').style.display = '';
+  document.getElementById('run-dlg-save-name').value = data.name || '';
+
+  const note = document.getElementById('run-dlg-iteration-note');
+  note.textContent = `ℹ️  Collection will run ${data.rowCount} time${data.rowCount !== 1 ? 's' : ''} total.`;
+  note.style.display = '';
+  document.getElementById('run-dlg-run-btn').textContent = `▶ Run Collection × ${data.rowCount}`;
+}
+
+function _apiRunDlgUploadClick() {
+  document.getElementById('run-dlg-file-input')?.click();
+}
+
+async function _apiRunDlgFileChosen(input) {
+  const file = input.files?.[0];
+  if (!file) return;
+  const uploading = document.getElementById('run-dlg-uploading');
+  const errEl = document.getElementById('run-dlg-error');
+  errEl.style.display = 'none';
+  uploading.style.display = '';
+
+  try {
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('projectId', currentProjectId || '');
+    fd.append('name', file.name.replace(/\.[^.]+$/, ''));
+    // If replacing a previously uploaded (unsaved) file, pass replaceId
+    if (_apiRunDialogFileId && !document.getElementById('run-dlg-file-select').value) {
+      fd.append('replaceId', _apiRunDialogFileId);
+    }
+    const res = await fetch('/api/data-files/upload', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Upload failed');
+
+    _apiRunDialogFileId = data.id;
+    _apiRunDialogFileName = data.name;
+    _apiRunDialogRows = data.rowCount;
+    _apiRunDialogColumns = data.columns || [];
+
+    document.getElementById('run-dlg-save-name').value = data.name || '';
+    _apiRunDlgShowPreview(data);
+    // Add to dropdown
+    const sel = document.getElementById('run-dlg-file-select');
+    let opt = sel.querySelector(`option[value="${data.id}"]`);
+    if (!opt) {
+      opt = document.createElement('option');
+      opt.value = data.id;
+      sel.appendChild(opt);
+    }
+    opt.textContent = `${data.name} (${data.rowCount} rows)`;
+    sel.value = data.id;
+  } catch (e) {
+    _apiRunDlgShowError(e.message);
+  } finally {
+    uploading.style.display = 'none';
+    input.value = '';
+  }
+}
+
+async function _apiRunDlgSaveFile() {
+  if (!_apiRunDialogFileId) return;
+  const name = document.getElementById('run-dlg-save-name').value.trim();
+  if (!name) { _apiRunDlgShowError('Enter a name before saving.'); return; }
+  try {
+    const res = await fetch(`/api/data-files/${encodeURIComponent(_apiRunDialogFileId)}/name`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    });
+    if (!res.ok) throw new Error('Rename failed');
+    _apiRunDialogFileName = name;
+    const sel = document.getElementById('run-dlg-file-select');
+    const opt = sel.querySelector(`option[value="${_apiRunDialogFileId}"]`);
+    if (opt) opt.textContent = `${name} (${_apiRunDialogRows} rows)`;
+  } catch (e) {
+    _apiRunDlgShowError(e.message);
+  }
+}
+
+function _apiRunDlgClearFile() {
+  _apiRunDialogFileId = null;
+  _apiRunDialogFileName = null;
+  _apiRunDialogRows = 0;
+  _apiRunDialogColumns = [];
+  document.getElementById('run-dlg-file-select').value = '';
+  document.getElementById('run-dlg-file-preview').style.display = 'none';
+  document.getElementById('run-dlg-iteration-note').style.display = 'none';
+  document.getElementById('run-dlg-run-btn').textContent = '▶ Run Collection';
+}
+
+function _apiRunDlgShowError(msg) {
+  const el = document.getElementById('run-dlg-error');
+  el.textContent = msg;
+  el.style.display = '';
+}
+
+async function _apiColRunExecute() {
+  if (!_apiRunDialogColId) return;
+  const runBtn = document.getElementById('run-dlg-run-btn');
+  runBtn.disabled = true;
+  runBtn.textContent = 'Starting…';
+  document.getElementById('run-dlg-error').style.display = 'none';
+
+  try {
+    const stopOnFailure = document.getElementById('run-dlg-stop-on-fail').value === 'true';
+    const body = { projectId: currentProjectId };
+    if (_apiRunDialogFileId) {
+      body.dataFileId = _apiRunDialogFileId;
+      body.stopOnFailure = stopOnFailure;
+    }
+    const res = await fetch(`/api/api-collections/${_apiRunDialogColId}/run`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Run failed');
+    _apiColRunClose();
+    modAlert('api-col-list-alert', 'success', `Run started — ID: ${data.runId || data.id}`);
+    if (typeof apiRunsLoad === 'function') apiRunsLoad(_apiRunDialogColId, data.runId || data.id);
+  } catch (e) {
+    _apiRunDlgShowError(e.message);
+    runBtn.disabled = false;
+    runBtn.textContent = _apiRunDialogRows > 0 ? `▶ Run Collection × ${_apiRunDialogRows}` : '▶ Run Collection';
   }
 }
 

@@ -5,14 +5,78 @@ import type { ApiAssertion, ApiAssertionResult, ApiResponseSnapshot } from '../d
 const ajv = new Ajv();
 
 function resolveField(field: string, response: ApiResponseSnapshot): unknown {
-  if (field === 'status')       return response.status;
+  // Status code — accept both 'status' (engine format) and 'statusCode' (UI format)
+  if (field === 'status' || field === 'statusCode') return response.status;
   if (field === 'responseTime') return response.durationMs;
+
+  // Response payload size in bytes (approximate via JSON serialisation)
+  if (field === 'responseSize') {
+    try { return JSON.stringify(response.body).length; } catch { return 0; }
+  }
+
+  // HTTP version — read from gateway/proxy header if present
+  if (field === 'httpVersion') {
+    return response.headers['x-http-version'] ?? response.headers['http-version'] ?? undefined;
+  }
+
+  // Named response header — field = 'header.<name>'
   if (field.startsWith('header.')) {
     const name = field.slice(7).toLowerCase();
     const key = Object.keys(response.headers).find(k => k.toLowerCase() === name);
     return key ? response.headers[key] : undefined;
   }
-  // JSONPath into body
+
+  // Cookie value by name — field = 'cookie.<name>'
+  if (field.startsWith('cookie.')) {
+    const cookieName = field.slice(7).toLowerCase();
+    const raw = response.headers['set-cookie'] ?? response.headers['Set-Cookie'] ?? '';
+    const pairs = raw.split(/[;,]/).map((s: string) => s.trim());
+    const match = pairs.find((p: string) => p.toLowerCase().startsWith(cookieName + '='));
+    return match ? match.split('=').slice(1).join('=') : undefined;
+  }
+
+  // Array length — field = '@arrayLength:<jsonpath>'
+  if (field.startsWith('@arrayLength:')) {
+    const path = field.slice(13);
+    if (!path) return undefined;
+    try {
+      const results = JSONPath({ path, json: response.body as object });
+      const val = results[0];
+      return Array.isArray(val) ? val.length : undefined;
+    } catch { return undefined; }
+  }
+
+  // Object field count — field = '@fieldCount:<jsonpath>'
+  if (field.startsWith('@fieldCount:')) {
+    const path = field.slice(12);
+    if (!path) return undefined;
+    try {
+      const results = JSONPath({ path, json: response.body as object });
+      const val = results[0];
+      return (val && typeof val === 'object' && !Array.isArray(val))
+        ? Object.keys(val as object).length
+        : undefined;
+    } catch { return undefined; }
+  }
+
+  // Body contains — stringify so the `contains` operator can search the full payload as text
+  if (field === 'bodyContains') {
+    try { return typeof response.body === 'string' ? response.body : JSON.stringify(response.body); }
+    catch { return ''; }
+  }
+
+  // Body is valid JSON — return boolean; body already parsed means true; raw string: try parse
+  if (field === 'bodyIsJson') {
+    if (response.body === null || response.body === undefined) return false;
+    if (typeof response.body === 'object') return true;
+    if (typeof response.body === 'string') {
+      try { JSON.parse(response.body); return true; } catch { return false; }
+    }
+    return false;
+  }
+
+  // JSONPath into body (direct path or legacy 'body' fallback)
+  if (field === 'body') return response.body;
   try {
     const results = JSONPath({ path: field.startsWith('$') ? field : `$.${field}`, json: response.body as object });
     return results.length > 0 ? results[0] : undefined;
@@ -49,6 +113,12 @@ function evaluate(op: string, actual: unknown, expected: unknown): boolean {
         return validate(actual) as boolean;
       } catch { return false; }
     }
+    // Array operators
+    case 'arrayLengthEquals':      return Array.isArray(actual) && actual.length === Number(expected);
+    case 'arrayLengthGreaterThan': return Array.isArray(actual) && actual.length > Number(expected);
+    case 'arrayLengthLessThan':    return Array.isArray(actual) && actual.length < Number(expected);
+    case 'arrayNotEmpty':          return Array.isArray(actual) && actual.length > 0;
+    case 'arrayContains':          return Array.isArray(actual) && actual.some(item => String(item) === String(expected));
     default: return false;
   }
 }

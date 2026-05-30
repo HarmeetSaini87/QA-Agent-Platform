@@ -7,7 +7,9 @@ import type { ApiEnvironment, ApiCollection, ApiCollectionRunResult } from '../.
 import { requireAuth, requireEditor } from '../../auth/middleware';
 import { logAudit } from '../../auth/audit';
 import { encryptSensitiveVars, decryptSensitiveVars } from '../../utils/apiSecrets';
-import { runCollection } from '../../utils/apiRunner';
+import { runCollection, runCollectionWithDataFile } from '../../utils/apiRunner';
+import { getDataFile, getDataFileRows } from '../../data/data-file-store';
+import { execHealthStart, execHealthComplete } from '../../utils/exec-health-store';
 import { getCoordinatorBridge, USE_COORDINATOR } from '../../api-runtime/execution-coordinator/coordinator-bridge';
 import { resolveAuthHeaders } from '../../utils/apiAuth';
 // OLD: direct legacy import — replaced by import-engine adapter in Phase D Step 3
@@ -371,14 +373,30 @@ export function registerApiTestingRoutes(app: express.Application): void {
     const runId = uuidv4();
     logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'RUN_API_COLLECTION', resourceType: 'api-collection', resourceId: col.id, details: col.name, ip: req.ip ?? null });
 
-    if (USE_COORDINATOR) {
+    execHealthStart({ runId, type: 'api-collection', name: col.name, startedAt: new Date().toISOString() });
+
+    const dataFileId   = req.body.dataFileId as string | undefined;
+    const stopOnFail   = req.body.stopOnFailure !== false; // default: continue
+
+    if (dataFileId) {
+      const dataFileMeta = getDataFile(dataFileId);
+      if (!dataFileMeta) { res.status(400).json({ error: `Data file ${dataFileId} not found` }); return; }
+      const dataRows = getDataFileRows(dataFileId);
+      if (!dataRows.length) { res.status(400).json({ error: 'Data file has no rows' }); return; }
+
+      runCollectionWithDataFile(col, env, runId, dataRows, dataFileId, dataFileMeta.name, stopOnFail)
+        .then(r => execHealthComplete(runId, r.status === 'passed' ? 'passed' : 'failed', r.stepResults.filter(s => s.status === 'passed').length, r.stepResults.filter(s => s.status === 'failed').length, r.stepResults.length))
+        .catch(() => execHealthComplete(runId, 'error', 0, 0, 0));
+    } else if (USE_COORDINATOR) {
       // Phase C Track 1: route through ExecutionCoordinator when feature flag is set
       getCoordinatorBridge().dispatchRun(col, env, runId, (_cId, _eId, rId) =>
         runCollection(col, env, rId)
       );
     } else {
       // OLD: direct runCollection — preserved as default path
-      runCollection(col, env, runId).catch(() => { /* errors persisted in run file */ });
+      runCollection(col, env, runId)
+        .then(r => execHealthComplete(runId, r.status === 'passed' ? 'passed' : 'failed', r.stepResults.filter(s => s.status === 'passed').length, r.stepResults.filter(s => s.status === 'failed').length, r.stepResults.length))
+        .catch(() => execHealthComplete(runId, 'error', 0, 0, 0));
     }
     res.json({ runId });
   });

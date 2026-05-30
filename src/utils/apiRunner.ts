@@ -260,6 +260,75 @@ export async function runCollection(
   return result;
 }
 
+// ── Data-driven iteration wrapper ─────────────────────────────────────────────
+// Runs `runCollection` once per data row, tagging each step result with
+// iterationIndex + rowIdentifier, then merges into a single result.
+export async function runCollectionWithDataFile(
+  collection: ApiCollection,
+  environment: ApiEnvironment,
+  runId: string,
+  dataRows: Record<string, string>[],
+  dataFileId: string,
+  dataFileName: string,
+  stopOnFailure: boolean,
+  inheritedContext?: Record<string, string>,
+): Promise<ApiCollectionRunResult> {
+  const allStepResults: ApiStepResult[] = [];
+  const iterationSummary: ApiCollectionRunResult['iterationSummary'] = [];
+  let anyFailed = false;
+
+  // First column is used as row identifier
+  const identifierKey = dataRows[0] ? Object.keys(dataRows[0])[0] : 'row';
+
+  for (let i = 0; i < dataRows.length; i++) {
+    const row = dataRows[i];
+    const rowContext: Record<string, string> = { ...inheritedContext, ...row };
+    const iterRunId = `${runId}_iter${i}`;
+
+    const iterResult = await runCollection(collection, environment, iterRunId, rowContext);
+
+    const rowIdentifier = row[identifierKey] ?? String(i + 1);
+    const tagged: ApiStepResult[] = iterResult.stepResults.map(s => ({
+      ...s,
+      iterationIndex: i,
+      rowIdentifier,
+    }));
+    allStepResults.push(...tagged);
+
+    const iterPassed = iterResult.status === 'passed';
+    if (!iterPassed) anyFailed = true;
+
+    const iterDuration = (iterResult as unknown as Record<string, unknown>).durationMs as number | undefined;
+    iterationSummary!.push({
+      index:        i,
+      rowIdentifier,
+      status:       iterResult.status === 'running' ? 'failed' : iterResult.status,
+      durationMs:   iterDuration ?? 0,
+    });
+
+    if (stopOnFailure && !iterPassed) break;
+  }
+
+  const startedAt = new Date().toISOString();
+  const base: ApiCollectionRunResult = {
+    id:               runId,
+    collectionId:     collection.id,
+    projectId:        collection.projectId ?? '',
+    startedAt,
+    completedAt:      new Date().toISOString(),
+    status:           anyFailed ? 'failed' : 'passed',
+    stepResults:      allStepResults,
+    variableContext:  {},
+    iterationCount:   dataRows.length,
+    dataFileId,
+    dataFileName,
+    iterationSummary,
+  };
+
+  await getArtifactEngine().saveRunResult(base);
+  return base;
+}
+
 // OLD: inline orchestration loop (Phase B Step 5 -- moved to workflow-engine/engine.ts)
 // Retained as reference per CLAUDE.md comment-out rule. Remove on explicit "clean up" instruction.
 //

@@ -1,4 +1,9 @@
-// ══════════════════════════════════════════════════════════════════════════════
+// OLD: Entire plugin ecosystem module commented out 2026-05-30.
+// Concluded: no user value — auth-provider use case covered by existing pre-request hooks;
+// custom-assertion use case replaced by native array operators + domain assertion library.
+// src/api-plugins/ folder kept on disk. Re-enable by uncommenting server.ts import+route,
+// index.html tab+panel, 08-tab-switch.js trigger, and this file.
+/* ══════════════════════════════════════════════════════════════════════════════
 // API PLUGINS MODULE — Plugin Ecosystem page
 // ══════════════════════════════════════════════════════════════════════════════
 
@@ -136,3 +141,4 @@ function apiPluginsExport() {
   );
   showToast('success', 'Plugins exported to plugins.csv');
 }
+*/ // END OLD plugin ecosystem module

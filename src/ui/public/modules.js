@@ -254,29 +254,89 @@ function userCloseModal() { closeModal('modal-user'); editingUserId = null; }
 // ══════════════════════════════════════════════════════════════════════════════
 
 let auditPage = 1;
+let _auditAllEntries = [];
 
 async function auditLoad(page = 1) {
   auditPage = page;
   const res = await fetch(`/api/admin/audit?page=${page}&size=50`);
   const data = await res.json();
+  _auditAllEntries = data.entries || [];
+  _auditRender(_auditAllEntries, data.total, data.size, page);
+}
+
+function auditApplyFilter() {
+  const actionF = (document.getElementById('audit-filter-action')?.value || '').toLowerCase();
+  const userF   = (document.getElementById('audit-filter-user')?.value || '').toLowerCase();
+  const filtered = _auditAllEntries.filter(e => {
+    if (actionF && !(e.action || '').toLowerCase().includes(actionF)) return false;
+    if (userF   && !(e.username || '').toLowerCase().includes(userF))  return false;
+    return true;
+  });
+  _auditRender(filtered, filtered.length, 50, 1);
+}
+
+function auditResetFilter() {
+  const af = document.getElementById('audit-filter-action');
+  const uf = document.getElementById('audit-filter-user');
+  if (af) af.value = '';
+  if (uf) uf.value = '';
+  auditLoad(1);
+}
+
+function _auditActionBadge(action) {
+  var a = action || '';
+  var bg, color;
+  if (a.includes('LOGIN_SUCCESS'))       { bg = 'rgba(22,163,74,.12)';  color = '#16a34a'; }
+  else if (a.includes('LOGOUT'))         { bg = 'rgba(107,114,128,.12)'; color = '#6b7280'; }
+  else if (a.includes('FAIL') || a.includes('ERROR') || a.includes('DENIED')) { bg = 'rgba(220,38,38,.1)'; color = '#dc2626'; }
+  else if (a.includes('CREATE') || a.includes('CREATED')) { bg = 'rgba(37,99,235,.1)';  color = '#2563eb'; }
+  else if (a.includes('DELETE') || a.includes('DELETED')) { bg = 'rgba(220,38,38,.08)'; color = '#b91c1c'; }
+  else if (a.includes('RUN') || a.includes('EXEC'))       { bg = 'rgba(124,58,237,.1)'; color = '#7c3aed'; }
+  else if (a.includes('UPDATE') || a.includes('EDIT'))    { bg = 'rgba(180,83,9,.1)';   color = '#b45309'; }
+  else if (a.includes('DEBUG'))          { bg = 'rgba(8,145,178,.1)';  color = '#0891b2'; }
+  else                                   { bg = 'rgba(107,114,128,.08)'; color = 'var(--text-muted)'; }
+  return '<span style="font-size:11px;padding:2px 7px;border-radius:4px;font-weight:600;background:' + bg + ';color:' + color + '">' + escHtml(a) + '</span>';
+}
+
+function _auditModuleLabel(resourceType) {
+  var map = {
+    'script': 'Test Scripts', 'suite': 'Test Suites', 'execution': 'Execution',
+    'api-collection': 'API Collections', 'api-suite': 'API Suites',
+    'api-intelligence': 'AI Intelligence', 'api-run': 'API Runs',
+    'user': 'Users', 'project': 'Projects', 'environment': 'Environments',
+    'locator': 'Locators', 'function': 'Functions', 'jira': 'Jira',
+    'healing': 'Self-Healing', 'governance': 'Governance'
+  };
+  if (!resourceType) return '—';
+  return map[resourceType] || escHtml(resourceType);
+}
+
+function _auditRender(entries, total, size, page) {
   const tbody = document.getElementById('audit-tbody');
   if (!tbody) return;
 
-  tbody.innerHTML = data.entries.map(e => `
-    <tr>
-      <td style="white-space:nowrap">${formatDate(e.createdAt)}</td>
-      <td>${escHtml(e.username || '—')}</td>
-      <td><code style="font-size:11px">${escHtml(e.action)}</code></td>
-      <td>${escHtml(e.resourceType ? `${e.resourceType}:${e.resourceId}` : '—')}</td>
-      <td>${escHtml(e.ip || '—')}</td>
-    </tr>`).join('');
+  if (!entries.length) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:16px;">No audit entries found.</td></tr>';
+  } else {
+    tbody.innerHTML = entries.map(e => {
+      var details = e.details ? escHtml(String(e.details).slice(0, 80)) + (String(e.details).length > 80 ? '…' : '') : '—';
+      return '<tr>'
+        + '<td style="white-space:nowrap;font-size:12px">' + formatDate(e.createdAt) + '</td>'
+        + '<td style="font-size:12px">' + escHtml(e.username || '—') + '</td>'
+        + '<td>' + _auditActionBadge(e.action) + '</td>'
+        + '<td style="font-size:12px">' + _auditModuleLabel(e.resourceType) + '</td>'
+        + '<td style="font-size:12px;color:var(--text-muted)">' + escHtml(e.ip || '—') + '</td>'
+        + '<td style="font-size:11px;color:var(--text-muted);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escHtml(e.details || '') + '">' + details + '</td>'
+        + '</tr>';
+    }).join('');
+  }
 
   const pg = document.getElementById('audit-pagination');
   if (pg) {
-    const totalPages = Math.ceil(data.total / data.size);
+    const totalPages = Math.max(1, Math.ceil(total / size));
     pg.innerHTML = `
       <button class="tbl-btn" ${page <= 1 ? 'disabled' : ''} onclick="auditLoad(${page - 1})">← Prev</button>
-      <span style="font-size:12px;color:var(--neutral-500)">Page ${page} / ${totalPages} &nbsp;(${data.total} entries)</span>
+      <span style="font-size:12px;color:var(--neutral-500)">Page ${page} / ${totalPages} &nbsp;(${total} entries)</span>
       <button class="tbl-btn" ${page >= totalPages ? 'disabled' : ''} onclick="auditLoad(${page + 1})">Next →</button>`;
   }
 }
@@ -2225,7 +2285,7 @@ function fnCloseModal() { closeModal('modal-function'); editingFnId = null; }
 const _panelLoaded = new Set();
 
 // Tabs where the project dropdown is irrelevant and should be hidden
-const _HIDE_PROJ_DROPDOWN_TABS = new Set(['projects', 'admin']);
+const _HIDE_PROJ_DROPDOWN_TABS = new Set(['projects', 'admin', 'worker-health']);
 
 function onModuleTabSwitch(tab) {
   if (tab === 'admin') usersLoad();
@@ -2244,12 +2304,13 @@ function onModuleTabSwitch(tab) {
   if (tab === 'api-envs') apiEnvLoad();
   if (tab === 'api-collections') apiColLoad();
   if (tab === 'api-runs') apiRunsLoad();
-  if (tab === 'api-flakiness') flakinessLoad();
+  if (tab === 'api-flakiness') flakinessPageInit();
   if (tab === 'api-suites') apiSuitesInit();
   if (tab === 'api-replay' && !_panelLoaded.has('api-replay')) { if (typeof apiReplayInit === 'function') apiReplayInit(); }
   if (tab === 'worker-health') { if (typeof workerHealthInit === 'function') { var _whPanel = document.getElementById('panel-worker-health'); if (_whPanel) workerHealthInit(_whPanel); } }
   if (tab === 'governance') { if (typeof governanceInit === 'function') { var _govPanel = document.getElementById('panel-governance'); if (_govPanel) governanceInit(_govPanel); } }
-  if (tab === 'api-plugins') { if (typeof apiPluginsLoad === 'function') apiPluginsLoad(); }
+  // OLD: Plugin tab trigger removed — plugin ecosystem deactivated 2026-05-30
+  // if (tab === 'api-plugins') { if (typeof apiPluginsLoad === 'function') apiPluginsLoad(); }
   if (tab === 'api-graph') { if (typeof graphEditorLoad === 'function') graphEditorLoad(); }
   if (tab === 'api-collab') { if (typeof collabLoad === 'function') collabLoad(); }
   if (tab === 'api-copilot') { if (typeof copilotLoad === 'function') copilotLoad(); }
@@ -6242,6 +6303,9 @@ async function respondT4Heal(action) {
 let _flakyAllTests = [];
 let _flakyFilter = 'all';
 let _flakyTop10 = false;
+let _flakyPage = 0;
+let _flakyPageSize = 25;
+let _flakyTotal = 0;
 
 function flakyToggleTop10() {
   _flakyTop10 = !_flakyTop10;
@@ -6257,29 +6321,35 @@ function flakySetFilter(f) {
   flakyRender();
 }
 
-async function flakyLoad() {
+async function flakyLoad(resetPage = true) {
   if (!currentProjectId) {
     const loadEl = document.getElementById('flaky-loading');
     if (loadEl) { loadEl.style.display = ''; loadEl.textContent = 'Select a project to analyse flaky tests.'; }
-    ['flaky-summary-bar', 'flaky-table-wrap', 'flaky-empty', 'flaky-filter-tabs', 'flaky-budget-banner']
+    ['flaky-summary-bar', 'flaky-table-wrap', 'flaky-empty', 'flaky-filter-tabs', 'flaky-budget-banner', 'flaky-pagination']
       .forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
     return;
   }
 
+  // FIX: read suiteId BEFORE repopulating the dropdown to preserve user selection
   const suiteSel = document.getElementById('flaky-suite-filter');
+  const prevSuiteId = suiteSel?.value || '';
   if (suiteSel && typeof allSuites !== 'undefined') {
     const proj = allSuites.filter(s => s.projectId === currentProjectId);
     suiteSel.innerHTML = '<option value="">All Suites</option>' +
       proj.map(s => `<option value="${escHtml(s.id)}">${escHtml(s.name)}</option>`).join('');
+    if (prevSuiteId) suiteSel.value = prevSuiteId; // restore selection after repopulate
   }
 
-  const suiteId = document.getElementById('flaky-suite-filter')?.value || '';
+  const suiteId = suiteSel?.value || '';
   const sort = document.getElementById('flaky-sort')?.value || 'flakeScore';
+  if (resetPage) _flakyPage = 0;
+
   const loadEl = document.getElementById('flaky-loading');
   if (loadEl) { loadEl.style.display = ''; loadEl.textContent = 'Analysing runs…'; }
-  ['flaky-summary-bar', 'flaky-table-wrap', 'flaky-empty', 'flaky-filter-tabs', 'flaky-budget-banner']
+  ['flaky-summary-bar', 'flaky-table-wrap', 'flaky-empty', 'flaky-filter-tabs', 'flaky-budget-banner', 'flaky-pagination']
     .forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
 
+  // Fetch all (up to 200) for client-side filter counts, then paginate client-side
   let url = `/api/flaky?projectId=${encodeURIComponent(currentProjectId)}&limit=200&sort=${encodeURIComponent(sort)}`;
   if (suiteId) url += `&suiteId=${encodeURIComponent(suiteId)}`;
 
@@ -6321,10 +6391,10 @@ function flakyRender() {
   if (summaryBar) {
     summaryBar.style.display = '';
     summaryBar.innerHTML = `
-      <span style="color:var(--neutral-300);font-size:13px">
+      <span style="color:var(--flaky-text);font-size:13px">
         ${total} tests &nbsp;·&nbsp;
-        <span style="color:#f48771">${quarantined} quarantined</span> &nbsp;·&nbsp;
-        <span style="color:#dcdcaa">${flagged} flagged</span>
+        <span style="color:var(--flaky-danger)">${quarantined} quarantined</span> &nbsp;·&nbsp;
+        <span style="color:var(--flaky-warn)">${flagged} flagged</span>
       </span>`;
   }
 
@@ -6333,32 +6403,92 @@ function flakyRender() {
   if (tests.length === 0) {
     if (empty) empty.style.display = '';
     if (wrap) wrap.style.display = 'none';
+    _flakyRenderPagination(0, 0);
     return;
   }
   if (empty) empty.style.display = 'none';
   if (wrap) wrap.style.display = '';
 
+  // Pagination
+  const filteredTotal = tests.length;
+  const pageSize = _flakyTop10 ? filteredTotal : _flakyPageSize;
+  const totalPages = _flakyTop10 ? 1 : Math.ceil(filteredTotal / pageSize);
+  if (_flakyPage >= totalPages) _flakyPage = Math.max(0, totalPages - 1);
+  const paged = _flakyTop10 ? tests : tests.slice(_flakyPage * pageSize, (_flakyPage + 1) * pageSize);
+
   const tbody = document.getElementById('flaky-tbody');
-  if (tbody) tbody.innerHTML = tests.map(t => flakyRow(t)).join('');
+  if (tbody) tbody.innerHTML = paged.map(t => flakyRow(t)).join('');
+
+  _flakyRenderPagination(filteredTotal, totalPages);
+}
+
+function _flakyRenderPagination(filteredTotal, totalPages) {
+  let pg = document.getElementById('flaky-pagination');
+  if (!pg) return;
+  if (filteredTotal === 0 || _flakyTop10) { pg.style.display = 'none'; return; }
+
+  const pageSize = _flakyPageSize;
+  const start = _flakyPage * pageSize + 1;
+  const end = Math.min((_flakyPage + 1) * pageSize, filteredTotal);
+
+  pg.style.display = 'flex';
+  pg.innerHTML = `
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <span style="font-size:12px;color:var(--flaky-text)">
+        ${start}–${end} of ${filteredTotal}
+      </span>
+      <div style="display:flex;align-items:center;gap:6px">
+        <label style="font-size:12px;color:var(--flaky-text)">Rows:</label>
+        <select class="fm-input" style="height:26px;font-size:12px;padding:0 4px;width:70px"
+          onchange="_flakySetPageSize(parseInt(this.value))">
+          ${[10,25,50,100].map(n =>
+            `<option value="${n}"${n === pageSize ? ' selected' : ''}>${n}</option>`
+          ).join('')}
+        </select>
+      </div>
+      <div style="display:flex;gap:4px">
+        <button class="btn btn-xs btn-outline" onclick="_flakyGoPage(0)" ${_flakyPage === 0 ? 'disabled' : ''} title="First">«</button>
+        <button class="btn btn-xs btn-outline" onclick="_flakyGoPage(${_flakyPage - 1})" ${_flakyPage === 0 ? 'disabled' : ''} title="Previous">‹</button>
+        <span style="font-size:12px;color:var(--flaky-text);padding:2px 8px;align-self:center">
+          Page ${_flakyPage + 1} / ${totalPages}
+        </span>
+        <button class="btn btn-xs btn-outline" onclick="_flakyGoPage(${_flakyPage + 1})" ${_flakyPage >= totalPages - 1 ? 'disabled' : ''} title="Next">›</button>
+        <button class="btn btn-xs btn-outline" onclick="_flakyGoPage(${totalPages - 1})" ${_flakyPage >= totalPages - 1 ? 'disabled' : ''} title="Last">»</button>
+      </div>
+    </div>`;
+}
+
+function _flakyGoPage(p) {
+  _flakyPage = p;
+  flakyRender();
+}
+
+function _flakySetPageSize(n) {
+  _flakyPageSize = n;
+  _flakyPage = 0;
+  flakyRender();
 }
 
 function flakyRow(t) {
   const isInsuff = t.evaluationState === 'insufficient_data';
-  const rowStyle = isInsuff ? 'opacity:0.5' : '';
+  // OLD: const rowStyle = isInsuff ? 'opacity:0.5' : '';
+  // opacity:0.5 on the <tr> made all child colors appear faded — CSS child opacity can't exceed parent.
+  // Status label + muted color already signal insufficient state; row opacity is redundant.
+  const rowStyle = '';
   const newBadge = t.quarantinedAt && (Date.now() - new Date(t.quarantinedAt).getTime() < 86400000)
     ? '<span class="flaky-badge-new">NEW</span>' : '';
   const autoBadge = t.isQuarantined
     ? `<span class="flaky-badge-q">${t.autoQuarantined ? '⛔ Auto' : '⛔ Manual'}</span>` : '';
 
   const statusLabel = t.isQuarantined ? 'Quarantined' : isInsuff ? 'Insufficient' : t.shouldQuarantine ? 'Flagged' : 'Active';
-  const statusColor = t.isQuarantined ? '#f48771' : isInsuff ? '#858585' : t.shouldQuarantine ? '#dcdcaa' : '#4ec9b0';
+  const statusColor = t.isQuarantined ? 'var(--flaky-danger)' : isInsuff ? 'var(--flaky-muted)' : t.shouldQuarantine ? 'var(--flaky-warn)' : 'var(--flaky-pass)';
 
   let scoreCell = '—';
   if (!isInsuff && t.flakeScore !== undefined) {
     const sc = t.flakeScore;
     const thr = 0.30;
     const near = Math.abs(sc - thr) < 0.05;
-    const color = sc >= thr ? '#f48771' : near ? '#dcdcaa' : '#4ec9b0';
+    const color = sc >= thr ? 'var(--flaky-danger)' : near ? 'var(--flaky-warn)' : 'var(--flaky-pass)';
     const arrow = sc >= thr ? ' ↑' : '';
     const tooltip = sc >= thr ? `Above threshold (${thr})` : near ? `Near threshold (${thr})` : `Below threshold (${thr})`;
     scoreCell = `<span style="color:${color};font-weight:700" title="${tooltip}">${sc.toFixed(2)}${arrow}</span>`;
@@ -6368,23 +6498,24 @@ function flakyRow(t) {
     ? (t.confidence >= 0.7 ? 'High' : t.confidence >= 0.4 ? 'Med' : 'Low') : '—';
 
   const sparkline = (t.recentRunsPreview || []).map(r =>
-    `<span style="color:${r.status === 'pass' ? '#4ec9b0' : '#f48771'};font-size:10px;font-weight:700">${r.status === 'pass' ? 'P' : 'F'}</span>`
+    `<span style="color:${r.status === 'pass' ? 'var(--flaky-pass)' : 'var(--flaky-danger)'};font-size:10px;font-weight:700">${r.status === 'pass' ? 'P' : 'F'}</span>`
   ).join('');
 
   const cat = t.classification?.primary ?? '—';
-  const catColor = { network: '#569cd6', timing: '#dcdcaa', locator: '#9cdcfe', assertion: '#f48771', environment: '#ce9178', unknown: '#858585' }[cat] || '#858585';
+  const catColor = { network: 'var(--flaky-network)', timing: 'var(--flaky-warn)', locator: 'var(--flaky-locator)', assertion: 'var(--flaky-danger)', environment: 'var(--flaky-env)', unknown: 'var(--flaky-muted)' }[cat] || 'var(--flaky-muted)';
   const catCell = cat !== '—' ? `<span style="color:${catColor};font-size:11px">${cat}</span>` : '—';
 
   const lastRun = t.lastRunAt ? _flakyFmtDate(t.lastRunAt) : '—';
   const lastFail = t.lastFailureAt ? _flakyFmtDate(t.lastFailureAt) : '—';
 
   let actionBtns = '';
-  if (!isInsuff) {
-    if (t.isQuarantined) {
-      actionBtns = `<button class="btn btn-xs btn-outline" onclick="flakyRestore('${escHtml(t.suiteId)}','${escHtml(t.testId)}','${escHtml(t.testName)}')" title="Restore from quarantine">Restore</button>`;
-    } else {
-      actionBtns = `<button class="btn btn-xs btn-outline" onclick="flakyQuarantine('${escHtml(t.suiteId)}','${escHtml(t.testId)}','${escHtml(t.testName)}')" title="Manually quarantine">Quarantine</button>`;
-    }
+  if (t.isQuarantined) {
+    actionBtns = `<button class="btn btn-xs btn-outline" onclick="flakyRestore('${escHtml(t.suiteId)}','${escHtml(t.testId)}','${escHtml(t.testName)}')" title="Restore from quarantine">Restore</button>`;
+  } else if (!isInsuff) {
+    actionBtns = `<button class="btn btn-xs btn-outline" onclick="flakyQuarantine('${escHtml(t.suiteId)}','${escHtml(t.testId)}','${escHtml(t.testName)}')" title="Manually quarantine">Quarantine</button>`;
+  } else {
+    // Insufficient data — allow manual quarantine override, clearly labelled
+    actionBtns = `<button class="btn btn-xs btn-outline" style="opacity:0.75" onclick="flakyQuarantineInsuff('${escHtml(t.suiteId)}','${escHtml(t.testId)}','${escHtml(t.testName)}')" title="Force quarantine — overrides insufficient data state">Force Quarantine</button>`;
   }
 
   const expandId = `flaky-expand-${escHtml(t.testId)}`;
@@ -6412,14 +6543,14 @@ function flakyRow(t) {
 
 function flakyExpandedRow(t) {
   if (t.evaluationState === 'insufficient_data') {
-    return `<div style="color:#858585;font-size:13px">Insufficient data — need ≥5 runs to compute flake score.</div>`;
+    return `<div style="color:var(--flaky-muted);font-size:13px">Insufficient data — need ≥5 runs to compute flake score.</div>`;
   }
 
   const thr = 0.30;
   const eligible = t.shouldQuarantine ? '✔ Eligible for auto-quarantine' : `Below threshold (${thr})`;
 
   const history = (t.recentRunsPreview || []).map(r =>
-    `<span style="color:${r.status === 'pass' ? '#4ec9b0' : '#f48771'};font-weight:700">${r.status === 'pass' ? 'P' : 'F'}</span>`
+    `<span style="color:${r.status === 'pass' ? 'var(--flaky-pass)' : 'var(--flaky-danger)'};font-weight:700">${r.status === 'pass' ? 'P' : 'F'}</span>`
   ).join(' ');
 
   const sig = t.signals || {};
@@ -6498,6 +6629,16 @@ async function flakyQuarantine(suiteId, testId, testName) {
     body: JSON.stringify({ suiteId, testId, testName, reason: 'manual' })
   });
   if (res.ok) { showToast('info', 'Test quarantined.'); flakyLoad(); }
+  else showToast('error', 'Quarantine failed.');
+}
+
+async function flakyQuarantineInsuff(suiteId, testId, testName) {
+  if (!confirm(`Force quarantine "${testName}"?\n\nThis test has insufficient run history to score automatically. Quarantining manually will exclude it from suite pass/fail immediately.\n\nContinue?`)) return;
+  const res = await fetch('/api/flaky/quarantine', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ suiteId, testId, testName, reason: 'manual-insufficient' })
+  });
+  if (res.ok) { showToast('info', 'Test force-quarantined.'); flakyLoad(); }
   else showToast('error', 'Quarantine failed.');
 }
 
@@ -10817,7 +10958,7 @@ function _apiColRenderList() {
       <td style="font-size:12px">${modeLabel}</td>
       <td>${runBadge}</td>
       <td class="tbl-actions">
-        <button class="tbl-btn" onclick="apiColRun('${id}')">▶ Run</button>
+        <button class="tbl-btn" onclick="_apiColRunOpen('${id}')">▶ Run</button>
         <button class="tbl-btn" onclick="apiColTryRequestOpen('${id}')">🧪 Try</button>
         <button class="tbl-btn" onclick="apiColGenTestsOpen('${id}','${nm}')">✨ Suggest Tests</button>
         ${showGraph ? `<button class="tbl-btn" onclick="apiColGraphOpenModal('${id}')">🔀 Graph</button>` : ''}
@@ -11018,16 +11159,17 @@ function _renderApiColSteps() {
             <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-secondary,#1a1a1a);cursor:pointer" onclick="_apiColRuleToggle('pre-vars-${i}')">
               <div style="display:flex;align-items:center;gap:8px">
                 <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--accent)">① Before Request</span>
-                <span style="font-size:11px;color:var(--text-muted)">Set variables before sending</span>
+                <span style="font-size:11px;color:var(--text-muted)">Runs before the HTTP call — set or override variables</span>
+                <span title="Use this section to inject or override variables before this request fires. Examples:&#10;• Set authToken = {{envToken}} to inject a token from environment&#10;• Set userId = 42 to hardcode a test value&#10;• Set timestamp = {{$now}} to stamp the request time&#10;Variables set here are available as {{varName}} in this request's URL, Headers, and Body." style="cursor:help;color:var(--text-muted);font-size:13px">ⓘ</span>
               </div>
-              <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();_apiColPreVarAdd(${i})">+ Add Rule</button>
+              <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();_apiColPreVarAdd(${i})">+ Add Variable</button>
             </div>
             <div id="pre-vars-${i}" style="padding:8px 12px">
-              <div style="display:grid;grid-template-columns:1fr 110px 1fr 22px;gap:4px;font-size:11px;color:var(--text-muted);font-weight:600;margin-bottom:4px">
-                <span>Variable Name</span><span>Set To</span><span>Value / Source</span><span></span>
+              <div style="display:grid;grid-template-columns:1fr 200px 1fr 22px;gap:4px;font-size:11px;color:var(--text-muted);font-weight:600;margin-bottom:4px">
+                <span>Variable Name</span><span>How to set it</span><span>Value</span><span></span>
               </div>
               <div id="api-step-prevars-${i}"></div>
-              <div style="font-size:11px;color:var(--text-muted);margin-top:6px">💡 Use <code>{{varName}}</code> in URL, Headers, Body of any later request</div>
+              <div style="font-size:11px;color:var(--text-muted);margin-top:6px">💡 Variables set here are available as <code>{{varName}}</code> in this request's URL, Headers, and Body — and in all later requests too.</div>
             </div>
           </div>
 
@@ -11036,11 +11178,13 @@ function _renderApiColSteps() {
             <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-secondary,#1a1a1a);cursor:pointer" onclick="_apiColRuleToggle('post-rules-${i}')">
               <div style="display:flex;align-items:center;gap:8px">
                 <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#4ade80">② After Response</span>
-                <span style="font-size:11px;color:var(--text-muted)">Extract values &amp; assert conditions</span>
+                <span style="font-size:11px;color:var(--text-muted)">Runs after the HTTP response — extract data &amp; validate</span>
+                <span title="Use this section to:&#10;• Extract — pull values out of the response (e.g. save userId from JSON body) so later requests can use them as {{userId}}&#10;• Assert — validate the response meets your expectations (status code, headers, body fields). Assertions that fail mark the request as FAILED in the run report." style="cursor:help;color:var(--text-muted);font-size:13px">ⓘ</span>
               </div>
               <div style="display:flex;gap:6px" onclick="event.stopPropagation()">
                 <button class="btn btn-secondary btn-sm" onclick="_apiColExtractAdd(${i})">+ Extract</button>
                 <button class="btn btn-secondary btn-sm" onclick="_apiColAssertAdd(${i})">+ Assert</button>
+                <button class="btn btn-secondary btn-sm" style="color:#a78bfa;border-color:#a78bfa" onclick="_domainAssertOpen(${i})" title="Load pre-built assertion templates for your API domain (eCommerce, Fintech, Salesforce, etc.)">Load Domain Template</button>
               </div>
             </div>
             <div id="post-rules-${i}" style="padding:8px 12px">
@@ -11059,21 +11203,18 @@ function _renderApiColSteps() {
             </div>
           </div>
 
-          <!-- Section 3: Flow Control — Next Step -->
+          <!-- Section 3: Flow Control — No-Code Rule Builder -->
           <div style="border:1px solid var(--border);border-radius:6px;overflow:hidden">
             <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-secondary,#1a1a1a);cursor:pointer" onclick="_apiColRuleToggle('flow-rules-${i}')">
               <div style="display:flex;align-items:center;gap:8px">
                 <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#f59e0b">③ Flow Control</span>
-                <span style="font-size:11px;color:var(--text-muted)">Conditionally jump to another request</span>
+                <span style="font-size:11px;color:var(--text-muted)">Control what happens after this request runs</span>
               </div>
               <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();_apiColFlowAdd(${i})">+ Add Rule</button>
             </div>
             <div id="flow-rules-${i}" style="padding:8px 12px">
-              <div style="display:grid;grid-template-columns:130px 140px 1fr 130px 22px;gap:4px;font-size:11px;color:var(--text-muted);font-weight:600;margin-bottom:4px">
-                <span>Check</span><span>Operator</span><span>Value</span><span>Then go to</span><span></span>
-              </div>
               <div id="api-step-flow-${i}"></div>
-              <div style="font-size:11px;color:var(--text-muted);margin-top:6px">💡 Like <code>postman.setNextRequest()</code> — no code needed. Example: if statusCode equals 401 → go to "Re-Authenticate" request. If no rules match, collection runs sequentially by default.</div>
+              <div style="font-size:11px;color:var(--text-muted);margin-top:6px">💡 No code needed. Rules are evaluated in order — first match wins. Actions: <strong>Skip to next</strong> (continue), <strong>Stop</strong> the collection, <strong>Jump</strong> to a specific request, or <strong>Repeat</strong> this request up to N times. Uncheck "condition is met" to make a rule always apply.</div>
             </div>
           </div>
         </div>
@@ -11187,40 +11328,122 @@ function _apiColRuleToggle(id) {
 }
 
 // ── Pre-request: Set Variables ──────────────────────────────────────────────
+
+
 function _apiColPreVarAdd(i) {
   if (!_apiColSteps[i].preVars) _apiColSteps[i].preVars = [];
   _apiColSteps[i].preVars.push({ name: '', setTo: 'literal', value: '' });
   _apiColPreVarsRender(i);
 }
+
 function _apiColPreVarsRender(i) {
   const c = document.getElementById('api-step-prevars-' + i);
   if (!c) return;
   const vars = _apiColSteps[i].preVars ?? [];
-  if (!vars.length) { c.innerHTML = '<div style="color:var(--text-muted);font-size:12px;padding:4px 0">No rules — click + Add Rule to set a variable before this request.</div>'; return; }
-  c.innerHTML = vars.map((v, vi) => `
-    <div style="display:grid;grid-template-columns:1fr 110px 1fr 22px;gap:4px;margin-bottom:4px;align-items:center">
-      <input class="fm-input" style="font-size:12px" placeholder="e.g. authToken" value="${escHtml(v.name)}" oninput="_apiColPreVarField(${i},${vi},'name',this.value)"/>
-      <select class="fm-input" style="font-size:12px" onchange="_apiColPreVarField(${i},${vi},'setTo',this.value)">
-        <option value="literal" ${v.setTo==='literal'?'selected':''}>Literal</option>
-        <option value="collectionVar" ${v.setTo==='collectionVar'?'selected':''}>Collection Var</option>
-        <option value="envVar" ${v.setTo==='envVar'?'selected':''}>Env Var</option>
+  if (!vars.length) {
+    c.innerHTML = '<div style="color:var(--text-muted);font-size:12px;padding:4px 0">No pre-request variables added yet — click + Add Variable.</div>';
+    return;
+  }
+  c.innerHTML = vars.map((v, vi) => {
+    // Value/source cell — changes based on setTo mode
+    let valueCell;
+    if (v.setTo === 'generate') {
+      const _dynTokens = (typeof scriptKeywords !== 'undefined' && scriptKeywords.dynamicTokens) ? scriptKeywords.dynamicTokens : [];
+      let _dynOpts = '<option value="">— choose token —</option>';
+      let _curGrp = null;
+      for (const t of _dynTokens) {
+        const grp = t.group || '';
+        if (grp && grp !== _curGrp) {
+          if (_curGrp !== null) _dynOpts += '</optgroup>';
+          _dynOpts += `<optgroup label="${escHtml(grp)}">`;
+          _curGrp = grp;
+        }
+        _dynOpts += `<option value="${escHtml(t.token)}"${v.value === t.token ? ' selected' : ''}>${escHtml(t.label)}</option>`;
+      }
+      if (_curGrp !== null) _dynOpts += '</optgroup>';
+      valueCell = `<select class="fm-input" style="font-size:12px" onchange="_apiColPreVarField(${i},${vi},'value',this.value)">${_dynOpts}</select>`;
+    } else if (v.setTo === 'collectionVar') {
+      valueCell = `<input class="fm-input" style="font-size:12px" placeholder="{{varName}} — name of the variable to copy" value="${escHtml(v.value)}" oninput="_apiColPreVarField(${i},${vi},'value',this.value)"/>`;
+    } else if (v.setTo === 'envVar') {
+      valueCell = `<input class="fm-input" style="font-size:12px" placeholder="{{ENV_VAR}} — environment variable name" value="${escHtml(v.value)}" oninput="_apiColPreVarField(${i},${vi},'value',this.value)"/>`;
+    } else {
+      // literal / fixed value
+      valueCell = `<input class="fm-input" style="font-size:12px" placeholder="Enter a fixed value, e.g. true or 42" value="${escHtml(v.value)}" oninput="_apiColPreVarField(${i},${vi},'value',this.value)"/>`;
+    }
+    return `<div style="display:grid;grid-template-columns:1fr 200px 1fr 22px;gap:4px;margin-bottom:4px;align-items:center">
+      <input class="fm-input" style="font-size:12px" placeholder="Variable name, e.g. authToken" value="${escHtml(v.name)}" oninput="_apiColPreVarField(${i},${vi},'name',this.value)"/>
+      <select class="fm-input" style="font-size:12px" onchange="_apiColPreVarField(${i},${vi},'setTo',this.value)" title="How should this variable's value be set?">
+        <option value="literal"       ${(v.setTo||'literal')==='literal'      ?'selected':''}>Fixed Value</option>
+        <option value="collectionVar" ${v.setTo==='collectionVar'?'selected':''}>From another variable (Collection Variable)</option>
+        <option value="envVar"        ${v.setTo==='envVar'       ?'selected':''}>From environment</option>
+        <option value="generate"      ${v.setTo==='generate'     ?'selected':''}>Generate (random)</option>
       </select>
-      <input class="fm-input" style="font-size:12px" placeholder="${v.setTo==='literal'?'value':v.setTo==='collectionVar'?'{{varName}}':'{{ENV_VAR}}'}" value="${escHtml(v.value)}" oninput="_apiColPreVarField(${i},${vi},'value',this.value)"/>
-      <button class="tbl-btn del" onclick="_apiColPreVarRemove(${i},${vi})">✕</button>
-    </div>`).join('');
+      ${valueCell}
+      <button class="tbl-btn del" onclick="_apiColPreVarRemove(${i},${vi})" title="Remove">✕</button>
+    </div>`;
+  }).join('');
 }
-function _apiColPreVarField(i, vi, f, val) { _apiColSteps[i].preVars[vi][f] = val; if (f === 'setTo') _apiColPreVarsRender(i); }
+
+function _apiColPreVarField(i, vi, f, val) {
+  _apiColSteps[i].preVars[vi][f] = val;
+  if (f === 'setTo') { _apiColSteps[i].preVars[vi].value = ''; _apiColPreVarsRender(i); }
+}
 function _apiColPreVarRemove(i, vi) { _apiColSteps[i].preVars.splice(vi, 1); _apiColPreVarsRender(i); }
 
 // ── Post-response: Assertions ───────────────────────────────────────────────
 const _ASSERT_FIELDS = [
-  { label: 'Status Code', value: 'statusCode' },
-  { label: 'Response Time (ms)', value: 'responseTime' },
-  { label: 'Body (JSON path)', value: 'body' },
-  { label: 'Header', value: 'header' },
-  { label: 'Body contains', value: 'bodyContains' },
-  { label: 'Body is valid JSON', value: 'bodyIsJson' },
+  { label: 'Status Code',               value: 'statusCode',      hasPath: false },
+  { label: 'Response Time (ms)',         value: 'responseTime',    hasPath: false },
+  { label: 'Body (JSON path / array)',   value: 'body',            hasPath: true,  pathPlaceholder: 'Path e.g. $.data or $.items[0].id' },
+  { label: 'Body (array length)',        value: 'bodyArrayLength', hasPath: true,  pathPlaceholder: 'Array path e.g. $.items' },
+  { label: 'Body (field count)',         value: 'bodyFieldCount',  hasPath: true,  pathPlaceholder: 'Object path e.g. $.user' },
+  { label: 'Header',                     value: 'header',          hasPath: true,  pathPlaceholder: 'Header name e.g. content-type' },
+  { label: 'Cookie',                     value: 'cookie',          hasPath: true,  pathPlaceholder: 'Cookie name e.g. sessionId' },
+  { label: 'Body contains',             value: 'bodyContains',    hasPath: false, lockedOperator: 'contains' },
+  { label: 'Body is valid JSON',         value: 'bodyIsJson',      hasPath: false, lockedOperator: 'equals',   lockedExpected: 'true' },
+  { label: 'Response size (bytes)',      value: 'responseSize',    hasPath: false },
+  { label: 'HTTP version',              value: 'httpVersion',     hasPath: false },
 ];
+
+// Derive the Check field type from the stored field string (handles all encoded formats)
+function _assertFieldType(field) {
+  if (!field || field === 'statusCode' || field === 'status') return 'statusCode';
+  if (field === 'responseTime') return 'responseTime';
+  if (field === 'bodyContains') return 'bodyContains';
+  if (field === 'bodyIsJson')   return 'bodyIsJson';
+  if (field === 'responseSize') return 'responseSize';
+  if (field === 'httpVersion')  return 'httpVersion';
+  if (field === 'body')         return 'body';
+  if (field.startsWith('@arrayLength:')) return 'bodyArrayLength';
+  if (field.startsWith('@fieldCount:'))  return 'bodyFieldCount';
+  if (field.startsWith('header.') || field === 'header') return 'header';
+  if (field.startsWith('cookie.') || field === 'cookie') return 'cookie';
+  if (field.startsWith('$')) return 'body';  // direct JSONPath
+  return 'statusCode';
+}
+
+// Extract the path portion from an encoded field string
+function _assertFieldPath(field) {
+  if (field.startsWith('@arrayLength:')) return field.slice(13);
+  if (field.startsWith('@fieldCount:'))  return field.slice(12);
+  if (field.startsWith('header.'))       return field.slice(7);
+  if (field.startsWith('cookie.'))       return field.slice(7);
+  if (field.startsWith('$'))             return field;  // body JSONPath stored directly
+  return '';
+}
+
+// Encode fieldType + path back into a single field string for storage
+function _assertFieldEncode(fieldType, path) {
+  const p = (path || '').trim();
+  switch (fieldType) {
+    case 'body':            return p || 'body';
+    case 'bodyArrayLength': return p ? '@arrayLength:' + p : '@arrayLength:';
+    case 'bodyFieldCount':  return p ? '@fieldCount:' + p  : '@fieldCount:';
+    case 'header':          return p ? 'header.' + p       : 'header';
+    case 'cookie':          return p ? 'cookie.' + p       : 'cookie';
+    default:                return fieldType;
+  }
+}
 const _ASSERT_OPS = [
   { label: 'equals', value: 'equals' },
   { label: 'not equals', value: 'notEquals' },
@@ -11233,6 +11456,12 @@ const _ASSERT_OPS = [
   { label: 'exists', value: 'exists' },
   { label: 'not exists', value: 'notExists' },
   { label: 'is empty', value: 'isEmpty' },
+  // Array operators
+  { label: 'array length equals', value: 'arrayLengthEquals' },
+  { label: 'array length > N', value: 'arrayLengthGreaterThan' },
+  { label: 'array length < N', value: 'arrayLengthLessThan' },
+  { label: 'array not empty', value: 'arrayNotEmpty' },
+  { label: 'array contains', value: 'arrayContains' },
 ];
 function _apiColAssertAdd(i) {
   if (!_apiColSteps[i].assertions) _apiColSteps[i].assertions = [];
@@ -11244,55 +11473,307 @@ function _apiColAssertRender(i) {
   if (!c) return;
   const assertions = _apiColSteps[i].assertions ?? [];
   if (!assertions.length) { c.innerHTML = '<div style="color:var(--text-muted);font-size:12px;padding:4px 0">No assertions — click + Assert to validate the response.</div>'; return; }
-  const noExpected = ['exists','notExists','isEmpty'];
-  c.innerHTML = assertions.map((a, ai) => `
-    <div style="display:grid;grid-template-columns:150px 140px 1fr 90px 22px;gap:4px;margin-bottom:4px;align-items:center">
-      <select class="fm-input" style="font-size:12px" onchange="_apiColAssertField(${i},${ai},'field',this.value)">
-        ${_ASSERT_FIELDS.map(f => `<option value="${f.value}" ${a.field===f.value?'selected':''}>${f.label}</option>`).join('')}
-      </select>
-      <select class="fm-input" style="font-size:12px" onchange="_apiColAssertField(${i},${ai},'operator',this.value)">
-        ${_ASSERT_OPS.map(o => `<option value="${o.value}" ${a.operator===o.value?'selected':''}>${o.label}</option>`).join('')}
-      </select>
-      <input class="fm-input" style="font-size:12px" placeholder="Expected value or {{var}}" value="${escHtml(String(a.expected ?? ''))}" ${noExpected.includes(a.operator)?'disabled style="font-size:12px;opacity:0.4"':''} oninput="_apiColAssertField(${i},${ai},'expected',this.value)"/>
+  const noExpected = ['exists','notExists','isEmpty','arrayNotEmpty'];
+  c.innerHTML = assertions.map((a, ai) => {
+    const ft = _assertFieldType(a.field);
+    const fp = _assertFieldPath(a.field);
+    const fieldDef = _ASSERT_FIELDS.find(f => f.value === ft) || _ASSERT_FIELDS[0];
+    const fieldDropdown = `<select class="fm-input" style="font-size:12px" onchange="_apiColAssertFieldType(${i},${ai},this.value)">
+      ${_ASSERT_FIELDS.map(f => `<option value="${f.value}" ${ft===f.value?'selected':''}>${f.label}</option>`).join('')}
+    </select>`;
+    const checkCell = fieldDef.hasPath
+      ? `<div style="display:flex;flex-direction:column;gap:2px">
+           ${fieldDropdown}
+           <input class="fm-input" style="font-size:11px;color:var(--text-muted)" placeholder="${escHtml(fieldDef.pathPlaceholder||'')}" value="${escHtml(fp)}" oninput="_apiColAssertFieldPath(${i},${ai},this.value)"/>
+         </div>`
+      : fieldDropdown;
+    // Operator cell — locked for bodyContains (contains) and bodyIsJson (equals)
+    const operatorCell = fieldDef.lockedOperator
+      ? `<div class="fm-input" style="font-size:12px;opacity:0.55;display:flex;align-items:center;cursor:not-allowed;user-select:none">${fieldDef.lockedOperator}</div>`
+      : `<select class="fm-input" style="font-size:12px" onchange="_apiColAssertField(${i},${ai},'operator',this.value)">
+           ${_ASSERT_OPS.map(o => `<option value="${o.value}" ${a.operator===o.value?'selected':''}>${o.label}</option>`).join('')}
+         </select>`;
+    // Expected cell — locked for bodyIsJson (true), disabled for no-expected operators
+    const isLocked   = fieldDef.lockedExpected !== undefined;
+    const isDisabled = isLocked || noExpected.includes(a.operator);
+    const dispVal    = isLocked ? fieldDef.lockedExpected : escHtml(String(a.expected ?? ''));
+    const expectedCell = `<input class="fm-input" style="font-size:12px${isDisabled?';opacity:0.4':''}" placeholder="Expected value or {{var}}" value="${dispVal}" ${isDisabled?'disabled':''} oninput="_apiColAssertField(${i},${ai},'expected',this.value)"/>`;
+    return `<div style="display:grid;grid-template-columns:150px 140px 1fr 90px 22px;gap:4px;margin-bottom:4px;align-items:${fieldDef.hasPath?'start':'center'}">
+      ${checkCell}
+      ${operatorCell}
+      ${expectedCell}
       <select class="fm-input" style="font-size:12px" onchange="_apiColAssertField(${i},${ai},'severity',this.value)">
         ${['critical','high','medium','low','soft'].map(s => `<option ${a.severity===s?'selected':''}>${s}</option>`).join('')}
       </select>
       <button class="tbl-btn del" onclick="_apiColAssertRemove(${i},${ai})">✕</button>
-    </div>`).join('');
+    </div>`;
+  }).join('');
+}
+// Change Check field type — reset path, auto-set locked operator/expected, re-render
+function _apiColAssertFieldType(i, ai, ft) {
+  _apiColSteps[i].assertions[ai].field = _assertFieldEncode(ft, '');
+  const fieldDef = _ASSERT_FIELDS.find(f => f.value === ft);
+  if (fieldDef?.lockedOperator) _apiColSteps[i].assertions[ai].operator = fieldDef.lockedOperator;
+  if (fieldDef?.lockedExpected !== undefined) _apiColSteps[i].assertions[ai].expected = fieldDef.lockedExpected;
+  _apiColAssertRender(i);
+}
+// Update path portion of field — encode type + new path without re-render (live typing)
+function _apiColAssertFieldPath(i, ai, path) {
+  const ft = _assertFieldType(_apiColSteps[i].assertions[ai].field);
+  _apiColSteps[i].assertions[ai].field = _assertFieldEncode(ft, path);
 }
 function _apiColAssertField(i, ai, f, val) { _apiColSteps[i].assertions[ai][f] = val; if (f === 'operator') _apiColAssertRender(i); }
 function _apiColAssertRemove(i, ai) { _apiColSteps[i].assertions.splice(ai, 1); _apiColAssertRender(i); }
 
-// ── Flow Control: Next Step ─────────────────────────────────────────────────
+// ── Domain Assertion Library ────────────────────────────────────────────────
+
+let _domainAssertStepIdx = -1;
+let _domainAssertDomains = [];
+
+async function _domainAssertOpen(i) {
+  _domainAssertStepIdx = i;
+  let modal = document.getElementById('domain-assert-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'domain-assert-modal';
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:9999';
+    modal.innerHTML = `
+      <div style="background:var(--bg-primary,#111);border:1px solid var(--border);border-radius:10px;width:820px;max-width:96vw;max-height:90vh;display:flex;flex-direction:column;position:relative">
+        <!-- Header -->
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--border);flex-shrink:0">
+          <span style="font-size:15px;font-weight:700;color:#a78bfa">Load Domain Assertion Template</span>
+          <button class="tbl-btn" onclick="_domainAssertClose()" style="font-size:16px;padding:2px 8px">✕</button>
+        </div>
+        <!-- Body: two columns -->
+        <div style="display:flex;flex:1;overflow:hidden;min-height:0">
+          <!-- Left: domain list -->
+          <div style="width:240px;flex-shrink:0;padding:12px;border-right:1px solid var(--border);overflow-y:auto">
+            <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Select Domain</div>
+            <div id="domain-assert-list" style="display:flex;flex-direction:column;gap:6px"></div>
+          </div>
+          <!-- Right: preview -->
+          <div style="flex:1;padding:12px;overflow-y:auto;display:flex;flex-direction:column;gap:10px">
+            <div id="domain-assert-preview" style="display:none;flex:1">
+              <div style="color:var(--text-muted);font-size:12px">Click a domain on the left to preview its assertions.</div>
+            </div>
+            <div id="domain-assert-placeholder" style="color:var(--text-muted);font-size:12px;margin-top:20px">
+              Select a domain on the left to see the pre-built assertion pack. Assertions are <strong style="color:var(--text)">appended</strong> to your existing ones.
+            </div>
+          </div>
+        </div>
+        <!-- Footer -->
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 18px;border-top:1px solid var(--border);flex-shrink:0">
+          <div style="font-size:11px;color:#f59e0b">Advisory: review expected values before saving.</div>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-secondary" onclick="_domainAssertClose()">Cancel</button>
+            <button class="btn btn-primary" id="domain-assert-apply-btn" style="background:#7c3aed;border-color:#7c3aed;display:none" onclick="_domainAssertApply()">Apply Assertions</button>
+          </div>
+        </div>
+      </div>`;
+    document.body.appendChild(modal);
+  }
+  modal.style.display = 'flex';
+  document.getElementById('domain-assert-apply-btn').style.display = 'none';
+  document.getElementById('domain-assert-preview').style.display = 'none';
+  modal._selectedDomain = null;
+  const list = document.getElementById('domain-assert-list');
+  list.innerHTML = '<div style="color:var(--text-muted);font-size:12px">Loading domains…</div>';
+  try {
+    const res = await fetch('/api/ai-intelligence/domain-assertions');
+    if (!res.ok) { list.innerHTML = '<div style="color:#ef4444">Failed to load domains.</div>'; return; }
+    const data = await res.json();
+    _domainAssertDomains = data.domains || [];
+    list.innerHTML = _domainAssertDomains.map(d => `
+      <div class="domain-card" data-id="${escHtml(d.id)}" onclick="_domainAssertSelect('${escHtml(d.id)}')"
+           style="border:1px solid var(--border);border-radius:6px;padding:8px 10px;cursor:pointer;transition:border-color .15s,background .15s">
+        <div style="font-weight:600;font-size:12px;color:#a78bfa">${escHtml(d.name)}</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:2px;line-height:1.3">${escHtml(d.description)}</div>
+      </div>`).join('');
+  } catch { list.innerHTML = '<div style="color:#ef4444">Error loading domains.</div>'; }
+}
+
+async function _domainAssertSelect(domainId) {
+  document.querySelectorAll('.domain-card').forEach(c => {
+    c.style.borderColor = c.dataset.id === domainId ? '#a78bfa' : 'var(--border)';
+    c.style.background = c.dataset.id === domainId ? 'rgba(167,139,250,.08)' : '';
+  });
+  const modal = document.getElementById('domain-assert-modal');
+  modal._selectedDomain = domainId;
+  const preview = document.getElementById('domain-assert-preview');
+  const placeholder = document.getElementById('domain-assert-placeholder');
+  if (placeholder) placeholder.style.display = 'none';
+  preview.style.display = 'block';
+  preview.innerHTML = '<div style="color:var(--text-muted);font-size:12px">Loading…</div>';
+  document.getElementById('domain-assert-apply-btn').style.display = 'none';
+  try {
+    const res = await fetch(`/api/ai-intelligence/domain-assertions/${encodeURIComponent(domainId)}`);
+    if (!res.ok) { preview.innerHTML = '<div style="color:#ef4444">Failed to load pack.</div>'; return; }
+    const pack = await res.json();
+    preview.innerHTML = `
+      <div style="font-size:12px;font-weight:700;color:var(--text-muted);margin-bottom:8px">${escHtml(pack.name)} — ${pack.assertions.length} assertions</div>
+      <div style="display:grid;grid-template-columns:1fr 100px 1fr 65px;gap:4px;font-size:11px;font-weight:700;color:var(--text-muted);padding:0 0 4px;border-bottom:1px solid var(--border);margin-bottom:4px">
+        <span>Check Field</span><span>Operator</span><span>Expected</span><span>Severity</span>
+      </div>
+      ${pack.assertions.map(a => `
+        <div style="display:grid;grid-template-columns:1fr 100px 1fr 65px;gap:4px;padding:5px 0;border-bottom:1px solid rgba(255,255,255,.04);font-size:11px;align-items:center">
+          <span style="color:#e2e8f0;word-break:break-all">${escHtml(a.field)}</span>
+          <span style="color:#94a3b8">${escHtml(a.operator)}</span>
+          <span style="color:#94a3b8">${a.expected !== undefined ? escHtml(String(a.expected)) : '<em style="opacity:.4">—</em>'}</span>
+          <span style="color:${a.severity==='critical'?'#f87171':a.severity==='high'?'#fb923c':a.severity==='medium'?'#facc15':'#94a3b8'};font-size:10px;font-weight:600">${escHtml(a.severity||'medium')}</span>
+        </div>`).join('')}`;
+    document.getElementById('domain-assert-apply-btn').style.display = 'inline-block';
+    modal._assertionPack = pack.assertions;
+  } catch (e) { preview.innerHTML = `<div style="color:#ef4444">Error: ${e.message}</div>`; }
+}
+
+function _domainAssertApply() {
+  const modal = document.getElementById('domain-assert-modal');
+  const assertions = modal._assertionPack;
+  const i = _domainAssertStepIdx;
+  if (!assertions || i < 0) return;
+  if (!_apiColSteps[i].assertions) _apiColSteps[i].assertions = [];
+  _apiColSteps[i].assertions.push(...assertions);
+  _apiColAssertRender(i);
+  _domainAssertClose();
+  showToast('success', `${assertions.length} domain assertions added. Review expected values before saving.`);
+}
+
+function _domainAssertClose() {
+  const modal = document.getElementById('domain-assert-modal');
+  if (modal) modal.style.display = 'none';
+}
+
+// ── Flow Control: No-Code Rule Builder ─────────────────────────────────────
+// Data schema: FlowRule = { condition?: { field, operator, value }, action, target? }
+// action: '__stop__' | '__continue__' | '__jump__' | '__repeat__'
+// target: step name (jump) | repeat count as string (repeat)
+
 function _apiColFlowAdd(i) {
   if (!_apiColSteps[i].flowRules) _apiColSteps[i].flowRules = [];
-  _apiColSteps[i].flowRules.push({ check: 'statusCode', operator: 'equals', value: '200', nextStep: '' });
+  _apiColSteps[i].flowRules.push({
+    condition: { field: 'statusCode', operator: 'equals', value: '200' },
+    action: '__continue__',
+  });
   _apiColFlowRender(i);
 }
+
 function _apiColFlowRender(i) {
   const c = document.getElementById('api-step-flow-' + i);
   if (!c) return;
   const rules = _apiColSteps[i].flowRules ?? [];
-  if (!rules.length) { c.innerHTML = '<div style="color:var(--text-muted);font-size:12px;padding:4px 0">No flow rules — collection runs sequentially by default.</div>'; return; }
-  const stepOpts = _apiColSteps.map((s, si) => `<option value="${escHtml(s.name)}" ${rules[0]?.nextStep===s.name?'selected':''}>${si+1}. ${escHtml(s.name)}</option>`).join('');
-  const stopOpts = `<option value="__stop__">⛔ Stop collection</option><option value="__continue__">▶ Continue next</option>`;
-  c.innerHTML = rules.map((r, ri) => `
-    <div style="display:grid;grid-template-columns:130px 140px 1fr 130px 22px;gap:4px;margin-bottom:4px;align-items:center">
-      <select class="fm-input" style="font-size:12px" onchange="_apiColFlowField(${i},${ri},'check',this.value)">
-        ${_ASSERT_FIELDS.map(f => `<option value="${f.value}" ${r.check===f.value?'selected':''}>${f.label}</option>`).join('')}
-      </select>
-      <select class="fm-input" style="font-size:12px" onchange="_apiColFlowField(${i},${ri},'operator',this.value)">
-        ${_ASSERT_OPS.map(o => `<option value="${o.value}" ${r.operator===o.value?'selected':''}>${o.label}</option>`).join('')}
-      </select>
-      <input class="fm-input" style="font-size:12px" placeholder="Value or {{var}}" value="${escHtml(r.value ?? '')}" oninput="_apiColFlowField(${i},${ri},'value',this.value)"/>
-      <select class="fm-input" style="font-size:12px" onchange="_apiColFlowField(${i},${ri},'nextStep',this.value)">
-        ${stopOpts}
-        ${_apiColSteps.map((s, si) => si !== i ? `<option value="${escHtml(s.name)}" ${r.nextStep===s.name?'selected':''}>${si+1}. ${escHtml(s.name)}</option>` : '').join('')}
-      </select>
-      <button class="tbl-btn del" onclick="_apiColFlowRemove(${i},${ri})">✕</button>
-    </div>`).join('');
+  if (!rules.length) {
+    c.innerHTML = '<div style="color:var(--text-muted);font-size:12px;padding:4px 0">No rules added — collection runs sequentially by default.</div>';
+    return;
+  }
+  c.innerHTML = rules.map((r, ri) => {
+    // Condition section
+    const hasCondition = !!r.condition;
+    const field = r.condition?.field || 'statusCode';
+    const ft = _assertFieldType(field);
+    const fp = _assertFieldPath(field);
+    const fieldDef = _ASSERT_FIELDS.find(f => f.value === ft) || _ASSERT_FIELDS[0];
+
+    const condCheckDropdown = `<select class="fm-input" style="font-size:12px" onchange="_apiColFlowCheckType(${i},${ri},this.value)">
+      ${_ASSERT_FIELDS.map(f => `<option value="${f.value}" ${ft===f.value?'selected':''}>${f.label}</option>`).join('')}
+    </select>`;
+    const condCheckCell = fieldDef.hasPath
+      ? `<div style="display:flex;flex-direction:column;gap:2px">${condCheckDropdown}
+           <input class="fm-input" style="font-size:11px;color:var(--text-muted)" placeholder="${escHtml(fieldDef.pathPlaceholder||'')}" value="${escHtml(fp)}" oninput="_apiColFlowCheckPath(${i},${ri},this.value)"/>
+         </div>`
+      : condCheckDropdown;
+    const condOpCell = fieldDef.lockedOperator
+      ? `<div class="fm-input" style="font-size:12px;opacity:0.55;display:flex;align-items:center;cursor:not-allowed;user-select:none">${fieldDef.lockedOperator}</div>`
+      : `<select class="fm-input" style="font-size:12px" onchange="_apiColFlowCondField(${i},${ri},'operator',this.value)">
+           ${_ASSERT_OPS.map(o => `<option value="${o.value}" ${(r.condition?.operator||'equals')===o.value?'selected':''}>${o.label}</option>`).join('')}
+         </select>`;
+    const isValLocked = fieldDef.lockedExpected !== undefined;
+    const condValCell = `<input class="fm-input" style="font-size:12px${isValLocked?';opacity:0.4':''}" placeholder="Value or {{var}}" value="${isValLocked ? escHtml(fieldDef.lockedExpected) : escHtml(r.condition?.value ?? '')}" ${isValLocked?'disabled':''} oninput="_apiColFlowCondField(${i},${ri},'value',this.value)"/>`;
+
+    const condBlock = hasCondition
+      ? `<div style="display:grid;grid-template-columns:140px 140px 1fr;gap:4px;align-items:${fieldDef.hasPath?'start':'center'}">
+           ${condCheckCell}${condOpCell}${condValCell}
+         </div>`
+      : `<div style="color:var(--text-muted);font-size:12px;font-style:italic">Always (no condition)</div>`;
+
+    // Action section
+    const action = r.action || '__continue__';
+    const actionOpts = [
+      { v: '__continue__', label: '▶ Skip to next request' },
+      { v: '__stop__',     label: '⛔ Stop collection' },
+      { v: '__jump__',     label: '↩ Jump to request...' },
+      { v: '__repeat__',   label: '🔁 Repeat this request' },
+    ];
+    const actionDropdown = `<select class="fm-input" style="font-size:12px;flex:1" onchange="_apiColFlowActionChange(${i},${ri},this.value)">
+      ${actionOpts.map(a => `<option value="${a.v}" ${action===a.v?'selected':''}>${a.label}</option>`).join('')}
+    </select>`;
+    let targetCell = '';
+    if (action === '__jump__') {
+      targetCell = `<select class="fm-input" style="font-size:12px;flex:1" onchange="_apiColFlowSetTarget(${i},${ri},this.value)">
+        <option value="">— pick request —</option>
+        ${_apiColSteps.map((s, si) => `<option value="${escHtml(s.name)}" ${r.target===s.name?'selected':''}>${si+1}. ${escHtml(s.name)}${si===i?' (this request)':''}</option>`).join('')}
+      </select>`;
+    } else if (action === '__repeat__') {
+      const maxR = parseInt(r.target, 10);
+      targetCell = `<div style="display:flex;align-items:center;gap:4px;flex:1">
+        <span style="font-size:12px;color:var(--text-muted);white-space:nowrap">up to</span>
+        <input class="fm-input" type="number" min="1" max="10" style="width:60px;font-size:12px" value="${isNaN(maxR)?3:maxR}" oninput="_apiColFlowSetTarget(${i},${ri},this.value)"/>
+        <span style="font-size:12px;color:var(--text-muted);white-space:nowrap">times</span>
+      </div>`;
+    }
+
+    return `<div style="border:1px solid var(--border);border-radius:6px;padding:8px 10px;margin-bottom:6px;background:var(--bg-secondary,#1a1a1a)">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
+        <span style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px">If</span>
+        <label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer">
+          <input type="checkbox" ${hasCondition?'checked':''} onchange="_apiColFlowToggleCond(${i},${ri},this.checked)"/>
+          condition is met
+        </label>
+        <span style="flex:1"></span>
+        <button class="tbl-btn del" onclick="_apiColFlowRemove(${i},${ri})" title="Remove rule">✕</button>
+      </div>
+      <div style="padding:4px 0 8px 18px">${condBlock}</div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <span style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px">Then</span>
+        ${actionDropdown}
+        ${targetCell}
+      </div>
+    </div>`;
+  }).join('');
 }
-function _apiColFlowField(i, ri, f, val) { _apiColSteps[i].flowRules[ri][f] = val; }
+
+function _apiColFlowCheckType(i, ri, ft) {
+  if (!_apiColSteps[i].flowRules[ri].condition) _apiColSteps[i].flowRules[ri].condition = { field: ft, operator: 'equals', value: '' };
+  const encoded = _assertFieldEncode(ft, '');
+  _apiColSteps[i].flowRules[ri].condition.field = encoded;
+  const fieldDef = _ASSERT_FIELDS.find(f => f.value === ft);
+  if (fieldDef?.lockedOperator) _apiColSteps[i].flowRules[ri].condition.operator = fieldDef.lockedOperator;
+  if (fieldDef?.lockedExpected !== undefined) _apiColSteps[i].flowRules[ri].condition.value = fieldDef.lockedExpected;
+  _apiColFlowRender(i);
+}
+function _apiColFlowCheckPath(i, ri, path) {
+  if (!_apiColSteps[i].flowRules[ri].condition) return;
+  const ft = _assertFieldType(_apiColSteps[i].flowRules[ri].condition.field || 'statusCode');
+  _apiColSteps[i].flowRules[ri].condition.field = _assertFieldEncode(ft, path);
+}
+function _apiColFlowCondField(i, ri, f, val) {
+  if (!_apiColSteps[i].flowRules[ri].condition) _apiColSteps[i].flowRules[ri].condition = { field: 'statusCode', operator: 'equals', value: '' };
+  _apiColSteps[i].flowRules[ri].condition[f] = val;
+}
+function _apiColFlowToggleCond(i, ri, checked) {
+  if (checked) {
+    _apiColSteps[i].flowRules[ri].condition = { field: 'statusCode', operator: 'equals', value: '200' };
+  } else {
+    delete _apiColSteps[i].flowRules[ri].condition;
+  }
+  _apiColFlowRender(i);
+}
+function _apiColFlowActionChange(i, ri, action) {
+  _apiColSteps[i].flowRules[ri].action = action;
+  if (action === '__repeat__') _apiColSteps[i].flowRules[ri].target = '3';
+  else if (action !== '__jump__') delete _apiColSteps[i].flowRules[ri].target;
+  _apiColFlowRender(i);
+}
+function _apiColFlowSetTarget(i, ri, val) { _apiColSteps[i].flowRules[ri].target = val; }
 function _apiColFlowRemove(i, ri) { _apiColSteps[i].flowRules.splice(ri, 1); _apiColFlowRender(i); }
 function _apiColParamAdd(i) {
   if (!_apiColSteps[i].request) _apiColSteps[i].request = {};
@@ -11553,6 +12034,7 @@ function apiColGenTestsOpen(colId, colName) {
   _genTestColId = colId;
   _genTestColName = colName;
   _genTestCases = [];
+  _genAssertSuggestions = [];
   const sel = document.getElementById('gen-tests-category-select');
   if (sel) sel.value = 'Negative';
   const content = document.getElementById('gen-tests-content');
@@ -11560,10 +12042,43 @@ function apiColGenTestsOpen(colId, colName) {
   const title = document.getElementById('gen-tests-modal-title');
   if (title) title.textContent = '🧪 Suggest Tests — ' + colName;
   _genTestsShowSelControls(false);
+  // Hide run picker on open
+  const runSel = document.getElementById('gen-tests-run-select');
+  if (runSel) runSel.style.display = 'none';
   openModal('modal-gen-tests');
 }
 
+// Called when category dropdown changes
+async function _genTestsCategoryChanged() {
+  const sel = document.getElementById('gen-tests-category-select');
+  const runSel = document.getElementById('gen-tests-run-select');
+  if (!sel || !runSel) return;
+  if (sel.value !== '__suggest_assertions__') {
+    runSel.style.display = 'none';
+    return;
+  }
+  // Show run picker and load recent runs for this collection
+  runSel.style.display = '';
+  runSel.innerHTML = '<option value="">Loading runs…</option>';
+  try {
+    const projectQs = (typeof currentProjectId !== 'undefined' && currentProjectId) ? '&projectId=' + encodeURIComponent(currentProjectId) : '';
+    const res = await fetch('/api/api-runs?collectionId=' + encodeURIComponent(_genTestColId) + projectQs);
+    if (!res.ok) { runSel.innerHTML = '<option value="">Failed to load runs</option>'; return; }
+    const runs = await res.json();
+    const list = Array.isArray(runs) ? runs : (runs.runs || runs.results || []);
+    if (!list.length) { runSel.innerHTML = '<option value="">No runs found — run the collection first</option>'; return; }
+    runSel.innerHTML = list.map(function(r) {
+      const d = r.startedAt ? new Date(r.startedAt).toLocaleString() : r.id;
+      const status = r.status === 'passed' ? '✅' : r.status === 'failed' ? '❌' : '⏱';
+      return '<option value="' + escHtml(r.id) + '">' + status + ' ' + escHtml(d) + '</option>';
+    }).join('');
+  } catch (e) {
+    runSel.innerHTML = '<option value="">Error: ' + escHtml(e.message) + '</option>';
+  }
+}
+
 let _genTestCases = [];
+let _genAssertSuggestions = []; // [{stepId, stepName, assertionPayload, ...}] for assert-from-run mode
 
 function _genTestsShowSelControls(show) {
   ['btn-gen-tests-select-all','btn-gen-tests-deselect-all','btn-gen-tests-add'].forEach(id => {
@@ -11591,7 +12106,91 @@ async function apiColGenTestsRun() {
   const aiBadge  = document.getElementById('gen-tests-ai-badge');
   if (!content) return;
 
+  // ── Suggest Assertions from recent run ──────────────────────────────────────
+  if (category === '__suggest_assertions__') {
+    const runSel = document.getElementById('gen-tests-run-select');
+    const runId  = runSel ? runSel.value : '';
+    if (!runId) { content.innerHTML = '<div style="color:var(--warning);padding:12px 0">Select a run from the dropdown first.</div>'; return; }
+    _genAssertSuggestions = [];
+    _genTestCases = [];
+    _genTestsShowSelControls(false);
+    if (aiBadge) aiBadge.style.display = 'none';
+    content.innerHTML = '<div style="color:var(--text-muted);padding:12px 0">⏳ Analysing run and generating assertion suggestions…</div>';
+    try {
+      // Fetch collection to know all steps and their existing assertions
+      const colRes = await fetch('/api/api-collections/' + encodeURIComponent(_genTestColId));
+      if (!colRes.ok) throw new Error('Could not load collection');
+      const col = await colRes.json();
+      const steps = col.steps || [];
+
+      // For each step, fetch assertion suggestions from the run
+      const allRows = [];
+      for (const step of steps) {
+        let data;
+        try {
+          const sRes = await fetch('/api/ai-intelligence/steps/' + encodeURIComponent(step.id) + '/suggest-assertions', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ runId }),
+          });
+          if (!sRes.ok) continue;
+          data = await sRes.json();
+        } catch { continue; }
+
+        const existingKeys = new Set((step.assertions || []).map(a => a.field + '::' + a.operator));
+        const newSuggestions = (data.suggestions || []).filter(s => !existingKeys.has(s.field + '::' + s.operator));
+        if (!newSuggestions.length) continue;
+
+        newSuggestions.forEach(function(s) {
+          _genAssertSuggestions.push({ stepId: step.id, stepName: step.name, suggestion: s });
+          allRows.push({ stepId: step.id, stepName: step.name, suggestion: s });
+        });
+      }
+
+      if (!allRows.length) {
+        content.innerHTML = '<div style="color:var(--text-muted);padding:16px 0">No new assertion suggestions — all observed assertions are already added to every request.</div>';
+        return;
+      }
+
+      const sevColor = { critical:'#ef4444', high:'#fb923c', medium:'#f59e0b', low:'#22c55e', soft:'#9ca3af' };
+      const confColor = function(c) { return c >= 85 ? '#22c55e' : c >= 70 ? '#fb923c' : '#9ca3af'; };
+      const targetLabel = { status:'Status', header:'Header', responseTime:'Resp Time', body:'Body', array:'Array', domain:'Domain' };
+
+      const rows = allRows.map(function(row, idx) {
+        const s = row.suggestion;
+        const sc = sevColor[(s.assertionPayload && s.assertionPayload.severity) || 'medium'] || '#9ca3af';
+        return '<tr>' +
+          '<td style="width:36px;text-align:center"><input type="checkbox" class="gen-test-cb" data-idx="' + idx + '" onchange="_genTestsUpdateSelCount()"/></td>' +
+          '<td style="font-size:11px;color:var(--text-muted)">' + escHtml(row.stepName) + '</td>' +
+          '<td><span style="display:inline-block;padding:2px 6px;border-radius:8px;font-size:10px;font-weight:700;background:' + sc + '22;color:' + sc + '">' + escHtml((s.assertionPayload && s.assertionPayload.severity) || 'medium') + '</span></td>' +
+          '<td style="font-size:11px;color:var(--text-muted)">' + escHtml(targetLabel[s.target] || s.target) + '</td>' +
+          '<td style="font-family:monospace;font-size:11px">' + escHtml(s.field || '—') + '</td>' +
+          '<td style="font-size:11px">' + escHtml(s.operator || '—') + '</td>' +
+          '<td style="font-family:monospace;font-size:11px">' + escHtml(s.expectedValue != null ? String(s.expectedValue) : '—') + '</td>' +
+          '<td style="color:' + confColor(s.confidence||0) + ';font-size:11px;font-weight:600">' + (s.confidence||0) + '%</td>' +
+          '<td style="font-size:11px;color:var(--text-muted);max-width:180px;white-space:normal">' + escHtml(s.rationale || '') + '</td>' +
+          '</tr>';
+      }).join('');
+
+      content.innerHTML =
+        '<div style="font-size:12px;color:var(--text-muted);margin-bottom:8px"><strong>' + allRows.length + '</strong> new assertion suggestion' + (allRows.length !== 1 ? 's' : '') + ' across <strong>' + new Set(allRows.map(r => r.stepId)).size + '</strong> request' + (new Set(allRows.map(r => r.stepId)).size !== 1 ? 's' : '') + '</div>' +
+        '<div style="overflow:auto;max-height:420px">' +
+          '<table class="data-table">' +
+            '<thead><tr><th style="width:36px"></th><th>Request</th><th>Severity</th><th>Type</th><th>Field</th><th>Operator</th><th>Expected</th><th>Confidence</th><th>Rationale</th></tr></thead>' +
+            '<tbody>' + rows + '</tbody>' +
+          '</table>' +
+        '</div>';
+
+      _genTestsShowSelControls(true);
+      _genTestsUpdateSelCount();
+    } catch (e) {
+      content.innerHTML = '<div style="color:#ef4444">Error: ' + escHtml(e.message) + '</div>';
+    }
+    return; // skip regular test generation below
+  }
+  // ── End Suggest Assertions ──────────────────────────────────────────────────
+
   _genTestCases = [];
+  _genAssertSuggestions = [];
   _genTestsShowSelControls(false);
   if (aiBadge) aiBadge.style.display = 'none';
   content.innerHTML = '<div style="color:var(--text-muted);padding:12px 0">⏳ Generating <strong>' + escHtml(category) + '</strong> tests… this may take a few seconds if AI is enabled.</div>';
@@ -11663,12 +12262,47 @@ async function apiColGenTestsRun() {
 
 async function apiColGenTestsAddSelected() {
   const checked = Array.from(document.querySelectorAll('#gen-tests-content input[type=checkbox]:checked'));
-  if (!checked.length) { alert('Select at least one test to add.'); return; }
-  const selectedCases = checked.map(cb => _genTestCases[parseInt(cb.dataset.idx)]);
-
+  if (!checked.length) { alert('Select at least one item to add.'); return; }
   const btn = document.getElementById('btn-gen-tests-add');
   if (btn) { btn.textContent = '⏳ Adding…'; btn.disabled = true; }
 
+  // ── Mode: Add assertion suggestions ─────────────────────────────────────────
+  if (_genAssertSuggestions.length) {
+    const selected = checked.map(cb => _genAssertSuggestions[parseInt(cb.dataset.idx)]);
+    try {
+      const colRes = await fetch('/api/api-collections/' + encodeURIComponent(_genTestColId));
+      if (!colRes.ok) throw new Error('Could not load collection');
+      const col = await colRes.json();
+      let addedCount = 0;
+      selected.forEach(function(row) {
+        const step = (col.steps || []).find(function(s) { return s.id === row.stepId; });
+        if (!step) return;
+        if (!Array.isArray(step.assertions)) step.assertions = [];
+        const p = row.suggestion.assertionPayload;
+        if (!p) return;
+        const already = step.assertions.some(function(a) { return a.field === p.field && a.operator === p.operator; });
+        if (already) return;
+        step.assertions.push({ field: p.field, operator: p.operator, expected: p.expected, severity: p.severity || 'high', weight: p.weight || 7 });
+        addedCount++;
+      });
+      const saveRes = await fetch('/api/api-collections/' + encodeURIComponent(_genTestColId), {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(col),
+      });
+      if (!saveRes.ok) throw new Error('Save failed (' + saveRes.status + ')');
+      closeModal('modal-gen-tests');
+      modAlert('api-col-list-alert', 'success', addedCount + ' assertion' + (addedCount !== 1 ? 's' : '') + ' added to collection requests.');
+      await apiColLoad();
+    } catch (e) {
+      modAlert('api-col-list-alert', 'error', e.message);
+    } finally {
+      if (btn) { btn.textContent = '+ Add Selected to Collection'; btn.disabled = false; }
+    }
+    return;
+  }
+
+  // ── Mode: Add test cases (existing behaviour) ────────────────────────────────
+  const selectedCases = checked.map(cb => _genTestCases[parseInt(cb.dataset.idx)]);
   try {
     const res = await fetch('/api/api-collections/' + encodeURIComponent(_genTestColId) + '/add-steps', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -11969,6 +12603,7 @@ async function apiColTryRequestSave() {
 }
 
 async function apiColRun(id) {
+  // OLD: direct run without data file dialog — kept as fallback, main path now uses _apiColRunOpen
   const col = _apiCols.find(c => c.id === id);
   if (!col) return;
   try {
@@ -11983,6 +12618,274 @@ async function apiColRun(id) {
     if (typeof apiRunsLoad === 'function') apiRunsLoad(id, data.runId || data.id);
   } catch (e) {
     modAlert('api-col-list-alert', 'error', e.message);
+  }
+}
+
+// ── Run Dialog (Data File Runner) ─────────────────────────────────────────────
+
+let _apiRunDialogColId = null;
+let _apiRunDialogFileId = null;   // currently selected saved file id
+let _apiRunDialogFileName = null; // display name
+let _apiRunDialogRows = 0;
+let _apiRunDialogColumns = [];
+
+function _apiColRunOpen(id) {
+  const col = _apiCols.find(c => c.id === id);
+  if (!col) return;
+  _apiRunDialogColId = id;
+  _apiRunDialogFileId = null;
+  _apiRunDialogFileName = null;
+  _apiRunDialogRows = 0;
+  _apiRunDialogColumns = [];
+
+  // Build modal HTML if not present
+  if (!document.getElementById('modal-api-run-dialog')) {
+    const div = document.createElement('div');
+    div.innerHTML = `
+<div id="modal-api-run-dialog" class="modal-backdrop" style="display:none;z-index:1200">
+  <div class="modal-box" style="max-width:600px">
+    <div class="modal-header">
+      <h3 id="run-dlg-title">▶ Run Collection</h3>
+      <button class="modal-close" onclick="_apiColRunClose()">✕</button>
+    </div>
+    <div class="modal-body" style="padding:16px">
+      <div style="margin-bottom:16px">
+        <label style="font-weight:600;display:block;margin-bottom:6px">📂 Data File <span style="font-weight:400;color:var(--text-muted)">(optional — runs once per row)</span></label>
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+          <select id="run-dlg-file-select" style="flex:1" onchange="_apiRunDlgSelectFile(this.value)">
+            <option value="">— select a saved file or upload new —</option>
+          </select>
+          <button class="tbl-btn" onclick="_apiRunDlgUploadClick()" title="Upload new CSV / JSON">⬆ Upload</button>
+          <input type="file" id="run-dlg-file-input" accept=".csv,.json" style="display:none" onchange="_apiRunDlgFileChosen(this)">
+        </div>
+        <div id="run-dlg-file-preview" style="display:none;background:var(--bg-secondary);border:1px solid var(--border);border-radius:6px;padding:10px;font-size:13px">
+          <div id="run-dlg-file-info" style="margin-bottom:6px;color:var(--text-muted)"></div>
+          <div id="run-dlg-preview-table"></div>
+          <div style="margin-top:8px;display:flex;align-items:center;gap:8px">
+            <label style="font-size:12px;font-weight:600">Save as:</label>
+            <input id="run-dlg-save-name" type="text" class="form-input" style="flex:1;padding:3px 6px;font-size:12px" placeholder="Name for reuse…">
+            <button class="tbl-btn" onclick="_apiRunDlgSaveFile()" id="run-dlg-save-btn">💾 Save</button>
+          </div>
+          <button class="tbl-btn del" onclick="_apiRunDlgClearFile()" style="margin-top:6px;font-size:11px">✕ Remove file</button>
+        </div>
+      </div>
+      <div style="margin-bottom:14px;display:flex;align-items:center;gap:10px">
+        <label style="font-weight:600;font-size:13px">If a row fails:</label>
+        <select id="run-dlg-stop-on-fail" style="font-size:13px">
+          <option value="false">Continue to next row</option>
+          <option value="true">Stop</option>
+        </select>
+      </div>
+      <div id="run-dlg-iteration-note" style="display:none;color:var(--accent);font-size:13px;margin-bottom:12px"></div>
+      <div id="run-dlg-uploading" style="display:none;color:var(--text-muted);font-size:13px">⏳ Uploading…</div>
+      <div id="run-dlg-error" style="display:none;color:var(--danger);font-size:13px"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-secondary" onclick="_apiColRunClose()">Cancel</button>
+      <button class="btn-primary" id="run-dlg-run-btn" onclick="_apiColRunExecute()">▶ Run Collection</button>
+    </div>
+  </div>
+</div>`;
+    document.body.appendChild(div.firstElementChild);
+  }
+
+  document.getElementById('run-dlg-title').textContent = `▶ Run — ${col.name}`;
+  document.getElementById('run-dlg-file-preview').style.display = 'none';
+  document.getElementById('run-dlg-iteration-note').style.display = 'none';
+  document.getElementById('run-dlg-error').style.display = 'none';
+  document.getElementById('run-dlg-run-btn').textContent = '▶ Run Collection';
+  document.getElementById('run-dlg-save-name').value = '';
+
+  _apiRunDlgLoadSavedFiles();
+  document.getElementById('modal-api-run-dialog').style.display = 'flex';
+}
+
+function _apiColRunClose() {
+  const m = document.getElementById('modal-api-run-dialog');
+  if (m) m.style.display = 'none';
+}
+
+async function _apiRunDlgLoadSavedFiles() {
+  if (!currentProjectId) return;
+  try {
+    const res = await fetch(`/api/data-files?projectId=${encodeURIComponent(currentProjectId)}`);
+    const files = res.ok ? await res.json() : [];
+    const sel = document.getElementById('run-dlg-file-select');
+    sel.innerHTML = '<option value="">— select a saved file or upload new —</option>';
+    for (const f of files) {
+      const opt = document.createElement('option');
+      opt.value = f.id;
+      opt.textContent = `${f.name} (${f.rowCount} rows — ${(f.columns||[]).join(', ')})`;
+      sel.appendChild(opt);
+    }
+    // Re-select previously chosen file
+    if (_apiRunDialogFileId) sel.value = _apiRunDialogFileId;
+  } catch { /* ignore */ }
+}
+
+async function _apiRunDlgSelectFile(fileId) {
+  if (!fileId) {
+    _apiRunDialogFileId = null;
+    document.getElementById('run-dlg-file-preview').style.display = 'none';
+    document.getElementById('run-dlg-iteration-note').style.display = 'none';
+    document.getElementById('run-dlg-run-btn').textContent = '▶ Run Collection';
+    return;
+  }
+  try {
+    const res = await fetch(`/api/data-files/${encodeURIComponent(fileId)}`);
+    if (!res.ok) throw new Error('Not found');
+    const data = await res.json();
+    _apiRunDialogFileId = data.id;
+    _apiRunDialogFileName = data.name;
+    _apiRunDialogRows = data.rowCount;
+    _apiRunDialogColumns = data.columns || [];
+    _apiRunDlgShowPreview(data);
+  } catch (e) {
+    _apiRunDlgShowError('Failed to load file: ' + e.message);
+  }
+}
+
+function _apiRunDlgShowPreview(data) {
+  const preview = data.preview || (data.rows || []).slice(0, 3);
+  const cols = data.columns || [];
+  let tbl = `<div style="color:var(--text-muted);font-size:12px;margin-bottom:4px">✔ ${data.rowCount} rows — columns: <strong>${cols.join(' | ')}</strong></div>`;
+  if (preview.length && cols.length) {
+    tbl += `<table style="width:100%;font-size:11px;border-collapse:collapse"><thead><tr>`;
+    for (const c of cols) tbl += `<th style="border:1px solid var(--border);padding:3px 6px;background:var(--bg-accent)">${escHtml(c)}</th>`;
+    tbl += '</tr></thead><tbody>';
+    for (const row of preview) {
+      tbl += '<tr>';
+      for (const c of cols) tbl += `<td style="border:1px solid var(--border);padding:3px 6px">${escHtml(String(row[c] ?? ''))}</td>`;
+      tbl += '</tr>';
+    }
+    tbl += '</tbody></table>';
+  }
+  document.getElementById('run-dlg-file-info').innerHTML = '';
+  document.getElementById('run-dlg-preview-table').innerHTML = tbl;
+  document.getElementById('run-dlg-file-preview').style.display = '';
+  document.getElementById('run-dlg-save-name').value = data.name || '';
+
+  const note = document.getElementById('run-dlg-iteration-note');
+  note.textContent = `ℹ️  Collection will run ${data.rowCount} time${data.rowCount !== 1 ? 's' : ''} total.`;
+  note.style.display = '';
+  document.getElementById('run-dlg-run-btn').textContent = `▶ Run Collection × ${data.rowCount}`;
+}
+
+function _apiRunDlgUploadClick() {
+  document.getElementById('run-dlg-file-input')?.click();
+}
+
+async function _apiRunDlgFileChosen(input) {
+  const file = input.files?.[0];
+  if (!file) return;
+  const uploading = document.getElementById('run-dlg-uploading');
+  const errEl = document.getElementById('run-dlg-error');
+  errEl.style.display = 'none';
+  uploading.style.display = '';
+
+  try {
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('projectId', currentProjectId || '');
+    fd.append('name', file.name.replace(/\.[^.]+$/, ''));
+    // If replacing a previously uploaded (unsaved) file, pass replaceId
+    if (_apiRunDialogFileId && !document.getElementById('run-dlg-file-select').value) {
+      fd.append('replaceId', _apiRunDialogFileId);
+    }
+    const res = await fetch('/api/data-files/upload', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Upload failed');
+
+    _apiRunDialogFileId = data.id;
+    _apiRunDialogFileName = data.name;
+    _apiRunDialogRows = data.rowCount;
+    _apiRunDialogColumns = data.columns || [];
+
+    document.getElementById('run-dlg-save-name').value = data.name || '';
+    _apiRunDlgShowPreview(data);
+    // Add to dropdown
+    const sel = document.getElementById('run-dlg-file-select');
+    let opt = sel.querySelector(`option[value="${data.id}"]`);
+    if (!opt) {
+      opt = document.createElement('option');
+      opt.value = data.id;
+      sel.appendChild(opt);
+    }
+    opt.textContent = `${data.name} (${data.rowCount} rows)`;
+    sel.value = data.id;
+  } catch (e) {
+    _apiRunDlgShowError(e.message);
+  } finally {
+    uploading.style.display = 'none';
+    input.value = '';
+  }
+}
+
+async function _apiRunDlgSaveFile() {
+  if (!_apiRunDialogFileId) return;
+  const name = document.getElementById('run-dlg-save-name').value.trim();
+  if (!name) { _apiRunDlgShowError('Enter a name before saving.'); return; }
+  try {
+    const res = await fetch(`/api/data-files/${encodeURIComponent(_apiRunDialogFileId)}/name`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    });
+    if (!res.ok) throw new Error('Rename failed');
+    _apiRunDialogFileName = name;
+    const sel = document.getElementById('run-dlg-file-select');
+    const opt = sel.querySelector(`option[value="${_apiRunDialogFileId}"]`);
+    if (opt) opt.textContent = `${name} (${_apiRunDialogRows} rows)`;
+  } catch (e) {
+    _apiRunDlgShowError(e.message);
+  }
+}
+
+function _apiRunDlgClearFile() {
+  _apiRunDialogFileId = null;
+  _apiRunDialogFileName = null;
+  _apiRunDialogRows = 0;
+  _apiRunDialogColumns = [];
+  document.getElementById('run-dlg-file-select').value = '';
+  document.getElementById('run-dlg-file-preview').style.display = 'none';
+  document.getElementById('run-dlg-iteration-note').style.display = 'none';
+  document.getElementById('run-dlg-run-btn').textContent = '▶ Run Collection';
+}
+
+function _apiRunDlgShowError(msg) {
+  const el = document.getElementById('run-dlg-error');
+  el.textContent = msg;
+  el.style.display = '';
+}
+
+async function _apiColRunExecute() {
+  if (!_apiRunDialogColId) return;
+  const runBtn = document.getElementById('run-dlg-run-btn');
+  runBtn.disabled = true;
+  runBtn.textContent = 'Starting…';
+  document.getElementById('run-dlg-error').style.display = 'none';
+
+  try {
+    const stopOnFailure = document.getElementById('run-dlg-stop-on-fail').value === 'true';
+    const body = { projectId: currentProjectId };
+    if (_apiRunDialogFileId) {
+      body.dataFileId = _apiRunDialogFileId;
+      body.stopOnFailure = stopOnFailure;
+    }
+    const res = await fetch(`/api/api-collections/${_apiRunDialogColId}/run`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Run failed');
+    _apiColRunClose();
+    modAlert('api-col-list-alert', 'success', `Run started — ID: ${data.runId || data.id}`);
+    if (typeof apiRunsLoad === 'function') apiRunsLoad(_apiRunDialogColId, data.runId || data.id);
+  } catch (e) {
+    _apiRunDlgShowError(e.message);
+    runBtn.disabled = false;
+    runBtn.textContent = _apiRunDialogRows > 0 ? `▶ Run Collection × ${_apiRunDialogRows}` : '▶ Run Collection';
   }
 }
 
@@ -13055,9 +13958,10 @@ function _apiRunsRenderList() {
     const startedRel  = r.startedAt ? _apiRunsRelTime(r.startedAt) : '—';
     const startedFull = r.startedAt ? new Date(r.startedAt).toLocaleString() : '';
 
+    const dataFileBadge = r.dataFileName ? `<span title="Data file: ${_apiRunsEsc(r.dataFileName)}" style="font-size:10px;background:#6366f1;color:#fff;padding:1px 5px;border-radius:8px;margin-left:4px">📂 ${_apiRunsEsc(r.dataFileName)} (${r.iterationCount||0} rows)</span>` : '';
     return `<tr>
       <td style="text-align:center;color:var(--text-muted);font-size:12px">${sr}</td>
-      <td style="font-weight:500">${_apiRunsEsc(colName)}</td>
+      <td style="font-weight:500">${_apiRunsEsc(colName)}${dataFileBadge}</td>
       <td style="color:var(--text-muted);font-size:12px">${_apiRunsEsc(envName)}</td>
       <td title="${_apiRunsEsc(startedFull)}" style="font-size:12px;color:var(--text-muted)">${startedRel}</td>
       <td style="font-size:12px">${durStr}</td>
@@ -13089,6 +13993,8 @@ async function apiRunsViewDetail(runId) {
   if (tlPanel) { tlPanel.dataset.loaded = ''; tlPanel.innerHTML = ''; }
   const vtPanel = document.getElementById('run-var-trace-panel');
   if (vtPanel) { vtPanel.dataset.loaded = ''; vtPanel.innerHTML = ''; }
+  const obsPanel = document.getElementById('run-observability-panel');
+  if (obsPanel) { obsPanel.dataset.loaded = ''; obsPanel.innerHTML = ''; }
   await _apiRunsFetchAndRender(runId);
   openModal('modal-api-run-detail');
 }
@@ -13185,6 +14091,41 @@ function _apiRunsRenderDetail(run) {
     } else {
       clusterEl.innerHTML = '';
     }
+  }
+
+  // Data File iteration summary banner
+  const iterBannerEl = document.getElementById('api-run-iteration-banner') || (() => {
+    const el = document.createElement('div');
+    el.id = 'api-run-iteration-banner';
+    document.getElementById('api-run-detail-summary')?.after(el);
+    return el;
+  })();
+  if (run.iterationCount > 1 && run.iterationSummary?.length) {
+    const iters = run.iterationSummary;
+    const iterPassed = iters.filter(it => it.status === 'passed').length;
+    const rows = iters.map((it, i) => {
+      const sc = it.status === 'passed' ? '#22c55e' : '#ef4444';
+      return `<tr style="font-size:12px">
+        <td style="padding:3px 8px">${i + 1}</td>
+        <td style="padding:3px 8px;color:var(--text-muted)">${_apiRunsEsc(it.rowIdentifier ?? '')}</td>
+        <td style="padding:3px 8px"><span style="color:${sc};font-weight:700">${it.status}</span></td>
+        <td style="padding:3px 8px;color:var(--text-muted)">${it.durationMs ? (it.durationMs/1000).toFixed(1)+'s' : '—'}</td>
+      </tr>`;
+    }).join('');
+    iterBannerEl.innerHTML = `
+      <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:12px 16px;margin-bottom:12px">
+        <div style="font-weight:700;margin-bottom:8px;font-size:13px">📂 ${_apiRunsEsc(run.dataFileName || 'Data File')} — ${run.iterationCount} iterations &nbsp;·&nbsp; ${iterPassed}/${run.iterationCount} passed</div>
+        <table style="width:100%;border-collapse:collapse">
+          <thead><tr style="font-size:11px;color:var(--text-muted)"><th style="text-align:left;padding:3px 8px">#</th><th style="text-align:left;padding:3px 8px">Row</th><th style="padding:3px 8px;text-align:left">Status</th><th style="padding:3px 8px;text-align:left">Duration</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+        <div style="margin-top:10px;display:flex;gap:8px">
+          <button class="tbl-btn" onclick="_apiRunsExportSummaryCsv()">📊 Export Summary CSV</button>
+          <button class="tbl-btn" onclick="_apiRunsExportDetailCsv()">📋 Export Step Detail CSV</button>
+        </div>
+      </div>`;
+  } else {
+    iterBannerEl.innerHTML = '';
   }
 
   // Step results table — store steps for filter/search
@@ -13311,7 +14252,20 @@ function _apiRunsRenderStepRows() {
   if (countEl) countEl.textContent = `Showing ${filtered.length} of ${_apiRunsAllSteps.length} requests`;
 
   stepTbody.innerHTML = '';
+  let _lastIterIdx = -1;
   filtered.forEach((step, idx) => {
+    // Insert iteration group header when iterationIndex changes (data-driven runs only)
+    if (step.iterationIndex !== undefined && step.iterationIndex !== _lastIterIdx) {
+      _lastIterIdx = step.iterationIndex;
+      const iterRow = document.createElement('tr');
+      const sc = (() => {
+        const sum = _apiRunsCurrentRun?.iterationSummary?.[step.iterationIndex];
+        return sum?.status === 'passed' ? '#22c55e' : '#ef4444';
+      })();
+      iterRow.innerHTML = `<td colspan="8" style="padding:6px 10px;background:var(--bg-accent);border-top:2px solid var(--border);font-size:12px;font-weight:700;color:${sc}">
+        Row ${step.iterationIndex + 1}${step.rowIdentifier ? ' — ' + _apiRunsEsc(step.rowIdentifier) : ''}</td>`;
+      stepTbody.appendChild(iterRow);
+    }
     const isTeardown = step.stepName?.includes('[teardown]') || false;
     const sc = step.status === 'passed' ? '#22c55e' : step.status === 'failed' || step.status === 'error' ? '#ef4444' : step.status === 'degraded' ? '#f59e0b' : '#9ca3af';
     const rowId = 'api-run-step-' + step.stepId;
@@ -13551,6 +14505,10 @@ function apiRunsTabSwitch(tab) {
     const panel = document.getElementById('run-var-trace-panel');
     if (panel && !panel.dataset.loaded) { panel.dataset.loaded = '1'; _apiRunsLoadVarTrace(_apiRunsCurrentRunId, panel); }
   }
+  if (tab === 'observability' && _apiRunsCurrentRunId) {
+    const panel = document.getElementById('run-observability-panel');
+    if (panel && !panel.dataset.loaded) { panel.dataset.loaded = '1'; _apiRunsLoadObservability(_apiRunsCurrentRunId, panel); }
+  }
 }
 
 // ── Debugger Engine — Timeline (Phase F) ────────────────────────────────────
@@ -13734,44 +14692,145 @@ function _apiRunsSynthesizeVarTrace(panel) {
       '</tbody></table></div>';
 }
 
-// ── AI Assertion Suggester (Phase F) ────────────────────────────────────────
+// ── AI Assertion Suggester (Phase III) ──────────────────────────────────────
 
 async function _apiRunsLoadSuggestPanel(stepId) {
   const panel = document.getElementById('suggest-panel-' + stepId);
   if (!panel || panel.dataset.loaded) return;
   panel.dataset.loaded = '1';
   const runId = _apiRunsCurrentRunId;
-  if (!runId) { panel.innerHTML = '<div style="color:#ef4444">No active run.</div>'; return; }
-  panel.innerHTML = '<div style="color:var(--text-muted)">Generating suggestions…</div>';
+  const run   = _apiRunsCurrentRun;
+  if (!runId) { panel.innerHTML = '<div style="color:var(--danger);font-size:12px">No active run.</div>'; return; }
+  panel.innerHTML = '<div style="color:var(--text-muted);font-size:12px">Analysing response and generating suggestions…</div>';
   try {
-    const res = await fetch('/api/ai-intelligence/steps/' + encodeURIComponent(stepId) + '/suggest-assertions', {
+    // Fetch collection to get existing assertions for this step (dedup checkpoint)
+    var existingAssertionKeys = new Set();
+    if (run && run.collectionId) {
+      try {
+        var colRes = await fetch('/api/api-collections/' + encodeURIComponent(run.collectionId));
+        if (colRes.ok) {
+          var col = await colRes.json();
+          var colStep = (col.steps || []).find(function(s) { return s.id === stepId; });
+          if (colStep && Array.isArray(colStep.assertions)) {
+            colStep.assertions.forEach(function(a) {
+              existingAssertionKeys.add(a.field + '::' + a.operator);
+            });
+          }
+        }
+      } catch (e) { /* non-fatal — skip dedup if collection fetch fails */ }
+    }
+
+    var res = await fetch('/api/ai-intelligence/steps/' + encodeURIComponent(stepId) + '/suggest-assertions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ runId: runId }),
     });
-    if (!res.ok) { panel.innerHTML = '<div style="color:#ef4444">No suggestions available for this step.</div>'; return; }
-    const data = await res.json();
-    const suggestions = data.suggestions || [];
-    if (!suggestions.length) { panel.innerHTML = '<div style="color:var(--text-muted)">No suggestions generated.</div>'; return; }
+    if (!res.ok) { panel.innerHTML = '<div style="color:var(--danger);font-size:12px">No suggestions available for this request.</div>'; return; }
+    var data = await res.json();
+    var allSuggestions = data.suggestions || [];
 
-    const rows = suggestions.map(function(s) {
-      return '<tr>' +
-        '<td style="font-size:11px">' + escHtml(s.type || '') + '</td>' +
-        '<td style="font-family:monospace;font-size:11px">' + escHtml(s.field || '—') + '</td>' +
-        '<td style="font-family:monospace;font-size:11px">' + escHtml(s.operator || '—') + '</td>' +
-        '<td style="font-family:monospace;font-size:11px">' + escHtml(JSON.stringify(s.expectedValue != null ? s.expectedValue : '—')) + '</td>' +
-        '<td style="font-size:11px;color:var(--text-muted)">' + escHtml(s.rationale || '') + '</td>' +
-        '</tr>';
-    }).join('');
+    // Dedup: filter out suggestions whose field+operator already exist in step assertions
+    var suggestions = allSuggestions.filter(function(s) {
+      return !existingAssertionKeys.has(s.field + '::' + s.operator);
+    });
+    var skippedCount = allSuggestions.length - suggestions.length;
 
-    panel.innerHTML =
-      '<div style="color:#f59e0b;font-size:11px;margin-bottom:8px">&#x26A0; Advisory only — review before adding to collection.</div>' +
-      '<table class="data-table">' +
-        '<thead><tr><th>Type</th><th>Field</th><th>Operator</th><th>Expected</th><th>Rationale</th></tr></thead>' +
-        '<tbody>' + rows + '</tbody>' +
-      '</table>';
+    if (!suggestions.length) {
+      panel.innerHTML = '<div style="color:var(--text-muted);font-size:12px">'
+        + (skippedCount > 0
+          ? 'All ' + skippedCount + ' suggested assertion' + (skippedCount > 1 ? 's are' : ' is') + ' already added to this request.'
+          : 'No suggestions generated for this request.')
+        + '</div>';
+      return;
+    }
+
+    var domainBadge = data.detectedDomain
+      ? '<span style="background:rgba(167,139,250,.15);color:#a78bfa;border-radius:4px;padding:2px 8px;font-size:10px;font-weight:600">Domain detected: ' + escHtml(data.detectedDomain) + '</span>'
+      : '';
+    var skippedNote = skippedCount > 0
+      ? '<span style="color:var(--text-muted);font-size:11px">' + skippedCount + ' already added — hidden</span>'
+      : '';
+
+    var targetOrder = ['status','header','responseTime','body','array','domain'];
+    var grouped = {};
+    targetOrder.forEach(function(t) { grouped[t] = []; });
+    suggestions.forEach(function(s) {
+      var t = s.target || 'body';
+      if (!grouped[t]) grouped[t] = [];
+      grouped[t].push(s);
+    });
+
+    var targetLabels = { status:'Status Code', header:'Headers', responseTime:'Response Time SLA', body:'Body Fields (Observed)', array:'Arrays (Observed)', domain:'Domain-Aware Suggestions' };
+    var targetColors = { status:'var(--success)', header:'#38bdf8', responseTime:'#fb923c', body:'var(--neutral-900)', array:'#a78bfa', domain:'#f59e0b' };
+
+    var html = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">'
+      + '<span style="color:var(--warning);font-size:11px">&#x26A0; Advisory — based on actual observed response. Review before saving.</span>'
+      + (domainBadge ? domainBadge : '')
+      + (skippedNote ? '<span style="margin-left:auto">' + skippedNote + '</span>' : '<span style="margin-left:auto;font-size:11px;color:var(--text-muted)">' + suggestions.length + ' new suggestions</span>')
+      + '</div>';
+
+    targetOrder.forEach(function(t) {
+      var group = grouped[t];
+      if (!group || !group.length) return;
+      html += '<div style="margin-bottom:12px">'
+        + '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:' + (targetColors[t]||'var(--text-muted)') + ';margin-bottom:5px">' + (targetLabels[t]||t) + '</div>'
+        + '<table class="data-table" style="font-size:11px">'
+        + '<thead><tr><th>Field</th><th>Operator</th><th>Expected Value</th><th>Confidence</th><th>Rationale</th><th></th></tr></thead><tbody>'
+        + group.map(function(s) {
+            var confColor = s.confidence >= 85 ? 'var(--success)' : s.confidence >= 70 ? '#fb923c' : 'var(--text-muted)';
+            var payloadStr = encodeURIComponent(JSON.stringify(s.assertionPayload || {}));
+            var colId = (run && run.collectionId) ? encodeURIComponent(run.collectionId) : '';
+            return '<tr>'
+              + '<td style="font-family:monospace;word-break:break-all">' + escHtml(s.field || '—') + '</td>'
+              + '<td>' + escHtml(s.operator || '—') + '</td>'
+              + '<td style="font-family:monospace">' + escHtml(s.expectedValue != null ? String(s.expectedValue) : '—') + '</td>'
+              + '<td style="color:' + confColor + ';font-weight:600">' + (s.confidence||0) + '%</td>'
+              + '<td style="color:var(--text-muted);max-width:200px;white-space:normal">' + escHtml(s.rationale || '') + '</td>'
+              + '<td><button class="tbl-btn" style="white-space:nowrap;color:var(--success)" '
+              +   'onclick="_apiRunsAddSuggestion(\'' + escHtml(stepId) + '\',\'' + escHtml(colId) + '\',decodeURIComponent(\'' + payloadStr + '\'))">+ Add</button></td>'
+              + '</tr>';
+          }).join('')
+        + '</tbody></table></div>';
+    });
+
+    panel.innerHTML = html;
   } catch (e) {
-    panel.innerHTML = '<div style="color:#ef4444">Failed: ' + escHtml(e.message) + '</div>';
+    panel.innerHTML = '<div style="color:var(--danger);font-size:12px">Failed: ' + escHtml(e.message) + '</div>';
+  }
+}
+
+async function _apiRunsAddSuggestion(stepId, collectionId, payloadJson) {
+  var payload;
+  try { payload = JSON.parse(payloadJson); } catch { showToast('error', 'Invalid assertion payload.'); return; }
+  if (!payload || !payload.field) return;
+  if (!collectionId) { showToast('error', 'Cannot determine collection — reload the run and try again.'); return; }
+
+  var assertion = { field: payload.field, operator: payload.operator, expected: payload.expected, severity: payload.severity || 'high', weight: payload.weight || 7 };
+
+  try {
+    // Fetch current collection, inject assertion into the matching request, PUT back
+    var colRes = await fetch('/api/api-collections/' + collectionId);
+    if (!colRes.ok) throw new Error('Collection fetch failed');
+    var col = await colRes.json();
+    var step = (col.steps || []).find(function(s) { return s.id === stepId; });
+    if (!step) throw new Error('Request not found in collection');
+    if (!Array.isArray(step.assertions)) step.assertions = [];
+    // Guard: skip if already present
+    var alreadyExists = step.assertions.some(function(a) { return a.field === assertion.field && a.operator === assertion.operator; });
+    if (alreadyExists) { showToast('info', 'This assertion is already on the request.'); return; }
+    step.assertions.push(assertion);
+    var saveRes = await fetch('/api/api-collections/' + collectionId, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(col),
+    });
+    if (!saveRes.ok) throw new Error('Save failed (' + saveRes.status + ')');
+    showToast('success', 'Assertion saved to request "' + escHtml(step.name || step.id) + '".');
+    // Refresh suggest panel so the added assertion no longer appears
+    var panel = document.getElementById('suggest-panel-' + stepId);
+    if (panel) { delete panel.dataset.loaded; _apiRunsLoadSuggestPanel(stepId); }
+  } catch (e) {
+    showToast('error', 'Failed to save assertion: ' + e.message);
   }
 }
 
@@ -14794,160 +15853,764 @@ async function _apiRunsRejectProposal(proposalId, btn) {
     alert('Rejection failed: ' + String(err));
   }
 }
+
+// ── Observability Tab (integrated from Replay page) ───────────────────────────
+
+async function _apiRunsLoadObservability(runId, panel) {
+  panel.innerHTML = '<div style="color:var(--text-muted);font-size:13px;padding:12px;">Loading observability data…</div>';
+  try {
+    var res = await fetch('/api/api-runs/' + encodeURIComponent(runId) + '/observability');
+    if (!res.ok) {
+      panel.innerHTML = '<div style="color:var(--text-muted);font-size:13px;padding:12px;">No observability data available for this run.</div>';
+      return;
+    }
+    var summary = await res.json();
+    _apiRunsRenderObservability(runId, summary, panel);
+  } catch (e) {
+    panel.innerHTML = '<div style="color:var(--flaky-danger);font-size:13px;padding:12px;">Error loading observability: ' + escHtml(e.message) + '</div>';
+  }
+}
+
+function _apiRunsRenderObservability(runId, summary, panel) {
+  var replay = summary.replay || {};
+  var stats = replay.stats || {};
+
+  var statusBadge = summary.status === 'passed'
+    ? '<span class="badge badge-green">PASSED</span>'
+    : '<span class="badge badge-red">FAILED</span>';
+
+  var html =
+    // Summary header
+    '<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap">'
+    + statusBadge
+    + '<span style="font-size:12px;color:var(--text-muted)">'
+    + escHtml((summary.startedAt || '').replace('T',' ').slice(0,19))
+    + ' &middot; ' + (summary.stepCount || 0) + ' steps'
+    + (summary.hasSnapshot ? ' &middot; <span style="color:var(--brand)">snapshot</span>' : '')
+    + (summary.hasTimeline ? ' &middot; <span style="color:var(--brand)">timeline</span>' : '')
+    + '</span>'
+    + '</div>'
+
+    // Stat cards
+    + '<div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:20px">'
+    + _obsCard(stats.requestsSent || 0,       'Requests Sent',       'var(--neutral-600)')
+    + _obsCard(stats.assertionsPassed || 0,   'Assertions Passed',   '#16a34a')
+    + _obsCard(stats.assertionsFailed || 0,   'Assertions Failed',   '#dc2626')
+    + _obsCard(stats.retriesTriggered || 0,   'Retries',             '#b45309')
+    + _obsCard(stats.teardownEvents || 0,     'Teardown Events',     'var(--brand)')
+    + _obsCard(stats.failuresPropagated || 0, 'Failures Propagated', '#dc2626')
+    + '</div>'
+
+    // Inner tab bar — Snapshot removed (limited standalone value)
+    + '<div style="display:flex;gap:6px;margin-bottom:12px;border-bottom:1px solid var(--neutral-200);padding-bottom:8px">'
+    + '<button class="tbl-btn obs-inner-tab active" onclick="_obsLoadEvents(' + JSON.stringify(runId) + ')">Replay Events (' + (replay.eventCount || 0) + ')</button>'
+    + '</div>'
+    + '<div id="obs-inner-content-' + escHtml(runId) + '"></div>';
+
+  panel.innerHTML = html;
+
+  // Auto-load events
+  _obsLoadEvents(runId);
+}
+
+function _obsCard(value, label, color) {
+  return '<div style="padding:10px 16px;border:1px solid var(--neutral-200);border-radius:8px;min-width:110px;text-align:center">'
+    + '<div style="font-size:20px;font-weight:700;color:' + color + '">' + value + '</div>'
+    + '<div style="font-size:11px;color:var(--text-muted);margin-top:2px">' + escHtml(label) + '</div>'
+    + '</div>';
+}
+
+function _obsTab(btn, tab, runId) {
+  btn.closest('div').querySelectorAll('.obs-inner-tab').forEach(function(b) { b.classList.remove('active'); });
+  btn.classList.add('active');
+  if (tab === 'events') _obsLoadEvents(runId);
+  else if (tab === 'snapshot') _obsLoadSnapshot(runId);
+}
+
+async function _obsLoadEvents(runId) {
+  var el = document.getElementById('obs-inner-content-' + runId);
+  if (!el) return;
+  el.innerHTML = '<div style="color:var(--text-muted);font-size:12px;">Loading replay events…</div>';
+  try {
+    var res = await fetch('/api/api-runs/' + encodeURIComponent(runId) + '/replay-events');
+    if (!res.ok) { el.innerHTML = '<div style="color:var(--text-muted);font-size:12px;padding:8px;">No replay events available.</div>'; return; }
+    var session = await res.json();
+    // Filter out bookkeeping events — step-completed adds no user value
+    var events = (session.events || []).filter(function(ev) {
+      var k = ev.kind || '';
+      return k !== 'step-completed' && k !== 'step-started';
+    });
+    if (!events.length) { el.innerHTML = '<div style="color:var(--text-muted);font-size:12px;padding:8px;">No replay events recorded for this run.</div>'; return; }
+
+    el.innerHTML = '<div style="max-height:400px;overflow-y:auto">'
+      + '<table class="data-table" style="margin:0">'
+      + '<thead style="position:sticky;top:0;z-index:2"><tr>'
+        + '<th style="width:130px">Event</th>'
+        + '<th style="width:150px">Request</th>'
+        + '<th>Detail</th>'
+        + '<th style="width:80px;text-align:center">Result</th>'
+        + '<th style="width:80px;text-align:right">Duration</th>'
+      + '</tr></thead>'
+      + '<tbody>'
+      + events.map(function(ev) {
+          var kind = ev.kind || '';
+          var eventBadge = _obsEventBadge(kind);
+          var detail = _obsEventDetail(ev);
+          var result = _obsResultBadge(ev);
+          var dur = ev.durationMs != null ? ev.durationMs + 'ms' : '—';
+          return '<tr>'
+            + '<td>' + eventBadge + '</td>'
+            + '<td style="font-size:12px;font-weight:500">' + escHtml(ev.stepName || '—') + '</td>'
+            + '<td style="font-size:12px;color:var(--text-muted)">' + detail + '</td>'
+            + '<td style="text-align:center">' + result + '</td>'
+            + '<td style="text-align:right;font-size:12px;color:var(--text-muted)">' + dur + '</td>'
+            + '</tr>';
+        }).join('')
+      + '</tbody></table></div>';
+  } catch (e) {
+    el.innerHTML = '<div style="color:var(--flaky-danger);font-size:12px;">Error: ' + escHtml(e.message) + '</div>';
+  }
+}
+
+function _obsEventBadge(kind) {
+  var label, bg, color;
+  if (kind === 'request-sent')        { label = '→ Request Sent';    bg = 'rgba(37,99,235,.1)';   color = '#2563eb'; }
+  else if (kind === 'response-received') { label = '← Response';     bg = 'rgba(124,58,237,.1)';  color = '#7c3aed'; }
+  else if (kind === 'assertion-passed')  { label = '✓ Assertion';    bg = 'rgba(22,163,74,.1)';   color = '#16a34a'; }
+  else if (kind === 'assertion-failed')  { label = '✗ Assertion';    bg = 'rgba(220,38,38,.1)';   color = '#dc2626'; }
+  else if (kind === 'variable-extracted'){ label = '⬇ Variable';     bg = 'rgba(180,83,9,.1)';    color = '#b45309'; }
+  else if (kind === 'failure-propagated'){ label = '✗ Failure';      bg = 'rgba(220,38,38,.12)';  color = '#dc2626'; }
+  else if (kind === 'step-skipped')      { label = '⊘ Skipped';      bg = 'rgba(107,114,128,.1)'; color = '#6b7280'; }
+  else if (kind === 'retry-triggered')   { label = '↺ Retry';        bg = 'rgba(180,83,9,.1)';    color = '#b45309'; }
+  else                                   { label = escHtml(kind.replace(/-/g,' ')); bg = 'rgba(107,114,128,.08)'; color = 'var(--text-muted)'; }
+  return '<span style="font-size:11px;padding:2px 7px;border-radius:4px;font-weight:600;white-space:nowrap;background:' + bg + ';color:' + color + '">' + label + '</span>';
+}
+
+function _obsEventDetail(ev) {
+  if (ev.request)    return escHtml(ev.request.method + ' ' + ev.request.url);
+  if (ev.assertion)  return (ev.assertion.passed ? '✓ ' : '✗ ') + escHtml(ev.assertion.type) + (ev.assertion.message ? ': ' + escHtml(ev.assertion.message) : '');
+  if (ev.variable)   return escHtml(ev.variable.key) + ' = ' + escHtml(ev.variable.maskedValue);
+  if (ev.failure)    return escHtml(ev.failure.reason);
+  if (ev.skipReason) return escHtml(ev.skipReason);
+  return '—';
+}
+
+function _obsResultBadge(ev) {
+  if (!ev.response) return '<span style="color:var(--text-muted);font-size:11px">—</span>';
+  var status = ev.response.status;
+  var bg = status >= 500 ? 'rgba(220,38,38,.1)'
+    : status >= 400 ? 'rgba(180,83,9,.1)'
+    : status >= 200 ? 'rgba(22,163,74,.1)'
+    : 'rgba(107,114,128,.1)';
+  var color = status >= 500 ? '#dc2626'
+    : status >= 400 ? '#b45309'
+    : status >= 200 ? '#16a34a'
+    : '#6b7280';
+  return '<span style="font-size:11px;padding:2px 7px;border-radius:4px;font-weight:700;background:' + bg + ';color:' + color + '">' + status + '</span>';
+}
+
+async function _obsLoadSnapshot(runId) {
+  var el = document.getElementById('obs-inner-content-' + runId);
+  if (!el) return;
+  el.innerHTML = '<div style="color:var(--text-muted);font-size:12px;">Loading snapshot…</div>';
+  try {
+    var res = await fetch('/api/api-runs/' + encodeURIComponent(runId) + '/observability');
+    var obs = res.ok ? await res.json() : null;
+    var snap = obs && obs.snapshotSummary;
+    if (!snap) { el.innerHTML = '<div style="color:var(--text-muted);font-size:12px;padding:8px;">No snapshot available for this run.</div>'; return; }
+    el.innerHTML = '<div style="padding:12px;border:1px solid var(--neutral-200);border-radius:6px;font-size:12px">'
+      + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'
+      + _obsSnapshotRow('Captured at', (snap.capturedAt || '').replace('T',' ').slice(0,19))
+      + _obsSnapshotRow('Completed nodes', snap.completedNodeIds)
+      + _obsSnapshotRow('Failed nodes', snap.failedNodeIds)
+      + _obsSnapshotRow('Skipped nodes', snap.skippedNodeIds)
+      + '</div>'
+      + '</div>';
+  } catch (e) {
+    el.innerHTML = '<div style="color:var(--flaky-danger);font-size:12px;">Error: ' + escHtml(e.message) + '</div>';
+  }
+}
+
+// ── Data File CSV Exports ──────────────────────────────────────────────────────
+
+function _apiRunsCsvEscape(v) {
+  const s = String(v ?? '');
+  return s.includes(',') || s.includes('"') || s.includes('\n') ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+
+function _apiRunsCsvDownload(filename, rows) {
+  const csv = rows.map(r => r.map(_apiRunsCsvEscape).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+}
+
+function _apiRunsExportSummaryCsv() {
+  const run = _apiRunsCurrentRun;
+  if (!run) return;
+  const iters = run.iterationSummary || [];
+  const header = ['Row', 'Identifier', 'Status', 'Duration (ms)'];
+  const rows = [header, ...iters.map((it, i) => [
+    i + 1,
+    it.rowIdentifier ?? '',
+    it.status,
+    it.durationMs ?? 0,
+  ])];
+  _apiRunsCsvDownload(`run-summary-${run.id}.csv`, rows);
+}
+
+function _apiRunsExportDetailCsv() {
+  const run = _apiRunsCurrentRun;
+  if (!run) return;
+  const steps = run.stepResults || [];
+  const header = ['Row', 'Row Identifier', 'Step Name', 'Status', 'HTTP Status', 'Duration (ms)', 'Assertion Failures'];
+  const rows = [header, ...steps.map(s => {
+    const failedAsserts = (s.assertionResults || []).filter(a => !a.passed).map(a => a.message).join('; ');
+    return [
+      s.iterationIndex !== undefined ? s.iterationIndex + 1 : 1,
+      s.rowIdentifier ?? '',
+      s.stepName ?? s.stepId,
+      s.status,
+      s.response?.status ?? '',
+      s.durationMs ?? 0,
+      failedAsserts,
+    ];
+  })];
+  _apiRunsCsvDownload(`run-detail-${run.id}.csv`, rows);
+}
+
+function _obsSnapshotRow(label, value) {
+  return '<div style="padding:8px;border:1px solid var(--neutral-200);border-radius:6px">'
+    + '<div style="font-size:11px;color:var(--text-muted);margin-bottom:2px">' + escHtml(label) + '</div>'
+    + '<div style="font-weight:600">' + escHtml(String(value ?? '—')) + '</div>'
+    + '</div>';
+}
 // API FLAKINESS ANALYTICS MODULE
-// Collection-level flakiness report: hotspots, clusters, step breakdown
+// Redesigned 2026-05-29: matches Flaky Tests page layout pattern
+// All colours use --afl-* CSS tokens (defined in styles_addon.css) — works in both dark & light themes
 // ══════════════════════════════════════════════════════════════════════════════
 
-var _flakinessColId   = null;
-var _flakinessReport  = null;
+var _flakinessColId    = null;
+var _flakinessReport   = null;
+var _flakinessFilter   = 'all';
+var _flakinessTop10    = false;
+var _flakinessAllCols  = [];
+var _flakinessPage     = 0;
+var _flakinessPageSize = 25;
 
-async function flakinessLoad(collectionId) {
-  _flakinessColId = collectionId || _flakinessColId;
+// ── Bootstrap ─────────────────────────────────────────────────────────────────
+
+async function flakinessPageInit() {
+  await _flakinessLoadCollections();
+}
+
+async function _flakinessLoadCollections() {
+  if (!currentProjectId) return;
+  try {
+    const res  = await fetch(`/api/api-collections?projectId=${encodeURIComponent(currentProjectId)}`);
+    const data = await res.json();
+    _flakinessAllCols = data.collections || data || [];
+    const sel = document.getElementById('flakiness-col-filter');
+    if (!sel) return;
+    sel.innerHTML = '<option value="">— Select a collection —</option>' +
+      _flakinessAllCols.map(c =>
+        `<option value="${_flEsc(c.id)}">${_flEsc(c.name)}</option>`
+      ).join('');
+  } catch (e) { /* ignore */ }
+}
+
+// ── Load / Recompute ───────────────────────────────────────────────────────────
+
+async function flakinessLoad() {
+  const sel = document.getElementById('flakiness-col-filter');
+  _flakinessColId = sel ? sel.value : _flakinessColId;
+
   if (!_flakinessColId) {
-    document.getElementById('flakiness-empty').style.display = '';
-    document.getElementById('flakiness-content').style.display = 'none';
+    _flakinessShowState('empty');
     return;
   }
-  document.getElementById('flakiness-empty').style.display = 'none';
-  document.getElementById('flakiness-content').style.display = '';
-  document.getElementById('flakiness-loading').style.display = '';
 
+  _flakinessShowState('loading');
   try {
     const res = await fetch('/api/flakiness/' + encodeURIComponent(_flakinessColId));
+    if (!res.ok) throw new Error('HTTP ' + res.status);
     _flakinessReport = await res.json();
     _flakinessRender();
   } catch (e) {
-    document.getElementById('flakiness-loading').style.display = 'none';
-    modAlert('flakiness-alert', 'error', 'Load failed: ' + e.message);
+    _flakinessShowState('empty');
+    _flAlert('error', 'Load failed: ' + e.message);
   }
 }
 
 async function flakinessRecompute() {
-  if (!_flakinessColId) return;
-  document.getElementById('flakiness-loading').style.display = '';
+  if (!_flakinessColId) { _flAlert('warn', 'Select a collection first.'); return; }
+  const btn = document.getElementById('flakiness-recompute-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '↺ Computing…'; }
+  _flakinessShowState('loading');
   try {
     const res = await fetch('/api/flakiness/' + encodeURIComponent(_flakinessColId) + '/recompute', { method: 'POST' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
     _flakinessReport = await res.json();
     _flakinessRender();
   } catch (e) {
-    modAlert('flakiness-alert', 'error', 'Recompute failed: ' + e.message);
+    _flAlert('error', 'Recompute failed: ' + e.message);
+    _flakinessShowState('table');
   } finally {
-    document.getElementById('flakiness-loading').style.display = 'none';
+    if (btn) { btn.disabled = false; btn.textContent = '↺ Recompute'; }
   }
 }
+
+// ── Filter / Sort Controls ─────────────────────────────────────────────────────
+
+function flakinessSetFilter(f) {
+  _flakinessFilter = f;
+  _flakinessPage   = 0;
+  document.querySelectorAll('.flaky-filter-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.filter === f));
+  _flakinessRenderTable();
+}
+
+function flakinessToggleTop10() {
+  _flakinessTop10 = !_flakinessTop10;
+  _flakinessPage  = 0;
+  const btn = document.getElementById('flakiness-top10-btn');
+  if (btn) btn.classList.toggle('active', _flakinessTop10);
+  _flakinessRenderTable();
+}
+
+function flakinessApplyFilters() {
+  _flakinessPage = 0;
+  _flakinessRenderTable();
+}
+
+function _flakinessSetPageSize(n) {
+  _flakinessPageSize = n;
+  _flakinessPage     = 0;
+  _flakinessRenderTable();
+}
+
+function _flakinessPageGo(dir) {
+  _flakinessPage += dir;
+  _flakinessRenderTable();
+}
+
+// ── Render ────────────────────────────────────────────────────────────────────
 
 function _flakinessRender() {
-  document.getElementById('flakiness-loading').style.display = 'none';
   if (!_flakinessReport) return;
-  _flakinessRenderSummary();
-  _flakinessRenderHotspots();
-  _flakinessRenderClusters();
-  _flakinessRenderStepTable();
+  _flakinessShowState('table');
+  const tabs = document.getElementById('flakiness-filter-tabs');
+  if (tabs) tabs.style.display = '';
+  _flakinessRenderSummaryBar();
+  _flakinessRenderTable();
 }
 
-function _flakinessRenderSummary() {
+function _flakinessRenderSummaryBar() {
+  const r   = _flakinessReport;
+  const bar = document.getElementById('flakiness-summary-bar');
+  if (!bar || !r) return;
+
+  const records   = r.stepRecords || [];
+  const total     = records.length;
+  const critical  = records.filter(s => _flakinessStatus(s) === 'critical').length;
+  const unstable  = records.filter(s => _flakinessStatus(s) === 'unstable').length;
+  const stable    = records.filter(s => _flakinessStatus(s) === 'stable').length;
+  const stability = Math.round((r.stabilityScore || 0) * 100);
+  const stabColor = stability >= 90 ? 'var(--afl-pass)' : stability >= 70 ? 'var(--afl-warn)' : 'var(--afl-danger)';
+
+  bar.style.display = '';
+  bar.innerHTML =
+    `<span style="color:var(--afl-text);font-size:13px">` +
+    `${total} request${total !== 1 ? 's' : ''} &nbsp;·&nbsp; ` +
+    `<span style="color:var(--afl-danger)">${critical} critical</span> &nbsp;·&nbsp; ` +
+    `<span style="color:var(--afl-warn)">${unstable} unstable</span> &nbsp;·&nbsp; ` +
+    `<span style="color:var(--afl-pass)">${stable} stable</span>` +
+    `</span>` +
+    `<span style="margin-left:16px;font-size:12px;color:var(--afl-subtext)">` +
+    `Stability <strong style="color:${stabColor}">${stability}%</strong> &nbsp;·&nbsp; ` +
+    `${r.runsAnalyzed} run${r.runsAnalyzed !== 1 ? 's' : ''} analysed &nbsp;·&nbsp; ` +
+    `Computed ${new Date(r.computedAt).toLocaleString()}` +
+    `</span>`;
+}
+
+function _flakinessRenderTable() {
   const r = _flakinessReport;
-  const el = document.getElementById('flakiness-summary');
-  if (!el) return;
-  const stability = Math.round(r.stabilityScore * 100);
-  const stabColor = stability >= 90 ? '#22c55e' : stability >= 70 ? '#f59e0b' : '#ef4444';
-  el.innerHTML = `
-    <div style="display:flex;gap:20px;flex-wrap:wrap;margin-bottom:12px;">
-      <div style="text-align:center;">
-        <div style="font-size:28px;font-weight:700;color:${stabColor}">${stability}%</div>
-        <div style="font-size:11px;color:var(--text-muted)">Stability Score</div>
-      </div>
-      <div style="text-align:center;">
-        <div style="font-size:28px;font-weight:700;color:var(--text-main)">${r.runsAnalyzed}</div>
-        <div style="font-size:11px;color:var(--text-muted)">Runs Analyzed</div>
-      </div>
-      <div style="text-align:center;">
-        <div style="font-size:28px;font-weight:700;color:#facc15">${r.hotspots.length}</div>
-        <div style="font-size:11px;color:var(--text-muted)">Flaky Steps</div>
-      </div>
-      <div style="text-align:center;">
-        <div style="font-size:28px;font-weight:700;color:#a78bfa">${r.clusters.length}</div>
-        <div style="font-size:11px;color:var(--text-muted)">Clusters</div>
-      </div>
+  if (!r) return;
+
+  let records = [...(r.stepRecords || [])];
+
+  if (_flakinessFilter === 'critical')      records = records.filter(s => _flakinessStatus(s) === 'critical');
+  if (_flakinessFilter === 'unstable')      records = records.filter(s => _flakinessStatus(s) === 'unstable');
+  if (_flakinessFilter === 'stable')        records = records.filter(s => _flakinessStatus(s) === 'stable');
+  if (_flakinessFilter === 'insufficient')  records = records.filter(s => s.totalRuns < 3);
+
+  const sort = document.getElementById('flakiness-sort')?.value || 'score';
+  if (sort === 'score')    records.sort((a, b) => b.flakinessScore - a.flakinessScore);
+  if (sort === 'failrate') records.sort((a, b) => b.failRate - a.failRate);
+  if (sort === 'runs')     records.sort((a, b) => b.totalRuns - a.totalRuns);
+  if (sort === 'name')     records.sort((a, b) => (a.stepName || '').localeCompare(b.stepName || ''));
+
+  if (_flakinessTop10) records = records.slice(0, 10);
+
+  const total      = records.length;
+  const totalPages = _flakinessTop10 ? 1 : Math.max(1, Math.ceil(total / _flakinessPageSize));
+  if (_flakinessPage >= totalPages) _flakinessPage = totalPages - 1;
+  if (_flakinessPage < 0)          _flakinessPage = 0;
+
+  const start   = _flakinessTop10 ? 0 : _flakinessPage * _flakinessPageSize;
+  const end     = _flakinessTop10 ? records.length : Math.min(start + _flakinessPageSize, total);
+  const visible = records.slice(start, end);
+
+  const tbody = document.getElementById('flakiness-step-tbody');
+  if (!tbody) return;
+
+  if (total === 0) {
+    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:32px;color:var(--afl-muted);font-size:13px;">No requests match this filter.</td></tr>`;
+    _flakinessRenderPagination(0, 0, 0);
+    return;
+  }
+  tbody.innerHTML = visible.map(s => _flakinessRow(s)).join('');
+  _flakinessRenderPagination(totalPages, total, start, end);
+}
+
+function _flakinessRenderPagination(totalPages, total, start, end) {
+  const table = document.querySelector('#flakiness-step-tbody')?.closest('table');
+  if (!table) return;
+  let tfoot = table.querySelector('tfoot');
+  if (!tfoot) { tfoot = document.createElement('tfoot'); table.appendChild(tfoot); }
+  if (total === 0) { tfoot.innerHTML = ''; return; }
+
+  const dispStart = total === 0 ? 0 : start + 1;
+  const rppOpts = [10, 25, 50, 100, 200, 500].map(n =>
+    `<option value="${n}"${_flakinessPageSize === n ? ' selected' : ''}>${n}</option>`
+  ).join('');
+
+  tfoot.innerHTML = `<tr><td colspan="8" style="padding:6px 4px;">
+    <div class="lt-pagination">
+      <label style="font-size:12px;color:var(--neutral-500)">Rows per page:
+        <select class="fm-input" style="padding:2px 6px;font-size:12px;width:auto"
+          onchange="_flakinessSetPageSize(+this.value)">${rppOpts}</select>
+      </label>
+      ${totalPages <= 1
+        ? `<span style="font-size:12px;color:var(--neutral-500)">${dispStart}–${end} of ${total}</span>`
+        : `<button class="tbl-btn" onclick="_flakinessPageGo(-1)" ${_flakinessPage === 0 ? 'disabled' : ''}>&#8592; Prev</button>
+           <span style="font-size:12px;color:var(--neutral-500)">Page ${_flakinessPage + 1} / ${totalPages} &nbsp;(${dispStart}–${end} of ${total})</span>
+           <button class="tbl-btn" onclick="_flakinessPageGo(1)" ${_flakinessPage >= totalPages - 1 ? 'disabled' : ''}>Next &#8594;</button>`}
     </div>
-    <div style="font-size:10px;color:var(--text-muted)">Computed: ${new Date(r.computedAt).toLocaleString()}</div>`;
+  </td></tr>`;
 }
 
-function _flakinessRenderHotspots() {
-  const el = document.getElementById('flakiness-hotspots');
-  if (!el || !_flakinessReport) return;
-  const hotspotIds = new Set(_flakinessReport.hotspots);
-  const flaky = _flakinessReport.stepRecords.filter(r => hotspotIds.has(r.stepId))
-    .sort((a, b) => b.flakinessScore - a.flakinessScore);
-  if (flaky.length === 0) {
-    el.innerHTML = '<div style="color:var(--text-muted);font-size:12px;">No flaky steps detected.</div>';
-    return;
+function _flakinessRow(s) {
+  const pct      = Math.round((s.flakinessScore || 0) * 100);
+  const failPct  = Math.round((s.failRate || 0) * 100);
+  const status   = _flakinessStatus(s);
+  const isInsuff = s.totalRuns < 3;
+
+  const barColor = status === 'critical' ? 'var(--afl-danger)' : status === 'unstable' ? 'var(--afl-warn)' : 'var(--afl-pass)';
+  const scoreBar =
+    `<div style="display:flex;align-items:center;gap:6px;">` +
+    `<div style="width:70px;background:var(--afl-bar-track);border-radius:3px;height:6px;flex-shrink:0;">` +
+    `<div style="width:${pct}%;background:${barColor};border-radius:3px;height:100%;"></div></div>` +
+    `<span style="font-size:11px;color:${barColor};font-weight:600;">${pct}%</span>` +
+    `</div>`;
+
+  const sig         = _flakinessSignatureLabel(s.dominantSignature);
+  const action      = isInsuff ? '—' : _flakinessGetSuggestedAction(s);
+  const actionShort = action.length > 40 ? action.slice(0, 38) + '…' : action;
+
+  return `<tr style="${isInsuff ? 'opacity:0.6;' : ''}cursor:pointer" onclick="flakinessOpenDrawer(${JSON.stringify(s.stepId)})">` +
+    `<td style="font-size:12px;font-weight:500;color:var(--afl-text);">${_flEsc(s.stepName || s.stepId)}</td>` +
+    `<td>${_flakinessStatusBadge(status, isInsuff)}</td>` +
+    `<td>${isInsuff ? `<span style="color:var(--afl-muted);font-size:11px;">Insufficient data</span>` : scoreBar}</td>` +
+    `<td style="text-align:center;font-size:12px;color:var(--afl-text);">${isInsuff ? '—' : failPct + '%'}</td>` +
+    `<td style="font-size:11px;color:var(--afl-subtext);">${sig}</td>` +
+    `<td style="font-size:11px;color:var(--afl-text);" title="${_flEsc(action)}">${isInsuff ? '—' : _flEsc(actionShort)}</td>` +
+    `<td style="text-align:center;font-size:12px;color:var(--afl-text);">${s.totalRuns}</td>` +
+    `<td><button class="btn btn-xs btn-outline" onclick="event.stopPropagation();flakinessOpenDrawer('${_flEsc(s.stepId)}')">Details</button></td>` +
+    `</tr>`;
+}
+
+// ── Drawer ────────────────────────────────────────────────────────────────────
+
+function flakinessOpenDrawer(stepId) {
+  if (!_flakinessReport) return;
+  const s = (_flakinessReport.stepRecords || []).find(r => r.stepId === stepId);
+  if (!s) return;
+
+  const drawer  = document.getElementById('flakiness-drawer');
+  const overlay = document.getElementById('flakiness-drawer-overlay');
+  const title   = document.getElementById('flakiness-drawer-title');
+  const body    = document.getElementById('flakiness-drawer-body');
+  if (!drawer || !body) return;
+
+  title.textContent = s.stepName || s.stepId;
+
+  const pct      = Math.round((s.flakinessScore || 0) * 100);
+  const failPct  = Math.round((s.failRate || 0) * 100);
+  const altPct   = Math.round((s.alternationIndex || 0) * 100);
+  const status   = _flakinessStatus(s);
+  const isInsuff = s.totalRuns < 3;
+  const barColor = status === 'critical' ? 'var(--afl-danger)' : status === 'unstable' ? 'var(--afl-warn)' : 'var(--afl-pass)';
+  const action   = _flakinessGetSuggestedAction(s);
+  const hint     = _flakinessGetActionHint(s);
+  const sig      = s.dominantSignature;
+
+  body.innerHTML =
+    // Score header
+    `<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">` +
+    `${_flakinessStatusBadge(status, isInsuff)}` +
+    `<span style="font-size:22px;font-weight:700;color:${barColor}">${pct}%</span>` +
+    `<span style="font-size:12px;color:var(--afl-subtext);">flakiness score</span>` +
+    `</div>` +
+
+    // Stats grid
+    `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px;">` +
+    _drawerStat('Total Runs',  s.totalRuns,                       'var(--afl-brand)') +
+    _drawerStat('Passed',      s.passedRuns,                      'var(--afl-pass)') +
+    _drawerStat('Failed',      s.failedRuns,                      'var(--afl-danger)') +
+    _drawerStat('Fail Rate',   failPct + '%',                     'var(--afl-danger)') +
+    _drawerStat('Alternation', altPct + '%',                      'var(--afl-warn)', 'How often pass/fail alternates') +
+    _drawerStat('Retries',     s.retryStats?.retryCount || 0,     'var(--afl-info)') +
+    `</div>` +
+
+    // Retry recovery
+    (s.retryStats?.retryCount > 0 ? `
+    <div style="background:var(--afl-section-bg);border:1px solid var(--afl-border);border-radius:6px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:var(--afl-text);">
+      <span style="color:var(--afl-subtext);">Retry recovery: </span>
+      ${s.retryStats.recoveredAfterRetry
+        ? `<span style="color:var(--afl-pass);font-weight:600;">✓ Recovered after retry</span> — retrying helps`
+        : `<span style="color:var(--afl-danger);font-weight:600;">✗ Did not recover</span> — retrying did not fix it`}
+    </div>` : '') +
+
+    // Failure type
+    `<div style="margin-bottom:16px;">` +
+    `<div style="font-size:11px;font-weight:600;color:var(--afl-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;">Failure Type</div>` +
+    `<div style="font-size:13px;color:var(--afl-text);font-weight:500;">${_flakinessSignatureLabel(sig)}</div>` +
+    (sig?.httpStatus    ? `<div style="font-size:11px;color:var(--afl-subtext);margin-top:2px;">HTTP ${sig.httpStatus}</div>` : '') +
+    (sig?.transportError ? `<div style="font-size:11px;color:var(--afl-subtext);margin-top:2px;">${_flEsc(sig.transportError)}</div>` : '') +
+    (sig?.assertionField ? `<div style="font-size:11px;color:var(--afl-subtext);margin-top:2px;">Field: ${_flEsc(sig.assertionField)}</div>` : '') +
+    `</div>` +
+
+    // Suggested action
+    `<div style="background:var(--afl-section-bg);border:1px solid var(--afl-border);border-left:3px solid var(--afl-warn);border-radius:6px;padding:14px;margin-bottom:16px;">` +
+    `<div style="font-size:11px;font-weight:600;color:var(--afl-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;">💡 Suggested Action</div>` +
+    `<div style="font-size:13px;color:var(--afl-warn);font-weight:600;margin-bottom:6px;">${_flEsc(action)}</div>` +
+    `<div style="font-size:12px;color:var(--afl-subtext);line-height:1.6;">${_flEsc(hint)}</div>` +
+    `</div>` +
+
+    // Timestamps
+    `<div style="font-size:11px;color:var(--afl-subtext);">` +
+    (s.lastFailedAt ? `<div style="margin-bottom:3px;">Last failed: <span style="color:var(--afl-danger)">${new Date(s.lastFailedAt).toLocaleString()}</span></div>` : '') +
+    (s.lastPassedAt ? `<div>Last passed: <span style="color:var(--afl-pass)">${new Date(s.lastPassedAt).toLocaleString()}</span></div>` : '') +
+    `</div>` +
+
+    // Link to Suggest Tests
+    (!isInsuff ? `
+    <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--afl-border);">
+      <div style="font-size:11px;color:var(--afl-muted);margin-bottom:8px;">Want to prevent this in future runs?</div>
+      <button class="btn btn-sm btn-outline" onclick="flakinessCloseDrawer();showTab('api-collections')">
+        → Open API Collections → Suggest Tests
+      </button>
+    </div>` : '');
+
+  drawer.style.display  = '';
+  overlay.style.display = '';
+}
+
+function flakinessCloseDrawer() {
+  const drawer  = document.getElementById('flakiness-drawer');
+  const overlay = document.getElementById('flakiness-drawer-overlay');
+  if (drawer)  drawer.style.display  = 'none';
+  if (overlay) overlay.style.display = 'none';
+}
+
+function _drawerStat(label, value, color, title) {
+  return `<div style="background:var(--afl-card-bg);border:1px solid var(--afl-border);border-radius:6px;padding:10px 12px;${title ? 'cursor:help' : ''}" ${title ? `title="${_flEsc(title)}"` : ''}>` +
+    `<div style="font-size:18px;font-weight:700;color:${color}">${value}</div>` +
+    `<div style="font-size:11px;color:var(--afl-subtext);margin-top:2px;">${label}</div>` +
+    `</div>`;
+}
+
+// ── Deterministic Action Engine ───────────────────────────────────────────────
+
+function _flakinessGetSuggestedAction(s) {
+  const sig      = s.dominantSignature;
+  const failPct  = (s.failRate || 0) * 100;
+  const flakePct = (s.flakinessScore || 0) * 100;
+  const cat      = sig?.category;
+  const code     = sig?.httpStatus;
+
+  if (cat === 'http_status' || cat === 'timeout') {
+    if (code === 504 || code === 408 || cat === 'timeout') return 'Increase timeout on this request';
+    if (code === 401) return 'Check auth token — may be expired';
+    if (code === 403) return 'Review role/permissions for this environment';
+    if (code === 404) return 'Verify endpoint URL in this environment';
+    if (code === 405) return 'Verify HTTP method is correct';
+    if (code === 429) return 'Add retry with backoff — rate limit hit';
+    if (code === 500) return 'Add retry with backoff — server error';
+    if (code === 502 || code === 503) return 'Downstream instability — add retry with backoff';
   }
-  el.innerHTML = flaky.map(function(r) {
-    var pct = Math.round(r.flakinessScore * 100);
-    var barColor = pct >= 70 ? '#ef4444' : pct >= 40 ? '#f59e0b' : '#facc15';
-    return '<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid #374151;">'
-      + '<div style="flex:1;font-size:12px;">' + _flakinessEscHtml(r.stepName) + '</div>'
-      + '<div style="width:100px;background:#1e2130;border-radius:4px;height:8px;">'
-      + '<div style="width:' + pct + '%;background:' + barColor + ';border-radius:4px;height:100%;"></div></div>'
-      + '<div style="width:36px;text-align:right;font-size:11px;color:' + barColor + ';">' + pct + '%</div>'
-      + '<div style="width:60px;text-align:right;font-size:10px;color:var(--text-muted);">' + Math.round(r.failRate * 100) + '% fail</div>'
-      + '</div>';
-  }).join('');
-}
-
-function _flakinessRenderClusters() {
-  const el = document.getElementById('flakiness-clusters');
-  if (!el || !_flakinessReport) return;
-  if (_flakinessReport.clusters.length === 0) {
-    el.innerHTML = '<div style="color:var(--text-muted);font-size:12px;">No failure clusters detected.</div>';
-    return;
+  if (cat === 'network') {
+    if (sig?.transportError === 'ECONNREFUSED') return 'Check environment URL — service unreachable';
+    if (sig?.transportError === 'ETIMEDOUT')    return 'Increase timeout — connection timed out';
+    return 'Check network connectivity to target environment';
   }
-  el.innerHTML = _flakinessReport.clusters.map(function(c) {
-    var dimLabel = { http_status: 'HTTP Status', assertion_type: 'Assertion', transport_error: 'Transport Error', dependency_chain: 'Dependency Chain', endpoint: 'Endpoint' }[c.dimension] || c.dimension;
-    return '<div class="flakiness-cluster-card">'
-      + '<h4>' + dimLabel + ': ' + _flakinessEscHtml(c.dimensionKey) + '</h4>'
-      + '<div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">' + c.stepIds.length + ' step(s) · ' + c.totalFailures + ' total failures · avg score ' + Math.round(c.avgFlakinessScore * 100) + '%</div>'
-      + '<div style="font-size:11px;color:#9ca3af;">' + c.stepNames.map(function(n) { return _flakinessEscHtml(n); }).join(', ') + '</div>'
-      + '</div>';
-  }).join('');
+  if (cat === 'auth')                   return 'Review Token Lifecycle — add Token Lifecycle tests';
+  if (cat === 'dependency_propagation') return 'Fix the upstream request that this one depends on';
+  if (cat === 'assertion') {
+    if (sig?.assertionField?.startsWith('body'))   return 'Review baseline — response body may have changed';
+    if (sig?.assertionField?.startsWith('header')) return 'Check response headers — add Content-Type tests';
+    if (sig?.assertionField?.startsWith('status')) return 'Expected status mismatch — review Contract tests';
+    return 'Review assertion rules — add Contract tests';
+  }
+
+  if (failPct > 70 && flakePct < 30)  return 'Consistent failure — request is broken, not flaky';
+  if (failPct < 20 && flakePct > 60)  return 'Intermittent — add 1–2 retries with delay';
+  if (s.alternationIndex > 0.7)        return 'High alternation — add Idempotency tests';
+  if (s.retryStats?.retryCount > 5)    return 'Too many retries — check Boundary/Edge conditions';
+
+  return 'Review recent run history for recurring pattern';
 }
 
-function _flakinessRenderStepTable() {
-  const el = document.getElementById('flakiness-step-tbody');
-  if (!el || !_flakinessReport) return;
-  const records = [..._flakinessReport.stepRecords].sort((a, b) => b.flakinessScore - a.flakinessScore);
-  el.innerHTML = records.map(function(r) {
-    var pct = Math.round(r.flakinessScore * 100);
-    var color = r.isFlaky ? '#facc15' : '#22c55e';
-    var flakyLabel = r.isFlaky ? '<span class="api-run-flaky-badge">⚡ flaky</span>' : '<span style="color:#22c55e;font-size:10px;">stable</span>';
-    var sig = r.dominantSignature ? r.dominantSignature.category : '—';
-    return '<tr>'
-      + '<td style="font-size:12px;">' + _flakinessEscHtml(r.stepName) + ' ' + flakyLabel + '</td>'
-      + '<td style="text-align:center;font-size:11px;">' + Math.round(r.failRate * 100) + '%</td>'
-      + '<td><div style="display:flex;align-items:center;gap:4px;">'
-      + '<div style="width:60px;background:#1e2130;border-radius:3px;height:6px;">'
-      + '<div style="width:' + pct + '%;background:' + color + ';border-radius:3px;height:100%;"></div></div>'
-      + '<span style="font-size:10px;color:' + color + ';">' + pct + '%</span></div></td>'
-      + '<td style="font-size:11px;color:var(--text-muted);">' + _flakinessEscHtml(sig) + '</td>'
-      + '<td style="text-align:center;font-size:11px;">' + r.totalRuns + '</td>'
-      + '</tr>';
-  }).join('');
+function _flakinessGetActionHint(s) {
+  const sig     = s.dominantSignature;
+  const cat     = sig?.category;
+  const code    = sig?.httpStatus;
+  const failPct = (s.failRate || 0) * 100;
+
+  if (cat === 'timeout' || code === 408 || code === 504)
+    return 'Go to API Collections → edit this request → Settings tab → increase Timeout value. Also consider adding 1 retry.';
+  if (code === 401 || code === 403 || cat === 'auth')
+    return 'Check the environment credentials in API Environments. Use "Suggest Tests → Token Lifecycle" to add token expiry test cases.';
+  if (code === 429)
+    return 'Add a retry with 2–5 second delay. Use "Suggest Tests → Boundary" to add rate limit test cases.';
+  if (cat === 'network')
+    return 'Verify the base URL in your API Environment matches the running service. Check if the service is up in this environment.';
+  if (cat === 'dependency_propagation')
+    return 'Look at the request that runs before this one in the collection. That request is failing and causing this one to be skipped or fail too.';
+  if (cat === 'assertion')
+    return 'Open API Collections → edit this request → Rules tab → review your assertions. Use "Suggest Tests → Contract" to add schema checks.';
+  if (failPct > 70)
+    return 'This request fails consistently — it is likely broken, not flaky. Fix the underlying issue before adding retries.';
+  if (s.alternationIndex > 0.7)
+    return 'The request alternates between pass and fail. Use "Suggest Tests → Idempotency" to verify the API behaves consistently on repeated calls.';
+
+  return 'Open API Collections → run the collection a few more times → then Recompute to get a clearer picture.';
 }
 
-function _flakinessEscHtml(str) {
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function _flakinessStatus(s) {
+  if (s.totalRuns < 3) return 'insufficient';
+  const pct = (s.flakinessScore || 0) * 100;
+  if (pct >= 61) return 'critical';
+  if (pct >= 31) return 'unstable';
+  return 'stable';
+}
+
+function _flakinessStatusBadge(status, isInsuff) {
+  if (isInsuff || status === 'insufficient')
+    return '<span style="font-size:10px;color:var(--afl-insuff-text);background:var(--afl-insuff-bg);border-radius:4px;padding:2px 8px;">Insufficient</span>';
+  if (status === 'critical')
+    return '<span style="font-size:10px;color:var(--afl-critical-text);background:var(--afl-critical-bg);border-radius:4px;padding:2px 8px;font-weight:600;">⚡ Critical</span>';
+  if (status === 'unstable')
+    return '<span style="font-size:10px;color:var(--afl-unstable-text);background:var(--afl-unstable-bg);border-radius:4px;padding:2px 8px;font-weight:600;">⚠ Unstable</span>';
+  return '<span style="font-size:10px;color:var(--afl-stable-text);background:var(--afl-stable-bg);border-radius:4px;padding:2px 8px;">✓ Stable</span>';
+}
+
+function _flakinessSignatureLabel(sig) {
+  if (!sig) return '—';
+  const labels = {
+    assertion:             '📋 Assertion failed',
+    http_status:           '🌐 HTTP ' + (sig.httpStatus || 'error'),
+    timeout:               '⏱ Timeout',
+    network:               '🔌 Network error',
+    auth:                  '🔑 Auth failure',
+    dependency_propagation:'🔗 Dependency failure',
+    unknown:               '❓ Unknown'
+  };
+  return labels[sig.category] || _flEsc(sig.category);
+}
+
+function _flakinessShowState(state) {
+  const ids = {
+    empty:   'flakiness-empty',
+    loading: 'flakiness-loading',
+    table:   'flakiness-table-wrap'
+  };
+  Object.values(ids).forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  });
+  const target = document.getElementById(ids[state]);
+  if (target) target.style.display = '';
+
+  const showMeta = state === 'table';
+  const tabs = document.getElementById('flakiness-filter-tabs');
+  const bar  = document.getElementById('flakiness-summary-bar');
+  if (tabs) tabs.style.display = showMeta ? '' : 'none';
+  if (bar)  bar.style.display  = showMeta ? '' : 'none';
+}
+
+function _flAlert(type, msg) {
+  const el = document.getElementById('flakiness-alert');
+  if (!el) return;
+  el.innerHTML = `<div class="alert alert-${type}" style="margin-bottom:10px;">${_flEsc(msg)}</div>`;
+  setTimeout(() => { el.innerHTML = ''; }, 5000);
+}
+
+function _flEsc(str) {
   if (!str) return '';
-  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  return String(str)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 // Module: API Suite Orchestration
 // Page: api-suites
 
 var _apiSuitesList = [];
-var _apiSuitesCurrentSuiteId = null;
+var _apiSuitesPage = 0;
+var _apiSuitesPageSize = 10;
+var _apiSuitesAllCollections = [];
+var _apiSuitesAllEnvs = [];
+var _suiteFormCollections = []; // [{id, name, envId}] — ordered main collections
+var _suiteFormEnvId = '';       // currently selected suite environment in form
+var _suiteFormEditingId = null; // null = create, string = edit
 
 function apiSuitesInit() {
   apiSuitesLoad();
 }
+
+// ── Meta helpers (collections + envs for dropdowns) ──────────────────────────
+
+async function _apiSuitesLoadMeta() {
+  if (!currentProjectId) return;
+  try {
+    var colRes = await fetch('/api/api-collections?projectId=' + encodeURIComponent(currentProjectId));
+    var envRes = await fetch('/api/api-envs?projectId=' + encodeURIComponent(currentProjectId));
+    _apiSuitesAllCollections = colRes.ok ? await colRes.json() : [];
+    _apiSuitesAllEnvs = envRes.ok ? await envRes.json() : [];
+  } catch (e) {
+    _apiSuitesAllCollections = [];
+    _apiSuitesAllEnvs = [];
+  }
+}
+
+function _apiSuiteEnvName(envId) {
+  if (!envId) return '—';
+  var e = _apiSuitesAllEnvs.find(function (x) { return x.id === envId; });
+  return e ? e.name : envId;
+}
+
+function _apiSuiteColName(colId) {
+  if (!colId) return '—';
+  var c = _apiSuitesAllCollections.find(function (x) { return x.id === colId; });
+  return c ? c.name : colId;
+}
+
+// ── Load ──────────────────────────────────────────────────────────────────────
 
 async function apiSuitesLoad() {
   var tbody = document.getElementById('api-suites-tbody');
@@ -14955,16 +16618,18 @@ async function apiSuitesLoad() {
 
   if (!currentProjectId) {
     _apiSuitesList = [];
-    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:20px;">Select a project from the top bar to view API suites.</td></tr>';
+    _apiSuitesHideDetail();
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:20px;">Select a project from the top bar to view API suites.</td></tr>';
     return;
   }
 
-  tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:16px;">Loading…</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:16px;">Loading…</td></tr>';
   try {
-    var url = '/api/api-suites?projectId=' + encodeURIComponent(currentProjectId);
-    var res = await fetch(url);
+    await _apiSuitesLoadMeta();
+    var res = await fetch('/api/api-suites?projectId=' + encodeURIComponent(currentProjectId));
     if (!res.ok) { modAlert('api-suites-alert', 'error', 'Failed to load suites.'); return; }
     _apiSuitesList = await res.json();
+    _apiSuitesPage = 0;
     _apiSuitesHideDetail();
     apiSuitesRender();
   } catch (e) {
@@ -14972,118 +16637,605 @@ async function apiSuitesLoad() {
   }
 }
 
+// ── Show / hide detail area ───────────────────────────────────────────────────
+
 function _apiSuitesHideDetail() {
   var detail = document.getElementById('api-suites-detail');
-  var tbl = document.querySelector('#panel-api-suites .data-table');
-  var filters = document.querySelector('#panel-api-suites [id="api-suites-filter-name"]')?.closest('div');
+  var listArea = document.getElementById('api-suites-list-area');
   if (detail) detail.style.display = 'none';
-  if (tbl) tbl.style.display = '';
-  if (filters) filters.style.display = '';
+  if (listArea) listArea.style.display = '';
 }
 
-function _apiSuitesShowDetail() {
+function _apiSuitesShowDetailPanel() {
   var detail = document.getElementById('api-suites-detail');
-  var tbl = document.querySelector('#panel-api-suites .data-table');
-  var filters = document.querySelector('#panel-api-suites [id="api-suites-filter-name"]')?.closest('div');
+  var listArea = document.getElementById('api-suites-list-area');
   if (detail) detail.style.display = '';
-  if (tbl) tbl.style.display = 'none';
-  if (filters) filters.style.display = 'none';
+  if (listArea) listArea.style.display = 'none';
 }
+
+// ── Render list ───────────────────────────────────────────────────────────────
 
 function apiSuitesRender() {
   var tbody = document.getElementById('api-suites-tbody');
   if (!tbody) return;
 
-  var nameFilter = (document.getElementById('api-suites-filter-name')?.value || '').toLowerCase();
-  var statusFilter = document.getElementById('api-suites-filter-status')?.value || '';
+  var nameFilter = (document.getElementById('api-suites-filter-name') ? document.getElementById('api-suites-filter-name').value : '').toLowerCase();
+  var statusFilter = document.getElementById('api-suites-filter-status') ? document.getElementById('api-suites-filter-status').value : '';
 
-  var filtered = _apiSuitesList.filter(function(s) {
-    if (nameFilter && !escHtml(s.name).toLowerCase().includes(nameFilter)) return false;
+  var filtered = _apiSuitesList.filter(function (s) {
+    if (nameFilter && !s.name.toLowerCase().includes(nameFilter)) return false;
     if (statusFilter === 'active' && s.archived) return false;
     if (statusFilter === 'archived' && !s.archived) return false;
     return true;
   });
 
-  if (filtered.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:20px;">'
-      + (_apiSuitesList.length === 0 ? 'No API suites yet. Click <strong>+ New Suite</strong> to create one.' : 'No suites match the current filter.')
+  var total = filtered.length;
+  var totalPages = Math.max(1, Math.ceil(total / _apiSuitesPageSize));
+  if (_apiSuitesPage >= totalPages) _apiSuitesPage = totalPages - 1;
+  var paged = filtered.slice(_apiSuitesPage * _apiSuitesPageSize, (_apiSuitesPage + 1) * _apiSuitesPageSize);
+
+  if (total === 0) {
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:20px;">'
+      + (_apiSuitesList.length === 0
+        ? 'No API suites yet. Click <strong>+ New Suite</strong> to create one.'
+        : 'No suites match the current filter.')
       + '</td></tr>';
+    _apiSuitesRenderPagination(0, 1);
     return;
   }
 
-  tbody.innerHTML = filtered.map(function(s) {
+  tbody.innerHTML = paged.map(function (s, i) {
+    var idx = _apiSuitesPage * _apiSuitesPageSize + i + 1;
     var colCount = s.collectionIds ? s.collectionIds.length : 0;
+
     var hooks = [];
-    if (s.beforeAllCollectionId) hooks.push('beforeAll');
-    if (s.afterAllCollectionId) hooks.push('afterAll');
-    var lifecycle = hooks.length ? hooks.join(', ') : '—';
+    if (s.beforeAllCollectionId) hooks.push('Before All');
+    if (s.beforeEachCollectionId) hooks.push('Before Each');
+    if (s.afterEachCollectionId) hooks.push('After Each');
+    if (s.afterAllCollectionId) hooks.push('After All');
+    var lifecycle = hooks.length
+      ? '<span style="font-size:11px;color:var(--brand)">' + hooks.join(' · ') + '</span>'
+      : '<span style="color:var(--text-muted);font-size:12px">—</span>';
+
+    var envName = _apiSuiteEnvName(s.environmentId);
+    var envBadge = s.environmentId
+      ? '<span style="font-size:11px;color:var(--neutral-700)">' + escHtml(envName) + '</span>'
+      : '<span style="color:var(--text-muted);font-size:12px">—</span>';
+
+    var onFail = s.onFailure === 'stop'
+      ? '<span style="font-size:11px;padding:2px 7px;border-radius:4px;background:rgba(220,38,38,.1);color:#dc2626">Stop</span>'
+      : '<span style="font-size:11px;padding:2px 7px;border-radius:4px;background:rgba(107,114,128,.1);color:var(--text-muted)">Continue</span>';
+
     var statusBadge = s.archived
-      ? '<span class="badge badge-grey">Archived</span>'
-      : '<span class="badge badge-green">Active</span>';
+      ? '<span class="badge badge-grey" style="font-size:10px">Archived</span>'
+      : '<span class="badge badge-green" style="font-size:10px">Active</span>';
+
     return '<tr>'
-      + '<td><a href="#" onclick="apiSuitesShowDetail(\'' + s.id + '\');return false;" style="font-weight:500">' + escHtml(s.name) + '</a> ' + statusBadge + '</td>'
-      + '<td>' + colCount + ' collection' + (colCount !== 1 ? 's' : '') + '</td>'
-      + '<td>' + escHtml(s.environmentId || '—') + '</td>'
-      + '<td style="font-size:12px;color:var(--text-muted)">' + escHtml(lifecycle) + '</td>'
+      + '<td style="text-align:center;color:var(--text-muted);font-size:12px">' + idx + '</td>'
       + '<td>'
-      + '<button class="tbl-btn run-btn" onclick="apiSuitesRunSuite(\'' + s.id + '\')">&#9654; Run</button> '
-      + '<button class="tbl-btn" onclick="apiSuitesShowDetail(\'' + s.id + '\')">Detail</button> '
-      + '<button class="tbl-btn del" onclick="apiSuitesDelete(\'' + s.id + '\')">Delete</button>'
+        + '<a href="#" onclick="apiSuitesShowDetail(\'' + escHtml(s.id) + '\');return false;" style="font-weight:600;font-size:13px">' + escHtml(s.name) + '</a>'
+        + (s.description ? '<div style="font-size:11px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px" title="' + escHtml(s.description) + '">' + escHtml(s.description) + '</div>' : '')
+      + '</td>'
+      + '<td>' + envBadge + '</td>'
+      + '<td style="text-align:center;font-size:12px;font-weight:600">' + colCount + '</td>'
+      + '<td>' + lifecycle + '</td>'
+      + '<td>' + onFail + '</td>'
+      + '<td>' + statusBadge + '</td>'
+      + '<td style="white-space:nowrap">'
+        + '<button class="tbl-btn run-btn" onclick="apiSuitesRunSuite(\'' + escHtml(s.id) + '\')" title="Run suite">&#9654; Run</button> '
+        + '<button class="tbl-btn" onclick="apiSuitesShowEdit(\'' + escHtml(s.id) + '\')" title="Edit suite">&#9998; Edit</button> '
+        + '<button class="tbl-btn del" onclick="apiSuitesDelete(\'' + escHtml(s.id) + '\')" title="Delete">&#128465;</button>'
       + '</td>'
       + '</tr>';
   }).join('');
+
+  _apiSuitesRenderPagination(total, totalPages);
 }
 
-async function apiSuitesShowDetail(suiteId) {
-  _apiSuitesCurrentSuiteId = suiteId;
+function _apiSuitesRenderPagination(total, totalPages) {
+  var pg = document.getElementById('api-suites-pagination');
+  if (!pg) return;
+  if (total <= _apiSuitesPageSize) { pg.style.display = 'none'; return; }
+  var start = _apiSuitesPage * _apiSuitesPageSize + 1;
+  var end = Math.min((_apiSuitesPage + 1) * _apiSuitesPageSize, total);
+  pg.style.display = 'flex';
+  pg.innerHTML = '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">'
+    + '<span style="font-size:12px;color:var(--text-muted)">' + start + '–' + end + ' of ' + total + '</span>'
+    + '<div style="display:flex;align-items:center;gap:6px">'
+    + '<label style="font-size:12px;color:var(--text-muted)">Rows:</label>'
+    + '<select class="fm-input" style="height:26px;font-size:12px;padding:0 4px;width:70px" onchange="_apiSuitesSetPageSize(parseInt(this.value))">'
+    + [10, 25, 50].map(function (n) { return '<option value="' + n + '"' + (n === _apiSuitesPageSize ? ' selected' : '') + '>' + n + '</option>'; }).join('')
+    + '</select></div>'
+    + '<div style="display:flex;gap:4px">'
+    + '<button class="btn btn-xs btn-outline" onclick="_apiSuitesGoPage(0)" ' + (_apiSuitesPage === 0 ? 'disabled' : '') + ' title="First">«</button>'
+    + '<button class="btn btn-xs btn-outline" onclick="_apiSuitesGoPage(' + (_apiSuitesPage - 1) + ')" ' + (_apiSuitesPage === 0 ? 'disabled' : '') + ' title="Previous">‹</button>'
+    + '<span style="font-size:12px;padding:2px 8px;align-self:center;color:var(--text-muted)">Page ' + (_apiSuitesPage + 1) + ' / ' + totalPages + '</span>'
+    + '<button class="btn btn-xs btn-outline" onclick="_apiSuitesGoPage(' + (_apiSuitesPage + 1) + ')" ' + (_apiSuitesPage >= totalPages - 1 ? 'disabled' : '') + ' title="Next">›</button>'
+    + '<button class="btn btn-xs btn-outline" onclick="_apiSuitesGoPage(' + (totalPages - 1) + ')" ' + (_apiSuitesPage >= totalPages - 1 ? 'disabled' : '') + ' title="Last">»</button>'
+    + '</div></div>';
+}
+
+function _apiSuitesGoPage(p) { _apiSuitesPage = p; apiSuitesRender(); }
+function _apiSuitesSetPageSize(n) { _apiSuitesPageSize = n; _apiSuitesPage = 0; apiSuitesRender(); }
+
+// ── Create form ───────────────────────────────────────────────────────────────
+
+function apiSuitesShowCreate() {
+  _suiteFormEditingId = null;
+  _suiteFormCollections = [];
+  _suiteFormEnvId = '';
+  _apiSuitesShowDetailPanel();
+  _suiteFormRender(null);
+}
+
+// ── Edit form ─────────────────────────────────────────────────────────────────
+
+async function apiSuitesShowEdit(suiteId) {
+  _suiteFormEditingId = suiteId;
   var detail = document.getElementById('api-suites-detail');
   if (!detail) return;
-  _apiSuitesShowDetail();
-  detail.innerHTML = '<div style="color:var(--text-muted);font-size:12px;padding:12px;">Loading…</div>';
+  _apiSuitesShowDetailPanel();
+  detail.innerHTML = '<div style="color:var(--text-muted);padding:20px;font-size:13px;">Loading suite…</div>';
+  try {
+    var res = await fetch('/api/api-suites/' + encodeURIComponent(suiteId));
+    if (!res.ok) { modAlert('api-suites-alert', 'error', 'Suite not found'); return; }
+    var suite = await res.json();
+    _suiteFormEnvId = suite.environmentId || '';
+    _suiteFormCollections = (suite.collectionIds || []).map(function (id) {
+      var col = _apiSuitesAllCollections.find(function (c) { return c.id === id; });
+      return { id: id, name: col ? col.name : id, envId: col ? (col.environmentId || '') : '' };
+    });
+    _suiteFormRender(suite);
+  } catch (e) {
+    modAlert('api-suites-alert', 'error', 'Error: ' + e.message);
+  }
+}
+
+// ── Form renderer ─────────────────────────────────────────────────────────────
+
+function _suiteFormRender(suite) {
+  var isEdit = suite !== null;
+  var detail = document.getElementById('api-suites-detail');
+  if (!detail) return;
+
+  var envOptions = '<option value="">— Select environment —</option>'
+    + _apiSuitesAllEnvs.map(function (e) {
+      var typeTag = e.envType ? ' (' + e.envType + ')' : '';
+      return '<option value="' + escHtml(e.id) + '"' + (e.id === _suiteFormEnvId ? ' selected' : '') + '>'
+        + escHtml(e.name + typeTag) + '</option>';
+    }).join('');
+
+  detail.innerHTML =
+    // ── Header ────────────────────────────────────────────────────────────────
+    '<div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;padding-bottom:14px;border-bottom:1px solid var(--neutral-200)">'
+    + '<button class="btn btn-secondary btn-sm" onclick="apiSuitesLoad()">&#8592; Back</button>'
+    + '<div>'
+      + '<div style="font-size:16px;font-weight:700">' + (isEdit ? 'Edit Suite' : 'New API Suite') + '</div>'
+      + (isEdit ? '<div style="font-size:12px;color:var(--text-muted);margin-top:1px">' + escHtml(suite.name) + '</div>' : '')
+    + '</div>'
+    + '</div>'
+
+    // ── Row 1: Basic info + Environment ───────────────────────────────────────
+    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;max-width:860px">'
+
+    // Left: basic info
+    + '<div>'
+      + '<div class="form-group" style="margin-bottom:14px">'
+        + '<label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Suite Name <span style="color:var(--flaky-danger)">*</span></label>'
+        + '<input id="sf-name" class="form-control" placeholder="e.g. Smoke Regression Suite" value="' + (suite ? escHtml(suite.name) : '') + '" />'
+      + '</div>'
+      + '<div class="form-group" style="margin-bottom:14px">'
+        + '<label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Description <span style="color:var(--text-muted);font-weight:400">(optional)</span></label>'
+        + '<textarea id="sf-description" class="form-control" rows="2" placeholder="What does this suite validate?">' + (suite && suite.description ? escHtml(suite.description) : '') + '</textarea>'
+      + '</div>'
+      + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">'
+        + '<div class="form-group">'
+          + '<label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">On Failure</label>'
+          + '<select id="sf-onFailure" class="form-control">'
+            + '<option value="continue"' + ((!suite || suite.onFailure === 'continue') ? ' selected' : '') + '>Continue</option>'
+            + '<option value="stop"' + (suite && suite.onFailure === 'stop' ? ' selected' : '') + '>Stop on fail</option>'
+          + '</select>'
+        + '</div>'
+        + (isEdit
+          ? '<div class="form-group"><label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Status</label>'
+            + '<select id="sf-archived" class="form-control">'
+              + '<option value="false"' + (!suite.archived ? ' selected' : '') + '>Active</option>'
+              + '<option value="true"' + (suite.archived ? ' selected' : '') + '>Archived</option>'
+            + '</select></div>'
+          : '<div></div>')
+      + '</div>'
+    + '</div>'
+
+    // Right: environment (the critical one — must select first)
+    + '<div>'
+      + '<div style="padding:16px;border:1px solid var(--neutral-300);border-radius:8px;background:var(--neutral-100)">'
+        + '<div style="font-size:12px;font-weight:700;margin-bottom:6px;display:flex;align-items:center;gap:6px">'
+          + '<span style="font-size:14px">🌐</span> Execution Environment <span style="color:var(--flaky-danger)">*</span>'
+        + '</div>'
+        + '<select id="sf-env" class="form-control" onchange="_suiteFormOnEnvChange(this.value)">'
+          + envOptions
+        + '</select>'
+        + '<div style="font-size:11px;color:var(--text-muted);margin-top:8px;line-height:1.5">'
+          + '⚡ All collections in this suite will run against this environment. '
+          + 'Collections that have a different default environment are flagged with a warning badge — they will still run correctly using this suite environment.'
+        + '</div>'
+      + '</div>'
+    + '</div>'
+
+    + '</div>' // end grid row 1
+
+    // ── Main Collections ──────────────────────────────────────────────────────
+    + '<div style="margin-top:24px;max-width:860px">'
+      + '<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:10px">'
+        + '<div style="font-size:13px;font-weight:700">Main Collections <span style="color:var(--flaky-danger)">*</span></div>'
+        + '<div style="font-size:12px;color:var(--text-muted)">Executed sequentially in this order</div>'
+      + '</div>'
+      + '<div id="suite-form-col-list"></div>'
+      + '<div style="display:flex;gap:8px;margin-top:10px;align-items:center">'
+        + '<select id="sf-col-add-sel" class="form-control" style="flex:1;max-width:340px;font-size:13px">'
+          + '<option value="">— Select collection to add —</option>'
+          + _suiteFormColOptions()
+        + '</select>'
+        + '<button class="btn btn-secondary btn-sm" onclick="_suiteFormAddCollection()">+ Add</button>'
+      + '</div>'
+    + '</div>'
+
+    // ── Lifecycle Hooks (collapsed by default) ────────────────────────────────
+    + '<div style="margin-top:28px;max-width:860px">'
+      + '<div style="border:1px solid var(--neutral-300);border-radius:8px;overflow:hidden">'
+        + '<div onclick="_suiteFormToggleHooks()" style="display:flex;align-items:center;gap:8px;padding:10px 14px;cursor:pointer;user-select:none;background:var(--neutral-100)">'
+          + '<span id="sf-hooks-arrow" style="font-size:13px;transition:transform .2s;transform:rotate(90deg)">▶</span>'
+          + '<div style="font-size:13px;font-weight:700">Advanced: Lifecycle Hooks</div>'
+          + '<div style="font-size:12px;color:var(--text-muted);margin-left:4px">Optional — Before All / After All run even when collections fail</div>'
+          + (suite && (suite.beforeAllCollectionId || suite.beforeEachCollectionId || suite.afterEachCollectionId || suite.afterAllCollectionId)
+            ? '<span style="margin-left:auto;font-size:11px;padding:2px 7px;border-radius:4px;background:rgba(37,99,235,.1);color:#2563eb">Configured</span>'
+            : '')
+        + '</div>'
+        + '<div id="sf-hooks-body" style="display:block;padding:16px 16px 12px">'
+          + '<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px">'
+            + _suiteFormHookField('sf-beforeAll',  '⬆ Before All',  suite ? suite.beforeAllCollectionId  : '')
+            + _suiteFormHookField('sf-afterAll',   '⬇ After All',   suite ? suite.afterAllCollectionId   : '')
+            + _suiteFormHookField('sf-beforeEach', '↑ Before Each', suite ? suite.beforeEachCollectionId : '')
+            + _suiteFormHookField('sf-afterEach',  '↓ After Each',  suite ? suite.afterEachCollectionId  : '')
+          + '</div>'
+        + '</div>'
+      + '</div>'
+    + '</div>'
+
+    // ── Submit ────────────────────────────────────────────────────────────────
+    + '<div style="display:flex;gap:8px;margin-top:28px;padding-top:16px;border-top:1px solid var(--neutral-200);max-width:860px">'
+      + '<button class="btn btn-primary" onclick="apiSuitesSave()">' + (isEdit ? '&#10003; Save Changes' : '&#43; Create Suite') + '</button>'
+      + '<button class="btn btn-secondary" onclick="apiSuitesLoad()">Cancel</button>'
+    + '</div>'
+    + '<div id="suite-form-alert" style="margin-top:12px;max-width:860px"></div>';
+
+  _suiteFormRenderCollectionList();
+}
+
+// ── Form: collection list helpers ─────────────────────────────────────────────
+
+function _suiteFormColOptions() {
+  var addedIds = _suiteFormCollections.map(function (c) { return c.id; });
+  return _apiSuitesAllCollections.filter(function (c) {
+    return !addedIds.includes(c.id);
+  }).map(function (c) {
+    var envLabel = c.environmentId ? ' (' + escHtml(_apiSuiteEnvName(c.environmentId)) + ')' : ' (No env)';
+    return '<option value="' + escHtml(c.id) + '">' + escHtml(c.name) + envLabel + '</option>';
+  }).join('');
+}
+
+var _suiteHookTooltips = {
+  'sf-beforeAll':  'Runs ONCE before any main collection starts. Use for: creating test users, seeding DB, generating auth tokens.',
+  'sf-beforeEach': 'Runs before EVERY main collection. Use for: resetting session state, clearing cart, refreshing tokens per collection.',
+  'sf-afterEach':  'Runs after EVERY main collection. Use for: per-collection cleanup, logging results, resetting modified data.',
+  'sf-afterAll':   'Runs ONCE after ALL main collections finish — GUARANTEED even if collections fail. Use for: deleting test data, revoking tokens, environment teardown.'
+};
+
+function _suiteFormHookField(id, label, selectedId) {
+  // Show all collections EXCEPT those already in the main list (no point running twice)
+  var mainIds = _suiteFormCollections.map(function (c) { return c.id; });
+  var opts = '<option value="">— None —</option>'
+    + _apiSuitesAllCollections.filter(function (c) {
+      return !mainIds.includes(c.id);
+    }).map(function (c) {
+      var envLabel = c.environmentId ? ' (' + escHtml(_apiSuiteEnvName(c.environmentId)) + ')' : ' (No env)';
+      return '<option value="' + escHtml(c.id) + '"' + (c.id === selectedId ? ' selected' : '') + '>'
+        + escHtml(c.name) + envLabel + '</option>';
+    }).join('');
+  var tooltip = _suiteHookTooltips[id] || '';
+  return '<div class="form-group" style="margin-bottom:4px">'
+    + '<label style="font-size:12px;font-weight:600;display:flex;align-items:center;gap:5px;margin-bottom:4px">'
+      + label
+      + (tooltip
+        ? '<span title="' + escHtml(tooltip) + '" style="display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border-radius:50%;background:var(--neutral-300);color:var(--neutral-700);font-size:10px;font-weight:700;cursor:help;flex-shrink:0">?</span>'
+        : '')
+    + '</label>'
+    + '<select id="' + id + '" class="form-control" style="font-size:13px;width:100%;max-width:100%;text-overflow:ellipsis">' + opts + '</select>'
+    + '</div>';
+}
+
+function _suiteFormToggleHooks() {
+  var body = document.getElementById('sf-hooks-body');
+  var arrow = document.getElementById('sf-hooks-arrow');
+  if (!body) return;
+  var open = body.style.display !== 'none';
+  body.style.display = open ? 'none' : '';
+  if (arrow) arrow.style.transform = open ? '' : 'rotate(90deg)';
+}
+
+function _suiteFormOnEnvChange(envId) {
+  _suiteFormEnvId = envId;
+  _suiteFormRenderCollectionList();
+}
+
+function _suiteFormRefreshHookDropdowns() {
+  // Re-render hook dropdowns: all collections EXCEPT those in the main list
+  var mainIds = _suiteFormCollections.map(function (c) { return c.id; });
+  var available = _apiSuitesAllCollections.filter(function (c) { return !mainIds.includes(c.id); });
+  ['sf-beforeAll', 'sf-beforeEach', 'sf-afterEach', 'sf-afterAll'].forEach(function (id) {
+    var sel = document.getElementById(id);
+    if (!sel) return;
+    var prev = sel.value;
+    sel.innerHTML = '<option value="">— None —</option>'
+      + available.map(function (c) {
+        var envLabel = c.environmentId ? ' (' + escHtml(_apiSuiteEnvName(c.environmentId)) + ')' : ' (No env)';
+        return '<option value="' + escHtml(c.id) + '"' + (c.id === prev ? ' selected' : '') + '>'
+          + escHtml(c.name) + envLabel + '</option>';
+      }).join('');
+    // keep previous selection only if it's still available (not moved into main list)
+    var stillValid = available.find(function (c) { return c.id === prev; });
+    sel.value = stillValid ? prev : '';
+  });
+}
+
+function _suiteFormRenderCollectionList() {
+  var container = document.getElementById('suite-form-col-list');
+  if (!container) return;
+
+  if (_suiteFormCollections.length === 0) {
+    container.innerHTML = '<div style="padding:16px;border:2px dashed var(--neutral-300);border-radius:8px;text-align:center;color:var(--text-muted);font-size:12px">No collections added yet. Select a collection from the dropdown below and click <strong>+ Add</strong>.</div>';
+    _suiteFormRefreshAddDropdown();
+    _suiteFormRefreshHookDropdowns();
+    return;
+  }
+
+  container.innerHTML = '<div style="border:1px solid var(--neutral-300);border-radius:8px;overflow:hidden">'
+    + '<table class="data-table" style="margin:0">'
+    + '<thead><tr>'
+      + '<th style="width:40px;text-align:center">#</th>'
+      + '<th>Collection</th>'
+      + '<th style="width:180px">Environment</th>'
+      + '<th style="width:90px;text-align:center">Order</th>'
+      + '<th style="width:44px"></th>'
+    + '</tr></thead>'
+    + '<tbody>'
+    + _suiteFormCollections.map(function (col, idx) {
+      var envBadge = '';
+      if (_suiteFormEnvId && col.envId && col.envId !== _suiteFormEnvId) {
+        // Collection has a different default env — warn, suite env overrides
+        var colEnvName = _apiSuiteEnvName(col.envId);
+        envBadge = '<span title="Collection default env is \'' + escHtml(colEnvName) + '\'. Suite environment will override during execution." '
+          + 'style="font-size:11px;padding:2px 7px;border-radius:4px;background:rgba(180,83,9,.12);color:#b45309;cursor:help">⚠ ' + escHtml(colEnvName) + '</span>';
+      } else if (_suiteFormEnvId && col.envId && col.envId === _suiteFormEnvId) {
+        // Collection default env matches suite env
+        envBadge = '<span style="font-size:11px;padding:2px 7px;border-radius:4px;background:rgba(22,163,74,.1);color:#16a34a">✓ Match</span>';
+      } else if (_suiteFormEnvId && !col.envId) {
+        // Collection has no default env — will use suite env, no conflict
+        envBadge = '<span style="font-size:11px;padding:2px 7px;border-radius:4px;background:rgba(37,99,235,.08);color:#2563eb">→ Uses suite env</span>';
+      } else {
+        // No suite env selected yet
+        envBadge = '<span style="font-size:11px;color:var(--text-muted)">—</span>';
+      }
+      return '<tr>'
+        + '<td style="text-align:center;font-size:12px;color:var(--text-muted);font-weight:600">' + (idx + 1) + '</td>'
+        + '<td style="font-weight:600;font-size:13px">' + escHtml(col.name) + '</td>'
+        + '<td>' + envBadge + '</td>'
+        + '<td style="text-align:center">'
+          + '<button class="tbl-btn" onclick="_suiteFormMoveCol(' + idx + ',-1)" ' + (idx === 0 ? 'disabled' : '') + ' title="Move up">↑</button> '
+          + '<button class="tbl-btn" onclick="_suiteFormMoveCol(' + idx + ',1)" ' + (idx === _suiteFormCollections.length - 1 ? 'disabled' : '') + ' title="Move down">↓</button>'
+        + '</td>'
+        + '<td><button class="tbl-btn del" onclick="_suiteFormRemoveCol(' + idx + ')" title="Remove">✕</button></td>'
+        + '</tr>';
+    }).join('')
+    + '</tbody></table></div>';
+
+  _suiteFormRefreshAddDropdown();
+  _suiteFormRefreshHookDropdowns();
+}
+
+function _suiteFormRefreshAddDropdown() {
+  var addSel = document.getElementById('sf-col-add-sel');
+  if (!addSel) return;
+  var prev = addSel.value;
+  addSel.innerHTML = '<option value="">— Select collection to add —</option>' + _suiteFormColOptions();
+  var stillAvailable = !_suiteFormCollections.find(function (c) { return c.id === prev; });
+  if (prev && stillAvailable) addSel.value = prev;
+}
+
+function _suiteFormAddCollection() {
+  var sel = document.getElementById('sf-col-add-sel');
+  if (!sel || !sel.value) return;
+  var colId = sel.value;
+  if (_suiteFormCollections.find(function (c) { return c.id === colId; })) return;
+  var col = _apiSuitesAllCollections.find(function (c) { return c.id === colId; });
+  if (!col) return;
+  _suiteFormCollections.push({ id: col.id, name: col.name, envId: col.environmentId || '' });
+  sel.value = '';
+  _suiteFormRenderCollectionList();
+}
+
+function _suiteFormRemoveCol(idx) {
+  _suiteFormCollections.splice(idx, 1);
+  _suiteFormRenderCollectionList();
+}
+
+function _suiteFormMoveCol(idx, dir) {
+  var ni = idx + dir;
+  if (ni < 0 || ni >= _suiteFormCollections.length) return;
+  var tmp = _suiteFormCollections[idx];
+  _suiteFormCollections[idx] = _suiteFormCollections[ni];
+  _suiteFormCollections[ni] = tmp;
+  _suiteFormRenderCollectionList();
+}
+
+// ── Save (create or update) ───────────────────────────────────────────────────
+
+async function apiSuitesSave() {
+  var name = (document.getElementById('sf-name') ? document.getElementById('sf-name').value : '').trim();
+  var envId = document.getElementById('sf-env') ? document.getElementById('sf-env').value : '';
+  var onFailure = document.getElementById('sf-onFailure') ? document.getElementById('sf-onFailure').value : 'continue';
+  var description = (document.getElementById('sf-description') ? document.getElementById('sf-description').value : '').trim();
+
+  if (!name) { modAlert('suite-form-alert', 'error', 'Suite name is required.'); return; }
+  if (!envId) { modAlert('suite-form-alert', 'error', 'Execution environment is required.'); return; }
+  if (_suiteFormCollections.length === 0) { modAlert('suite-form-alert', 'error', 'At least one main collection is required.'); return; }
+
+  var beforeAll = document.getElementById('sf-beforeAll') ? document.getElementById('sf-beforeAll').value : '';
+  var beforeEach = document.getElementById('sf-beforeEach') ? document.getElementById('sf-beforeEach').value : '';
+  var afterEach = document.getElementById('sf-afterEach') ? document.getElementById('sf-afterEach').value : '';
+  var afterAll = document.getElementById('sf-afterAll') ? document.getElementById('sf-afterAll').value : '';
+
+  var body = {
+    name: name,
+    environmentId: envId,
+    onFailure: onFailure,
+    collectionIds: _suiteFormCollections.map(function (c) { return c.id; }),
+    projectId: currentProjectId || undefined,
+  };
+  if (description) body.description = description;
+  if (beforeAll) body.beforeAllCollectionId = beforeAll;
+  if (beforeEach) body.beforeEachCollectionId = beforeEach;
+  if (afterEach) body.afterEachCollectionId = afterEach;
+  if (afterAll) body.afterAllCollectionId = afterAll;
+
+  var archivedEl = document.getElementById('sf-archived');
+  if (_suiteFormEditingId && archivedEl) body.archived = archivedEl.value === 'true';
+
+  try {
+    var url = _suiteFormEditingId
+      ? '/api/api-suites/' + encodeURIComponent(_suiteFormEditingId)
+      : '/api/api-suites';
+    var method = _suiteFormEditingId ? 'PUT' : 'POST';
+    var res = await fetch(url, {
+      method: method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      var err = await res.json();
+      modAlert('suite-form-alert', 'error', (err.error && err.error.message) || 'Save failed');
+      return;
+    }
+    modAlert('api-suites-alert', 'success', _suiteFormEditingId ? 'Suite updated.' : 'Suite created.');
+    apiSuitesLoad();
+  } catch (e) {
+    modAlert('suite-form-alert', 'error', 'Error: ' + e.message);
+  }
+}
+
+// ── Suite detail view ─────────────────────────────────────────────────────────
+
+async function apiSuitesShowDetail(suiteId) {
+  var detail = document.getElementById('api-suites-detail');
+  if (!detail) return;
+  _apiSuitesShowDetailPanel();
+  detail.innerHTML = '<div style="color:var(--text-muted);font-size:13px;padding:20px;">Loading…</div>';
   try {
     var suiteRes = await fetch('/api/api-suites/' + encodeURIComponent(suiteId));
     var runsRes = await fetch('/api/api-suites/' + encodeURIComponent(suiteId) + '/runs');
     if (!suiteRes.ok) { modAlert('api-suites-alert', 'error', 'Suite not found'); return; }
     var suite = await suiteRes.json();
     var runs = runsRes.ok ? await runsRes.json() : [];
-    detail.innerHTML = apiSuitesDetailHtml(suite, runs);
+    detail.innerHTML = _apiSuitesDetailHtml(suite, runs);
   } catch (e) {
     modAlert('api-suites-alert', 'error', 'Error: ' + e.message);
   }
 }
 
-function apiSuitesDetailHtml(suite, runs) {
-  var html = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;">'
-    + '<button class="btn btn-secondary btn-sm" onclick="apiSuitesLoad()">&#8592; Back to Suites</button>'
-    + '<button class="btn btn-primary btn-sm" onclick="apiSuitesRunSuite(\'' + escHtml(suite.id) + '\')">&#9654; Run Suite</button>'
-    + '</div>'
-    + '<div style="font-size:17px;font-weight:600;margin-bottom:4px;">' + escHtml(suite.name) + '</div>'
-    + '<div style="font-size:12px;color:var(--text-muted);margin-bottom:16px;display:flex;gap:16px;">'
-    + '<span>Collections: <strong>' + (suite.collectionIds || []).length + '</strong></span>'
-    + '<span>Environment: <strong>' + escHtml(suite.environmentId || '—') + '</strong></span>'
-    + '<span>On Failure: <strong>' + escHtml(suite.onFailure || 'continue') + '</strong></span>'
-    + (suite.beforeAllCollectionId ? '<span>beforeAll: <strong>' + escHtml(suite.beforeAllCollectionId) + '</strong></span>' : '')
-    + (suite.afterAllCollectionId ? '<span>afterAll: <strong>' + escHtml(suite.afterAllCollectionId) + '</strong></span>' : '')
-    + '</div>';
+function _apiSuitesDetailHtml(suite, runs) {
+  var envName = _apiSuiteEnvName(suite.environmentId);
+  var hooks = [];
+  if (suite.beforeAllCollectionId) hooks.push({ label: 'Before All', id: suite.beforeAllCollectionId });
+  if (suite.beforeEachCollectionId) hooks.push({ label: 'Before Each', id: suite.beforeEachCollectionId });
+  if (suite.afterEachCollectionId) hooks.push({ label: 'After Each', id: suite.afterEachCollectionId });
+  if (suite.afterAllCollectionId) hooks.push({ label: 'After All', id: suite.afterAllCollectionId });
 
-  html += '<div style="font-weight:600;font-size:13px;margin-bottom:8px;">Recent Runs <span style="font-size:12px;color:var(--text-muted);font-weight:400">(' + runs.length + ' total)</span></div>';
+  var html =
+    // Header
+    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid var(--neutral-200)">'
+    + '<button class="btn btn-secondary btn-sm" onclick="apiSuitesLoad()">&#8592; Back</button>'
+    + '<button class="btn btn-primary btn-sm" onclick="apiSuitesRunSuite(\'' + escHtml(suite.id) + '\')">&#9654; Run Suite</button>'
+    + '<button class="btn btn-secondary btn-sm" onclick="apiSuitesShowEdit(\'' + escHtml(suite.id) + '\')">&#9998; Edit</button>'
+    + '</div>'
+
+    // Title + meta
+    + '<div style="font-size:17px;font-weight:700;margin-bottom:6px">' + escHtml(suite.name) + '</div>'
+    + (suite.description ? '<div style="font-size:13px;color:var(--text-muted);margin-bottom:12px">' + escHtml(suite.description) + '</div>' : '')
+    + '<div style="display:flex;flex-wrap:wrap;gap:16px;font-size:12px;color:var(--text-muted);margin-bottom:20px">'
+      + '<span>🌐 Environment: <strong style="color:var(--neutral-700)">' + escHtml(envName) + '</strong></span>'
+      + '<span>📦 Collections: <strong>' + (suite.collectionIds || []).length + '</strong></span>'
+      + '<span>⚡ On Failure: <strong>' + escHtml(suite.onFailure || 'continue') + '</strong></span>'
+      + (suite.archived ? '<span><span class="badge badge-grey" style="font-size:10px">Archived</span></span>' : '<span><span class="badge badge-green" style="font-size:10px">Active</span></span>')
+    + '</div>'
+
+    // Collections + hooks side by side
+    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:24px">'
+
+    // Main collections
+    + '<div>'
+      + '<div style="font-size:12px;font-weight:700;margin-bottom:8px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px">Main Collections</div>'
+      + '<div style="border:1px solid var(--neutral-300);border-radius:6px;overflow:hidden">'
+      + (suite.collectionIds && suite.collectionIds.length
+        ? suite.collectionIds.map(function (id, i) {
+            return '<div style="padding:8px 12px;font-size:13px;border-bottom:1px solid var(--neutral-200);display:flex;align-items:center;gap:8px">'
+              + '<span style="font-size:11px;color:var(--text-muted);min-width:18px">' + (i + 1) + '</span>'
+              + '<span style="font-weight:500">' + escHtml(_apiSuiteColName(id)) + '</span>'
+              + '</div>';
+          }).join('')
+        : '<div style="padding:12px;font-size:12px;color:var(--text-muted)">No collections</div>')
+      + '</div>'
+    + '</div>'
+
+    // Lifecycle hooks
+    + '<div>'
+      + '<div style="font-size:12px;font-weight:700;margin-bottom:8px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px">Lifecycle Hooks</div>'
+      + '<div style="border:1px solid var(--neutral-300);border-radius:6px;overflow:hidden">'
+      + (hooks.length
+        ? hooks.map(function (h) {
+            return '<div style="padding:8px 12px;font-size:13px;border-bottom:1px solid var(--neutral-200);display:flex;align-items:center;gap:8px">'
+              + '<span style="font-size:11px;color:var(--brand);font-weight:600;min-width:72px">' + escHtml(h.label) + '</span>'
+              + '<span style="color:var(--text-muted)">' + escHtml(_apiSuiteColName(h.id)) + '</span>'
+              + '</div>';
+          }).join('')
+        : '<div style="padding:12px;font-size:12px;color:var(--text-muted)">No lifecycle hooks configured</div>')
+      + '</div>'
+    + '</div>'
+
+    + '</div>' // end grid
+
+    // Runs
+    + '<div style="font-weight:700;font-size:13px;margin-bottom:8px">Recent Runs <span style="font-size:12px;color:var(--text-muted);font-weight:400">(' + runs.length + ' total)</span></div>';
 
   if (runs.length === 0) {
-    html += '<div style="color:var(--text-muted);font-size:12px;padding:12px 0;">No runs yet for this suite.</div>';
+    html += '<div style="color:var(--text-muted);font-size:13px;padding:16px 0;">No runs yet. Click <strong>Run Suite</strong> to execute.</div>';
     return html;
   }
 
-  html += '<table class="data-table"><thead><tr><th>Run ID</th><th>Status</th><th>Phases</th><th>Duration</th><th>Started</th><th>Actions</th></tr></thead><tbody>'
-    + runs.slice(0, 20).map(function(r) {
-      var statusCell = r.status === 'passed'
+  html += '<table class="data-table"><thead><tr>'
+    + '<th style="width:90px">Run ID</th><th style="width:90px">Status</th>'
+    + '<th style="width:70px">Phases</th><th style="width:80px">Duration</th>'
+    + '<th>Started</th><th style="width:70px">Actions</th>'
+    + '</tr></thead><tbody>'
+    + runs.slice(0, 20).map(function (r) {
+      var statusBadge = r.status === 'passed'
         ? '<span class="badge badge-green">PASSED</span>'
         : '<span class="badge badge-red">FAILED</span>';
       return '<tr>'
-        + '<td style="font-size:11px;font-family:monospace">' + escHtml(r.id.slice(0, 8)) + '…</td>'
-        + '<td>' + statusCell + '</td>'
-        + '<td>' + (r.phaseResults ? r.phaseResults.length : '—') + '</td>'
-        + '<td>' + (r.durationMs ? Math.round(r.durationMs / 1000) + 's' : '—') + '</td>'
-        + '<td style="font-size:11px;">' + escHtml((r.startedAt || '').replace('T', ' ').slice(0, 19)) + '</td>'
+        + '<td style="font-size:11px;font-family:monospace;color:var(--text-muted)">' + escHtml(r.id.slice(0, 8)) + '…</td>'
+        + '<td>' + statusBadge + '</td>'
+        + '<td style="text-align:center;font-size:12px">' + (r.phaseResults ? r.phaseResults.length : '—') + '</td>'
+        + '<td style="font-size:12px">' + (r.durationMs ? Math.round(r.durationMs / 1000) + 's' : '—') + '</td>'
+        + '<td style="font-size:12px">' + escHtml((r.startedAt || '').replace('T', ' ').slice(0, 19)) + '</td>'
         + '<td><button class="tbl-btn" onclick="apiSuitesShowRun(\'' + escHtml(r.id) + '\')">View</button></td>'
         + '</tr>';
     }).join('')
@@ -15092,56 +17244,67 @@ function apiSuitesDetailHtml(suite, runs) {
   return html;
 }
 
+// ── Run detail view ───────────────────────────────────────────────────────────
+
 async function apiSuitesShowRun(runId) {
   var detail = document.getElementById('api-suites-detail');
   if (!detail) return;
-  detail.innerHTML = '<div style="color:var(--text-muted);font-size:12px;padding:12px;">Loading run…</div>';
+  detail.innerHTML = '<div style="color:var(--text-muted);font-size:13px;padding:20px;">Loading run…</div>';
   try {
     var res = await fetch('/api/api-suite-runs/' + encodeURIComponent(runId));
     if (!res.ok) { modAlert('api-suites-alert', 'error', 'Run not found'); return; }
     var run = await res.json();
-    detail.innerHTML = apiSuitesRunHtml(run);
+    detail.innerHTML = _apiSuitesRunHtml(run);
   } catch (e) {
     modAlert('api-suites-alert', 'error', 'Error: ' + e.message);
   }
 }
 
-function apiSuitesRunHtml(run) {
+function _apiSuitesRunHtml(run) {
   var statusBadge = run.status === 'passed'
     ? '<span class="badge badge-green">PASSED</span>'
     : '<span class="badge badge-red">FAILED</span>';
 
-  var html = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;">'
+  var passed = (run.phaseResults || []).filter(function (p) { return p.status === 'passed'; }).length;
+  var total = (run.phaseResults || []).length;
+  var passRate = total ? Math.round((passed / total) * 100) : 0;
+
+  return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid var(--neutral-200)">'
     + '<button class="btn btn-secondary btn-sm" onclick="apiSuitesShowDetail(\'' + escHtml(run.suiteId) + '\')">&#8592; Back to Suite</button>'
     + '</div>'
-    + '<div style="font-size:17px;font-weight:600;margin-bottom:4px;">' + escHtml(run.suiteName) + ' &nbsp;' + statusBadge + '</div>'
-    + '<div style="font-size:12px;color:var(--text-muted);margin-bottom:16px;">'
-    + escHtml((run.startedAt || '').replace('T', ' ').slice(0, 19))
-    + ' &nbsp;&middot;&nbsp; ' + (run.durationMs ? Math.round(run.durationMs / 1000) + 's' : '—')
+
+    + '<div style="font-size:17px;font-weight:700;margin-bottom:4px">' + escHtml(run.suiteName) + ' &nbsp;' + statusBadge + '</div>'
+    + '<div style="font-size:12px;color:var(--text-muted);margin-bottom:16px;display:flex;gap:16px">'
+      + '<span>Started: ' + escHtml((run.startedAt || '').replace('T', ' ').slice(0, 19)) + '</span>'
+      + '<span>Duration: ' + (run.durationMs ? Math.round(run.durationMs / 1000) + 's' : '—') + '</span>'
+      + '<span>Phases: ' + passed + ' / ' + total + ' passed (' + passRate + '%)</span>'
     + '</div>'
-    + '<div style="font-weight:600;font-size:13px;margin-bottom:8px;">Lifecycle Timeline</div>'
-    + '<table class="data-table"><thead><tr><th>Phase</th><th>Collection</th><th>Status</th><th>Duration</th></tr></thead><tbody>'
-    + (run.phaseResults || []).map(function(p) {
+
+    + '<div style="font-weight:700;font-size:13px;margin-bottom:8px">Lifecycle Timeline</div>'
+    + '<table class="data-table"><thead><tr>'
+      + '<th>Phase</th><th>Collection</th><th style="width:90px">Status</th><th style="width:90px">Duration</th>'
+    + '</tr></thead><tbody>'
+    + (run.phaseResults || []).map(function (p) {
       var phaseStatus = p.status === 'passed'
         ? '<span class="badge badge-green">passed</span>'
         : p.status === 'failed'
           ? '<span class="badge badge-red">failed</span>'
           : '<span class="badge badge-grey">' + escHtml(p.status) + '</span>';
       var hookBadge = p.isLifecycleHook
-        ? '<span style="font-size:10px;background:#1f2937;border:1px solid #374151;border-radius:3px;padding:1px 5px;margin-left:4px;color:#9ca3af;">'
+        ? ' <span style="font-size:10px;padding:1px 5px;border-radius:3px;background:var(--neutral-200);color:var(--text-muted)">'
           + escHtml(p.phase.replace(/_/g, ' ').toUpperCase()) + '</span>'
         : '';
       return '<tr>'
-        + '<td>' + escHtml(p.phase) + hookBadge + '</td>'
-        + '<td><a href="#" onclick="typeof apiRunsLoadByRunId===\'function\'&&apiRunsLoadByRunId(\'' + escHtml(p.runId) + '\');return false;">' + escHtml(p.collectionName) + '</a></td>'
+        + '<td style="font-size:12px">' + escHtml(p.phase) + hookBadge + '</td>'
+        + '<td><a href="#" onclick="typeof apiRunsLoadByRunId===\'function\'&&apiRunsLoadByRunId(\'' + escHtml(p.runId) + '\');return false;" style="font-size:13px">' + escHtml(p.collectionName) + '</a></td>'
         + '<td>' + phaseStatus + '</td>'
-        + '<td>' + (p.durationMs || '—') + (p.durationMs ? 'ms' : '') + '</td>'
+        + '<td style="font-size:12px;color:var(--text-muted)">' + (p.durationMs ? p.durationMs + 'ms' : '—') + '</td>'
         + '</tr>';
     }).join('')
     + '</tbody></table>';
-
-  return html;
 }
+
+// ── Run suite ─────────────────────────────────────────────────────────────────
 
 async function apiSuitesRunSuite(suiteId) {
   try {
@@ -15157,8 +17320,10 @@ async function apiSuitesRunSuite(suiteId) {
   }
 }
 
+// ── Delete suite ──────────────────────────────────────────────────────────────
+
 async function apiSuitesDelete(suiteId) {
-  if (!confirm('Delete this suite?')) return;
+  if (!confirm('Delete this suite? This cannot be undone.')) return;
   try {
     var res = await fetch('/api/api-suites/' + encodeURIComponent(suiteId), { method: 'DELETE' });
     if (!res.ok) { modAlert('api-suites-alert', 'error', 'Delete failed'); return; }
@@ -15168,510 +17333,249 @@ async function apiSuitesDelete(suiteId) {
     modAlert('api-suites-alert', 'error', 'Error: ' + e.message);
   }
 }
+// 29-worker-health.js — Execution Health dashboard: real-time view of all active + recent runs.
+// Polls /api/execution-health every 5s while tab visible.
 
-function apiSuitesShowCreate() {
-  var detail = document.getElementById('api-suites-detail');
-  if (!detail) return;
-  _apiSuitesShowDetail();
-  detail.innerHTML = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;">'
-    + '<button class="btn btn-secondary btn-sm" onclick="apiSuitesLoad()">&#8592; Cancel</button>'
-    + '<div style="font-size:15px;font-weight:600;">New API Suite</div>'
-    + '</div>'
-    + '<form onsubmit="apiSuitesCreate(event)" style="max-width:520px">'
-    + '<div class="form-group"><label>Suite Name <span style="color:#f87171">*</span></label><input name="name" class="form-control" placeholder="e.g. Smoke Suite" required /></div>'
-    + '<div class="form-group"><label>Collection IDs <span style="color:#f87171">*</span> <span style="font-weight:400;color:var(--text-muted)">(comma-separated)</span></label><input name="collectionIds" class="form-control" placeholder="col-abc123, col-def456" required /></div>'
-    + '<div class="form-group"><label>Environment ID <span style="color:#f87171">*</span></label><input name="environmentId" class="form-control" placeholder="env-abc123" required /></div>'
-    + '<div class="form-group"><label>On Failure</label><select name="onFailure" class="form-control"><option value="continue">continue</option><option value="stop">stop</option></select></div>'
-    + '<div class="form-group"><label>Before All Collection ID <span style="color:var(--text-muted);font-weight:400">(optional)</span></label><input name="beforeAllCollectionId" class="form-control" placeholder="Optional setup collection" /></div>'
-    + '<div class="form-group"><label>After All Collection ID <span style="color:var(--text-muted);font-weight:400">(optional)</span></label><input name="afterAllCollectionId" class="form-control" placeholder="Optional teardown collection" /></div>'
-    + '<div style="display:flex;gap:8px;margin-top:8px;">'
-    + '<button type="submit" class="btn btn-primary">Create Suite</button>'
-    + '<button type="button" class="btn btn-secondary" onclick="apiSuitesLoad()">Cancel</button>'
-    + '</div>'
-    + '</form>';
-}
-
-async function apiSuitesCreate(event) {
-  event.preventDefault();
-  var form = event.target;
-  var body = {
-    name: form.name.value.trim(),
-    collectionIds: form.collectionIds.value.split(',').map(function(s) { return s.trim(); }).filter(Boolean),
-    environmentId: form.environmentId.value.trim(),
-    onFailure: form.onFailure.value,
-    beforeAllCollectionId: form.beforeAllCollectionId.value.trim() || undefined,
-    afterAllCollectionId: form.afterAllCollectionId.value.trim() || undefined,
-    projectId: currentProjectId || undefined,
-  };
-  try {
-    var res = await fetch('/api/api-suites', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) {
-      var err = await res.json();
-      modAlert('api-suites-alert', 'error', (err.error && err.error.message) || 'Create failed');
-      return;
-    }
-    modAlert('api-suites-alert', 'success', 'Suite created.');
-    apiSuitesLoad();
-  } catch (e) {
-    modAlert('api-suites-alert', 'error', 'Error: ' + e.message);
-  }
-}
-// Module: Observability & Replay Engine UI
-// Page: api-replay
-
-var _apiReplayCurrentRunId = null;
-
-function apiReplayInit() {
-  apiReplayRenderLanding();
-}
-
-function apiReplayRenderLanding() {
-  var el = document.getElementById('api-replay-content');
-  if (!el) return;
-  el.innerHTML = '<div style="padding:20px;color:var(--text-muted);font-size:13px;">'
-    + '<div style="font-size:16px;font-weight:600;margin-bottom:12px;color:#e5e7eb;">🔍 Execution Replay &amp; Observability</div>'
-    + '<p>Enter a Run ID to inspect its replay events, timeline, and observability summary.</p>'
-    + '<div style="display:flex;gap:8px;margin-top:12px;">'
-    + '<input id="api-replay-run-input" class="form-control" style="max-width:320px;" placeholder="Run ID (e.g. abc123)" />'
-    + '<button class="btn btn-sm" onclick="apiReplayLoad()">Load</button>'
-    + '</div>'
-    + '<div style="margin-top:16px;font-size:11px;color:#4b5563;">Tip: copy the Run ID from the API Runs tab.</div>'
-    + '</div>';
-}
-
-async function apiReplayLoad(runId) {
-  runId = runId || (document.getElementById('api-replay-run-input') || {}).value || '';
-  runId = runId.trim();
-  if (!runId) { modAlert('api-replay-alert', 'error', 'Enter a Run ID.'); return; }
-  _apiReplayCurrentRunId = runId;
-
-  var el = document.getElementById('api-replay-content');
-  if (el) el.innerHTML = '<div style="color:var(--text-muted);padding:16px;">Loading observability data...</div>';
-
-  try {
-    var res = await fetch('/api/api-runs/' + encodeURIComponent(runId) + '/observability');
-    if (!res.ok) {
-      var err = await res.json();
-      modAlert('api-replay-alert', 'error', (err.error && err.error.message) || 'Run not found.');
-      apiReplayRenderLanding();
-      return;
-    }
-    var summary = await res.json();
-    apiReplayRenderSummary(summary);
-  } catch (e) {
-    modAlert('api-replay-alert', 'error', 'Error: ' + e.message);
-  }
-}
-
-function apiReplayRenderSummary(summary) {
-  var el = document.getElementById('api-replay-content');
-  if (!el) return;
-
-  var statusColor = summary.status === 'passed' ? '#4ade80' : '#f87171';
-  var replay = summary.replay || {};
-  var stats = replay.stats || {};
-
-  el.innerHTML = '<div style="margin-bottom:12px;">'
-    + '<button class="btn btn-sm" onclick="apiReplayRenderLanding()">&#8592; Back</button>'
-    + '</div>'
-    + '<div style="font-size:15px;font-weight:600;margin-bottom:4px;">'
-    + 'Run: <span style="font-family:monospace;font-size:13px;">' + escHtml(summary.runId) + '</span>'
-    + ' <span style="color:' + statusColor + ';margin-left:8px;">' + escHtml(summary.status.toUpperCase()) + '</span>'
-    + '</div>'
-    + '<div style="font-size:11px;color:var(--text-muted);margin-bottom:16px;">'
-    + escHtml(summary.startedAt.replace('T',' ').slice(0,19))
-    + ' &middot; ' + summary.stepCount + ' steps'
-    + (summary.hasSnapshot ? ' &middot; <span style="color:#a78bfa;">snapshot</span>' : '')
-    + (summary.hasTimeline ? ' &middot; <span style="color:#60a5fa;">timeline</span>' : '')
-    + '</div>'
-
-    // Stats cards
-    + '<div style="margin-bottom:16px;">'
-    + _obsStatCard(stats.requestsSent || 0, 'Requests')
-    + _obsStatCard(stats.assertionsPassed || 0, 'Assertions Passed')
-    + _obsStatCard(stats.assertionsFailed || 0, 'Assertions Failed')
-    + _obsStatCard(stats.retriesTriggered || 0, 'Retries')
-    + _obsStatCard(stats.teardownEvents || 0, 'Teardowns')
-    + _obsStatCard(stats.failuresPropagated || 0, 'Failures')
-    + '</div>'
-
-    // Tab bar
-    + '<div style="display:flex;gap:8px;margin-bottom:12px;border-bottom:1px solid #374151;padding-bottom:8px;">'
-    + '<button class="tbl-btn" onclick="apiReplayShowTab(\'events\')">Replay Events (' + (replay.eventCount || 0) + ')</button>'
-    + '<button class="tbl-btn" onclick="apiReplayShowTab(\'timeline\')">Timeline</button>'
-    + (summary.snapshotSummary ? '<button class="tbl-btn" onclick="apiReplayShowTab(\'snapshot\')">Snapshot</button>' : '')
-    + '</div>'
-    + '<div id="api-replay-tab-content"></div>';
-
-  apiReplayShowTab('events');
-}
-
-function _obsStatCard(value, label) {
-  return '<div class="obs-stat-card"><span class="obs-stat-value">' + value + '</span><span class="obs-stat-label">' + escHtml(label) + '</span></div>';
-}
-
-async function apiReplayShowTab(tab) {
-  var el = document.getElementById('api-replay-tab-content');
-  if (!el) return;
-
-  if (tab === 'events') {
-    el.innerHTML = '<div style="color:var(--text-muted);font-size:11px;">Loading replay events...</div>';
-    try {
-      var res = await fetch('/api/api-runs/' + encodeURIComponent(_apiReplayCurrentRunId) + '/replay-events');
-      if (!res.ok) { el.innerHTML = '<div style="color:#f87171;">Failed to load replay events.</div>'; return; }
-      var session = await res.json();
-      el.innerHTML = apiReplayEventsHtml(session.events || []);
-    } catch (e) {
-      el.innerHTML = '<div style="color:#f87171;">Error: ' + escHtml(e.message) + '</div>';
-    }
-
-  } else if (tab === 'timeline') {
-    el.innerHTML = '<div style="color:var(--text-muted);font-size:11px;">Loading timeline...</div>';
-    try {
-      var res2 = await fetch('/api/api-runs/' + encodeURIComponent(_apiReplayCurrentRunId) + '/timeline');
-      if (!res2.ok) { el.innerHTML = '<div style="color:var(--text-muted);font-size:12px;">No timeline recorded for this run.</div>'; return; }
-      var timeline = await res2.json();
-      el.innerHTML = apiReplayTimelineHtml(timeline.events || []);
-    } catch (e2) {
-      el.innerHTML = '<div style="color:#f87171;">Error: ' + escHtml(e2.message) + '</div>';
-    }
-
-  } else if (tab === 'snapshot') {
-    try {
-      var res3 = await fetch('/api/api-runs/' + encodeURIComponent(_apiReplayCurrentRunId) + '/observability');
-      var obs = res3.ok ? await res3.json() : null;
-      var snap = obs && obs.snapshotSummary;
-      if (!snap) { el.innerHTML = '<div style="color:var(--text-muted);font-size:12px;">No snapshot available.</div>'; return; }
-      el.innerHTML = '<div style="font-size:12px;padding:8px;">'
-        + '<div><b>Captured:</b> ' + escHtml(snap.capturedAt.replace('T',' ').slice(0,19)) + '</div>'
-        + '<div><b>Completed nodes:</b> ' + snap.completedNodeIds + '</div>'
-        + '<div><b>Failed nodes:</b> ' + snap.failedNodeIds + '</div>'
-        + '<div><b>Skipped nodes:</b> ' + snap.skippedNodeIds + '</div>'
-        + '</div>';
-    } catch (e3) {
-      el.innerHTML = '<div style="color:#f87171;">Error: ' + escHtml(e3.message) + '</div>';
-    }
-  }
-}
-
-function apiReplayEventsHtml(events) {
-  if (!events.length) return '<div style="color:var(--text-muted);font-size:12px;padding:8px;">No replay events.</div>';
-  return '<div style="max-height:480px;overflow-y:auto;">'
-    + events.map(function(e) {
-      var kindClass = 'kind-' + e.kind;
-      var detail = '';
-      if (e.request) detail = e.request.method + ' ' + escHtml(e.request.url);
-      else if (e.response) detail = 'HTTP ' + e.response.status + ' (' + e.response.durationMs + 'ms)';
-      else if (e.assertion) detail = (e.assertion.passed ? '✓ ' : '✗ ') + escHtml(e.assertion.type) + (e.assertion.message ? ': ' + escHtml(e.assertion.message) : '');
-      else if (e.variable) detail = e.variable.key + ' = ' + escHtml(e.variable.maskedValue);
-      else if (e.failure) detail = escHtml(e.failure.reason);
-      else if (e.skipReason) detail = escHtml(e.skipReason);
-      return '<div class="replay-event-row">'
-        + '<span style="color:#4b5563;min-width:32px;">' + e.seq + '</span>'
-        + '<span class="replay-event-kind ' + kindClass + '">' + escHtml(e.kind.replace(/-/g,' ')) + '</span>'
-        + '<span style="color:#9ca3af;min-width:120px;">' + escHtml(e.stepName) + '</span>'
-        + '<span>' + detail + '</span>'
-        + (e.durationMs != null ? '<span style="color:#4b5563;margin-left:auto;">' + e.durationMs + 'ms</span>' : '')
-        + '</div>';
-    }).join('')
-    + '</div>';
-}
-
-function apiReplayTimelineHtml(events) {
-  if (!events.length) return '<div style="color:var(--text-muted);font-size:12px;padding:8px;">No timeline events.</div>';
-  return '<div style="max-height:480px;overflow-y:auto;">'
-    + events.map(function(e) {
-      var typeClass = 'evt-' + e.eventType;
-      return '<div class="timeline-event-row">'
-        + '<span class="timeline-event-type ' + typeClass + '">' + escHtml(e.eventType) + '</span>'
-        + '<span style="color:#9ca3af;">' + escHtml(e.nodeName) + '</span>'
-        + (e.durationMs != null ? '<span style="color:#4b5563;margin-left:auto;">' + e.durationMs + 'ms</span>' : '')
-        + (e.detail ? '<span style="color:#6b7280;">' + escHtml(e.detail) + '</span>' : '')
-        + '</div>';
-    }).join('')
-    + '</div>';
-}
-
-// Page load hook
-if (typeof registerPageModule === 'function') {
-  registerPageModule('api-replay', apiReplayInit);
-}
-// 29-worker-health.js — Worker pool health dashboard (Phase D Step 12)
+let _execHealthTimer = null;
+let _execHealthAllRecent = [];
+let _execHealthPage = 0;          // 0-indexed, matches scripts/collections convention
+let _execHealthPageSize = 25;
 
 function workerHealthInit(panel) {
-  panel.innerHTML = '<div id="worker-health-alert"></div><div id="worker-health-content"><div class="worker-health-loading">Loading worker health...</div></div>';
-  workerHealthLoad();
+  execHealthRefresh();
+  _execHealthStartPolling();
 }
 
-function workerHealthLoad() {
-  fetch('/api/worker-pool/health')
-    .then(function(r) {
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      return r.json();
-    })
-    .then(function(report) { workerHealthRenderReport(report); })
-    .catch(function(e) {
-      var el = document.getElementById('worker-health-content');
-      if (el) el.innerHTML = '<div style="color:#f87171;padding:12px;">Failed to load worker health: ' + escHtml(String(e)) + '</div>';
-    });
+function _execHealthStartPolling() {
+  _execHealthStopPolling();
+  _execHealthTimer = setInterval(execHealthRefresh, 5000);
 }
 
-function workerHealthRenderReport(report) {
-  var el = document.getElementById('worker-health-content');
+function _execHealthStopPolling() {
+  if (_execHealthTimer) { clearInterval(_execHealthTimer); _execHealthTimer = null; }
+}
+
+async function execHealthRefresh() {
+  try {
+    var res = await fetch('/api/execution-health');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    var data = await res.json();
+    _execHealthAllRecent = data.recent || [];
+    _execHealthRender(data.active || [], _execHealthAllRecent);
+  } catch (e) { /* silent — keep last render */ }
+}
+
+function execHealthApplyFilter() {
+  _execHealthPage = 0;
+  _execHealthRenderRecent(_execHealthAllRecent);
+}
+
+function execHealthResetFilter() {
+  var n = document.getElementById('exec-health-filter-name');
+  var t = document.getElementById('exec-health-filter-type');
+  var s = document.getElementById('exec-health-filter-status');
+  if (n) n.value = '';
+  if (t) t.value = '';
+  if (s) s.value = '';
+  _execHealthPageSize = 25;
+  _execHealthPage = 0;
+  _execHealthRenderRecent(_execHealthAllRecent);
+}
+
+function _execHealthSetPageSize(n) {
+  _execHealthPageSize = n;
+  _execHealthPage = 0;
+  _execHealthRenderRecent(_execHealthAllRecent);
+}
+
+function _execHealthPageGo(delta) {
+  _execHealthPage += delta;
+  _execHealthRenderRecent(_execHealthAllRecent);
+}
+
+function _execHealthRender(active, recent) {
+  _execHealthRenderStats(active, recent);
+  _execHealthRenderActive(active);
+  _execHealthRenderRecent(recent);
+}
+
+function _execHealthRenderStats(active, recent) {
+  var el = document.getElementById('exec-health-stats');
   if (!el) return;
-
-  var healthClass = report.isHealthy ? 'healthy' : 'unhealthy';
-  var healthLabel = report.isHealthy ? '✓ Healthy' : '✗ Unhealthy';
-
-  var stuckHtml = '';
-  if (report.stuckRuns && report.stuckRuns.length > 0) {
-    stuckHtml = '<h4 style="margin:16px 0 8px;">Stuck Runs</h4>'
-      + '<div>' + report.stuckRuns.map(function(r) {
-        return '<div class="stuck-run-row">'
-          + '<span class="stuck-run-badge">STUCK</span>'
-          + '<span style="font-family:monospace;">' + escHtml(r.runId) + '</span>'
-          + '<span style="color:var(--text-muted);">worker: ' + escHtml(r.workerId) + '</span>'
-          + '<span style="color:var(--text-muted);">leased: ' + escHtml(r.leasedAt) + '</span>'
-          + '<span style="color:#ef4444;">' + Math.round(r.stuckForMs / 1000) + 's</span>'
-          + '</div>';
-      }).join('') + '</div>';
-  } else {
-    stuckHtml = '<div style="color:var(--text-muted);font-size:12px;padding:8px 0;">No stuck runs detected.</div>';
-  }
-
-  el.innerHTML = '<div class="worker-health-card ' + healthClass + '">'
-    + '<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">'
-    + '<span style="font-size:18px;font-weight:600;">' + healthLabel + '</span>'
-    + '<span style="color:var(--text-muted);font-size:12px;">Generated: ' + escHtml(report.generatedAt) + '</span>'
-    + '</div>'
-    + '<div style="display:flex;gap:16px;flex-wrap:wrap;">'
-    + _workerHealthMetric('Workers', report.workerCount)
-    + _workerHealthMetric('Active Leases', report.activeLeaseCount)
-    + _workerHealthMetric('Stuck Runs', report.stuckRuns ? report.stuckRuns.length : 0)
-    + '</div>'
-    + '</div>'
-    + stuckHtml;
+  var completed = recent.filter(function(r) { return r.status !== 'running'; });
+  var passed = completed.filter(function(r) { return r.status === 'passed'; }).length;
+  var failed = completed.filter(function(r) { return r.status === 'failed' || r.status === 'error'; }).length;
+  var passRate = completed.length > 0 ? Math.round((passed / completed.length) * 100) : 0;
+  el.innerHTML = [
+    _execStatCard(active.length, 'Active', '#3b82f6'),
+    _execStatCard(passed, 'Passed', '#10b981'),
+    _execStatCard(failed, 'Failed', '#ef4444'),
+    _execStatCard(completed.length > 0 ? passRate + '%' : '—', 'Pass Rate', passRate >= 80 ? '#10b981' : passRate >= 60 ? '#f59e0b' : '#ef4444'),
+  ].join('');
 }
 
-function _workerHealthMetric(label, value) {
-  return '<div class="worker-health-metric">'
-    + '<div style="font-size:22px;font-weight:700;">' + escHtml(String(value)) + '</div>'
-    + '<div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;">' + escHtml(label) + '</div>'
+function _execStatCard(value, label, color) {
+  return '<div style="background:var(--card-bg,#1e1e2e);border:1px solid var(--border,#2d2d3f);border-radius:8px;padding:14px 20px;min-width:110px;text-align:center;">'
+    + '<div style="font-size:24px;font-weight:700;color:' + color + '">' + escHtml(String(value)) + '</div>'
+    + '<div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-top:4px;">' + escHtml(label) + '</div>'
     + '</div>';
 }
 
-if (typeof registerPageModule === 'function') {
-  registerPageModule('worker-health', workerHealthInit);
-}
-/* 30-governance.js — Governance tab: tenant card, audit log, policy list */
-
-function governanceInit(panel) {
-  panel.innerHTML = [
-    '<h2 style="margin-bottom:16px;">&#x1F3DB;&#xFE0F; Enterprise Governance</h2>',
-    '<h4>Tenant Context</h4>',
-    '<div id="governance-tenant-card"><span class="text-muted">Loading...</span></div>',
-    '<h4 style="margin-top:24px;">Audit Log <span id="governance-audit-count" class="text-muted" style="font-size:0.8em;"></span></h4>',
-    '<div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap;">',
-    '  <input id="governance-audit-action-filter" type="text" placeholder="Filter by action..." style="padding:4px 8px;border:1px solid var(--border-color,#334155);background:var(--bg-secondary,#0f172a);color:inherit;border-radius:4px;width:200px;" />',
-    '  <input id="governance-audit-rid-filter" type="text" placeholder="Filter by resource ID..." style="padding:4px 8px;border:1px solid var(--border-color,#334155);background:var(--bg-secondary,#0f172a);color:inherit;border-radius:4px;width:200px;" />',
-    '  <button onclick="governanceAuditFilter()" style="padding:4px 12px;border-radius:4px;border:1px solid #475569;background:#1e293b;color:#e2e8f0;cursor:pointer;">Filter</button>',
-    '  <button onclick="governanceLoadAuditLog()" style="padding:4px 12px;border-radius:4px;border:1px solid #475569;background:#1e293b;color:#e2e8f0;cursor:pointer;">Reset</button>',
-    '</div>',
-    '<div style="overflow-x:auto;">',
-    '  <table style="width:100%;border-collapse:collapse;">',
-    '    <thead><tr style="font-size:0.8em;color:var(--text-muted);">',
-    '      <th style="padding:6px 8px;text-align:left;">Time</th>',
-    '      <th style="padding:6px 8px;text-align:left;">User</th>',
-    '      <th style="padding:6px 8px;text-align:left;">Action</th>',
-    '      <th style="padding:6px 8px;text-align:left;">Resource Type</th>',
-    '      <th style="padding:6px 8px;text-align:left;">Resource ID</th>',
-    '      <th style="padding:6px 8px;text-align:left;">Details</th>',
-    '    </tr></thead>',
-    '    <tbody id="governance-audit-tbody"><tr><td colspan="6" style="color:var(--text-muted);padding:8px;">Select Governance tab to load.</td></tr></tbody>',
-    '  </table>',
-    '</div>',
-    '<h4 style="margin-top:28px;">Governance Policies</h4>',
-    '<div id="governance-policies-list"><span class="text-muted">Loading...</span></div>',
-    '<h4 style="margin-top:24px;">Register New Policy</h4>',
-    '<form id="governance-policy-form" style="max-width:480px;" onsubmit="governanceSubmitPolicy(event)">',
-    '  <div style="margin-bottom:8px;"><label style="display:block;font-size:0.85em;margin-bottom:2px;">Policy ID</label>',
-    '    <input id="gov-policy-id" type="text" required placeholder="e.g. prod-gate" style="width:100%;padding:4px 8px;background:var(--bg-secondary,#0f172a);border:1px solid var(--border-color,#334155);color:inherit;border-radius:4px;" /></div>',
-    '  <div style="margin-bottom:8px;"><label style="display:block;font-size:0.85em;margin-bottom:2px;">Name</label>',
-    '    <input id="gov-policy-name" type="text" required placeholder="e.g. Production Execution Gate" style="width:100%;padding:4px 8px;background:var(--bg-secondary,#0f172a);border:1px solid var(--border-color,#334155);color:inherit;border-radius:4px;" /></div>',
-    '  <div style="margin-bottom:8px;"><label style="display:block;font-size:0.85em;margin-bottom:2px;">Allowed Roles <span style="color:var(--text-muted);">(comma-separated)</span></label>',
-    '    <input id="gov-policy-roles" type="text" placeholder="admin,editor,tester" style="width:100%;padding:4px 8px;background:var(--bg-secondary,#0f172a);border:1px solid var(--border-color,#334155);color:inherit;border-radius:4px;" /></div>',
-    '  <div style="margin-bottom:8px;"><label style="display:block;font-size:0.85em;margin-bottom:2px;">Restricted Env IDs <span style="color:var(--text-muted);">(comma-separated, blank = none)</span></label>',
-    '    <input id="gov-policy-envs" type="text" placeholder="env-prod,env-uat" style="width:100%;padding:4px 8px;background:var(--bg-secondary,#0f172a);border:1px solid var(--border-color,#334155);color:inherit;border-radius:4px;" /></div>',
-    '  <div style="margin-bottom:8px;display:flex;gap:16px;">',
-    '    <label><input id="gov-policy-approval" type="checkbox" /> Requires Approval</label>',
-    '    <label><input id="gov-policy-teardown" type="checkbox" /> Teardown Protected</label>',
-    '  </div>',
-    '  <button type="submit" style="padding:6px 16px;border-radius:4px;background:#2563eb;color:#fff;border:none;cursor:pointer;">Register Policy</button>',
-    '  <span id="gov-policy-status" style="margin-left:12px;font-size:0.85em;color:var(--text-muted);"></span>',
-    '</form>',
-  ].join('\n');
-
-  governanceLoad();
+function _execHealthRenderActive(active) {
+  var tbody = document.getElementById('exec-health-active-tbody');
+  if (!tbody) return;
+  var dot = document.getElementById('exec-health-live-dot');
+  var lbl = document.getElementById('exec-health-live-label');
+  if (dot && lbl) {
+    dot.style.background = active.length > 0 ? '#10b981' : '#6b7280';
+    lbl.textContent = active.length > 0 ? active.length + ' running' : 'Idle';
+  }
+  if (!active.length) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:20px;font-size:12px;">No active runs</td></tr>';
+    return;
+  }
+  var now = Date.now();
+  var TD = 'padding:8px 12px;border-bottom:1px solid var(--border,#2d2d3f);vertical-align:middle;';
+  tbody.innerHTML = active.map(function(r) {
+    var elapsed = _execHealthElapsed(r.startedAt, now);
+    var progress = r.total > 0 ? Math.round(((r.passed + r.failed) / r.total) * 100) : 0;
+    var passRate = (r.passed + r.failed) > 0 ? Math.round((r.passed / (r.passed + r.failed)) * 100) : null;
+    return '<tr onmouseover="this.style.background=\'var(--row-hover,rgba(255,255,255,.03))\'" onmouseout="this.style.background=\'\'">'
+      + '<td style="' + TD + 'font-family:monospace;font-size:11px;color:var(--text-muted);white-space:nowrap;">' + escHtml(r.runId.slice(0, 8)) + '…</td>'
+      + '<td style="' + TD + '">' + _execTypeBadge(r.type) + '</td>'
+      + '<td style="' + TD + 'max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + escHtml(r.name) + '">' + escHtml(r.name) + '</td>'
+      + '<td style="' + TD + '">' + _execStatusBadge('running') + '</td>'
+      + '<td style="' + TD + 'min-width:140px;">' + _execProgressBar(progress, r.passed, r.failed, r.total) + '</td>'
+      + '<td style="' + TD + '">' + (passRate !== null ? _execPassRateBadge(passRate) : '<span style="color:var(--text-muted);font-size:12px;">—</span>') + '</td>'
+      + '<td style="' + TD + 'font-size:12px;white-space:nowrap;">' + escHtml(elapsed) + '</td>'
+      + '</tr>';
+  }).join('');
 }
 
-function governanceLoad() {
-  governanceLoadTenantContext();
-  governanceLoadAuditLog();
-  governanceLoadPolicies();
-}
-
-function governanceLoadTenantContext() {
-  var el = document.getElementById('governance-tenant-card');
-  if (!el) return;
-
-  fetch('/api/governance/tenant', { credentials: 'include' })
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-      if (data.singleTenant) {
-        el.innerHTML = '<div class="governance-card"><span class="gov-policy-badge">Single-Tenant Mode</span><p style="margin:6px 0 0;color:var(--text-muted);font-size:0.85em;">No tenant isolation active. All users share a single environment.</p></div>';
-      } else {
-        var t = data.tenant;
-        el.innerHTML = '<div class="governance-card">'
-          + '<span class="gov-policy-badge gov-policy-badge--active">Multi-Tenant</span>'
-          + '<p style="margin:6px 0 0;font-size:0.85em;"><strong>ID:</strong> ' + escHtml(t.tenantId)
-          + ' &nbsp; <strong>Name:</strong> ' + escHtml(t.tenantName)
-          + ' &nbsp; <strong>Mode:</strong> ' + escHtml(t.isolationMode) + '</p>'
-          + '</div>';
-      }
-    })
-    .catch(function(err) {
-      var el2 = document.getElementById('governance-tenant-card');
-      if (el2) el2.innerHTML = '<p style="color:#ef4444;">Failed to load tenant context: ' + escHtml(String(err)) + '</p>';
-    });
-}
-
-function governanceLoadAuditLog(action, resourceId) {
-  var tbody = document.getElementById('governance-audit-tbody');
-  var countEl = document.getElementById('governance-audit-count');
+function _execHealthRenderRecent(recent) {
+  var tbody = document.getElementById('exec-health-recent-tbody');
+  var tfoot = document.getElementById('exec-health-tfoot');
+  var countEl = document.getElementById('exec-health-count-label');
   if (!tbody) return;
 
-  tbody.innerHTML = '<tr><td colspan="6" style="color:var(--text-muted);padding:8px;">Loading…</td></tr>';
+  // Apply filters
+  var nameF   = (document.getElementById('exec-health-filter-name')?.value || '').toLowerCase();
+  var typeF   = document.getElementById('exec-health-filter-type')?.value || '';
+  var statusF = document.getElementById('exec-health-filter-status')?.value || '';
 
-  var url = '/api/governance/audit?limit=50';
-  if (action)     url += '&action='     + encodeURIComponent(action);
-  if (resourceId) url += '&resourceId=' + encodeURIComponent(resourceId);
+  var filtered = recent.filter(function(r) {
+    if (nameF   && !(r.name || '').toLowerCase().includes(nameF)) return false;
+    if (typeF   && r.type !== typeF)   return false;
+    if (statusF && r.status !== statusF) return false;
+    return true;
+  });
 
-  fetch(url, { credentials: 'include' })
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-      if (countEl) countEl.textContent = data.total + ' entries';
-      if (!data.entries || data.entries.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" style="color:var(--text-muted);padding:8px;">No audit entries found.</td></tr>';
-        return;
-      }
-      tbody.innerHTML = data.entries.map(function(e) {
-        var ts = e.createdAt ? e.createdAt.replace('T', ' ').slice(0, 19) : '';
-        return '<tr class="gov-audit-row">'
-          + '<td>' + escHtml(ts) + '</td>'
-          + '<td>' + escHtml(e.username || e.userId || '—') + '</td>'
-          + '<td><span class="gov-audit-badge">' + escHtml(e.action) + '</span></td>'
-          + '<td>' + escHtml(e.resourceType || '—') + '</td>'
-          + '<td>' + escHtml(e.resourceId || '—') + '</td>'
-          + '<td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-muted);">' + escHtml(e.details || '') + '</td>'
-          + '</tr>';
-      }).join('');
-    })
-    .catch(function(err) {
-      tbody.innerHTML = '<tr><td colspan="6" style="color:#ef4444;padding:8px;">Error: ' + escHtml(String(err)) + '</td></tr>';
-    });
-}
+  var total = filtered.length;
+  var totalPages = Math.max(1, Math.ceil(total / _execHealthPageSize));
+  if (_execHealthPage >= totalPages) _execHealthPage = totalPages - 1;
+  if (_execHealthPage < 0) _execHealthPage = 0;
 
-function governanceAuditFilter() {
-  var action     = (document.getElementById('governance-audit-action-filter')?.value || '').trim();
-  var resourceId = (document.getElementById('governance-audit-rid-filter')?.value || '').trim();
-  governanceLoadAuditLog(action || undefined, resourceId || undefined);
-}
+  var start = _execHealthPage * _execHealthPageSize;
+  var end   = Math.min(start + _execHealthPageSize, total);
+  var page  = filtered.slice(start, end);
 
-function governanceLoadPolicies() {
-  var container = document.getElementById('governance-policies-list');
-  if (!container) return;
+  if (countEl) countEl.textContent = total > 0 ? '(' + total + ' result' + (total !== 1 ? 's' : '') + ')' : '';
 
-  container.innerHTML = '<span style="color:var(--text-muted);">Loading…</span>';
-
-  fetch('/api/governance/policies', { credentials: 'include' })
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-      if (!data.policies || data.policies.length === 0) {
-        container.innerHTML = '<p style="color:var(--text-muted);font-size:0.85em;">No governance policies registered.</p>';
-        return;
-      }
-      container.innerHTML = data.policies.map(function(p) {
-        var badgeClass = p.requiresApproval ? 'gov-policy-badge--approval' : 'gov-policy-badge--active';
-        return '<div class="gov-policy-row">'
-          + '<span class="gov-policy-badge ' + badgeClass + '">' + escHtml(p.name) + '</span>'
-          + ' <span style="color:var(--text-muted);font-size:0.78em;">[' + escHtml(p.policyId) + ']</span>'
-          + '<ul style="margin:6px 0 0;padding-left:18px;font-size:0.82em;">'
-          + '<li>Allowed roles: ' + p.allowedRoles.map(function(r) { return escHtml(r); }).join(', ') + '</li>'
-          + '<li>Restricted envs: ' + (p.restrictedEnvironmentIds.length ? p.restrictedEnvironmentIds.map(function(e) { return escHtml(e); }).join(', ') : 'none') + '</li>'
-          + '<li>Requires approval: ' + (p.requiresApproval ? 'Yes' : 'No') + '</li>'
-          + '<li>Teardown protected: ' + (p.teardownProtected ? 'Yes' : 'No') + '</li>'
-          + (p.maxRetries !== undefined ? '<li>Max retries: ' + p.maxRetries + '</li>' : '')
-          + '</ul></div>';
-      }).join('');
-    })
-    .catch(function(err) {
-      container.innerHTML = '<p style="color:#ef4444;">Error: ' + escHtml(String(err)) + '</p>';
-    });
-}
-
-function governanceSubmitPolicy(event) {
-  event.preventDefault();
-  var policyId   = (document.getElementById('gov-policy-id')?.value || '').trim();
-  var name       = (document.getElementById('gov-policy-name')?.value || '').trim();
-  var rolesRaw   = (document.getElementById('gov-policy-roles')?.value || '').trim();
-  var envsRaw    = (document.getElementById('gov-policy-envs')?.value || '').trim();
-  var approval   = document.getElementById('gov-policy-approval')?.checked || false;
-  var teardown   = document.getElementById('gov-policy-teardown')?.checked || false;
-  var statusEl   = document.getElementById('gov-policy-status');
-
-  if (!policyId || !name) {
-    if (statusEl) statusEl.textContent = 'Policy ID and Name are required.';
+  if (!page.length) {
+    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--text-muted);padding:20px;font-size:12px;">'
+      + (nameF || typeF || statusF ? 'No results match the current filters.' : 'No recent runs') + '</td></tr>';
+    if (tfoot) tfoot.innerHTML = '';
     return;
   }
 
-  var payload = {
-    policyId:                 policyId,
-    name:                     name,
-    requiresApproval:         approval,
-    allowedRoles:             rolesRaw ? rolesRaw.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : ['admin', 'editor', 'tester'],
-    restrictedEnvironmentIds: envsRaw  ? envsRaw.split(',').map(function(s) { return s.trim(); }).filter(Boolean)  : [],
-    teardownProtected:        teardown,
-  };
+  var TD2 = 'padding:8px 12px;border-bottom:1px solid var(--border,#2d2d3f);vertical-align:middle;';
+  tbody.innerHTML = page.map(function(r) {
+    var passRate = r.total > 0 ? Math.round((r.passed / r.total) * 100) : 0;
+    var duration = r.completedAt ? _execHealthDuration(r.startedAt, r.completedAt) : '—';
+    return '<tr onmouseover="this.style.background=\'var(--row-hover,rgba(255,255,255,.03))\'" onmouseout="this.style.background=\'\'">'
+      + '<td style="' + TD2 + 'font-family:monospace;font-size:11px;color:var(--text-muted);white-space:nowrap;">' + escHtml(r.runId.slice(0, 8)) + '…</td>'
+      + '<td style="' + TD2 + '">' + _execTypeBadge(r.type) + '</td>'
+      + '<td style="' + TD2 + 'max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + escHtml(r.name) + '">' + escHtml(r.name) + '</td>'
+      + '<td style="' + TD2 + '">' + _execStatusBadge(r.status) + '</td>'
+      + '<td style="' + TD2 + 'font-size:12px;color:#10b981;text-align:center;">' + r.passed + '</td>'
+      + '<td style="' + TD2 + 'font-size:12px;color:#ef4444;text-align:center;">' + r.failed + '</td>'
+      + '<td style="' + TD2 + 'font-size:12px;text-align:center;">' + r.total + '</td>'
+      + '<td style="' + TD2 + '">' + _execPassRateBadge(passRate) + '</td>'
+      + '<td style="' + TD2 + 'font-size:11px;white-space:nowrap;color:var(--text-muted);">' + escHtml(formatDate(r.startedAt)) + '</td>'
+      + '<td style="' + TD2 + 'font-size:12px;white-space:nowrap;color:var(--text-muted);">' + escHtml(duration) + '</td>'
+      + '</tr>';
+  }).join('');
 
-  fetch('/api/governance/policies', {
-    method:      'POST',
-    credentials: 'include',
-    headers:     { 'Content-Type': 'application/json' },
-    body:        JSON.stringify(payload),
-  })
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-      if (data.error) {
-        if (statusEl) statusEl.textContent = 'Error: ' + data.error;
-        return;
-      }
-      if (statusEl) statusEl.textContent = 'Policy \'' + escHtml(data.policy.name) + '\' registered.';
-      document.getElementById('governance-policy-form')?.reset();
-      governanceLoadPolicies();
-    })
-    .catch(function(err) {
-      if (statusEl) statusEl.textContent = 'Error: ' + String(err);
-    });
+  // Pagination in tfoot — exact same pattern as scripts + api-collections pages
+  if (tfoot) {
+    var rppOpts = [10, 25, 50, 100].map(function(n) {
+      return '<option value="' + n + '"' + (_execHealthPageSize === n ? ' selected' : '') + '>' + n + '</option>';
+    }).join('');
+    var pageInfo = '<span style="font-size:12px;color:var(--text-muted)">' + (start + 1) + '–' + end + ' of ' + total + '</span>';
+    var navBtns = totalPages > 1
+      ? '<button class="tbl-btn" onclick="_execHealthPageGo(-1)" ' + (_execHealthPage === 0 ? 'disabled' : '') + '>← Prev</button>'
+        + '<span style="font-size:12px;color:var(--text-muted)">Page ' + (_execHealthPage + 1) + ' / ' + totalPages + ' &nbsp;(' + (start + 1) + '–' + end + ' of ' + total + ')</span>'
+        + '<button class="tbl-btn" onclick="_execHealthPageGo(1)" ' + (_execHealthPage >= totalPages - 1 ? 'disabled' : '') + '>Next →</button>'
+      : pageInfo;
+    tfoot.innerHTML = '<tr><td colspan="10" style="padding:6px 4px"><div class="lt-pagination">'
+      + '<label style="font-size:12px;color:var(--text-muted)">Rows per page: '
+      + '<select class="fm-input" style="padding:2px 6px;font-size:12px;width:auto" onchange="_execHealthSetPageSize(+this.value)">' + rppOpts + '</select>'
+      + '</label>'
+      + navBtns
+      + '</div></td></tr>';
+  }
 }
 
-if (typeof registerPageModule === 'function') {
-  registerPageModule('governance', governanceInit);
+function _execTypeBadge(type) {
+  var map = { 'ui-test': ['#7c3aed', 'UI Test'], 'api-collection': ['#2563eb', 'API Collection'], 'api-suite': ['#0891b2', 'API Suite'] };
+  var entry = map[type] || ['#6b7280', type];
+  return '<span style="font-size:10px;padding:2px 7px;border-radius:4px;font-weight:600;background:' + entry[0] + '22;color:' + entry[0] + '">' + escHtml(entry[1]) + '</span>';
 }
-// ══════════════════════════════════════════════════════════════════════════════
+
+function _execStatusBadge(status) {
+  var map = { running: ['#3b82f6', '● Running'], passed: ['#10b981', '✓ Passed'], failed: ['#ef4444', '✗ Failed'], error: ['#f59e0b', '⚠ Error'] };
+  var entry = map[status] || ['#6b7280', status];
+  return '<span style="font-size:11px;padding:2px 8px;border-radius:4px;font-weight:600;background:' + entry[0] + '22;color:' + entry[0] + '">' + escHtml(entry[1]) + '</span>';
+}
+
+function _execPassRateBadge(rate) {
+  var color = rate >= 80 ? '#10b981' : rate >= 60 ? '#f59e0b' : '#ef4444';
+  return '<span style="font-size:11px;font-weight:600;color:' + color + '">' + rate + '%</span>';
+}
+
+function _execProgressBar(pct, passed, failed, total) {
+  if (total === 0) return '<span style="font-size:11px;color:var(--text-muted);">—</span>';
+  return '<div style="height:6px;background:var(--border,#2d2d3f);border-radius:3px;overflow:hidden;margin-bottom:3px;">'
+    + '<div style="height:100%;width:' + pct + '%;background:#10b981;border-radius:3px;transition:width .3s;"></div></div>'
+    + '<div style="font-size:10px;color:var(--text-muted);">' + (passed + failed) + ' / ' + total + '</div>';
+}
+
+function _execHealthElapsed(startedAt, nowMs) {
+  var s = Math.floor((nowMs - new Date(startedAt).getTime()) / 1000);
+  if (isNaN(s) || s < 0) return '—';
+  if (s < 60) return s + 's';
+  var m = Math.floor(s / 60);
+  if (m < 60) return m + 'm ' + (s % 60) + 's';
+  return Math.floor(m / 60) + 'h ' + (m % 60) + 'm';
+}
+
+function _execHealthDuration(startedAt, completedAt) {
+  return _execHealthElapsed(startedAt, new Date(completedAt).getTime());
+}
+
+document.addEventListener('visibilitychange', function() {
+  if (document.hidden) { _execHealthStopPolling(); }
+  else {
+    var panel = document.getElementById('panel-worker-health');
+    if (panel && panel.classList.contains('active')) { execHealthRefresh(); _execHealthStartPolling(); }
+  }
+});
+// OLD: Entire plugin ecosystem module commented out 2026-05-30.
+// Concluded: no user value — auth-provider use case covered by existing pre-request hooks;
+// custom-assertion use case replaced by native array operators + domain assertion library.
+// src/api-plugins/ folder kept on disk. Re-enable by uncommenting server.ts import+route,
+// index.html tab+panel, 08-tab-switch.js trigger, and this file.
+/* ══════════════════════════════════════════════════════════════════════════════
 // API PLUGINS MODULE — Plugin Ecosystem page
 // ══════════════════════════════════════════════════════════════════════════════
 
@@ -15809,6 +17713,7 @@ function apiPluginsExport() {
   );
   showToast('success', 'Plugins exported to plugins.csv');
 }
+*/ // END OLD plugin ecosystem module
 // ══════════════════════════════════════════════════════════════════════════════
 // GRAPH EDITOR MODULE — SVG DAG visualizer with drag, dep edit, layout save
 // ══════════════════════════════════════════════════════════════════════════════

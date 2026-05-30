@@ -589,7 +589,7 @@ export interface ApiRequest {
 
 export interface ApiAssertion {
   field: string;
-  operator: 'eq' | 'neq' | 'equals' | 'notEquals' | 'contains' | 'notContains' | 'startsWith' | 'endsWith' | 'gt' | 'lt' | 'greaterThan' | 'lessThan' | 'greaterThanOrEqual' | 'lessThanOrEqual' | 'exists' | 'notExists' | 'matches' | 'isEmpty' | 'isType' | 'jsonSchemaValid';
+  operator: 'eq' | 'neq' | 'equals' | 'notEquals' | 'contains' | 'notContains' | 'startsWith' | 'endsWith' | 'gt' | 'lt' | 'greaterThan' | 'lessThan' | 'greaterThanOrEqual' | 'lessThanOrEqual' | 'exists' | 'notExists' | 'matches' | 'isEmpty' | 'isType' | 'jsonSchemaValid' | 'arrayLengthEquals' | 'arrayLengthGreaterThan' | 'arrayLengthLessThan' | 'arrayNotEmpty' | 'arrayContains';
   expected?: unknown;
   weight?: number;
   severity?: 'critical' | 'high' | 'medium' | 'low' | 'soft';
@@ -617,6 +617,22 @@ export interface ApiStepExecution {
   condition?: string;
 }
 
+// Flow Control — executed after each step by FlowControlEngine
+export type FlowRuleAction = '__stop__' | '__continue__' | '__jump__' | '__repeat__';
+
+export interface FlowRuleCondition {
+  field: string;       // same field encoding as ApiAssertion.field
+  operator: string;    // same operator set as ApiAssertion.operator
+  value: string;       // expected value (always string; engine coerces)
+}
+
+export interface FlowRule {
+  condition?: FlowRuleCondition; // omit = unconditional (always fires)
+  action: FlowRuleAction;
+  /** For __jump__: target step name. For __repeat__: max repeat count as string. */
+  target?: string;
+}
+
 export interface ApiTestStep {
   id: string;
   name: string;
@@ -629,6 +645,7 @@ export interface ApiTestStep {
   order?: number;
   captureBaseline?: boolean;
   baselineRunId?: string;
+  flowRules?: FlowRule[];
 }
 
 export interface ApiCollection {
@@ -695,6 +712,9 @@ export interface ApiStepResult {
   error?: string;
   healingProposal?: string;
   isTeardown?: boolean;
+  // Data File Runner — set when run was data-driven
+  iterationIndex?: number;
+  rowIdentifier?: string;
 }
 
 export interface ApiCollectionRunResult {
@@ -706,6 +726,28 @@ export interface ApiCollectionRunResult {
   status: 'passed' | 'failed' | 'error' | 'running';
   stepResults: ApiStepResult[];
   variableContext: Record<string, string>;
+  // Data File Runner — populated when run was data-driven
+  dataFileId?: string;
+  dataFileName?: string;
+  iterationCount?: number;
+  iterationSummary?: Array<{
+    index: number;
+    rowIdentifier: string;
+    status: 'passed' | 'failed' | 'error' | 'skipped';
+    durationMs: number;
+  }>;
+}
+
+// Data File — saved on server for reuse across collection runs
+export interface ApiDataFile {
+  id: string;
+  name: string;             // user-given label e.g. "Admin Users"
+  originalFilename: string; // e.g. "users.csv"
+  columns: string[];        // detected column headers
+  rowCount: number;
+  createdAt: string;
+  lastUsedAt?: string;
+  projectId: string;
 }
 
 // Phase D Step 7 — per-node execution data merged into graph for run overlay
