@@ -11,9 +11,9 @@
 import express, { Request, Response } from 'express';
 import multer from 'multer';
 import { parse as csvParse } from 'csv-parse/sync';
-import * as fs from 'fs';
-import * as path from 'path';
 import { requireAuth } from '../../auth/middleware';
+import { readAll, SETTINGS } from '../../data/store';
+import type { AppSettings } from '../../data/types';
 import {
   saveDataFile,
   listDataFiles,
@@ -58,11 +58,9 @@ function parseFile(buffer: Buffer, originalname: string): Record<string, string>
 
 function readMaxRows(): number {
   try {
-    const settingsPath = path.resolve('data', 'settings.json');
-    if (fs.existsSync(settingsPath)) {
-      const s = JSON.parse(fs.readFileSync(settingsPath, 'utf-8')) as { dataFileMaxRows?: number };
-      if (s.dataFileMaxRows && Number.isInteger(s.dataFileMaxRows)) return s.dataFileMaxRows;
-    }
+    const rows = readAll<AppSettings & { id: string; dataFileMaxRows?: number }>(SETTINGS);
+    const val = rows[0]?.dataFileMaxRows;
+    if (val && Number.isInteger(val) && val > 0) return val;
   } catch { /* use default */ }
   return 500;
 }

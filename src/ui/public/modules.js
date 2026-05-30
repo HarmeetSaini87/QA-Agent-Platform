@@ -366,6 +366,9 @@ async function settingsLoad() {
   if (provSel && data.nlProvider) provSel.value = data.nlProvider;
   nlProviderChanged(data);  // pass saved data to pre-fill fields
 
+  const maxRowsEl = document.getElementById('set-data-file-max-rows');
+  if (maxRowsEl) maxRowsEl.value = data.dataFileMaxRows ?? 500;
+
   notifLoad(data.notifications ?? {});
   if (typeof jiraConfigLoad === 'function') jiraConfigLoad();
   if (typeof nlAliasLoad === 'function') nlAliasLoad();
@@ -381,6 +384,7 @@ async function settingsSave() {
     sessionTimeoutMinutes: parseInt(document.getElementById('set-timeout').value) || 60,
     maxFailedLogins: parseInt(document.getElementById('set-max-logins').value) || 5,
     allowRegistration: document.getElementById('set-allow-reg').checked,
+    dataFileMaxRows: parseInt(document.getElementById('set-data-file-max-rows')?.value) || 500,
     nlProvider: document.getElementById('set-nl-provider')?.value || '',
     nlModel: customModel || selectModel || '',
     nlBaseUrl: document.getElementById('set-nl-baseurl')?.value.trim() || '',

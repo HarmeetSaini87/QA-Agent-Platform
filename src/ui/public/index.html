@@ -1895,6 +1895,17 @@
                 </div>
               </div>
 
+              <!-- API Testing Settings -->
+              <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--neutral-300)">
+                <div style="font-size:13px;font-weight:700;color:var(--neutral-700);margin-bottom:4px">🔌 API Testing</div>
+                <div class="field" style="max-width:260px;margin-top:10px">
+                  <label>Max rows per data file run
+                    <span title="Maximum number of CSV/JSON rows processed per collection run. Rows beyond this limit are truncated." style="cursor:help;color:var(--neutral-500)"> ⓘ</span>
+                  </label>
+                  <input id="set-data-file-max-rows" class="fm-input" type="number" min="1" max="5000" placeholder="500" />
+                </div>
+              </div>
+
               <button class="btn btn-primary" style="margin-top:16px" onclick="settingsSave()">Save Settings</button>
               <button class="btn btn-outline" style="margin-top:16px;margin-left:8px;color:#f48771;border-color:#f48771" onclick="adminRestartServer()" id="btn-restart-server">&#9654; Restart Server</button>
             </div>
