@@ -139,6 +139,10 @@
       display: inline-flex; align-items: center; padding: 4px 12px;
       border-radius: 20px; font-size: 11px; font-weight: 600;
     }
+    .tc-browser-badge {
+      display: inline-flex; align-items: center; vertical-align: middle;
+    }
+    .tc-browser-badge svg { display: block; }
 
     /* ── Section titles (kept from original) ──────────────────────────────── */
     .section-title {
@@ -320,6 +324,11 @@
     .det-body { padding: 16px 20px; }
     .det-header.error-hdr { background: #fef2f2; color: var(--danger); }
     .det-header.error-hdr:hover { background: #fee2e2; }
+    .det-header.warn-hdr { background: #fffbeb; color: #92400e; }
+    .det-header.warn-hdr:hover { background: #fef3c7; }
+    .warn-hdr-note { font-size: 11px; font-weight: 400; opacity: 0.75; margin-left: 8px; }
+    .warn-toggle-link { font-size: 11px; color: #92400e; opacity: 0.7; text-decoration: underline dotted; }
+    .warn-toggle-link:hover { opacity: 1; }
 
     /* ── Error section ────────────────────────────────────────────────────── */
     .error-box {
@@ -573,10 +582,63 @@
       /* Det header print */
       .det-header { background: #f4f6f8 !important; color: #374151 !important; }
       .det-header.error-hdr { background: #fee2e2 !important; color: #991b1b !important; }
+      .det-header.warn-hdr  { background: #fef3c7 !important; color: #92400e !important; }
       /* Footer */
       .report-footer { background: #e5e7eb !important; color: #374151 !important; }
     }
+    /* ── Trace Viewer Modal ─────────────────────────────────────────── */
+    .trace-modal-overlay {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.75);
+      z-index: 9999;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .trace-modal-overlay[hidden] { display: none !important; }
+    .trace-modal-inner {
+      width: 95vw; height: 92vh;
+      background: #fff; border-radius: 8px;
+      display: flex; flex-direction: column;
+      overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    }
+    .trace-modal-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 16px; background: #1e1e2e; color: #fff;
+      font-size: 13px; font-weight: 500; flex-shrink: 0;
+    }
+    .trace-modal-header button {
+      background: transparent; border: 1px solid rgba(255,255,255,0.3);
+      color: #fff; padding: 4px 10px; border-radius: 4px;
+      cursor: pointer; font-size: 12px;
+    }
+    .trace-modal-header button:hover { background: rgba(255,255,255,0.1); }
+    #trace-iframe {
+      flex: 1; width: 100%; border: none;
+    }
+    #trace-modal-loading, #trace-modal-error {
+      flex: 1; display: flex; align-items: center; justify-content: center;
+      font-size: 14px; color: #555;
+    }
+    #trace-modal-error { color: #b91c1c; flex-direction: column; gap: 8px; }
+    .trace-det-section {
+      margin-top: 8px; padding: 10px 12px;
+      background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px;
+      font-size: 12px; color: #475569;
+    }
+    .trace-det-hint { color: #94a3b8; font-style: italic; margin-top: 4px; }
+
+    /* ── Defect button badges ────────────────────────────────────────────── */
+    .defect-btn {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 4px 10px; border-radius: 14px;
+      font-size: 11.5px; font-weight: 700; cursor: pointer;
+      border: none; transition: .15s; white-space: nowrap;
+    }
+    .defect-btn-file   { background: #fef3c7; color: #92400e; }
+    .defect-btn-file:hover { background: #fde68a; }
+    .defect-btn-open   { background: #fee2e2; color: #7f1d1d; }
+    .defect-btn-closed { background: #d1fae5; color: #065f46; }
   </style>
+  <script src="js/28-defect-modal.js"></script>
 </head>
 <body>
 
@@ -673,17 +735,29 @@ function statusBadge(status) {
 }
 
 function extractTcId(name) {
-  const m = (name || '').match(/\[([A-Z]{0,6}_\d+)\]/);
+  // Matches [MED-01], [TC-123], [ABC_01] — prefix letters + hyphen or underscore + digits
+  const m = (name || '').match(/^\[([A-Z]{1,8}[-_]\d+)\]/);
   return m ? m[1] : null;
 }
 
 function cleanTitle(name) {
-  return (name || '').replace(/^\s*\[[A-Z_\d]+\]\s*/, '').trim() || name || '—';
+  // Strip leading [TCID] prefix added by codegenGenerator
+  return (name || '').replace(/^\s*\[[A-Z]{1,8}[-_]\d+\]\s*/, '').trim() || name || '—';
 }
 
 function screenshotSrc(p) {
   if (!p) return '';
   return `/screenshots/${esc(p.replace('test-results/',''))}`;
+}
+
+const _rChromeIcon='<svg width="18" height="18" viewBox="0 0 24 24" style="vertical-align:-2px"><path d="M12 0C8.21 0 4.831 1.757 2.632 4.501l3.953 6.848A5.454 5.454 0 0 1 12 6.545h10.691A12 12 0 0 0 12 0zM1.931 5.47A11.943 11.943 0 0 0 0 12c0 6.012 4.42 10.991 10.189 11.864l3.953-6.847a5.45 5.45 0 0 1-6.865-2.29zm13.342 2.166a5.446 5.446 0 0 1 1.45 7.09l.002.001h-.002l-5.344 9.257c.206.01.413.016.621.016 6.627 0 12-5.373 12-12 0-1.54-.29-3.011-.818-4.364z" fill="#4285F4"/><path d="M12 16.364a4.364 4.364 0 1 1 0-8.728 4.364 4.364 0 0 1 0 8.728z" fill="#DC4E41"/><circle cx="12" cy="12" r="4.364" fill="#fff"/><circle cx="12" cy="12" r="3" fill="#4285F4"/></svg>';
+const _rFirefoxIcon='<svg width="18" height="18" viewBox="0 0 512 512" style="vertical-align:-2px"><defs><radialGradient id="rfg" cx="210%" cy="-100%" r="290%"><stop offset=".1" stop-color="#ffe226"/><stop offset=".79" stop-color="#ff7139"/></radialGradient><radialGradient id="rfc" cx="49%" cy="40%" r="128%" gradientTransform="matrix(.82 0 0 1 .088 0)"><stop offset=".3" stop-color="#960e18"/><stop offset=".35" stop-color="#b11927" stop-opacity=".74"/><stop offset=".43" stop-color="#db293d" stop-opacity=".34"/><stop offset=".5" stop-color="#f5334b" stop-opacity=".09"/><stop offset=".53" stop-color="#ff3750" stop-opacity="0"/></radialGradient><radialGradient id="rfd" cx="48%" cy="-12%" r="140%"><stop offset=".13" stop-color="#fff44f"/><stop offset=".53" stop-color="#ff980e"/></radialGradient><radialGradient id="rfe" cx="22.76%" cy="110.11%" r="100%"><stop offset=".35" stop-color="#3a8ee6"/><stop offset=".67" stop-color="#9059ff"/><stop offset="1" stop-color="#c139e6"/></radialGradient><radialGradient id="rff" cx="52%" cy="33%" r="59%" gradientTransform="scale(.9 1)"><stop offset=".21" stop-color="#9059ff" stop-opacity="0"/><stop offset=".97" stop-color="#6e008b" stop-opacity=".6"/></radialGradient><radialGradient id="rfb" cx="87.4%" cy="-12.9%" r="128%" gradientTransform="matrix(.8 0 0 1 .178 .129)"><stop offset=".13" stop-color="#ffbd4f"/><stop offset=".28" stop-color="#ff980e"/><stop offset=".47" stop-color="#ff3750"/><stop offset=".78" stop-color="#eb0878"/><stop offset=".86" stop-color="#e50080"/></radialGradient><radialGradient id="rfh" cx="84%" cy="-41%" r="180%"><stop offset=".11" stop-color="#fff44f"/><stop offset=".46" stop-color="#ff980e"/><stop offset=".72" stop-color="#ff3647"/><stop offset=".9" stop-color="#e31587"/></radialGradient><radialGradient id="rfi" cx="16.1%" cy="-18.6%" r="348.8%" gradientTransform="scale(1 .47) rotate(84 .279 -.297)"><stop offset="0" stop-color="#fff44f"/><stop offset=".3" stop-color="#ff980e"/><stop offset=".57" stop-color="#ff3647"/><stop offset=".74" stop-color="#e31587"/></radialGradient><radialGradient id="rfj" cx="18.9%" cy="-42.5%" r="238.4%"><stop offset=".14" stop-color="#fff44f"/><stop offset=".48" stop-color="#ff980e"/><stop offset=".66" stop-color="#ff3647"/><stop offset=".9" stop-color="#e31587"/></radialGradient><radialGradient id="rfk" cx="159.3%" cy="-44.72%" r="313.1%"><stop offset=".09" stop-color="#fff44f"/><stop offset=".63" stop-color="#ff980e"/></radialGradient><linearGradient id="rfa" x1="87.25%" y1="15.5%" x2="9.4%" y2="93.1%"><stop offset=".05" stop-color="#fff44f"/><stop offset=".37" stop-color="#ff980e"/><stop offset=".53" stop-color="#ff3647"/><stop offset=".7" stop-color="#e31587"/></linearGradient><linearGradient id="rfl" x1="80%" y1="14%" x2="18%" y2="84%"><stop offset=".17" stop-color="#fff44f" stop-opacity=".8"/><stop offset=".6" stop-color="#fff44f" stop-opacity="0"/></linearGradient></defs><path d="M478.711 166.353c-10.445-25.124-31.6-52.248-48.212-60.821 13.52 26.505 21.345 53.093 24.335 72.936 0 .039.015.136.047.4C427.706 111.135 381.627 83.823 344 24.355c-1.9-3.007-3.805-6.022-5.661-9.2a73.716 73.716 0 01-2.646-4.972A43.7 43.7 0 01332.1.677a.626.626 0 00-.546-.644.818.818 0 00-.451 0c-.034.012-.084.051-.12.065-.053.021-.12.069-.176.1.027-.036.083-.117.1-.136-60.37 35.356-80.85 100.761-82.732 133.484a120.249 120.249 0 00-66.142 25.488 71.355 71.355 0 00-6.225-4.7 111.338 111.338 0 01-.674-58.732c-24.688 11.241-43.89 29.01-57.85 44.7h-.111c-9.527-12.067-8.855-51.873-8.312-60.184-.114-.515-7.107 3.63-8.023 4.255a175.073 175.073 0 00-23.486 20.12 210.478 210.478 0 00-22.442 26.913c0 .012-.007.026-.011.038 0-.013.007-.026.011-.038a202.838 202.838 0 00-32.247 72.805c-.115.521-.212 1.061-.324 1.586-.452 2.116-2.08 12.7-2.365 15-.022.177-.032.347-.053.524a229.066 229.066 0 00-3.9 33.157c0 .41-.025.816-.025 1.227C16 388.418 123.6 496 256.324 496c118.865 0 217.56-86.288 236.882-199.63.407-3.076.733-6.168 1.092-9.271 4.777-41.21-.53-84.525-15.587-120.746z" fill="url(#rfa)"/><path d="M478.711 166.353c-10.445-25.124-31.6-52.248-48.212-60.821 13.52 26.505 21.345 53.093 24.335 72.936 0-.058.011.048.036.226.012.085.027.174.04.259 22.675 61.47 10.322 123.978-7.479 162.175-27.539 59.1-94.215 119.67-198.576 116.716C136.1 454.651 36.766 370.988 18.223 261.41c-3.379-17.28 0-26.054 1.7-40.084-2.071 10.816-2.86 13.94-3.9 33.157 0 .41-.025.816-.025 1.227C16 388.418 123.6 496 256.324 496c118.865 0 217.56-86.288 236.882-199.63.407-3.076.733-6.168 1.092-9.271 4.777-41.21-.53-84.525-15.587-120.746z" fill="url(#rfb)"/><path d="M361.922 194.6c.524.368 1 .734 1.493 1.1a130.706 130.706 0 00-22.31-29.112C266.4 91.892 321.516 4.626 330.811.194c.027-.036.083-.117.1-.136-60.37 35.356-80.85 100.761-82.732 133.484 2.8-.194 5.592-.429 8.442-.429 45.051 0 84.289 24.77 105.301 61.487z" fill="url(#rfd)"/><path d="M256.772 209.514c-.393 5.978-21.514 26.593-28.9 26.593-68.339 0-79.432 41.335-79.432 41.335 3.027 34.81 27.261 63.475 56.611 78.643 1.339.692 2.694 1.317 4.05 1.935a132.768 132.768 0 007.059 2.886 106.743 106.743 0 0031.271 6.031c119.78 5.618 142.986-143.194 56.545-186.408 22.137-3.85 45.115 5.053 57.947 14.067-21.012-36.714-60.25-61.484-105.3-61.484-2.85 0-5.641.235-8.442.429a120.249 120.249 0 00-66.142 25.488c3.664 3.1 7.8 7.244 16.514 15.828 16.302 16.067 58.13 32.705 58.219 34.657z" fill="url(#rfe)"/><path d="M170.829 151.036a244.042 244.042 0 014.981 3.3 111.338 111.338 0 01-.674-58.732c-24.688 11.241-43.89 29.01-57.85 44.7 1.155-.033 36.014-.66 53.543 10.732z" fill="url(#rfg)"/></svg>';
+const _rSafariIcon='<svg width="18" height="18" viewBox="0 0 24 24" style="vertical-align:-2px"><path d="M12 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0zm-.004.953h.006c.063 0 .113.05.113.113v1.842c0 .063-.05.113-.113.113h-.006a.112.112 0 0 1-.113-.113V1.066c0-.063.05-.113.113-.113z" fill="#006CFF"/><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z" fill="#5AC8FA" opacity=".3"/><path d="M12 3.4l-1.76 6.84L12 12l1.76-1.76z" fill="#FF3B30"/><path d="M12 20.6l1.76-6.84L12 12l-1.76 1.76z" fill="#fff"/><circle cx="12" cy="12" r="10" fill="none" stroke="#fff" stroke-width=".6" opacity=".5"/><circle cx="12" cy="12" r="1.8" fill="#fff"/><circle cx="12" cy="12" r="1" fill="#007AFF"/></svg>';
+function browserBadge(browser) {
+  const b = (browser || 'chromium').toLowerCase();
+  if (b === 'firefox')  return `<span class="tc-browser-badge" title="Firefox">${_rFirefoxIcon}</span>`;
+  if (b === 'webkit')   return `<span class="tc-browser-badge" title="Safari">${_rSafariIcon}</span>`;
+  return                       `<span class="tc-browser-badge" title="Chrome">${_rChromeIcon}</span>`;
 }
 
 // Converts a test-results/... artifact path → server-routed URL for video/trace.
@@ -823,10 +897,12 @@ function renderReport(r) {
             <th style="width:90px">TC ID</th>
             <th>Test Name</th>
             <th style="width:120px;text-align:center">Status</th>
+            <th style="width:90px;text-align:center">Browser</th>
             <th style="width:90px;text-align:center">Duration</th>
             <th style="width:100px;text-align:center">Screenshot</th>
             <th style="width:90px;text-align:center">Video</th>
             <th style="width:90px;text-align:center">Trace</th>
+            <th style="width:130px;text-align:center">Defect</th>
           </tr>
         </thead>
         <tbody id="tc-tbody">${tcRowsHtml}</tbody>
@@ -841,10 +917,71 @@ function renderReport(r) {
     ${metricsHtml}
     ${healHtml}
     ${tcHtml}
+    <!-- Quarantined Tests Section -->
+    <div id="quarantined-section" style="display:none;margin-top:28px">
+      <details style="margin-bottom:20px">
+        <summary style="cursor:pointer;font-size:14px;font-weight:600;color:#f48771;padding:8px 0;user-select:none;outline:none">
+          ⛔ Quarantined Tests (<span id="quarantined-count">0</span>) — excluded from pass/fail
+        </summary>
+        <div style="margin-top:12px">
+          <div style="font-size:12px;color:var(--g400);margin-bottom:12px">These tests ran but their results were <strong>NOT</strong> counted in the suite pass/fail decision.</div>
+          <div class="tc-table-wrap">
+            <table class="tc-table">
+              <thead>
+                <tr>
+                  <th style="width:36px;text-align:center">#</th>
+                  <th>Test Name</th>
+                  <th style="width:120px;text-align:center">Result</th>
+                  <th style="width:90px;text-align:center">Duration</th>
+                </tr>
+              </thead>
+              <tbody id="quarantined-tbody"></tbody>
+            </table>
+          </div>
+          <div id="quarantined-budget" style="margin-top:12px;font-size:12px;color:var(--g400);padding:6px 0;font-style:italic"></div>
+        </div>
+      </details>
+    </div>
     <div class="report-footer">
       <p>QA Agent Platform — Execution Report &nbsp;|&nbsp; Run ID: <code>${esc(r.runId||'—')}</code></p>
     </div>
   `;
+
+  // ── Populate Quarantined Section ──────────────────────────────────────────
+  const quarantinedTests = (tests || []).filter(t => t.quarantined === true);
+  if (quarantinedTests.length > 0) {
+    const section = document.getElementById('quarantined-section');
+    const countEl = document.getElementById('quarantined-count');
+    const tbody   = document.getElementById('quarantined-tbody');
+    const budgetEl = document.getElementById('quarantined-budget');
+
+    if (section) section.style.display = '';
+    if (countEl) countEl.textContent = quarantinedTests.length;
+
+    if (tbody) {
+      let qIndex = 0;
+      tbody.innerHTML = quarantinedTests.map((t) => {
+        qIndex++;
+        const resultLabel = t.status === 'pass'
+          ? `<span style="color:#4ec9b0;font-weight:600">PASSED</span> <span style="font-size:11px;color:var(--g400)">(quarantined)</span>`
+          : `<span style="color:#f48771;font-weight:600">FAILED</span> <span style="font-size:11px;color:var(--g400)">(quarantined)</span>`;
+        const dur = t.durationMs ? `${(t.durationMs/1000).toFixed(1)}s` : '—';
+        return `<tr style="border-left:none">
+          <td style="text-align:center;color:var(--g400);font-size:12px">${qIndex}</td>
+          <td style="color:var(--dark);font-weight:500">${esc(cleanTitle(t.name))}</td>
+          <td style="text-align:center">${resultLabel}</td>
+          <td style="text-align:center;color:var(--g500);font-size:12px;white-space:nowrap">${dur}</td>
+        </tr>`;
+      }).join('');
+    }
+
+    const failedQ = quarantinedTests.filter(t => t.status === 'fail').length;
+    if (budgetEl) {
+      budgetEl.textContent = failedQ > 0
+        ? `${failedQ} quarantined failure(s) this run — these were NOT counted toward suite failure.`
+        : 'All quarantined tests passed this run.';
+    }
+  }
 }
 
 // ── Build one test row pair (main + detail) ───────────────────────────────────
@@ -874,17 +1011,31 @@ function buildTestRow(t, i, r) {
          &#9654; Play
        </button>`;
 
-  // ── Trace button — always shown; active when a path is captured ───────────
-  const traceCell = t.tracePath
-    ? `<a class="tc-btn tc-btn-tr" href="${artifactSrc(t.tracePath)}" download
-          data-tpath="${esc(t.tracePath)}" onclick="event.stopPropagation()"
-          title="Download trace ZIP">&#128229; Trace</a>`
-    : `<button class="tc-btn tc-btn-tr tc-btn-inactive" disabled title="No trace captured">
-         &#128229; Trace
-       </button>`;
+  // ── Trace button — shown only when trace exists (no disabled clutter) ─────
+  const traceCell = (t.tracePath && t.testId)
+    ? `<a class="tc-btn tc-btn-tr" href="${artifactSrc(t.tracePath)}" target="_blank"
+          onclick="event.stopPropagation()" download
+          title="Download trace ZIP">&#128249; Trace</a>`
+    : '';
+
+  // ── Defect button — only on failed rows; badge if already filed ─────
+  let defectCell = '';
+  if (status === 'fail' && t.testId) {
+    if (t.defectKey) {
+      const cls = t.defectStatus === 'closed' ? 'defect-btn-closed' : 'defect-btn-open';
+      const label = t.defectStatus === 'closed' ? 'Closed' : 'Open';
+      defectCell = `<button class="defect-btn ${cls}"
+        onclick="event.stopPropagation();openDefectExisting(${esc(JSON.stringify(t.defectKey))},${esc(JSON.stringify(t.testId))})"
+        title="View defect ${esc(t.defectKey)}">&#128030; ${esc(t.defectKey)} (${label})</button>`;
+    } else {
+      defectCell = `<button class="defect-btn defect-btn-file"
+        onclick="event.stopPropagation();openDefectModal(${esc(JSON.stringify(r.runId))},${esc(JSON.stringify(t.testId))})"
+        title="File a Jira defect for this failure">&#128030; File Defect</button>`;
+    }
+  }
 
   // Detail row content
-  const detailHtml = buildDetailPanel(t, i, status);
+  const detailHtml = buildDetailPanel(t, i, status, r.traceMode, r.runId);
 
   // Auto-open failed test detail rows
   const detailOpenClass = status === 'fail' ? 'open' : '';
@@ -897,20 +1048,22 @@ function buildTestRow(t, i, r) {
       <td>${tcId ? `<span class="tc-id-badge">${esc(tcId)}</span>` : '<span style="color:var(--g400)">—</span>'}</td>
       <td style="color:var(--dark);font-weight:500">${esc(title)}</td>
       <td style="text-align:center">${statusBadge(status)}</td>
+      <td style="text-align:center">${browserBadge(t.browser)}</td>
       <td style="text-align:center;color:var(--g500);font-size:12px;white-space:nowrap">${fmtDurationMs(t.durationMs)}</td>
       <td style="text-align:center">${ssCell}</td>
       <td style="text-align:center">${videoCell}</td>
       <td style="text-align:center">${traceCell}</td>
+      <td style="text-align:center">${defectCell}</td>
     </tr>
     <tr class="tc-detail-row ${detailOpenClass}" id="detail-${rowId}">
-      <td colspan="9">
+      <td colspan="11">
         <div class="tc-detail-inner">${detailHtml}</div>
       </td>
     </tr>`;
 }
 
 // ── Build detail panel sections ───────────────────────────────────────────────
-function buildDetailPanel(t, i, status) {
+function buildDetailPanel(t, i, status, traceMode, runId) {
   const sections = [];
 
   // ── Error details (for failed tests) ──
@@ -948,44 +1101,28 @@ function buildDetailPanel(t, i, status) {
       </div>`);
   }
 
-  // ── Screenshots ──
+  // ── Visual diff strip (only when before/after pair exists; not the same as column screenshot) ──
   const hasBefore = !!t.screenshotBefore;
   const hasAfter  = !!t.screenshotAfter;
-  const hasSingle = !!t.screenshotPath;
-  if (hasBefore || hasAfter || hasSingle) {
-    let ssContent = '';
-    if (hasBefore || hasAfter) {
-      const beforeSrc = hasBefore ? screenshotSrc(t.screenshotBefore) : '';
-      const afterSrc  = hasAfter  ? screenshotSrc(t.screenshotAfter)  : '';
-      ssContent = `
-        <div class="diff-strip ${hasBefore && hasAfter ? '' : 'single'}">
-          ${hasBefore ? `<div class="diff-col"><div class="diff-tag before">&#128247; Before</div>
-            <img src="${beforeSrc}" alt="Before" loading="lazy" onclick="openModal('${beforeSrc}')" onerror="this.closest('.diff-col').style.display='none'"></div>` : ''}
-          ${hasAfter  ? `<div class="diff-col after-col"><div class="diff-tag after">&#9888; After (Failed)</div>
-            <img src="${afterSrc}" alt="After" loading="lazy" onclick="openModal('${afterSrc}')" onerror="this.closest('.diff-col').style.display='none'"></div>` : ''}
-        </div>`;
-    } else {
-      const src = screenshotSrc(t.screenshotPath);
-      ssContent = `
-        <div class="ss-grid">
-          <div class="ss-item" onclick="openModal('${src}')">
-            <img class="ss-preview" src="${src}" alt="Failure screenshot" loading="lazy" onerror="this.closest('.ss-item').style.display='none'">
-            <div class="ss-label">&#128247; Failure Screenshot</div>
-          </div>
-        </div>`;
-    }
+  if (hasBefore || hasAfter) {
+    const beforeSrc = hasBefore ? screenshotSrc(t.screenshotBefore) : '';
+    const afterSrc  = hasAfter  ? screenshotSrc(t.screenshotAfter)  : '';
+    const ssContent = `
+      <div class="diff-strip ${hasBefore && hasAfter ? '' : 'single'}">
+        ${hasBefore ? `<div class="diff-col"><div class="diff-tag before">&#128247; Before</div>
+          <img src="${beforeSrc}" alt="Before" loading="lazy" onclick="openModal('${beforeSrc}')" onerror="this.closest('.diff-col').style.display='none'"></div>` : ''}
+        ${hasAfter  ? `<div class="diff-col after-col"><div class="diff-tag after">&#9888; After (Failed)</div>
+          <img src="${afterSrc}" alt="After" loading="lazy" onclick="openModal('${afterSrc}')" onerror="this.closest('.diff-col').style.display='none'"></div>` : ''}
+      </div>`;
     sections.push(`
       <div class="det-section ${status !== 'fail' ? 'collapsed' : ''}">
         <div class="det-header" onclick="toggleDetSection(this)">
           <span class="det-arrow">&#9660;</span>
-          &#128247; Screenshots
+          &#128247; Visual Diff (Before / After)
         </div>
         <div class="det-body">${ssContent}</div>
       </div>`);
   }
-
-  // Video & Trace are accessed via the row-level Play / Trace buttons.
-  // No separate section needed in the expanded detail panel.
 
   // ── Failure Screenshot (Phase A: afterEach full-page capture) ──
   if (t.failureScreenshotPath) {
@@ -1007,18 +1144,29 @@ function buildDetailPanel(t, i, status) {
       </div>`);
   }
 
-  // ── Console Errors (Phase A: JS errors + page exceptions collected during test) ──
-  if (t.consoleErrors && t.consoleErrors.length) {
+  // ── App Warnings — hidden by default, toggle link shown only on failed tests ──
+  // Console errors from the browser are always app-level noise (404s, resource errors).
+  // Actual test failures (stale element, timeout, assertion) are in Error Details above.
+  if (t.consoleErrors && t.consoleErrors.length && status === 'fail') {
+    const warnId  = `app-warn-${i}`;
     const errRows = t.consoleErrors.map(e => `<div class="ce-row">${esc(e)}</div>`).join('');
     sections.push(`
-      <div class="det-section">
-        <div class="det-header error-hdr" onclick="toggleDetSection(this)">
-          <span class="det-arrow">&#9660;</span>
-          &#9888; Console Errors (${t.consoleErrors.length})
+      <div class="det-section collapsed" id="${warnId}" style="display:none">
+        <div class="det-header warn-hdr" onclick="toggleDetSection(this)">
+          <span class="det-arrow">&#9658;</span>
+          &#9432; Browser Console Warnings (${t.consoleErrors.length})
+          <span class="warn-hdr-note">— Not the cause of failure &middot; App-level noise</span>
         </div>
         <div class="det-body">
           <div class="ce-list">${errRows}</div>
         </div>
+      </div>
+      <div style="text-align:right;padding:4px 8px 0">
+        <a href="#" class="warn-toggle-link" onclick="event.preventDefault();
+          var w=document.getElementById('${warnId}');
+          w.style.display=w.style.display==='none'?'block':'none';
+          this.textContent=w.style.display==='none'?'Show browser warnings (${t.consoleErrors.length})':'Hide browser warnings';
+        ">Show browser warnings (${t.consoleErrors.length})</a>
       </div>`);
   }
 
@@ -1255,6 +1403,12 @@ async function exportHTML() {
       sp.innerHTML = '&#128229; Trace';
       a.replaceWith(sp);
     });
+    clone.querySelectorAll('button.tc-btn-tr').forEach(btn => {
+      btn.disabled = true;
+      btn.removeAttribute('onclick');
+      btn.classList.add('tc-btn-inactive');
+      btn.title = 'Trace viewer not available in saved report';
+    });
 
     // ── 9. Build the self-contained export HTML document ─────────────────────
     const css        = document.querySelector('style')?.textContent || '';
@@ -1342,6 +1496,84 @@ function applyFilters() {
 document.addEventListener('keydown', function(e) {
   if (e.key === 'Escape') { var m = document.getElementById('_xmodal'); if (m) m.style.display = 'none'; }
 });
+// ── Trace Viewer Modal ────────────────────────────────────────────────────────
+const ERROR_CODE_MESSAGES = {
+  TRACE_NOT_FOUND:       'Trace not captured for this test.',
+  TRACE_MISSING_ON_DISK: 'Trace artifact not found (may have expired).',
+  TRACE_TOO_LARGE:       'Trace too large to preview (> 50 MB).',
+  RUN_NOT_FOUND:         'Test result not found.',
+  TEST_NOT_FOUND:        'Test result not found.',
+};
+
+async function openTraceViewer(runId, testId, testName) {
+  const origin      = window.location.origin;
+  const traceApiUrl = \`\${origin}/api/trace/\${encodeURIComponent(runId)}/\${encodeURIComponent(testId)}\`;
+  const iframeSrc   = \`\${origin}/trace-viewer/?trace=\${encodeURIComponent(traceApiUrl)}\`;
+
+  // Show modal in loading state
+  const modal   = document.getElementById('trace-modal');
+  const loading = document.getElementById('trace-modal-loading');
+  const errDiv  = document.getElementById('trace-modal-error');
+  const iframe  = document.getElementById('trace-iframe');
+  const title   = document.getElementById('trace-modal-title');
+
+  title.textContent   = '\u{1F4F9} Trace: ' + (testName || testId);
+  loading.style.display = 'flex';
+  errDiv.hidden         = true;
+  iframe.style.display  = 'none';
+  iframe.src            = '';
+  modal.hidden          = false;
+
+  // HEAD preflight — reads X-Error-Code header
+  try {
+    const head = await fetch(traceApiUrl, { method: 'HEAD' });
+    if (!head.ok) {
+      const code = head.headers.get('X-Error-Code') || 'UNKNOWN';
+      const msg  = ERROR_CODE_MESSAGES[code] || 'Failed to load trace.';
+      loading.style.display = 'none';
+      errDiv.hidden = false;
+      errDiv.innerHTML = \`<span>&#9888; \${esc(msg)}</span><span style="font-size:11px;color:#94a3b8">Error code: \${esc(code)}</span>\`;
+      return;
+    }
+  } catch (e) {
+    loading.style.display = 'none';
+    errDiv.hidden = false;
+    errDiv.innerHTML = '<span>&#9888; Failed to reach trace endpoint.</span>';
+    return;
+  }
+
+  // Preflight passed — load iframe
+  iframe.src = iframeSrc;
+}
+
+function onTraceIframeLoaded() {
+  document.getElementById('trace-modal-loading').style.display = 'none';
+  document.getElementById('trace-iframe').style.display = 'block';
+}
+
+function onTraceIframeError() {
+  const loading = document.getElementById('trace-modal-loading');
+  const errDiv  = document.getElementById('trace-modal-error');
+  const iframe  = document.getElementById('trace-iframe');
+  loading.style.display = 'none';
+  iframe.style.display  = 'none';
+  errDiv.hidden = false;
+  errDiv.innerHTML = '<span>&#9888; Failed to load trace viewer.</span>';
+}
+
+function closeTraceModal() {
+  const modal  = document.getElementById('trace-modal');
+  const iframe = document.getElementById('trace-iframe');
+  iframe.src   = '';   // triggers req.on('close') on server → destroys stream
+  modal.hidden = true;
+}
+
+// Escape key closes trace modal (only when visible)
+document.addEventListener('keydown', function(e) {
+  if (e.key !== 'Escape') return;
+  var tm = document.getElementById('trace-modal');
+  if (tm && !tm.hidden) closeTraceModal();
+});
 <\/script>
 </body>
 </html>`;
@@ -1361,6 +1593,141 @@ document.addEventListener('keydown', function(e) {
     if (btn) { btn.innerHTML = origHtml || '&#8681; Export HTML'; btn.disabled = false; }
   }
 }
+</script>
+<script>
+// ── Trace Viewer Modal (live page) ───────────────────────────────────────────
+var ERROR_CODE_MESSAGES = {
+  TRACE_NOT_FOUND:       'Trace not captured for this test.',
+  TRACE_MISSING_ON_DISK: 'Trace artifact not found (may have expired).',
+  TRACE_TOO_LARGE:       'Trace too large to preview (> 50 MB).',
+  RUN_NOT_FOUND:         'Test result not found.',
+  TEST_NOT_FOUND:        'Test result not found.',
+};
+
+function esc2(s) {
+  return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+async function openTraceViewer(runId, testId, testName) {
+  var origin      = window.location.origin;
+  var traceApiUrl = origin + '/api/trace/' + encodeURIComponent(runId) + '/' + encodeURIComponent(testId);
+  var iframeSrc   = origin + '/trace-viewer/?trace=' + encodeURIComponent(traceApiUrl);
+
+  var modal   = document.getElementById('trace-modal');
+  var loading = document.getElementById('trace-modal-loading');
+  var errDiv  = document.getElementById('trace-modal-error');
+  var iframe  = document.getElementById('trace-iframe');
+  var title   = document.getElementById('trace-modal-title');
+
+  title.textContent     = '📹 Trace: ' + (testName || testId);
+  loading.style.display = 'flex';
+  errDiv.hidden         = true;
+  iframe.style.display  = 'none';
+  iframe.src            = '';
+  modal.hidden          = false;
+
+  try {
+    var head = await fetch(traceApiUrl, { method: 'HEAD' });
+    if (!head.ok) {
+      var code = head.headers.get('X-Error-Code') || 'UNKNOWN';
+      var msg  = ERROR_CODE_MESSAGES[code] || 'Failed to load trace.';
+      loading.style.display = 'none';
+      errDiv.hidden = false;
+      errDiv.innerHTML = '<span>&#9888; ' + esc2(msg) + '</span><span style="font-size:11px;color:#94a3b8">Error code: ' + esc2(code) + '</span>';
+      return;
+    }
+  } catch (e) {
+    loading.style.display = 'none';
+    errDiv.hidden = false;
+    errDiv.innerHTML = '<span>&#9888; Failed to reach trace endpoint.</span>';
+    return;
+  }
+
+  iframe.src = iframeSrc;
+}
+
+function onTraceIframeLoaded() {
+  document.getElementById('trace-modal-loading').style.display = 'none';
+  document.getElementById('trace-iframe').style.display = 'block';
+}
+
+function onTraceIframeError() {
+  var loading = document.getElementById('trace-modal-loading');
+  var errDiv  = document.getElementById('trace-modal-error');
+  var iframe  = document.getElementById('trace-iframe');
+  loading.style.display = 'none';
+  iframe.style.display  = 'none';
+  errDiv.hidden = false;
+  errDiv.innerHTML = '<span>&#9888; Failed to load trace viewer.</span>';
+}
+
+function closeTraceModal() {
+  var modal  = document.getElementById('trace-modal');
+  var iframe = document.getElementById('trace-iframe');
+  iframe.src   = '';
+  modal.hidden = true;
+}
+
+document.addEventListener('keydown', function(e) {
+  if (e.key !== 'Escape') return;
+  var tm = document.getElementById('trace-modal');
+  if (tm && !tm.hidden) closeTraceModal();
+});
+</script>
+<!-- Trace Viewer Modal -->
+<div id="trace-modal" class="trace-modal-overlay" hidden>
+  <div class="trace-modal-inner">
+    <div class="trace-modal-header">
+      <span id="trace-modal-title">&#128249; Trace Viewer</span>
+      <button onclick="closeTraceModal()">&#10005; Close</button>
+    </div>
+    <div id="trace-modal-loading">&#9203; Loading trace...</div>
+    <div id="trace-modal-error" hidden></div>
+    <iframe id="trace-iframe" src="" style="display:none"
+            onload="onTraceIframeLoaded()"
+            onerror="onTraceIframeError()"></iframe>
+  </div>
+</div>
+
+<script>
+// ── Defect Modal helpers (shared modal from js/28-defect-modal.js handles open/file/dismiss)
+
+// openDefectExisting — shows filed defect info in shared modal (no re-filing)
+async function openDefectExisting(defectKey, testId) {
+  if (typeof window.openDefectModal !== 'function') return;
+  // Use the shared modal infrastructure — inject + show loading state
+  window._dfxInjectModal && window._dfxInjectModal();
+  var m    = document.getElementById('shared-defect-modal');
+  var bodyEl = document.getElementById('s-dfx-body');
+  var foot = document.getElementById('s-dfx-footer');
+  if (!m) return;
+  m.hidden = false;
+  bodyEl.innerHTML = '<p>Defect <strong>' + esc2(defectKey) + '</strong> is filed for this test.</p>' +
+    '<p style="color:#6b7280;font-size:12px">Loading Jira URL…</p>';
+  foot.innerHTML = '<button class="s-btn" onclick="closeDefectModal()">Close</button>';
+  try {
+    var r = await fetch('/api/defects/by-test/' + encodeURIComponent(testId));
+    var j = r.ok ? await r.json() : null;
+    var rec = j && j.defects && j.defects.find(function(d) { return d.defectKey === defectKey; });
+    var url = (rec && rec.jiraUrl) || ('https://pnmx.atlassian.net/browse/' + encodeURIComponent(defectKey));
+    var statusLabel = rec ? ' (' + esc2(rec.status || '') + ')' : '';
+    bodyEl.innerHTML = '<div class="s-dfx-warn">&#128030; Defect <strong>' + esc2(defectKey) + '</strong>' + statusLabel + ' is filed for this test.</div>' +
+      '<p style="font-size:13px;color:#374151">Use the link below to view it in Jira.</p>';
+    foot.innerHTML =
+      '<button class="s-btn" onclick="closeDefectModal()">Close</button>' +
+      '<a class="s-btn s-btn-primary" href="' + esc2(url) + '" target="_blank" rel="noopener">Open in Jira ↗</a>';
+  } catch (_) {
+    foot.innerHTML =
+      '<button class="s-btn" onclick="closeDefectModal()">Close</button>' +
+      '<a class="s-btn s-btn-primary" href="' + esc2('/api/defects/open/' + encodeURIComponent(defectKey)) + '" target="_blank" rel="noopener">Open in Jira ↗</a>';
+  }
+}
+
+document.addEventListener('keydown', function(e) {
+  if (e.key !== 'Escape') return;
+  var dm = document.getElementById('shared-defect-modal');
+  if (dm && !dm.hidden) closeDefectModal();
+});
 </script>
 </body>
 </html>

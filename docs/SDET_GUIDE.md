@@ -3,30 +3,44 @@
 ## Architecture Overview
 
 ```
-Browser UI (index.html + modules.js + app.js)
+Browser UI (index.html + modules.js + app.js + recorder.js + login.js)
         │
         │  REST API (HTTP)
         ▼
 Express Server (src/ui/server.ts)  ←→  data/*.json (JSON file storage)
         │
-        │  Suite Run trigger
-        ▼
-codegenGenerator.ts
-        │  generates
-        ▼
-tests/codegen/<Suite>.spec.ts
-        │  executed by
-        ▼
-Playwright (chromium)
+        ├── Auth layer
+        │   src/auth/middleware.ts   requireAuth / requireEditor / requireAdmin / requireAuthOrApiKey
+        │   src/auth/audit.ts        logAudit → store.ts
+        │   src/auth/crypto.ts       hashPassword / verifyPassword / validatePasswordStrength
         │
-        ▼
-RunRecord → results/run-<uuid>.json
+        ├── Suite Run trigger
+        │         ▼
+        │   src/utils/codegenGenerator.ts  →  tests/codegen/<Suite>.spec.ts
+        │         ▼
+        │   Playwright (chromium)
+        │         ▼
+        │   RunRecord → results/run-<uuid>.json
+        │         ▼
+        │   Execution History UI + Standalone Report Page (execution-report.html)
         │
-        ▼
-Execution History UI + Standalone Report Page
+        └── Utils layer
+            codegenGenerator.ts   ACTIVE spec engine (suite run + debug run)
+            healingEngine.ts      AI self-healing locator scoring & candidate selection
+            licenseManager.ts     License key parse / validate / feature-gate / seat enforcement
+            recorderParser.ts     Chrome recorder event → platform step conversion
+            pageModelManager.ts   Page model CRUD (backing self-healing enrichment)
+            visualRegression.ts   Visual comparison utilities
+            nlProvider.ts         NL-to-step AI provider abstraction
+            notifier.ts           Notification dispatch
+            logger.ts             Winston logger wrapper
 ```
 
-The TypeScript codebase handles file I/O, the Web UI, spec generation, and result persistence. No external AI calls are made at runtime — all logic is deterministic keyword-to-Playwright mapping.
+**Graph analysis summary (2026-04-24, 11 communities, 92 cross-community edges):**
+- Highest-criticality flow: `registerCronJob` (0.64) — cron-based license/session maintenance
+- `auth` community calls directly into `store.ts` — tight coupling, known architectural debt
+- `utils-license` ↔ `tests-when`: 48 coupling edges — refactor candidate
+- `public-script` (545 nodes, JS): dominant frontend community; monolithic by design
 
 ---
 
@@ -41,8 +55,12 @@ The TypeScript codebase handles file I/O, the Web UI, spec generation, and resul
 | Common Data | `commondata` | `modules.js` → `cdLoad/Render` |
 | Execution History | `history` | `modules.js` → `histLoad/Render/Sort` |
 | Projects | `projects` | `modules.js` → `projLoad/Render` |
-| Admin | `admin` | `modules.js` → admin settings |
+| Admin | `admin` | `modules.js` → admin settings, license management |
 | Execution Report | standalone page | `execution-report.html` |
+| Recorder | Chrome extension panel | `recorder.js` + `recorder-extension/` |
+| Login | standalone page | `login.html` + `login.js` |
+| Self-Healing | background engine | `healingEngine.ts` + `pageModelManager.ts` |
+| Licensing | server + admin UI | `licenseManager.ts` → feature gates via `requireFeature` |
 
 ---
 
@@ -163,6 +181,8 @@ Run results are stored separately in `results/run-<uuid>.json`.
 2. Add the `case 'MY_KEYWORD':` handler in `src/utils/codegenGenerator.ts`
 3. Run `npm run build`
 
+> **LOCKED:** `src/utils/specGenerator.ts` is dead code — never edit or import it. All additions go to `codegenGenerator.ts` and `keywords.json` only.
+
 ---
 
 ## Environment Variables
@@ -174,6 +194,8 @@ Key `.env` variables:
 | `SESSION_SECRET` | Express session signing key — set a strong fixed value |
 | `PORT` | Server port (default 3000) |
 | `HEADLESS` | `true` to run Playwright headless (default: headed) |
+| `LICENSE_KEY` | Commercial license key (required for non-trial tiers) |
+| `SMTP_HOST` / `SMTP_PORT` | Notifier email dispatch (optional) |
 
 ---
 
@@ -218,3 +240,23 @@ The platform is designed to run on a shared server (`qa-launchpad.local`).
 | Suite run hangs | `waitForLoadState('networkidle')` blocking | Already fixed to `domcontentloaded` — rebuild if still occurring |
 | Session lost after restart | `SESSION_SECRET` changing on restart | Set a fixed `SESSION_SECRET` in `.env` |
 | Add buttons disabled | No project selected | Select a project from the top-right dropdown |
+| Feature locked / greyed out | License tier doesn't include feature | Check `requireFeature` gate in `licenseManager.ts` |
+| Self-healing not triggering | Page model missing for page | Run locator enrichment to build page model first |
+| Recorder events not streaming | Extension URL mismatch | Re-enter platform URL in extension popup |
+
+## New Utility Modules (added since initial release)
+
+| File | Purpose |
+|---|---|
+| `src/utils/healingEngine.ts` | Scores locator candidates using text similarity, class overlap, aria attributes. Called when a locator fails during a run. |
+| `src/utils/licenseManager.ts` | Parses and validates license keys (RSA + AES). Enforces tier features via `featuresForTier()` and seat limits via `isSeatAvailable()`. |
+| `src/utils/recorderParser.ts` | Converts raw Chrome recorder extension events into platform step objects. Entry point: `parseRecorderEvent()`. |
+| `src/utils/pageModelManager.ts` | CRUD for page models stored in `data/page-models/`. Used by self-healing to store enriched locator snapshots. |
+| `src/utils/visualRegression.ts` | Compares screenshots pixel-by-pixel or via structural diff. Used in visual assertion keywords. |
+| `src/utils/nlProvider.ts` | Abstraction layer for NL-to-step AI calls. Pluggable provider (currently stubbed; connects to external LLM when configured). |
+| `src/utils/notifier.ts` | Sends email/webhook notifications on run completion. Configured via `SMTP_*` env vars. |
+| `src/utils/logger.ts` | Winston-based structured logger. Import as `import { logger } from './logger'`. |
+| `src/auth/crypto.ts` | Password hashing (`bcryptjs`) and strength validation. |
+| `src/auth/audit.ts` | Appends structured audit entries to `data/audit.json` via `logAudit()`. |
+| `src/ui/public/recorder.js` | Frontend counterpart to the Chrome recorder extension — receives streamed events and renders steps live in the script editor. |
+| `src/ui/public/login.js` | Handles login form submission, session check, and redirect logic. |

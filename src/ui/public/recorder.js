@@ -575,10 +575,29 @@
     const tag = el.tagName.toLowerCase();
 
     // ── 1. data-* automation attributes ─────────────────────────────────────
+    // Dynamic testid patterns — framework-generated, not stable across runs
+    const DYNAMIC_TESTID_PATTERNS = [
+      /^rf__node-/,       // React Flow node IDs (rf__node-node_25 etc)
+      /^rf__edge-/,       // React Flow edge IDs
+      /^node_\d+$/,       // generic node_N IDs
+    ];
+    const isDynamicTestId = (v) => DYNAMIC_TESTID_PATTERNS.some(rx => rx.test(v));
     for (const attr of ['data-testid', 'data-qa', 'data-cy', 'data-id', 'data-automation']) {
       const v = el.getAttribute(attr);
       if (v && v.trim()) {
-        if (attr === 'data-testid') return { sel: `[data-testid="${v.trim()}"]`, type: 'testid' };
+        if (attr === 'data-testid') {
+          if (isDynamicTestId(v.trim())) {
+            // RF canvas node — use stable inner text selector
+            if (/^rf__node-/.test(v.trim())) {
+              const nodeText = (el.innerText || el.textContent || '').trim().replace(/\s+/g, ' ');
+              if (nodeText && nodeText.length >= 2 && nodeText.length <= 80) {
+                return { sel: `text:${nodeText}`, type: 'text' };
+              }
+            }
+            continue; // fall through to text/role selectors
+          }
+          return { sel: `[data-testid="${v.trim()}"]`, type: 'testid' };
+        }
         const css = `[${attr}="${v.trim()}"]`;
         if (countMatches(css, r) === 1) return { sel: css, type: 'css' };
       }

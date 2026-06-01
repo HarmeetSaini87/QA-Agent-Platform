@@ -20,10 +20,11 @@
  *   Mismatch → server refuses to start (unless QA_SKIP_MACHINE_CHECK=1).
  */
 
-import * as crypto from 'crypto';
-import * as fs     from 'fs';
-import * as os     from 'os';
-import * as path   from 'path';
+import * as crypto      from 'crypto';
+import * as fs          from 'fs';
+import * as os          from 'os';
+import * as path        from 'path';
+import { execSync }     from 'child_process';
 import { LicensePayload, FeatureKey } from '../data/types';
 
 export const VENDOR_SECRET = process.env.QA_VENDOR_SECRET ?? 'qa-agent-platform-vendor-secret-v1';
@@ -71,24 +72,116 @@ function decrypt(encText: string): string {
 }
 
 // ── P1-EG-01: Machine fingerprint ────────────────────────────────────────────
+//
+// Multi-signal fingerprint — works across physical, VM, cloud, container.
+// Signal priority (most stable → least stable):
+//   S1: Windows MachineGuid (registry) — stable for OS lifetime, survives NIC/hardware changes
+//   S2: BIOS/System UUID (wmic)        — hardware-level, stable across OS reinstalls on same HW
+//   S3: System drive volume serial     — stable unless drive replaced/reformatted
+//   S4: Stable physical MAC            — virtual/VPN adapters filtered out
+//   S5: hostname + CPU + platform      — soft entropy, always available
+//
+// Final ID = SHA-256(S1|S2|S3|S4|S5).slice(0,32)
+// If S1+S2 are available the ID is rock-solid on any machine type.
+// Falls back gracefully — at minimum S5 is always present.
 
 let _cachedMachineId: string | null = null;
+
+function _runCmd(cmd: string): string {
+  try {
+    return execSync(cmd, { timeout: 3000, windowsHide: true, stdio: ['ignore','pipe','ignore'] })
+      .toString().trim().replace(/\s+/g, ' ');
+  } catch { return ''; }
+}
+
+// Virtual/VPN adapter name fragments to exclude when picking primary MAC
+const VIRTUAL_NIC_PATTERNS = [
+  'virtual', 'vmware', 'vmnet', 'vethernet', 'hyper-v', 'hyperv',
+  'virtualbox', 'vbox', 'tap', 'tun', 'vpn', 'nordvpn', 'openvpn',
+  'wireguard', 'docker', 'loopback', 'bluetooth', 'isatap', 'teredo',
+  '6to4', 'ppoe', 'wan miniport', 'kernel debug', 'microsoft wi-fi',
+];
+
+function _getStableMAC(): string {
+  const nets = os.networkInterfaces();
+  const candidates: string[] = [];
+  for (const [name, ifaces] of Object.entries(nets)) {
+    const nameLower = name.toLowerCase();
+    if (VIRTUAL_NIC_PATTERNS.some(p => nameLower.includes(p))) continue;
+    for (const n of (ifaces ?? [])) {
+      if (!n.internal && n.mac && n.mac !== '00:00:00:00:00:00') {
+        candidates.push(n.mac);
+      }
+    }
+  }
+  // Sort for determinism — same result regardless of enumeration order
+  candidates.sort();
+  return candidates[0] ?? '';
+}
+
+function _getWindowsMachineGuid(): string {
+  if (os.platform() !== 'win32') return '';
+  const val = _runCmd(
+    'powershell -NoProfile -Command "(Get-ItemProperty HKLM:\\SOFTWARE\\Microsoft\\Cryptography).MachineGuid"'
+  );
+  return /^[0-9a-f-]{30,}/i.test(val) ? val.toLowerCase() : '';
+}
+
+function _getBiosUuid(): string {
+  if (os.platform() !== 'win32') return '';
+  // PowerShell CIM (works on all modern Windows — wmic deprecated in Win11/Server2025)
+  const val = _runCmd(
+    'powershell -NoProfile -Command "(Get-CimInstance Win32_ComputerSystemProduct).UUID"'
+  );
+  if (val && /^[0-9a-f-]{30,}/i.test(val) &&
+      !val.match(/^f{8}/i) && !val.match(/^0{8}/i) &&
+      val.toUpperCase() !== 'FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF' &&
+      val.toUpperCase() !== '00000000-0000-0000-0000-000000000000') {
+    return val.toLowerCase().trim();
+  }
+  return '';
+}
+
+function _getVolumeSerial(): string {
+  if (os.platform() !== 'win32') return '';
+  // Try PowerShell CIM first
+  let val = _runCmd(
+    'powershell -NoProfile -Command "(Get-CimInstance Win32_LogicalDisk -Filter \'DeviceID=\\\"C:\\\"\').VolumeSerialNumber"'
+  );
+  if (val && /^[A-F0-9]{4,}$/i.test(val.trim())) return val.trim().toLowerCase();
+  // Fallback: vol command (always available on all Windows)
+  val = _runCmd('cmd /c vol C:');
+  const m = val.match(/[A-F0-9]{4}-[A-F0-9]{4}/i);
+  return m ? m[0].replace('-', '').toLowerCase() : '';
+}
 
 export function getMachineId(): string {
   if (_cachedMachineId) return _cachedMachineId;
 
-  // Primary non-loopback MAC address
-  const nets   = os.networkInterfaces();
-  let primaryMAC = '';
-  for (const iface of Object.values(nets)) {
-    const hit = (iface ?? []).find(n => !n.internal && n.mac && n.mac !== '00:00:00:00:00:00');
-    if (hit) { primaryMAC = hit.mac; break; }
-  }
+  const s1 = _getWindowsMachineGuid();                                          // registry GUID
+  const s2 = _getBiosUuid();                                                    // BIOS UUID
+  const s3 = _getVolumeSerial();                                                // C: serial
+  const s4 = _getStableMAC();                                                   // physical MAC
+  const s5 = [os.hostname(), (os.cpus()[0]?.model ?? '').replace(/\s+/g, ' ').trim(), os.platform(), os.arch()].join('|');
 
-  const cpuModel = (os.cpus()[0]?.model ?? 'unknown').replace(/\s+/g, ' ').trim();
-  const raw      = [primaryMAC, os.hostname(), cpuModel, os.platform(), os.arch()].join('|');
+  const raw = [s1, s2, s3, s4, s5].join('||');
   _cachedMachineId = crypto.createHash('sha256').update(raw).digest('hex').slice(0, 32);
   return _cachedMachineId;
+}
+
+// Exposed for the check-machine-id tool and license status API
+export function getMachineIdComponents(): Record<string, string> {
+  return {
+    windowsMachineGuid: _getWindowsMachineGuid(),
+    biosUuid:           _getBiosUuid(),
+    volumeSerial:       _getVolumeSerial(),
+    stableMAC:          _getStableMAC(),
+    hostname:           os.hostname(),
+    cpuModel:           (os.cpus()[0]?.model ?? '').replace(/\s+/g, ' ').trim(),
+    platform:           os.platform(),
+    arch:               os.arch(),
+    machineId:          getMachineId(),
+  };
 }
 
 // ── P1-EG-02: Key parsing (v1 + v2) ──────────────────────────────────────────
@@ -176,7 +269,8 @@ function featuresForTier(tier: ParsedKey['tier']): LicensePayload['features'] {
       return { recorder: true, debugger: true, scheduler: true, sso: true,  apiAccess: false, whiteLabel: false, auditDays: 90, maxProjects: -1 };
     case 'trial':
       // Full features except SSO/API/white-label — 30-day evaluation, no machine binding
-      return { recorder: true, debugger: true, scheduler: true, sso: false, apiAccess: false, whiteLabel: false, auditDays: 7, maxProjects: -1 };
+      // OLD: maxProjects: -1 — trial incorrectly allowed unlimited projects
+      return { recorder: true, debugger: true, scheduler: true, sso: false, apiAccess: false, whiteLabel: false, auditDays: 7, maxProjects: 3 };
     case 'starter':
     default:
       return { recorder: true, debugger: true, scheduler: false, sso: false, apiAccess: false, whiteLabel: false, auditDays: 30, maxProjects: 1 };
@@ -434,8 +528,13 @@ export function isAutoTrial(): boolean {
 export function trialDaysRemaining(): number {
   const p = getLicensePayload();
   if (!p || p.tier !== 'trial') return 0;
-  const ms = new Date(p.expiresAt).getTime() - Date.now();
-  return Math.max(0, Math.ceil(ms / (1000 * 60 * 60 * 24)));
+  const now     = new Date();
+  const expires = new Date(p.expiresAt);
+  // Calendar-day diff — drops at midnight, not at exact activation time
+  // OLD: Math.ceil on raw ms — stayed at 14 on day 2 if activated late at night
+  const todayMidnight   = new Date(now.getFullYear(),     now.getMonth(),     now.getDate());
+  const expiresMidnight = new Date(expires.getFullYear(), expires.getMonth(), expires.getDate());
+  return Math.max(0, Math.round((expiresMidnight.getTime() - todayMidnight.getTime()) / 86400000));
 }
 
 // Periodic expiry enforcement — call from server on an interval.
@@ -473,6 +572,9 @@ export function isFeatureEnabled(feature: keyof LicensePayload['features']): boo
 // Rehydrated from SQLite sessions on server startup via syncSeatsFromSessions().
 
 const _userSessions = new Map<string, number>();
+// Flag: true until syncSeatsFromSessions() has been called at least once.
+// Prevents race condition where logins arrive before the map is rehydrated.
+let _seatSyncPending = true;
 
 export function recordLogin(userId: string): void {
   _userSessions.set(userId, (_userSessions.get(userId) ?? 0) + 1);
@@ -488,10 +590,16 @@ export function getSeatsUsed(): number {
   return _userSessions.size;
 }
 
+export function getActiveUserIds(): Set<string> {
+  return new Set(_userSessions.keys());
+}
+
 export function isSeatAvailable(userId: string): boolean {
   const p = getLicensePayload();
   if (!p) return true;
   if (p.seats === -1) return true;
+  // Block all new logins until seat map is rehydrated from SQLite after server restart
+  if (_seatSyncPending) return false;
   if (_userSessions.has(userId)) return true;
   return _userSessions.size < p.seats;
 }
@@ -503,6 +611,7 @@ export function syncSeatsFromSessions(activeUserIds: string[]): void {
   for (const uid of activeUserIds) {
     _userSessions.set(uid, (_userSessions.get(uid) ?? 0) + 1);
   }
+  _seatSyncPending = false;  // seat map is now reliable — allow logins
 }
 
 // P2-04: Returns fraction of seats used (0–1). -1 if unlimited.

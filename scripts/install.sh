@@ -221,6 +221,21 @@ APP_BASE_URL=https://your-application-url.com
 
 # Session cookie name (unique per installation)
 SESSION_COOKIE_NAME=qa-platform.sid
+
+# ── Email / SMTP Notifications (optional) ───────────────────────────────────
+# Uncomment and fill in to enable email alerts for failed runs, healing events, etc.
+# SMTP_HOST=smtp.yourcompany.com
+# SMTP_PORT=587
+# SMTP_SECURE=false
+# SMTP_USER=qa-platform@yourcompany.com
+# SMTP_PASS=your-smtp-password
+# SMTP_FROM=QA Platform <qa-platform@yourcompany.com>
+# NOTIFY_ON_FAIL=true
+# NOTIFY_ON_HEAL=false
+
+# ── Logging ──────────────────────────────────────────────────────────────────
+# Log level: debug | info | warn | error  (default: info)
+LOG_LEVEL=info
 EOF
     chown qa-platform:qa-platform "$ENV_FILE"
     chmod 600 "$ENV_FILE"
@@ -244,11 +259,16 @@ sudo -u qa-platform npm run build >> "$LOG_FILE" 2>&1 || fail "Build failed. Con
 ok "Build succeeded."
 
 ##############################################################################
-# [7] Playwright Chromium
+# [7] Playwright browsers — installed to machine-wide /opt path so the
+#     systemd service user (qa-platform) can find them on any account.
 ##############################################################################
-step 7 "Installing Playwright Chromium..."
-sudo -u qa-platform npx playwright install chromium >> "$LOG_FILE" 2>&1 || warn "Playwright install had warnings — suite runs may need: npx playwright install chromium"
-ok "Playwright Chromium installed."
+step 7 "Installing Playwright browsers (chromium, firefox, webkit)..."
+# Install into project folder — self-contained, works for any service account or user
+PW_BROWSERS_PATH="$INSTALL_DIR/.playwright-browsers"
+PLAYWRIGHT_BROWSERS_PATH="$PW_BROWSERS_PATH" sudo -u qa-platform \
+  npx playwright install chromium firefox webkit >> "$LOG_FILE" 2>&1 \
+  || warn "Playwright browser install had warnings — check $LOG_FILE"
+ok "Playwright browsers installed to $PW_BROWSERS_PATH"
 
 ##############################################################################
 # [8] systemd service

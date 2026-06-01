@@ -137,6 +137,36 @@ Hover the `?` icon next to any keyword in the step editor to see:
 
 ---
 
+## Recording a Test Script (Recorder)
+
+Instead of manually adding steps, you can record interactions directly from Chrome:
+
+1. Install the **QA Agent Recorder** Chrome extension (see `recorder-extension/INSTALL.md`)
+2. Open a Test Script in the editor → click **⬤ Record**
+3. Click the extension icon in Chrome → enter the platform URL → select Project + Environment
+4. Click **⬤ Start Recording** → interact with your app → steps stream live into the editor
+5. Click **⏹ Stop Recording** → review and save
+
+---
+
+## Self-Healing Locators
+
+When a locator fails during a run, the platform attempts automatic healing:
+
+1. The healing engine (`healingEngine.ts`) scores alternative candidates from the page snapshot
+2. If a high-confidence match is found, the step retries with the healed locator
+3. The healed locator is flagged in the run report so you can review and update the Locator Repository
+
+Self-healing requires a page model to be built for the target page. Contact your SDET team if healing is not triggering for a specific page.
+
+---
+
+## Licensing & Feature Gates
+
+Some features (visual regression, NL step generation, advanced scheduling) require a commercial license tier. If a button is greyed out or locked, the current license does not include that feature. Contact your admin to check the license status in the **Admin** panel.
+
+---
+
 ## Need help?
 
 Contact your SDET team.

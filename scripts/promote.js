@@ -28,7 +28,10 @@ const PROD_ROOT = path.resolve(__dirname, '..');                     // this pro
 const DEV_ROOT  = path.resolve(PROD_ROOT, '..', 'qa-agent-platform-dev');
 
 const FILES_TO_COPY  = ['playwright.config.ts', 'tsconfig.json'];
-const DIRS_TO_COPY   = ['src'];
+// iis-site excluded: prod web.config must point to port 3000, dev points to 3003.
+// start-server.bat excluded: prod bat must cd into qa-agent-platform, not dev.
+// These files are prod-specific and must never be overwritten by promote.
+const DIRS_TO_COPY   = ['src', 'scripts', 'docs', 'recorder-extension'];
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -169,6 +172,14 @@ async function main() {
   if (srcDiff.changed.length) { info(`Changed (${srcDiff.changed.length}):`); srcDiff.changed.slice(0,20).forEach(f => console.log(`      ~ src/${f}`)); }
   if (srcDiff.removed.length) { info(`Removed (${srcDiff.removed.length}):`); srcDiff.removed.slice(0,20).forEach(f => console.log(`      - src/${f}`)); }
 
+  // Also diff recorder-extension — it is in DIRS_TO_COPY but was previously excluded from the
+  // diff check, causing the script to exit early (totalChanges=0) when only extension files changed.
+  const extDiff = diffDir(path.join(DEV_ROOT, 'recorder-extension'), path.join(PROD_ROOT, 'recorder-extension'));
+  totalChanges += extDiff.added.length + extDiff.changed.length + extDiff.removed.length;
+  if (extDiff.added.length)   { info(`Added   (${extDiff.added.length}):`);   extDiff.added.slice(0,20).forEach(f => console.log(`      + recorder-extension/${f}`)); }
+  if (extDiff.changed.length) { info(`Changed (${extDiff.changed.length}):`); extDiff.changed.slice(0,20).forEach(f => console.log(`      ~ recorder-extension/${f}`)); }
+  if (extDiff.removed.length) { info(`Removed (${extDiff.removed.length}):`); extDiff.removed.slice(0,20).forEach(f => console.log(`      - recorder-extension/${f}`)); }
+
   for (const f of FILES_TO_COPY) {
     const devFile  = path.join(DEV_ROOT,  f);
     const prodFile = path.join(PROD_ROOT, f);
@@ -253,9 +264,92 @@ async function main() {
     process.exit(1);
   }
 
+  // Prod runs via tsx from src/ directly — public assets must be in BOTH src and dist
+  // (src/ is the live path; dist/ is needed if ever switched to compiled mode)
+  banner('Step 8 — Copy static assets → src/ui/public + dist/ui/public');
+  const devPublic      = path.join(DEV_ROOT,  'src', 'ui', 'public');
+  const prodPublicSrc  = path.join(PROD_ROOT, 'src', 'ui', 'public');
+  const prodPublicDist = path.join(PROD_ROOT, 'dist', 'ui', 'public');
+  rmDir(prodPublicSrc);  copyDir(devPublic, prodPublicSrc);
+  rmDir(prodPublicDist); copyDir(devPublic, prodPublicDist);
+  ok('src/ui/public/ and dist/ui/public/ both updated from dev');
+
+  // Sync .playwright-browsers from dev → prod (browser exes are not in node_modules)
+  banner('Step 9 — Sync .playwright-browsers');
+  const devBrowsers  = path.join(DEV_ROOT,  '.playwright-browsers');
+  const prodBrowsers = path.join(PROD_ROOT, '.playwright-browsers');
+  if (fs.existsSync(devBrowsers)) {
+    rmDir(prodBrowsers);
+    copyDir(devBrowsers, prodBrowsers);
+    ok('.playwright-browsers synced dev → prod');
+  } else {
+    warn('.playwright-browsers not found in dev — skipping browser sync');
+  }
+
   // All done — clean up backup
+  banner('Step 10 — Restart prod server');
+
+  // Prod is managed by QA-Platform-Service-Monitor (service-monitor.ps1 via schtasks).
+  // The monitor polls every 30s and calls scripts/start-qa-platform.ps1 when port 3000 is down.
+  // We must NOT spawn the server ourselves — the monitor will do it and would race/conflict.
+  // Strategy: kill the old PID → monitor detects port down → respawns within 30s → we poll.
+
+  // Find PID holding port 3000
+  let oldPid = null;
+  try {
+    const netstat = spawnSync('netstat', ['-ano'], { shell: true, encoding: 'utf8' });
+    const match = netstat.stdout.split('\n').find(l => l.includes(':3000') && l.includes('LISTENING'));
+    if (match) oldPid = match.trim().split(/\s+/).pop();
+  } catch {}
+
+  if (oldPid) {
+    info(`Found prod server on PID ${oldPid} — killing (monitor will respawn)…`);
+    try {
+      spawnSync('taskkill', [`//F`, `//PID`, oldPid], { shell: true });
+      ok(`PID ${oldPid} terminated.`);
+    } catch (e) {
+      warn(`Could not kill PID ${oldPid}: ${e.message}`);
+    }
+  } else {
+    info('No existing server found on port 3000 — monitor will start it.');
+  }
+
+  // Poll up to 60s — monitor checks every 30s, start-qa-platform.ps1 needs a few seconds to boot
+  info('Waiting for service monitor to respawn prod server (up to 60s)…');
+  let up = false;
+  for (let i = 0; i < 60; i++) {
+    await new Promise(r => setTimeout(r, 1000));
+    try {
+      const check = spawnSync('curl', ['-s', 'http://localhost:3000', '-o', '/dev/null', '-w', '%{http_code}'], { shell: true, encoding: 'utf8' });
+      const code = check.stdout.trim();
+      if (code === '200' || code === '302') { up = true; break; }
+    } catch {}
+  }
+
+  if (!up) {
+    warn('Server did not respond on port 3000 within 60 seconds.');
+    warn('Monitor may need more time. Check: curl http://localhost:3000');
+    warn('Monitor log: E:\\AI Agent\\service-monitor.log');
+    warn('Prod server log: ' + path.join(PROD_ROOT, 'logs', 'server.log'));
+  } else {
+    ok('Prod server is UP on port 3000.');
+  }
+
+  // Verify server.log has today's date
+  try {
+    const logTail = fs.readFileSync(path.join(PROD_ROOT, 'server.log'), 'utf8').split('\n').filter(Boolean);
+    const lastLine = logTail[logTail.length - 1] || '';
+    const today = new Date().toISOString().slice(0, 10);
+    if (lastLine.includes(today)) {
+      ok(`server.log confirmed today's date (${today}) — server is running latest build.`);
+    } else {
+      warn(`server.log last line does not show today's date. Last: "${lastLine.slice(0, 80)}"`);
+      warn('The server may be running an old binary. Check manually.');
+    }
+  } catch {}
+
   banner('Promotion complete');
-  ok('All files copied and prod build verified.');
+  ok('All files copied, prod built, server restarted and verified.');
 
   const cleanAnswer = await ask('Delete backup folder? (yes/no):');
   if (cleanAnswer.toLowerCase().startsWith('y')) {
@@ -265,8 +359,7 @@ async function main() {
     info(`Backup kept at: ${bakDir}`);
   }
 
-  console.log('\n  Prod is ready. Restart the prod server to apply changes.\n');
-  console.log('    taskkill //F //PID <pid> && npm run ui\n');
+  console.log('\n  Done. Prod is live on http://localhost:3000\n');
 }
 
 main().catch(err => {

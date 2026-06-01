@@ -1,10 +1,12 @@
 /**
- * content_script.js — QA Agent Recorder Extension v4
+ * content_script.js — QA Agent Recorder Extension v5
  *
  * Injected into the AUT tab when user starts recording.
- * Captures: click, fill (blur), select, check/uncheck, file upload,
- *           window.alert/confirm/prompt, open shadow DOM (recursive),
- *           same-origin iframes.
+ * Captures: click, dblclick, contextmenu, fill (blur), select (incl. multi),
+ *           check/uncheck, file upload, hover, drag & drop, keyboard shortcuts,
+ *           contenteditable, window.alert/confirm/prompt,
+ *           deep shadow DOM (recursive + attachShadow monkey-patch),
+ *           same-origin iframes (nested, with frameId context tagging).
  *
  * Each captured action POSTed to platformOrigin/api/recorder/step.
  * Notifies background.js via chrome.runtime.sendMessage for badge update.
@@ -18,6 +20,23 @@
  *   CR3. Natural language smartName — label[for] awareness for label elements.
  *   P1.  Self-Healing Phase 1 — healingProfile, alternatives[], importanceScore,
  *        pageKey captured on every step.
+ *
+ * v5 gap fixes:
+ *   G1.  Iframe frame context — frameId/frameName/frameSrc tagged on every step
+ *        from inside an iframe so codegenGenerator can wrap in frameLocator().
+ *   G2.  Nested iframes — injectIntoIframe() now calls scanForIframes(doc)
+ *        recursively so level-2+ iframes are injected.
+ *   G3.  Deep shadow DOM — attachShadow monkey-patch in MAIN world catches
+ *        dynamically created shadow roots on existing elements.
+ *   G4.  Hover — mouseenter listener emits HOVER step for tooltip/menu triggers.
+ *   G5.  Keyboard — keydown listener emits PRESS_KEY for Escape/Enter/Tab/F1-F12
+ *        and common Ctrl/Meta shortcuts.
+ *   G6.  contenteditable — FILL uses innerText instead of el.value for
+ *        rich-text editors (Quill, ProseMirror, TipTap, Draft.js, etc.).
+ *   G7.  Multi-select — SELECT step captures all selected option texts as array.
+ *   G8.  Double-click — dblclick listener emits DBLCLICK step.
+ *   G9.  Right-click — contextmenu listener emits RIGHT_CLICK step.
+ *   G10. Drag & drop — mousedown+mousemove+mouseup sequence emits DRAG step.
  */
 (function () {
   'use strict';
@@ -32,10 +51,151 @@
   let _lastClick      = { sel: '', ts: 0, stateHash: '' };
   const CLICK_DEBOUNCE_MS = 800;   // raised from 300ms — covers accidental double-clicks
   const FILL_MERGE_MS     = 600;   // inactivity window before FILL is emitted
+  // Tracks the last SELECT change event target — suppresses the post-selection
+  // browser-synthesised click that fires on the same <select> after value chosen
+  let _lastSelectChange = { el: null, ts: 0 };
+  const SELECT_CLICK_SUPPRESS_MS = 600;
 
   // ── CR2: Central dedup state ──────────────────────────────────────────────────
   let _lastEmitted = { eventType: '', selector: '', value: '', ts: 0 };
   let _pendingFill = null;  // { el, loc, value, timer } — buffered until typing stops
+
+  // ── G1: Iframe context registry — maps document → frame descriptor ────────────
+  // When events are captured inside an iframe, we tag every step with frameId/
+  // frameName/frameSrc so codegenGenerator can wrap selectors in frameLocator().
+  const _iframeContextMap = new WeakMap(); // document → { frameId, frameName, frameSrc }
+
+  // G1-AUTO: set when this content_script runs inside an iframe (self-registration path).
+  // _getFrameContext returns null for main-frame scripts (doc === document AND _selfFrameCtx === null).
+  // For iframe scripts: doc === document AND _selfFrameCtx is non-null → return it.
+  let _selfFrameCtx = null;
+
+  function _getFrameContext(doc) {
+    // OLD: if (doc === document) return null; // main frame — no wrapping needed
+    // NEW: doc === document is true for BOTH main frame AND iframe (each has its own `document`).
+    // Use _selfFrameCtx to distinguish: null = main frame, non-null = we ARE inside an iframe.
+    if (doc === document) return _selfFrameCtx; // null for main, frameCtx for iframe self
+    return _iframeContextMap.get(doc) || null;
+  }
+
+  // ── G1-AUTO: Frame-boundary auto-emission ─────────────────────────────────────
+  // Tracks the last frame context key posted so we can detect boundary crossings
+  // and auto-inject SWITCH FRAME / SWITCH MAIN steps without user interaction.
+  // Enterprise pattern: one step per logical boundary crossing; same-frame
+  // consecutive steps never re-emit (debounced by key comparison).
+  //
+  // Key priority (matches Playwright frameLocator selector priority):
+  //   id (stable, non-dynamic) → name → src pathname → null (main frame)
+  let _lastPostedFrameKey = null; // null = main frame
+  let _didEnterFrame      = false; // true once we've emitted at least one SWITCH FRAME
+
+  // Returns a stable, human-readable key for the frame context (or null = main).
+  function _frameKey(frameCtx) {
+    if (!frameCtx) return null;
+    const id = frameCtx.frameId;
+    if (id && !isDynamicId(id)) return `id:${id}`;
+    if (frameCtx.frameName) return `name:${frameCtx.frameName}`;
+    if (frameCtx.frameSrc) {
+      try { return `src:${new URL(frameCtx.frameSrc).pathname}`; } catch { return `src:${frameCtx.frameSrc}`; }
+    }
+    return '__frame__';
+  }
+
+  // Best CSS selector for a same-origin iframe element — mirrors cross-origin _emitSwitchFrame.
+  // Priority: #id → [name] → [src*=pathname] → iframe (last resort).
+  function _iframeSelector(frameCtx) {
+    const id = frameCtx.frameId;
+    if (id && !isDynamicId(id)) return { sel: `#${id}`, type: 'css' };
+    if (frameCtx.frameName) return { sel: `iframe[name="${frameCtx.frameName}"]`, type: 'css' };
+    if (frameCtx.frameSrc) {
+      try {
+        const p = new URL(frameCtx.frameSrc).pathname;
+        return { sel: `iframe[src*="${p}"]`, type: 'css' };
+      } catch { return { sel: `iframe[src*="${frameCtx.frameSrc}"]`, type: 'css' }; }
+    }
+    return { sel: 'iframe', type: 'css' };
+  }
+
+  // Check if an iframe is visible and interactable (skip invisible/analytics frames).
+  function _iframeIsVisible(frameCtx) {
+    try {
+      // Find the iframe element in the top document using the same selector priority.
+      const loc = _iframeSelector(frameCtx);
+      const el = document.querySelector(loc.sel);
+      if (!el) return true; // can't find element — assume visible (fail-open)
+      const rect = el.getBoundingClientRect();
+      if (rect.width < 4 || rect.height < 4) return false; // pixel-tracker sized
+      const style = window.getComputedStyle(el);
+      if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+      return true;
+    } catch { return true; } // any access error — fail-open
+  }
+
+  // Auto-emit SWITCH FRAME for same-origin iframes (before the first step from that frame).
+  function _autoEmitSwitchFrame(frameCtx) {
+    if (!_iframeIsVisible(frameCtx)) return; // skip invisible/analytics iframes
+    const loc  = _iframeSelector(frameCtx);
+    const name = frameCtx.frameName || frameCtx.frameId || frameCtx.frameSrc || '';
+    // Use postStep directly with a synthetic payload — bypass shouldEmit (which guards user gestures).
+    // Guard against duplicate emission within same recording session.
+    const key = _frameKey(frameCtx);
+    if (key === _lastPostedFrameKey) return; // already in this frame
+    _didEnterFrame = true;
+    if (!chrome.runtime?.id) return;
+    try {
+      chrome.runtime.sendMessage({
+        type: 'POST_STEP',
+        platformOrigin: _platformOrigin,
+        token: _token,
+        payload: {
+          eventType:    'SWITCH_FRAME',
+          selector:     loc.sel,
+          selectorType: loc.type,
+          value:        name,
+          smartName:    `Switch to frame: ${name || loc.sel}`,
+          tagName:      'iframe',
+          url:          location.href,
+          frameContext: frameCtx,
+        },
+      }, () => { void chrome.runtime.lastError; });
+    } catch { /* extension context gone */ }
+  }
+
+  // Auto-emit SWITCH MAIN when returning from an iframe to the main document.
+  function _autoEmitSwitchMain() {
+    if (!_didEnterFrame) return; // never entered a frame — no SWITCH MAIN needed
+    if (!chrome.runtime?.id) return;
+    try {
+      chrome.runtime.sendMessage({
+        type: 'POST_STEP',
+        platformOrigin: _platformOrigin,
+        token: _token,
+        payload: {
+          eventType:    'SWITCH_MAIN',
+          selector:     '',
+          selectorType: 'css',
+          value:        '',
+          smartName:    'Switch to main frame',
+          tagName:      '',
+          url:          location.href,
+        },
+      }, () => { void chrome.runtime.lastError; });
+    } catch { /* extension context gone */ }
+  }
+
+  // ── G3: attachShadow monkey-patch request (main world) ────────────────────────
+  // Ask background.js to inject the shadow root patcher in MAIN world so that
+  // el.attachShadow() calls on existing elements are intercepted and we receive
+  // a __qa_shadowroot custom event for each newly created shadow root.
+  let _shadowPatcherInjected = false;
+  function injectShadowPatcher() {
+    if (_shadowPatcherInjected) return;
+    _shadowPatcherInjected = true;
+    if (chrome.runtime?.id) try { chrome.runtime.sendMessage({ type: 'INJECT_SHADOW_PATCHER' }, () => { void chrome.runtime.lastError; }); } catch {}
+  }
+
+  // ── G10: Drag tracking state ──────────────────────────────────────────────────
+  let _dragState = null; // { el, loc, startX, startY, moved, isCanvas, isRF, rfCtx }
 
   // ── Self-init from chrome.storage (survives SSO redirects + race conditions) ─
   chrome.storage.local.get(['recorderState'], (result) => {
@@ -44,6 +204,22 @@
       _token          = state.token;
       _platformOrigin = state.platformOrigin;
       _active         = true;
+      // G1-AUTO: self-register if running inside an iframe (storage restore path)
+      try {
+        const fe = window.frameElement;
+        console.info('[QA Recorder][G1-AUTO] storage restore: frameElement=', fe ? fe.id || fe.src : 'null', 'href=', window.location.href);
+        if (fe) {
+          // OLD: _iframeContextMap.set(document, {...})
+          // NEW: also set _selfFrameCtx so _getFrameContext(document) returns it
+          _selfFrameCtx = {
+            frameId:   fe.id   || null,
+            frameName: fe.name || null,
+            frameSrc:  (() => { try { return window.location.href; } catch { return fe.src || null; } })(),
+          };
+          _iframeContextMap.set(document, _selfFrameCtx);
+          console.info('[QA Recorder][G1-AUTO] storage: registered _selfFrameCtx id=', fe.id, 'src=', window.location.href);
+        }
+      } catch(e) { console.warn('[QA Recorder][G1-AUTO] storage frameElement error:', e.message); }
       attachListeners();
       console.info('[QA Recorder] Active on', window.location.hostname);
       showToast('QA Recorder active — recording');
@@ -56,6 +232,34 @@
       _token          = msg.token;
       _platformOrigin = msg.platformOrigin;
       _active         = true;
+
+      // G1-AUTO: self-register on RECORDER_INIT regardless of frameInfo
+      // window.frameElement is non-null when this script runs inside an iframe (same-origin).
+      // This is the reliable path: runs synchronously on init, no async dependency.
+      console.info('[QA Recorder][G1-AUTO] RECORDER_INIT: frameInfo=', JSON.stringify(msg.frameInfo), 'frameElement=', window.frameElement ? (window.frameElement.id || window.frameElement.src) : 'null');
+      try {
+        const fe = window.frameElement;
+        if (fe) {
+          const frameId   = fe.id   || null;
+          const frameName = fe.name || null;
+          const frameSrc  = (() => { try { return window.location.href; } catch { return fe.src || null; } })();
+          // OLD: _iframeContextMap.set(document, { frameId, frameName, frameSrc });
+          // NEW: set _selfFrameCtx so _getFrameContext(document) returns it for THIS iframe script
+          _selfFrameCtx = { frameId, frameName, frameSrc };
+          _iframeContextMap.set(document, _selfFrameCtx); // keep map for parent-injected path compat
+          console.info('[QA Recorder][G1-AUTO] RECORDER_INIT: registered _selfFrameCtx id=', frameId, 'src=', frameSrc);
+        } else if (msg.frameInfo) {
+          // Fallback: cross-origin — use background-supplied frameInfo
+          _selfFrameCtx = {
+            frameId:   msg.frameInfo.frameId   || null,
+            frameName: msg.frameInfo.frameName || null,
+            frameSrc:  msg.frameInfo.frameSrc  || null,
+          };
+          _iframeContextMap.set(document, _selfFrameCtx); // keep map in sync
+          console.info('[QA Recorder][G1-AUTO] RECORDER_INIT: registered _selfFrameCtx from frameInfo=', JSON.stringify(msg.frameInfo));
+        }
+      } catch(e) { console.warn('[QA Recorder][G1-AUTO] RECORDER_INIT frameElement error:', e.message); }
+
       attachListeners();
       console.info('[QA Recorder] Active — recording started on', window.location.hostname);
       showToast('QA Recorder active — recording started');
@@ -73,14 +277,45 @@
   // Route through background service worker to avoid Mixed Content blocks.
   // AUT may be HTTPS while platform is HTTP — browsers block direct HTTPS→HTTP
   // fetch. The extension background worker is not subject to this restriction.
-  function postStep(payload) {
+  // G1: attach frameContext when step originates inside an iframe.
+  function postStep(payload, sourceDoc) {
     if (!_active || !_token || !_platformOrigin) return;
-    chrome.runtime.sendMessage({
-      type: 'POST_STEP',
-      platformOrigin: _platformOrigin,
-      token: _token,
-      payload,
-    });
+    const frameCtx = _getFrameContext(sourceDoc || document);
+    if (frameCtx) Object.assign(payload, { frameContext: frameCtx });
+
+    // G1-AUTO: detect frame boundary crossing and auto-inject SWITCH FRAME / SWITCH MAIN
+    // Skip auto-emit for steps that ARE frame-switch steps (avoid recursion).
+    const evtType = payload.eventType;
+    if (evtType !== 'SWITCH_FRAME' && evtType !== 'SWITCH_MAIN') {
+      const currentKey = _frameKey(frameCtx);
+      console.info('[QA Recorder][G1-AUTO] postStep evt=', evtType, 'frameCtx=', JSON.stringify(frameCtx), 'currentKey=', currentKey, 'lastKey=', _lastPostedFrameKey);
+      if (currentKey !== _lastPostedFrameKey) {
+        if (currentKey !== null) {
+          // entering same-origin iframe — emit SWITCH FRAME before this step
+          _autoEmitSwitchFrame(frameCtx);
+        } else {
+          // returning to main frame — emit SWITCH MAIN before this step
+          _autoEmitSwitchMain();
+        }
+        _lastPostedFrameKey = currentKey;
+      }
+    }
+
+    // Guard: chrome.runtime.id goes undefined when extension context is invalidated
+    if (!chrome.runtime?.id) {
+      _active = false;
+      console.error('[QA Recorder][ERROR] Extension reloaded while tab was open — recording stopped. Refresh this page (F5) to resume.');
+      return;
+    }
+    try {
+      chrome.runtime.sendMessage({
+        type: 'POST_STEP',
+        platformOrigin: _platformOrigin,
+        token: _token,
+        payload,
+      // No-op callback converts unhandled promise rejection → handled callback error
+      }, () => { void chrome.runtime.lastError; });
+    } catch { /* synchronous throw fallback */ }
   }
 
   // ── Dynamic ID detection — never use generated IDs as locators ───────────────
@@ -116,8 +351,92 @@
     'form', 'fieldset', 'figure', 'figcaption', 'blockquote',
     'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
     'i', 'em', 'strong', 'small', 'b', 'u', 's',
-    'img', 'svg', 'path', 'g', 'circle', 'rect', 'polygon',
+    'img',
+    // SVG structural containers — actionable SVGs handled separately via isSvgActionable()
+    'svg', 'g', 'defs', 'symbol', 'marker',
+    // SVG shape primitives — not actionable unless they have data-testid/aria-label/title
+    'path', 'circle', 'rect', 'polygon', 'polyline', 'line', 'ellipse',
   ]);
+
+  // SVG tags that can be meaningfully actionable (icon buttons, text, use elements)
+  const SVG_ACTIONABLE_TAGS = new Set(['text', 'tspan', 'use', 'image', 'foreignobject']);
+
+  // G11: SVG actionability check — true if the SVG element should be recorded
+  function isSvgActionable(el) {
+    const tag = (el.tagName || '').toLowerCase();
+    if (SVG_ACTIONABLE_TAGS.has(tag)) return true;
+    if (el.hasAttribute('data-testid') || el.hasAttribute('aria-label')) return true;
+    if (el.getAttribute('role')) return true;
+    try { if (window.getComputedStyle(el).cursor === 'pointer') return true; } catch {}
+    // Flow builder connector detection — SVG <path>/<line>/<polyline> that has
+    // a stroke (visible line) and is inside a flow/graph/diagram container.
+    if (['path', 'line', 'polyline', 'ellipse', 'circle', 'rect'].includes(tag)) {
+      const stroke = el.getAttribute('stroke') || (el.style && el.style.stroke) || '';
+      const hasStroke = stroke && stroke !== 'none' && stroke !== 'transparent';
+      if (hasStroke) {
+        // Check if inside a flow builder container (React Flow, JointJS, GoJS, Mermaid)
+        const flowParent = el.closest && el.closest(
+          '[class*="react-flow"],[class*="joint"],[class*="gojs"],[class*="mermaid"],' +
+          '[class*="flow-graph"],[class*="diagram"],[class*="canvas-container"],' +
+          '[data-testid*="flow"],[data-testid*="graph"],[data-testid*="canvas"]'
+        );
+        if (flowParent) return true;
+        // Fallback: any stroked path with an id or data attribute is likely intentional
+        if (el.id || el.getAttribute('data-id') || el.getAttribute('data-edge-id') ||
+            el.getAttribute('data-link-id') || el.getAttribute('data-connector-id')) return true;
+      }
+    }
+    return false;
+  }
+
+  // G11: Build a Playwright-compatible SVG locator
+  // Priority: data-testid → connector ids → aria-label → title child → <use> href → ancestor
+  function buildSvgLocator(el) {
+    const tid = el.getAttribute('data-testid');
+    if (tid) return { sel: `[data-testid="${tid}"]`, type: 'testid' };
+
+    // Flow builder connector / edge identifiers (React Flow, JointJS, GoJS, draw.io)
+    for (const attr of ['data-edge-id', 'data-link-id', 'data-connector-id', 'data-id', 'data-cell-id']) {
+      const v = el.getAttribute(attr);
+      if (v) return { sel: `[${attr}="${v}"]`, type: 'css' };
+    }
+    // Stable element id on connector path
+    if (el.id && !isDynamicId(el.id)) return { sel: `#${el.id}`, type: 'css' };
+
+    const al = el.getAttribute('aria-label');
+    if (al && al.trim()) return { sel: `//*[@aria-label="${al.trim()}"]`, type: 'xpath' };
+
+    // SVG <title> child element — Playwright getByTitle / aria-label fallback
+    const titleEl = el.querySelector && el.querySelector('title');
+    if (titleEl) {
+      const t = (titleEl.textContent || '').trim();
+      if (t) return { sel: `svg[title="${t}"], [aria-label="${t}"]`, type: 'css' };
+    }
+
+    // <use href="#icon-name"> — extract icon id as semantic label
+    if ((el.tagName || '').toLowerCase() === 'use') {
+      const href = el.getAttribute('href') || el.getAttribute('xlink:href') || '';
+      if (href.startsWith('#')) {
+        return { sel: `use[href="${href}"]`, type: 'css' };
+      }
+    }
+
+    // Nearest SVG ancestor with a stable attribute
+    let svgAncestor = el;
+    while (svgAncestor && (svgAncestor.tagName || '').toUpperCase() !== 'SVG' && svgAncestor !== document.body) {
+      svgAncestor = svgAncestor.parentElement;
+    }
+    if (svgAncestor && svgAncestor !== document.body) {
+      const svgTid = svgAncestor.getAttribute('data-testid');
+      if (svgTid) return { sel: `[data-testid="${svgTid}"]`, type: 'testid' };
+      const svgAl = svgAncestor.getAttribute('aria-label');
+      if (svgAl) return { sel: `//*[@aria-label="${svgAl}"]`, type: 'xpath' };
+    }
+
+    // Positional fallback — warn developer
+    console.warn('[QA Recorder][WARN] SVG element lacks stable locator — add data-testid or aria-label');
+    return { sel: buildRelativeXPath(el), type: 'xpath' };
+  }
 
   // ── CR1: Visibility guard ─────────────────────────────────────────────────────
   function isVisibleElement(el) {
@@ -128,6 +447,24 @@
       if (st.display === 'none' || st.visibility === 'hidden' || st.opacity === '0') return false;
       return true;
     } catch { return true; }
+  }
+
+  // ── Interactive-target guard ─────────────────────────────────────────────────
+  // Used by toast interception: if the clicked element IS an interactive control
+  // (button, link, role=button, etc.) inside a toast/dialog container, do NOT
+  // treat it as a toast assertion — let it fall through to normal CLICK recording.
+  // WHY: [role="alertdialog"] covers both notifications (inert text) and confirmation
+  // dialogs (Yes/No buttons). stopPropagation on button clicks silently swallows them.
+  function _isInteractiveTarget(el) {
+    if (!el) return false;
+    const tag  = (el.tagName || '').toUpperCase();
+    if (tag === 'BUTTON' || tag === 'A') return true;
+    if (tag === 'INPUT') {
+      const t = (el.type || '').toLowerCase();
+      if (t === 'button' || t === 'submit' || t === 'reset') return true;
+    }
+    const role = (el.getAttribute('role') || '').toLowerCase();
+    return ['button', 'link', 'menuitem', 'option', 'tab', 'checkbox', 'radio', 'switch'].includes(role);
   }
 
   // ── CR1: Actionable click guard ───────────────────────────────────────────────
@@ -145,6 +482,11 @@
 
     // <a> with href
     if (tag === 'a' && el.getAttribute('href') != null) return true;
+
+    // SVG elements — use dedicated SVG actionability check
+    if (el.namespaceURI === 'http://www.w3.org/2000/svg' || SVG_ACTIONABLE_TAGS.has(tag)) {
+      return isSvgActionable(el);
+    }
 
     // Container tags need an explicit interaction signal
     if (CONTAINER_TAGS.has(tag)) {
@@ -332,7 +674,7 @@
         const idx      = siblings.indexOf(el) + 1;
         const x        = idx > 0 ? `//*[${ancId}]//${tag}[${idx}]` : `//*[${ancId}]//${tag}`;
         if (xpUnique(x)) {
-          console.warn('[QA Recorder] Relative positional XPath — add data-testid or id for stability:', x);
+          console.warn('[QA Recorder][WARN] Relative positional XPath — add data-testid or id for stability:', x);
           return x;
         }
       }
@@ -352,11 +694,11 @@
           ? `@id="${node.id}"`
           : `@data-testid="${node.getAttribute('data-testid')}"`;
         parts.unshift(`//*[${anId}]`);
-        console.warn('[QA Recorder] Anchored positional XPath:', parts.join('/'));
+        console.warn('[QA Recorder][WARN] Anchored positional XPath:', parts.join('/'));
         return parts.join('/');
       }
     }
-    console.warn('[QA Recorder] No stable locator — add data-testid, id, or aria-label');
+    console.warn('[QA Recorder][WARN] No stable locator — add data-testid, id, or aria-label');
     return '//' + parts.join('/');
   }
 
@@ -381,21 +723,54 @@
     const r   = root || document;
     const tag = el.tagName.toLowerCase();
 
+    // G11: SVG elements — use dedicated SVG locator strategy before generic CSS
+    if (el.namespaceURI === 'http://www.w3.org/2000/svg' || SVG_ACTIONABLE_TAGS.has(tag)) {
+      return buildSvgLocator(el);
+    }
+
+    // G12: RF canvas node — el or any ancestor has rf__node-* testid (dynamic, not stable)
+    // Walk up to find the RF node wrapper, use scoped CSS :has-text() to avoid matching
+    // sidebar items that share the same label text (e.g. "Start" appears in both sidebar and canvas).
+    {
+      let rfAncestor = el;
+      while (rfAncestor && rfAncestor !== document.body) {
+        const tid = rfAncestor.getAttribute && rfAncestor.getAttribute('data-testid');
+        if (tid && /^rf__node-/.test(tid)) {
+          // OLD: return { sel: `text:${nodeText}`, type: 'text' };
+          // text:X is ambiguous — sidebar nodes share same label text as canvas nodes
+          const nodeText = (rfAncestor.innerText || rfAncestor.textContent || '').trim().replace(/\s+/g, ' ');
+          if (nodeText && nodeText.length >= 2 && nodeText.length <= 80)
+            return { sel: `.react-flow__node:has-text("${nodeText}")`, type: 'css' };
+          break; // found wrapper but no text — fall through
+        }
+        rfAncestor = rfAncestor.parentElement;
+      }
+    }
+
     // 1. data-* automation attributes — gold standard
     for (const attr of ['data-testid', 'data-qa', 'data-cy', 'data-id', 'data-automation']) {
       const v = el.getAttribute(attr);
       if (v && v.trim()) {
-        if (attr === 'data-testid') return { sel: `[data-testid="${v.trim()}"]`, type: 'testid' };
+        if (attr === 'data-testid') {
+          // OLD: return { sel: `[data-testid="${v.trim()}"]`, type: 'testid' };
+          // RF canvas nodes have dynamic IDs (rf__node-node_N) — not stable across sessions
+          if (/^rf__node-/.test(v.trim())) {
+            const nodeText = (el.innerText || el.textContent || '').trim().replace(/\s+/g, ' ');
+            if (nodeText && nodeText.length >= 2 && nodeText.length <= 80)
+              return { sel: `.react-flow__node:has-text("${nodeText}")`, type: 'css' };
+          }
+          return { sel: `[data-testid="${v.trim()}"]`, type: 'testid' };
+        }
         const css = `[${attr}="${v.trim()}"]`;
         if (countMatches(css, r) === 1) return { sel: css, type: 'css' };
       }
     }
 
-    // 2. Stable id — uniqueness verified (e.g. #username, #submitBtn)
+    // 2. Stable id — emit as type:'id' (raw value, no #) for Playwright getBy* parity
     if (el.id && !isDynamicId(el.id)) {
       const cssId = `#${el.id}`;
-      if (countMatches(cssId, r) === 1) return { sel: cssId, type: 'css' };
-      // ID not unique — qualify with tag
+      if (countMatches(cssId, r) === 1) return { sel: el.id, type: 'id' };
+      // ID not unique — qualify with tag as CSS fallback
       const cssTagId = `${tag}#${el.id}`;
       if (countMatches(cssTagId, r) === 1) return { sel: cssTagId, type: 'css' };
     }
@@ -477,6 +852,27 @@
     if (tag === 'input' || tag === 'select' || tag === 'textarea') {
       const lbl = getAssociatedLabel(el);
       if (lbl) return { sel: `label:${lbl}`, type: 'label' };
+    }
+
+    // 9b. nth / last — positional CSS when element is in a small, stable set
+    // Only triggers when all earlier strategies failed (no stable id/name/label/role).
+    // Format: "cssSelector:N" for nth, "cssSelector" for last — decoded by codegenGenerator.
+    {
+      const stableClasses = Array.from(el.classList).filter(c => !/\d{3,}|active|selected|hover|focus|open|show|hide/.test(c));
+      const shortCss      = stableClasses.length ? `${tag}.${stableClasses[0]}` : tag;
+      const siblings      = Array.from((r || document).querySelectorAll(shortCss));
+      const total         = siblings.length;
+      if (total >= 2 && total <= 20) {
+        const idx = siblings.indexOf(el);
+        if (idx !== -1) {
+          if (idx === total - 1 && total <= 10) {
+            return { sel: shortCss, type: 'last' };
+          }
+          if (idx <= 4) {
+            return { sel: `${shortCss}:${idx}`, type: 'nth' };
+          }
+        }
+      }
     }
 
     // 10. Row-anchored XPath for table cells
@@ -647,6 +1043,199 @@
     '[class*="loader"]:not([class*="preloader"])',
   ].join(',');
 
+  // ── Toast / Validation / Flash message selectors ────────────────────────────
+  // Covers: Toastr, SweetAlert2, Material Snackbar, Bootstrap Toast/Alert,
+  //         Angular Material, Ant Design message, Semantic UI, inline validation errors.
+  const TOAST_SEL = [
+    // ARIA roles — framework-agnostic
+    '[role="alert"]', '[role="status"]', '[role="log"]',
+    // Common toast libraries
+    '.toast', '.toast-message', '.toast-container .toast-body',
+    '.toastr', '.ngx-toastr',
+    '.mat-snack-bar-container', '.mat-simple-snackbar',
+    '.swal2-popup .swal2-html-container', '.swal2-toast',
+    '.ant-message-notice-content', '.ant-notification-notice-message',
+    '.p-toast-message', '.p-toast-detail',   // PrimeNG
+    '.iziToast-message',
+    // Bootstrap alerts / toasts
+    '.alert:not(.alert-dismissible .btn)', '.bs-toast',
+    // Generic flash / notification patterns
+    '[class*="notification"]:not([class*="icon"])',
+    '[class*="flash-message"]', '[class*="flash-notice"]',
+    '[class*="banner-message"]',
+    '[data-notify]', '[data-alert]',
+    // Modal / dialog content — capture text when dialog appears
+    '[role="dialog"] .modal-body', '[role="dialog"] .dialog-content',
+    '[role="alertdialog"]',
+    '.modal.show .modal-body', '.modal.show .modal-title',
+    '.mat-dialog-container .mat-dialog-content',
+    '.p-dialog-content',                   // PrimeNG dialog
+    '.cdk-overlay-container .mat-dialog-content',
+    // Tooltip validation messages
+    '[role="tooltip"]',
+    '[class*="tooltip"]:not([class*="tooltip-arrow"]):not([class*="tooltip-inner"])',
+    '.tippy-content',                       // Tippy.js
+    '.p-tooltip-text',                      // PrimeNG tooltip
+  ].join(',');
+
+  const VALIDATION_SEL = [
+    // ARIA invalid fields
+    '[aria-invalid="true"]',
+    // Common validation error patterns
+    '.invalid-feedback', '.field-error', '.error-message',
+    '.mat-error', '.mat-form-field-subscript-wrapper .mat-error',
+    '.ant-form-item-explain-error',
+    '.p-error',               // PrimeNG
+    '.form-error', '.form__error',
+    '[class*="validation-error"]', '[class*="error-text"]',
+    '[class*="help-block"][class*="error"]',
+    '.ng-invalid ~ .error', '.ng-touched.ng-invalid + span',
+  ].join(',');
+
+  // Dedup window for toast asserts — don't re-emit same text within 2s
+  let _lastToastEmit = { text: '', ts: 0 };
+
+  // Set of nodes already seen in this toast-detection pass (cleared per mutation batch)
+  const _seenToastNodes = new WeakSet();
+
+  // Debounce timer for mutation-triggered toast scan
+  let _toastScanTimer = null;
+
+  function _getVisibleText(el) {
+    return (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
+  }
+
+  function _isToastVisible(el) {
+    try {
+      const r = el.getBoundingClientRect();
+      if (r.width < 2 || r.height < 2) return false;
+      const style = window.getComputedStyle(el);
+      if (style.display === 'none' || style.visibility === 'hidden' || parseFloat(style.opacity) < 0.05) return false;
+      return true;
+    } catch { return false; }
+  }
+
+  // Check whether el is a QA Recorder's own toast (purple overlay) — never capture these
+  function _isRecorderOwnToast(el) {
+    try {
+      const style = window.getComputedStyle(el);
+      return style.background.includes('124, 58, 237') ||   // rgb(124,58,237)
+             style.backgroundColor.includes('124, 58, 237') ||
+             (el.style.background && el.style.background.includes('#7c3aed'));
+    } catch { return false; }
+  }
+
+  function _emitToastAssert(text, selector, selectorType) {
+    const now = Date.now();
+    if (_lastToastEmit.text === text && now - _lastToastEmit.ts < 5000) return; // deduplicate (5s window prevents React re-render bursts)
+    _lastToastEmit = { text, ts: now };
+    if (!shouldEmit('ASSERT_TOAST', selector, text)) return;
+    recordEmit('ASSERT_TOAST', selector, text);
+    postStep({
+      eventType:    'ASSERT_TOAST',
+      selector,
+      selectorType: selectorType || 'css',
+      value:        text,
+      smartName:    'Assert Toast Message',
+      tagName:      '',
+      url:          location.href,
+    });
+  }
+
+  function _emitValidationAssert(text, selector, selectorType) {
+    const now = Date.now();
+    if (!shouldEmit('ASSERT_TEXT', selector, text)) return;
+    recordEmit('ASSERT_TEXT', selector, text);
+    postStep({
+      eventType:    'ASSERT_TEXT',
+      selector,
+      selectorType: selectorType || 'css',
+      value:        text,
+      smartName:    'Assert Validation Message',
+      tagName:      '',
+      url:          location.href,
+    });
+  }
+
+  // Scan for newly appeared toast/validation nodes and emit asserts
+  function _scanForToastsAndValidation(addedNodes) {
+    if (!_active) return;
+
+    // 1. Check toast-role nodes added to DOM
+    addedNodes.forEach(node => {
+      if (!node || node.nodeType !== 1) return;
+      if (_seenToastNodes.has(node)) return;
+
+      // Match node itself or any descendant matching TOAST_SEL
+      const candidates = [];
+      if (node.matches && node.matches(TOAST_SEL)) candidates.push(node);
+      if (node.querySelectorAll) {
+        node.querySelectorAll(TOAST_SEL).forEach(c => candidates.push(c));
+      }
+
+      candidates.forEach(el => {
+        if (_seenToastNodes.has(el)) return;
+        // OLD: _seenToastNodes.add(el) before visibility check — permanently blocked re-show detection
+        if (!_isToastVisible(el)) return;
+        if (_isRecorderOwnToast(el)) return;
+
+        const text = _getVisibleText(el);
+        if (!text || text.length < 2) return;
+
+        _seenToastNodes.add(el); // only mark seen after confirmed visible + has text
+        const loc = bestSelector(el);
+        _emitToastAssert(text, loc.sel, loc.type);
+      });
+
+      // Match inline validation errors
+      const valCandidates = [];
+      if (node.matches && node.matches(VALIDATION_SEL)) valCandidates.push(node);
+      if (node.querySelectorAll) {
+        node.querySelectorAll(VALIDATION_SEL).forEach(c => valCandidates.push(c));
+      }
+      valCandidates.forEach(el => {
+        if (_seenToastNodes.has(el)) return;
+        // OLD: _seenToastNodes.add(el) before visibility check — permanently blocked re-show detection
+        if (!_isToastVisible(el)) return;
+
+        const text = _getVisibleText(el);
+        if (!text || text.length < 2) return;
+
+        _seenToastNodes.add(el); // only mark seen after confirmed visible + has text
+        const loc = bestSelector(el);
+        _emitValidationAssert(text, loc.sel, loc.type);
+      });
+    });
+
+    // 2. Also scan existing DOM for any toast that became visible (attribute mutation)
+    // Debounced to avoid hammering on rapid attribute changes
+    clearTimeout(_toastScanTimer);
+    _toastScanTimer = setTimeout(() => {
+      if (!_active) return;
+      // Scan toasts
+      document.querySelectorAll(TOAST_SEL).forEach(el => {
+        if (_seenToastNodes.has(el)) return;
+        if (!_isToastVisible(el)) return;
+        if (_isRecorderOwnToast(el)) return;
+        const text = _getVisibleText(el);
+        if (!text || text.length < 2) return;
+        _seenToastNodes.add(el);
+        const loc = bestSelector(el);
+        _emitToastAssert(text, loc.sel, loc.type);
+      });
+      // Scan validation errors — same toggle-visibility pattern as toasts
+      document.querySelectorAll(VALIDATION_SEL).forEach(el => {
+        if (_seenToastNodes.has(el)) return;
+        if (!_isToastVisible(el)) return;
+        const text = _getVisibleText(el);
+        if (!text || text.length < 2) return;
+        _seenToastNodes.add(el);
+        const loc = bestSelector(el);
+        _emitValidationAssert(text, loc.sel, loc.type);
+      });
+    }, 300);
+  }
+
   function isPageLoading() {
     try {
       const spinners = document.querySelectorAll(SPINNER_SEL);
@@ -677,12 +1266,17 @@
   function shouldEmit(eventType, selector, value) {
     const now  = Date.now();
     const last = _lastEmitted;
-    // Block exact duplicate (same type + selector + value within 1s)
-    if (last.eventType === eventType && last.selector === selector && last.value === value && now - last.ts < 1000) return false;
+    // Block exact duplicate (same type + selector + value within 2s)
+    if (last.eventType === eventType && last.selector === selector && last.value === value && now - last.ts < 2000) return false;
     // Block CLICK immediately after FILL on same element (FILL already implies interaction)
-    if (eventType === 'CLICK' && last.eventType === 'FILL' && last.selector === selector && now - last.ts < 800) return false;
+    if (eventType === 'CLICK' && last.eventType === 'FILL' && last.selector === selector && now - last.ts < 1500) return false;
+    // Block CLICK immediately after SELECT on same element (browser synthetic post-select click)
+    if (eventType === 'CLICK' && last.eventType === 'SELECT' && last.selector === selector && now - last.ts < 1500) return false;
     // Block FILL with identical value on same selector (re-focused without changing)
     if (eventType === 'FILL' && last.eventType === 'FILL' && last.selector === selector && last.value === value) return false;
+    // Block duplicate ASSERT (text/toast/visible) with same value within 5s regardless of selector
+    const assertTypes = new Set(['ASSERT_TEXT', 'ASSERT_TOAST', 'ASSERT_VISIBLE']);
+    if (assertTypes.has(eventType) && assertTypes.has(last.eventType) && last.value === value && now - last.ts < 5000) return false;
     return true;
   }
 
@@ -715,15 +1309,84 @@
       tagName:      f.el.tagName.toLowerCase(),
       url:          location.href,
       ...buildStepMeta(f.el, f.loc.sel),
-    });
+    }, f.srcDoc || document);
   }
 
   // ── Event handlers ────────────────────────────────────────────────────────────
+  // Tags that are purely decorative children — clicks should be attributed to
+  // the nearest interactive ancestor (button, a, [role=button], etc.) so that
+  // bestSelector / healing profiles are built on the stable parent, not the icon.
+  // svg/use/path intentionally excluded — handled by dedicated isSvgActionable/buildSvgLocator path
+  const TRANSPARENT_CHILD_TAGS = new Set(['i', 'em', 'b', 'strong', 'small', 'span']);
+
+  function resolveClickTarget(el) {
+    if (!el || el.nodeType !== 1) return el;
+    const tag = (el.tagName || '').toLowerCase();
+    if (!TRANSPARENT_CHILD_TAGS.has(tag)) return el;
+    // Only bubble if the element itself has no stable identity
+    if (el.id && !isDynamicId(el.id)) return el;
+    if (el.getAttribute('data-testid') || el.getAttribute('aria-label')) return el;
+    // Determine RF root boundary — never bubble past it (RF nodes have their own ID scheme)
+    const rfRoot = el.closest && el.closest(RF_SELECTORS.root);
+    let p = el.parentElement;
+    while (p && p !== document.body) {
+      // Stop if we'd cross out of the RF root into the outer page
+      if (rfRoot && !rfRoot.contains(p)) break;
+      const ptag = (p.tagName || '').toLowerCase();
+      if (INTERACTIVE_TAGS.has(ptag) || p.getAttribute('role') === 'button' || p.getAttribute('role') === 'link') return p;
+      if ((p.id && !isDynamicId(p.id)) || p.getAttribute('data-testid')) return p;
+      p = p.parentElement;
+    }
+    return el; // no stable ancestor found — fall through to original
+  }
+
   function handleClick(e) {
     if (!_active) return;
-    const el = e.target;
+    // OLD: const el = e.target;
+    const el = resolveClickTarget(e.target);
     if (!el || el.nodeType !== 1) return;
     if (el.type === 'file') return; // handled by change
+    // G1-AUTO: derive sourceDoc from element so iframe clicks carry frame context
+    const _srcDoc = el.ownerDocument || document;
+
+    // Toast/validation click interception — emit ASSERT_TOAST instead of CLICK
+    // when user explicitly clicks on a toast/alert container.
+    // INTERACTIVE GUARD: if the click target is a button/link inside the toast/dialog
+    // (e.g. Yes/No in [role="alertdialog"]), fall through to normal CLICK recording
+    // so the step is captured in the platform UI. Do NOT stopPropagation on those.
+    const toastAncestor = el.closest && (el.closest(TOAST_SEL));
+    if (toastAncestor && !_isRecorderOwnToast(toastAncestor) && _isToastVisible(toastAncestor)) {
+      if (!_isInteractiveTarget(el)) {
+        // Inert content click (text body, container) — record as toast assertion
+        const text = _getVisibleText(toastAncestor);
+        if (text && text.length >= 2) {
+          const loc2 = bestSelector(toastAncestor);
+          _emitToastAssert(text, loc2.sel, loc2.type);
+          e.stopPropagation();
+          return;
+        }
+      }
+      // Interactive target (button/link) — fall through to normal CLICK recording below
+    }
+
+    // Cross-origin iframe click — emit SWITCH_FRAME instead of CLICK
+    // User clicking the iframe element itself signals intent to interact inside it.
+    if (el.tagName === 'IFRAME' && _crossOriginIframes.has(el)) {
+      _emitSwitchFrame(el);
+      return;
+    }
+    // Also check if click landed on a cross-origin iframe via closest()
+    const iframeAncestor = el.closest && el.closest('iframe');
+    if (iframeAncestor && _crossOriginIframes.has(iframeAncestor)) {
+      _emitSwitchFrame(iframeAncestor);
+      return;
+    }
+
+    // Canvas click — capture pointer coordinates relative to canvas bounds
+    if (el.tagName === 'CANVAS') {
+      _emitCanvasClick(el, e);
+      return;
+    }
 
     // CR1: reject invisible elements and non-actionable containers
     if (!isVisibleElement(el)) return;
@@ -735,6 +1398,11 @@
 
     // CR2: flush any pending fill on a DIFFERENT element before recording click
     if (_pendingFill && _pendingFill.loc.sel !== loc.sel) flushPendingFill();
+
+    // Suppress post-selection click on <select> — browser fires a click on the
+    // same SELECT element after the user picks a value; that click is junk (Step 3 duplicate).
+    // The real selection is already captured by the change/SELECT event (Step 2).
+    if (el.tagName === 'SELECT' && _lastSelectChange.el === el && now - _lastSelectChange.ts < SELECT_CLICK_SUPPRESS_MS) return;
 
     // CR2: state-aware click dedup — allow re-recording if element state changed
     // (e.g. accordion toggle, checkbox, tab — same element but new state)
@@ -754,7 +1422,7 @@
         tagName:      el.tagName.toLowerCase(),
         url:          location.href,
         ...buildStepMeta(el, loc.sel),
-      });
+      }, _srcDoc);
       return;
     }
 
@@ -770,13 +1438,54 @@
       tagName:      el.tagName.toLowerCase(),
       url:          location.href,
       ...buildStepMeta(el, loc.sel),
-    });
+    }, _srcDoc);
+
+    // ── G2: Post-submit / post-navigation landmark ASSERT VISIBLE ────────────
+    // After clicking a submit/save/login button, wait briefly then look for a
+    // newly visible landmark element (heading, main region, dashboard widget).
+    // This converts the recorded flow into a real test case by verifying the
+    // expected page/state actually appeared.
+    const isSubmitLike = (
+      el.type === 'submit' ||
+      /\b(submit|save|login|sign.?in|confirm|continue|next|proceed|ok|apply|create|add|update|delete|remove|send|publish)\b/i
+        .test((el.textContent || el.value || el.getAttribute('aria-label') || '').trim())
+    );
+    if (isSubmitLike) {
+      setTimeout(() => {
+        if (!_active) return;
+        // Look for a visible heading or main landmark that isn't the current form
+        const LANDMARK_SEL = 'h1, h2, [role="main"] h1, [role="main"] h2, .dashboard-title, .page-title, [data-testid*="heading"], [data-testid*="title"]';
+        const candidates = Array.from(document.querySelectorAll(LANDMARK_SEL))
+          .filter(n => {
+            const rect = n.getBoundingClientRect();
+            return rect.width > 0 && rect.height > 0 && !n.closest('form');
+          });
+        if (candidates.length > 0) {
+          const target = candidates[0];
+          const text   = (target.textContent || '').trim().substring(0, 80);
+          const lSel   = bestSelector(target);
+          if (text && text.length >= 2 && shouldEmit('ASSERT_VISIBLE', lSel.sel, text)) {
+            recordEmit('ASSERT_VISIBLE', lSel.sel, text);
+            postStep({
+              eventType:    'ASSERT_VISIBLE',
+              selector:     lSel.sel,
+              selectorType: lSel.type,
+              value:        text,
+              smartName:    `Assert visible: ${text.substring(0, 40)}`,
+              tagName:      target.tagName.toLowerCase(),
+              url:          location.href,
+            });
+          }
+        }
+      }, 800);
+    }
   }
 
   function handleChange(e) {
     if (!_active) return;
     const el = e.target;
     if (!el || el.nodeType !== 1) return;
+    const _srcDoc = el.ownerDocument || document;
     const loc = bestSelector(el);
 
     // CR2: flush any pending fill before recording a change on a different element
@@ -793,21 +1502,26 @@
         tagName:      el.tagName.toLowerCase(),
         url:          location.href,
         ...buildStepMeta(el, loc.sel),
-      });
+      }, _srcDoc);
       return;
     }
     if (el.tagName === 'SELECT') {
-      const val = el.options[el.selectedIndex]?.text || el.value;
+      // G7: multi-select — capture all selected option texts as comma-separated string
+      const selectedTexts = el.multiple
+        ? Array.from(el.selectedOptions).map(o => o.text || o.value).join(', ')
+        : (el.options[el.selectedIndex]?.text || el.value);
+      // Mark this SELECT so handleClick suppresses the post-selection browser click
+      _lastSelectChange = { el, ts: Date.now() };
       postStep({
         eventType:    'SELECT',
         selector:     loc.sel,
         selectorType: loc.type,
-        value:        val,
+        value:        selectedTexts,
         smartName:    smartName(el),
         tagName:      'select',
         url:          location.href,
         ...buildStepMeta(el, loc.sel),
-      });
+      }, _srcDoc);
     }
   }
 
@@ -815,18 +1529,25 @@
   // so that if the user briefly loses and re-gains focus on the same field
   // (common in React/Angular with synthetic events), only one FILL is recorded.
   // If the user moves to a different field, the pending fill is flushed first.
+  // G6: contenteditable — use innerText instead of el.value for rich-text editors.
   function handleBlur(e) {
     if (!_active) return;
     const el = e.target;
     if (!el || el.nodeType !== 1) return;
+    const _srcDoc = el.ownerDocument || document;
     const tag  = el.tagName.toLowerCase();
     const type = (el.type || '').toLowerCase();
+    const isContentEditable = el.isContentEditable || el.getAttribute('contenteditable') === 'true' || el.getAttribute('contenteditable') === '';
     const fillable = ['text', 'email', 'password', 'search', 'url', 'tel', 'number', ''];
-    if (!((tag === 'input' && fillable.includes(type)) || tag === 'textarea')) return;
-    if (!el.value && el.value !== '0') return;
+    if (!((tag === 'input' && fillable.includes(type)) || tag === 'textarea' || isContentEditable)) return;
 
-    const loc   = bestSelector(el);
-    const value = el.value;
+    // G6: contenteditable uses innerText; inputs use .value
+    const value = isContentEditable
+      ? (el.innerText || el.textContent || '').trim()
+      : el.value;
+    if (!value && value !== '0') return;
+
+    const loc = bestSelector(el);
 
     if (_pendingFill && _pendingFill.loc.sel === loc.sel) {
       // Same field blurred again — update value and reset merge timer
@@ -836,38 +1557,761 @@
     } else {
       // Different field — flush any existing pending fill first
       flushPendingFill();
-      _pendingFill = { el, loc, value };
+      _pendingFill = { el, loc, value, srcDoc: _srcDoc };
     }
 
     // Schedule the actual emit after FILL_MERGE_MS of inactivity
     _pendingFill.timer = setTimeout(flushPendingFill, FILL_MERGE_MS);
   }
 
-  // ── Attach / detach ──────────────────────────────────────────────────────────
-  function attachToRoot(root) {
-    root.addEventListener('click',    handleClick,  true);
-    root.addEventListener('change',   handleChange, true);
-    root.addEventListener('blur',     handleBlur,   true);
-    root.addEventListener('focusout', handleBlur,   true);
-  }
-  function detachFromRoot(root) {
-    root.removeEventListener('click',    handleClick,  true);
-    root.removeEventListener('change',   handleChange, true);
-    root.removeEventListener('blur',     handleBlur,   true);
-    root.removeEventListener('focusout', handleBlur,   true);
+  // ── G8: Double-click handler ──────────────────────────────────────────────────
+  function handleDblClick(e) {
+    if (!_active) return;
+    const el = e.target;
+    if (!el || el.nodeType !== 1) return;
+    if (!isVisibleElement(el)) return;
+    const _srcDoc = el.ownerDocument || document;
+    const loc = bestSelector(el);
+    if (!shouldEmit('DBLCLICK', loc.sel, '')) return;
+    recordEmit('DBLCLICK', loc.sel, '');
+    postStep({
+      eventType:    'DBLCLICK',
+      selector:     loc.sel,
+      selectorType: loc.type,
+      value:        '',
+      smartName:    smartName(el),
+      tagName:      el.tagName.toLowerCase(),
+      url:          location.href,
+      ...buildStepMeta(el, loc.sel),
+    }, _srcDoc);
   }
 
-  // Shadow DOM
+  // ── G9: Right-click (context menu) handler ───────────────────────────────────
+  function handleContextMenu(e) {
+    if (!_active) return;
+    const el = e.target;
+    if (!el || el.nodeType !== 1) return;
+    if (!isVisibleElement(el) || !isActionableClick(el)) return;
+    const _srcDoc = el.ownerDocument || document;
+    const loc = bestSelector(el);
+    if (!shouldEmit('RIGHT_CLICK', loc.sel, '')) return;
+    recordEmit('RIGHT_CLICK', loc.sel, '');
+    postStep({
+      eventType:    'RIGHT_CLICK',
+      selector:     loc.sel,
+      selectorType: loc.type,
+      value:        '',
+      smartName:    smartName(el),
+      tagName:      el.tagName.toLowerCase(),
+      url:          location.href,
+      ...buildStepMeta(el, loc.sel),
+    }, _srcDoc);
+  }
+
+  // ── G4: Hover handler ─────────────────────────────────────────────────────────
+  // Only emit HOVER for elements that likely trigger UI changes (tooltips, menus).
+  // Debounce: suppress rapid mouse-over noise — only emit after 400ms dwell.
+  let _hoverTimer = null;
+  let _hoverEl    = null;
+  function handleMouseEnter(e) {
+    if (!_active) return;
+    const el = e.target;
+    if (!el || el.nodeType !== 1) return;
+    if (!isVisibleElement(el)) return;
+    // Only hover on elements that have a hover-reveal signal
+    const hasHoverSignal = (
+      el.hasAttribute('title') ||
+      el.hasAttribute('data-tooltip') ||
+      el.hasAttribute('aria-describedby') ||
+      el.hasAttribute('data-toggle') ||
+      el.hasAttribute('data-bs-toggle') ||
+      (el.getAttribute('role') === 'tooltip') ||
+      el.matches && el.matches('[class*="tooltip"],[class*="dropdown-toggle"],[class*="has-submenu"]')
+    );
+    if (!hasHoverSignal) return;
+    clearTimeout(_hoverTimer);
+    const _srcDoc = el.ownerDocument || document;
+    _hoverEl    = el;
+    _hoverTimer = setTimeout(() => {
+      if (!_active || _hoverEl !== el) return;
+      const loc = bestSelector(el);
+      if (!shouldEmit('HOVER', loc.sel, '')) return;
+      recordEmit('HOVER', loc.sel, '');
+      postStep({
+        eventType:    'HOVER',
+        selector:     loc.sel,
+        selectorType: loc.type,
+        value:        '',
+        smartName:    smartName(el),
+        tagName:      el.tagName.toLowerCase(),
+        url:          location.href,
+        ...buildStepMeta(el, loc.sel),
+      }, _srcDoc);
+    }, 400);
+  }
+  function handleMouseLeave() {
+    clearTimeout(_hoverTimer);
+    _hoverEl = null;
+  }
+
+  // ── G5: Keyboard handler ──────────────────────────────────────────────────────
+  // Capture structural keys (Escape, Enter, Tab, F-keys) and common shortcuts.
+  // Suppress plain printable-character keystrokes — those are captured via FILL.
+  const KEY_CAPTURE = new Set([
+    'Escape', 'Enter', 'Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
+    'Delete', 'Backspace', 'Home', 'End', 'PageUp', 'PageDown',
+    'F1','F2','F3','F4','F5','F6','F7','F8','F9','F10','F11','F12',
+  ]);
+  function handleKeyDown(e) {
+    if (!_active) return;
+    const el  = e.target;
+    const key = e.key;
+    // Ctrl/Meta + letter shortcut (e.g. Ctrl+A, Ctrl+S)
+    const isShortcut = (e.ctrlKey || e.metaKey) && key.length === 1;
+    if (!KEY_CAPTURE.has(key) && !isShortcut) return;
+    // Suppress Enter/Tab on <input> — those just move focus; FILL captures the value
+    if ((key === 'Enter' || key === 'Tab') && el && el.tagName === 'INPUT' && !el.getAttribute('role')) return;
+
+    const modifiers = [
+      e.ctrlKey  ? 'Control' : '',
+      e.metaKey  ? 'Meta'    : '',
+      e.altKey   ? 'Alt'     : '',
+      e.shiftKey ? 'Shift'   : '',
+    ].filter(Boolean);
+    const chord = [...modifiers, key].join('+');
+    const loc   = el && el.nodeType === 1 ? bestSelector(el) : { sel: 'body', type: 'css' };
+    if (!shouldEmit('PRESS_KEY', chord, '')) return;
+    recordEmit('PRESS_KEY', chord, '');
+    postStep({
+      eventType:    'PRESS_KEY',
+      selector:     loc.sel,
+      selectorType: loc.type,
+      value:        chord,
+      smartName:    `Press ${chord}`,
+      tagName:      (el && el.tagName ? el.tagName.toLowerCase() : ''),
+      url:          location.href,
+    });
+  }
+
+  // ── React Flow Engine ─────────────────────────────────────────────────────────
+  // Detects React Flow canvas context and converts screen↔flow coordinates.
+  // React Flow applies transform: translate(tx,ty) scale(zoom) on .react-flow__viewport
+  // All node positions are in FLOW SPACE — must normalize before storing.
+
+  const RF_SELECTORS = {
+    root:       '.react-flow',
+    pane:       '.react-flow__pane',
+    viewport:   '.react-flow__viewport',
+    node:       '.react-flow__node',
+    handle:     '.react-flow__handle',
+    edge:       '.react-flow__edge',
+    edgePath:   '.react-flow__edge-path',
+    minimap:    '.react-flow__minimap',
+    controls:   '.react-flow__controls',
+  };
+
+  // Parse "translate(tx, ty) scale(z)" or matrix(...) from viewport element
+  function _rfParseTransform(viewport) {
+    if (!viewport) return null;
+    try {
+      const raw = viewport.style.transform || getComputedStyle(viewport).transform || '';
+      // translate(Xpx, Ypx) scale(Z)
+      const t = raw.match(/translate\(\s*([-\d.]+)px,\s*([-\d.]+)px\)\s*scale\(([-\d.]+)\)/);
+      if (t) return { tx: parseFloat(t[1]), ty: parseFloat(t[2]), zoom: parseFloat(t[3]) };
+      // matrix(a,b,c,d,e,f) — CSS matrix: a=scale, e=translateX, f=translateY
+      const m = raw.match(/matrix\(([-\d.]+),\s*([-\d.]+),\s*([-\d.]+),\s*([-\d.]+),\s*([-\d.]+),\s*([-\d.]+)\)/);
+      if (m) return { tx: parseFloat(m[5]), ty: parseFloat(m[6]), zoom: parseFloat(m[1]) };
+    } catch {}
+    return null;
+  }
+
+  // Screen pixel → React Flow flow-space coordinate
+  function _rfScreenToFlow(screenX, screenY, rfRect, vp) {
+    if (!vp) return { x: Math.round(screenX - rfRect.left), y: Math.round(screenY - rfRect.top) };
+    const flowX = (screenX - rfRect.left - vp.tx) / vp.zoom;
+    const flowY = (screenY - rfRect.top  - vp.ty) / vp.zoom;
+    return { x: Math.round(flowX), y: Math.round(flowY) };
+  }
+
+  // Capture full React Flow context at event time
+  function _rfGetContext() {
+    const root     = document.querySelector(RF_SELECTORS.root);
+    if (!root) return null;
+    const viewport = root.querySelector(RF_SELECTORS.viewport);
+    const vp       = _rfParseTransform(viewport);
+    const rfRect   = root.getBoundingClientRect();
+    return { root, viewport, vp, rfRect };
+  }
+
+  // Get stable node identifier: data-id → aria-label → text label → fallback
+  function _rfNodeId(nodeEl) {
+    if (!nodeEl) return null;
+    return nodeEl.getAttribute('data-id') ||
+           nodeEl.getAttribute('data-nodeid') ||
+           nodeEl.getAttribute('data-testid') ||
+           nodeEl.getAttribute('aria-label') ||
+           (nodeEl.querySelector('.react-flow__node-label,label,[class*="label"],[class*="title"]')?.textContent || '').trim().substring(0, 60) ||
+           nodeEl.id || null;
+  }
+
+  // Extract semantic metadata from a .react-flow__node element for stable cross-session identification.
+  // Priority: data-testid > aria-label > visible label text > data-id (ephemeral fallback).
+  function _rfNodeMeta(nodeEl) {
+    if (!nodeEl) return null;
+    const dataId   = nodeEl.getAttribute('data-id') || nodeEl.getAttribute('data-nodeid') || null;
+    const testId   = nodeEl.getAttribute('data-testid') || null;
+    const ariaLbl  = nodeEl.getAttribute('aria-label') || null;
+    const labelEl  = nodeEl.querySelector('.react-flow__node-label,label,[class*="label"],[class*="title"],p,span');
+    const label    = (labelEl?.textContent || nodeEl.textContent || '').trim().replace(/\s+/g,' ').substring(0, 80) || null;
+    // Stable selector: prefer testId → ariaLabel → label text → dataId
+    const stableSel = testId   ? `[data-testid="${testId}"]`
+                    : ariaLbl  ? `[aria-label="${ariaLbl}"]`
+                    : label    ? `.react-flow__node:has-text("${label}")`
+                    : dataId   ? `.react-flow__node[data-id="${dataId}"]`
+                    : null;
+    return { dataId, testId, ariaLabel: ariaLbl, label, stableSel };
+  }
+
+  // Get handle position: 'source' or 'target' + side (top/right/bottom/left)
+  function _rfHandleInfo(handleEl) {
+    if (!handleEl) return null;
+    const pos  = handleEl.getAttribute('data-handlepos') || handleEl.getAttribute('data-position') || '';
+    const type = handleEl.getAttribute('data-handletype') || handleEl.getAttribute('data-type') ||
+                 (handleEl.classList.contains('source') ? 'source' : handleEl.classList.contains('target') ? 'target' : '');
+    const id   = handleEl.getAttribute('data-handleid') || handleEl.getAttribute('id') || '';
+    return { type, position: pos, id };
+  }
+
+  // Classify drag action from element context
+  function _rfClassifyAction(el, rfCtx) {
+    if (!el || !rfCtx) return null;
+    const node   = el.closest(RF_SELECTORS.node);
+    const handle = el.closest(RF_SELECTORS.handle);
+    const pane   = el.closest(RF_SELECTORS.pane);
+    if (handle) return 'connectNodes';    // dragging from a handle = edge creation
+    if (node)   return 'dragNode';        // dragging a node body
+    if (pane)   return 'panCanvas';       // dragging blank pane = pan
+    return null;
+  }
+
+  // HTML5 DnD — sidebar → canvas node drop
+  let _rfDndNodeType = null; // captured from dragstart dataTransfer
+  function _handleDragStart(e) {
+    if (!_active) return;
+    // dataTransfer values are empty at dragstart (React clears them after synthetic event)
+    // Read node type from the DOM element itself instead
+    const el = e.target;
+    if (!el) return;
+    // Try data attributes first, then label text, then class name
+    const nodeType =
+      el.getAttribute('data-node-type') ||
+      el.getAttribute('data-type')      ||
+      el.getAttribute('data-nodetype')  ||
+      // nodelabel sibling/child text — app uses 'nodelabel' as dataTransfer key
+      (el.querySelector('[class*="label"],[class*="title"],p,span')?.textContent?.trim()) ||
+      el.getAttribute('aria-label')     ||
+      (el.textContent?.trim()?.substring(0, 40)) ||
+      el.className?.split(' ').find(c => c && !c.includes('node-box') && !c.includes('drag')) ||
+      null;
+    if (nodeType) _rfDndNodeType = nodeType;
+  }
+
+  // ── G10: Drag & drop handlers ─────────────────────────────────────────────────
+  const DRAG_THRESHOLD_PX = 10;
+
+  function handleMouseDown(e) {
+    if (!_active || e.button !== 0) return;
+    // OLD: const el = e.target;
+    const el = resolveClickTarget(e.target);
+    if (!el || el.nodeType !== 1) return;
+
+    const isCanvas = el.tagName === 'CANVAS';
+    const rfCtx    = _rfGetContext();
+    const isRF     = !!(rfCtx && el.closest(RF_SELECTORS.root));
+
+    if (!isCanvas && !isRF && (!isVisibleElement(el) || !isActionableClick(el))) return;
+
+    _dragState = {
+      el,
+      loc:    bestSelector(el),
+      startX: e.clientX,
+      startY: e.clientY,
+      moved:  false,
+      isCanvas,
+      isRF,
+      rfCtx,  // snapshot of viewport transform at mousedown time
+    };
+  }
+
+  function handleMouseMove(e) {
+    if (!_dragState) return;
+    const dx = Math.abs(e.clientX - _dragState.startX);
+    const dy = Math.abs(e.clientY - _dragState.startY);
+    if (dx > DRAG_THRESHOLD_PX || dy > DRAG_THRESHOLD_PX) _dragState.moved = true;
+  }
+
+  function handleMouseUp(e) {
+    if (!_dragState) return;
+    const ds = _dragState;
+    _dragState = null;
+    if (!ds.moved) return;
+
+    // ── React Flow semantic drag ──────────────────────────────────────────────
+    if (ds.isRF && ds.rfCtx) {
+      const { rfCtx } = ds;
+      const action = _rfClassifyAction(ds.el, rfCtx);
+
+      if (action === 'connectNodes') {
+        // Edge creation: handle → handle drag
+        const srcHandle = ds.el.closest(RF_SELECTORS.handle);
+        const srcNode   = srcHandle?.closest(RF_SELECTORS.node);
+        const tgtEl     = e.target;
+        const tgtHandle = tgtEl?.closest(RF_SELECTORS.handle);
+        const tgtNode   = tgtHandle?.closest(RF_SELECTORS.node) || tgtEl?.closest(RF_SELECTORS.node);
+
+        const srcNodeId   = _rfNodeId(srcNode)   || 'unknown';
+        const tgtNodeId   = _rfNodeId(tgtNode)   || 'unknown';
+        const srcHandleInfo = _rfHandleInfo(srcHandle) || {};
+        const tgtHandleInfo = _rfHandleInfo(tgtHandle) || {};
+        // Semantic metadata for stable cross-session replay
+        const srcMeta = _rfNodeMeta(srcNode);
+        const tgtMeta = _rfNodeMeta(tgtNode);
+
+        const payload = {
+          sourceNode:       srcNodeId,
+          sourceNodeLabel:  srcMeta?.label    || srcNodeId,
+          sourceNodeTestId: srcMeta?.testId   || null,
+          sourceNodeAriaLabel: srcMeta?.ariaLabel || null,
+          sourceNodeStableSel: srcMeta?.stableSel || null,
+          sourceHandle:     srcHandleInfo.type || 'source',
+          sourcePosition:   srcHandleInfo.position || '',
+          targetNode:       tgtNodeId,
+          targetNodeLabel:  tgtMeta?.label    || tgtNodeId,
+          targetNodeTestId: tgtMeta?.testId   || null,
+          targetNodeAriaLabel: tgtMeta?.ariaLabel || null,
+          targetNodeStableSel: tgtMeta?.stableSel || null,
+          targetHandle:     tgtHandleInfo.type || 'target',
+          targetPosition:   tgtHandleInfo.position || '',
+          // Fallback flow coords if handles not found
+          fromFlow: _rfScreenToFlow(ds.startX, ds.startY, rfCtx.rfRect, rfCtx.vp),
+          toFlow:   _rfScreenToFlow(e.clientX, e.clientY, rfCtx.rfRect, rfCtx.vp),
+          viewport: rfCtx.vp,
+        };
+        const srcLabel = srcMeta?.label || srcNodeId;
+        const tgtLabel = tgtMeta?.label || tgtNodeId;
+        const key = `${srcNodeId}→${tgtNodeId}`;
+        if (!shouldEmit('RF_CONNECT', key, '')) return;
+        recordEmit('RF_CONNECT', key, '');
+        postStep({
+          eventType:    'RF_CONNECT',
+          selector:     srcMeta?.stableSel || (srcHandle ? bestSelector(srcHandle).sel : ds.loc.sel),
+          selectorType: srcMeta?.testId ? 'testid' : srcMeta?.ariaLabel ? 'css' : 'css',
+          value:        JSON.stringify(payload),
+          smartName:    `Connect "${srcLabel}" → "${tgtLabel}"`,
+          tagName:      'div',
+          url:          location.href,
+          rfAction:     payload,
+        });
+
+      } else if (action === 'dragNode') {
+        // Node reposition: record nodeId + flow-space target position
+        const nodeEl  = ds.el.closest(RF_SELECTORS.node);
+        const nodeId  = _rfNodeId(nodeEl) || 'unknown';
+        const nodeMeta = _rfNodeMeta(nodeEl);
+        const nodeLabel = nodeMeta?.label || nodeId;
+        const toFlow  = _rfScreenToFlow(e.clientX, e.clientY, rfCtx.rfRect, rfCtx.vp);
+        const fromFlow = _rfScreenToFlow(ds.startX, ds.startY, rfCtx.rfRect, rfCtx.vp);
+
+        const payload = {
+          nodeId,
+          nodeLabel,
+          nodeTestId:   nodeMeta?.testId   || null,
+          nodeAriaLabel: nodeMeta?.ariaLabel || null,
+          nodeStableSel: nodeMeta?.stableSel || null,
+          fromFlow,
+          toFlow,
+          deltaFlow: { x: Math.round(toFlow.x - fromFlow.x), y: Math.round(toFlow.y - fromFlow.y) },
+          viewport: rfCtx.vp,
+        };
+        const key = `${nodeId}:${toFlow.x},${toFlow.y}`;
+        if (!shouldEmit('RF_NODE_DRAG', key, '')) return;
+        recordEmit('RF_NODE_DRAG', key, '');
+        const nodeSel = nodeMeta?.stableSel || (nodeEl ? bestSelector(nodeEl).sel : ds.loc.sel);
+        postStep({
+          eventType:    'RF_NODE_DRAG',
+          selector:     nodeSel,
+          selectorType: 'css',
+          value:        JSON.stringify(payload),
+          smartName:    `Move node "${nodeLabel}" by (${payload.deltaFlow.x}, ${payload.deltaFlow.y})`,
+          tagName:      'div',
+          url:          location.href,
+          rfAction:     payload,
+          ...buildStepMeta(nodeEl || ds.el, nodeSel),
+        });
+
+      } else if (action === 'panCanvas') {
+        // Canvas pan: record viewport delta in screen px (pan is screen-space)
+        const dx = Math.round(e.clientX - ds.startX);
+        const dy = Math.round(e.clientY - ds.startY);
+        const payload = { dx, dy, viewport: rfCtx.vp };
+        if (!shouldEmit('RF_PAN', `${dx},${dy}`, '')) return;
+        recordEmit('RF_PAN', `${dx},${dy}`, '');
+        postStep({
+          eventType:    'RF_PAN',
+          selector:     RF_SELECTORS.pane,
+          selectorType: 'css',
+          value:        JSON.stringify(payload),
+          smartName:    `Pan canvas (${dx > 0 ? '+' : ''}${dx}, ${dy > 0 ? '+' : ''}${dy})`,
+          tagName:      'div',
+          url:          location.href,
+          rfAction:     payload,
+        });
+      }
+      return;
+    }
+
+    // ── Raw canvas drag (non-ReactFlow) ──────────────────────────────────────
+    if (ds.isCanvas) {
+      const rect  = ds.el.getBoundingClientRect();
+      const fromX = Math.round(ds.startX - rect.left);
+      const fromY = Math.round(ds.startY - rect.top);
+      const toX   = Math.round(e.clientX  - rect.left);
+      const toY   = Math.round(e.clientY  - rect.top);
+      const coords = JSON.stringify({ fromX, fromY, toX, toY });
+      if (!shouldEmit('CANVAS_DRAG', ds.loc.sel, coords)) return;
+      recordEmit('CANVAS_DRAG', ds.loc.sel, coords);
+      postStep({
+        eventType:    'CANVAS_DRAG',
+        selector:     ds.loc.sel,
+        selectorType: ds.loc.type,
+        value:        coords,
+        smartName:    `Canvas drag (${fromX},${fromY}) → (${toX},${toY})`,
+        tagName:      'canvas',
+        url:          location.href,
+        canvasDrag:   { fromX, fromY, toX, toY },
+        ...buildStepMeta(ds.el, ds.loc.sel),
+      });
+      return;
+    }
+
+    // ── Normal DOM drag ───────────────────────────────────────────────────────
+    const dropEl = e.target;
+    if (!dropEl || dropEl === ds.el || dropEl.nodeType !== 1) return;
+    const toLoc = bestSelector(dropEl);
+    if (!shouldEmit('DRAG', ds.loc.sel, toLoc.sel)) return;
+    recordEmit('DRAG', ds.loc.sel, toLoc.sel);
+    postStep({
+      eventType:    'DRAG',
+      selector:     ds.loc.sel,
+      selectorType: ds.loc.type,
+      value:        toLoc.sel,
+      smartName:    `Drag ${smartName(ds.el)} → ${smartName(dropEl)}`,
+      tagName:      ds.el.tagName.toLowerCase(),
+      url:          location.href,
+      toSelector:   toLoc.sel,
+      toSelectorType: toLoc.type,
+      ...buildStepMeta(ds.el, ds.loc.sel),
+    });
+  }
+
+  // ── Canvas coordinate click ───────────────────────────────────────────────────
+  // Captures click position relative to canvas top-left.
+  // Playwright needs locator.click({ position: { x, y } }) for canvas UIs.
+  function _emitCanvasClick(canvas, e) {
+    const rect = canvas.getBoundingClientRect();
+    const x    = Math.round(e.clientX - rect.left);
+    const y    = Math.round(e.clientY - rect.top);
+    const loc  = bestSelector(canvas);
+    const key  = `${loc.sel}:${x},${y}`;
+    if (!shouldEmit('CLICK_AT_COORDS', key, '')) return;
+    recordEmit('CLICK_AT_COORDS', key, '');
+    postStep({
+      eventType:    'CLICK_AT_COORDS',
+      selector:     loc.sel,
+      selectorType: loc.type,
+      value:        JSON.stringify({ x, y }),
+      smartName:    `Click canvas at (${x}, ${y})`,
+      tagName:      'canvas',
+      url:          location.href,
+      position:     { x, y },
+      ...buildStepMeta(canvas, loc.sel),
+    });
+  }
+
+  // ── Scroll capture ────────────────────────────────────────────────────────────
+  // Debounced — emits SCROLL after 600ms of scroll inactivity.
+  // Captures scrollLeft/scrollTop of the scrolled element (or window).
+  let _scrollTimer   = null;
+  let _scrollTarget  = null;
+  let _scrollLastPos = { x: 0, y: 0 };
+
+  function handleScroll(e) {
+    if (!_active) return;
+    const el   = e.target;
+    const isWin = !el || el === document || el === document.documentElement || el === document.body;
+    const scrollX = isWin ? window.scrollX : el.scrollLeft;
+    const scrollY = isWin ? window.scrollY : el.scrollTop;
+
+    // Suppress sub-pixel noise
+    if (Math.abs(scrollX - _scrollLastPos.x) < 5 && Math.abs(scrollY - _scrollLastPos.y) < 5) return;
+    _scrollLastPos = { x: scrollX, y: scrollY };
+    _scrollTarget  = isWin ? null : el;
+
+    clearTimeout(_scrollTimer);
+    _scrollTimer = setTimeout(() => {
+      if (!_active) return;
+      const target = _scrollTarget;
+      const sx     = isWin ? window.scrollX : (target ? target.scrollLeft : 0);
+      const sy     = isWin ? window.scrollY : (target ? target.scrollTop  : 0);
+      let loc = { sel: 'window', type: 'css' };
+      if (target && target.nodeType === 1) loc = bestSelector(target);
+      // Suppress if movement from last emitted position is trivial (<100px) — avoids initial-zero pairs
+      if (Math.abs(sx - _scrollLastEmitted.x) < 100 && Math.abs(sy - _scrollLastEmitted.y) < 100) return;
+      if (!shouldEmit('SCROLL', loc.sel, `${sx},${sy}`)) return;
+      _scrollLastEmitted = { x: sx, y: sy };
+      recordEmit('SCROLL', loc.sel, `${sx},${sy}`);
+      postStep({
+        eventType:    'SCROLL',
+        selector:     loc.sel,
+        selectorType: loc.type,
+        value:        JSON.stringify({ x: sx, y: sy }),
+        smartName:    `Scroll to (${sx}, ${sy})`,
+        tagName:      target ? (target.tagName || '').toLowerCase() : 'window',
+        url:          location.href,
+        scrollPosition: { x: sx, y: sy },
+      });
+    }, 600);
+  }
+
+  // ── Attach / detach ──────────────────────────────────────────────────────────
+  // ── HTML5 DnD drop handler — sidebar → ReactFlow canvas node creation ────────
+  function _handleDrop(e) {
+    if (!_active) return;
+    // OLD: const rfCtx = _rfGetContext(); if (!rfCtx) return;
+    // Before first node drop, .react-flow__pane may not exist yet (React hasn't rendered it).
+    // rfCtx can be null on first drop — fall through if _rfDndNodeType is set (DnD in progress).
+    let rfCtx = _rfGetContext();
+    if (!rfCtx && !_rfDndNodeType) return;
+    // Only fire if drop lands inside React Flow pane
+    // OLD: const pane = e.target?.closest(RF_SELECTORS.pane) || e.target?.closest(RF_SELECTORS.root); if (!pane) return;
+    // Before first drop, pane/root may not exist in DOM — allow if we have a pending node type
+    const pane = e.target?.closest(RF_SELECTORS.pane) || e.target?.closest(RF_SELECTORS.root);
+    if (!pane && !_rfDndNodeType) return;
+
+    let nodeType = _rfDndNodeType;
+    _rfDndNodeType = null;
+    // Also try reading from event directly (same-origin DnD)
+    try {
+      nodeType = nodeType ||
+        e.dataTransfer?.getData('application/reactflow') ||
+        e.dataTransfer?.getData('nodelabel')             ||
+        e.dataTransfer?.getData('text/plain')            || null;
+    } catch {}
+    // Always record the drop even if node type unresolved — use 'unknown' fallback
+    if (!nodeType) nodeType = 'unknown';
+
+    // rfCtx may be null on first-ever drop (canvas not yet rendered); use fallback rect/vp
+    const rfRect   = rfCtx?.rfRect || (pane ? pane.getBoundingClientRect() : { left: 0, top: 0 });
+    const vp       = rfCtx?.vp     || null;
+    const dropFlow = _rfScreenToFlow(e.clientX, e.clientY, rfRect, vp);
+    const payload  = { nodeType, dropFlow, viewport: vp };
+    const key      = `${nodeType}:${dropFlow.x},${dropFlow.y}`;
+    if (!shouldEmit('RF_DROP_NODE', key, '')) return;
+    recordEmit('RF_DROP_NODE', key, '');
+
+    // Snapshot existing node data-ids so we can identify the NEW node after React renders it
+    const _rfRoot = document.querySelector(RF_SELECTORS.root);
+    const _existingIds = new Set(
+      Array.from(document.querySelectorAll(RF_SELECTORS.node)).map(n => n.getAttribute('data-id'))
+    );
+
+    // Post the step immediately (so recording isn't blocked), then enrich via mutation callback
+    const stepBase = {
+      eventType:    'RF_DROP_NODE',
+      selector:     RF_SELECTORS.pane,
+      selectorType: 'css',
+      value:        JSON.stringify(payload),
+      smartName:    `Drop node "${nodeType}" at flow (${dropFlow.x}, ${dropFlow.y})`,
+      tagName:      'div',
+      url:          location.href,
+      rfAction:     payload,
+    };
+    postStep(stepBase);
+
+    // One-shot observer: when React renders the new node element, enrich the last posted step
+    // with stable semantic metadata (label, testId, ariaLabel, stableSel).
+    // 800ms timeout — if node doesn't appear, silently give up (step already recorded above).
+    if (_rfRoot) {
+      const _dropObs = new MutationObserver(() => {
+        const newNode = Array.from(document.querySelectorAll(RF_SELECTORS.node))
+          .find(n => !_existingIds.has(n.getAttribute('data-id')));
+        if (!newNode) return;
+        _dropObs.disconnect();
+        clearTimeout(_dropObsTimer);
+        const meta = _rfNodeMeta(newNode);
+        if (!meta) return;
+        const enriched = Object.assign({}, payload, {
+          placedNodeDataId:    meta.dataId,
+          placedNodeLabel:     meta.label,
+          placedNodeTestId:    meta.testId,
+          placedNodeAriaLabel: meta.ariaLabel,
+          placedNodeStableSel: meta.stableSel,
+        });
+        // Re-post as an enrichment patch — server /api/recorder/step handles this via enrichRfDrop flag
+        postStep({
+          ...stepBase,
+          value:     JSON.stringify(enriched),
+          smartName: `Drop node "${meta.label || nodeType}" at flow (${dropFlow.x}, ${dropFlow.y})`,
+          rfAction:  enriched,
+          enrichRfDrop: true,  // signal to server: update the last RF_DROP_NODE step value
+        });
+      });
+      const _dropObsTimer = setTimeout(() => _dropObs.disconnect(), 800);
+      _dropObs.observe(_rfRoot, { childList: true, subtree: true });
+    }
+  }
+
+  function attachToRoot(root) {
+    root.addEventListener('click',       handleClick,       true);
+    root.addEventListener('dblclick',    handleDblClick,    true);
+    root.addEventListener('contextmenu', handleContextMenu, true);
+    root.addEventListener('change',      handleChange,      true);
+    root.addEventListener('blur',        handleBlur,        true);
+    root.addEventListener('focusout',    handleBlur,        true);
+    root.addEventListener('mouseenter',  handleMouseEnter,  true);
+    root.addEventListener('mouseleave',  handleMouseLeave,  true);
+    root.addEventListener('keydown',     handleKeyDown,     true);
+    root.addEventListener('mousedown',   handleMouseDown,   true);
+    root.addEventListener('mousemove',   handleMouseMove,   true);
+    root.addEventListener('mouseup',     handleMouseUp,     true);
+    root.addEventListener('dragstart',   _handleDragStart,  true);
+    root.addEventListener('drop',        _handleDrop,       true);
+    root.addEventListener('scroll',      handleScroll,      false);
+  }
+  function detachFromRoot(root) {
+    root.removeEventListener('click',       handleClick,       true);
+    root.removeEventListener('dblclick',    handleDblClick,    true);
+    root.removeEventListener('contextmenu', handleContextMenu, true);
+    root.removeEventListener('change',      handleChange,      true);
+    root.removeEventListener('blur',        handleBlur,        true);
+    root.removeEventListener('focusout',    handleBlur,        true);
+    root.removeEventListener('mouseenter',  handleMouseEnter,  true);
+    root.removeEventListener('mouseleave',  handleMouseLeave,  true);
+    root.removeEventListener('keydown',     handleKeyDown,     true);
+    root.removeEventListener('mousedown',   handleMouseDown,   true);
+    root.removeEventListener('mousemove',   handleMouseMove,   true);
+    root.removeEventListener('mouseup',     handleMouseUp,     true);
+    root.removeEventListener('dragstart',   _handleDragStart,  true);
+    root.removeEventListener('drop',        _handleDrop,       true);
+    root.removeEventListener('scroll',      handleScroll,      false);
+  }
+
+  // ── G3: Deep shadow DOM — recursive injection ─────────────────────────────────
+  // injectIntoShadowRoot scans shadow root for nested shadow roots recursively.
   function injectIntoShadowRoot(sr) {
+    if (sr.__qaInjected) return;
+    sr.__qaInjected = true;
     attachToRoot(sr);
+    // Scan for already-existing nested shadow hosts
+    sr.querySelectorAll('*').forEach(el => { if (el.shadowRoot) injectIntoShadowRoot(el.shadowRoot); });
     new MutationObserver(muts => muts.forEach(m => m.addedNodes.forEach(n => {
+      if (n.nodeType !== 1) return;
       if (n.shadowRoot) injectIntoShadowRoot(n.shadowRoot);
+      if (n.querySelectorAll) n.querySelectorAll('*').forEach(c => { if (c.shadowRoot) injectIntoShadowRoot(c.shadowRoot); });
     }))).observe(sr, { childList: true, subtree: true });
   }
 
-  // Same-origin iframes
+  // ── G1+G2: Iframe injection with frame context tagging + nested recursion ─────
+  // Registers the iframe's document in _iframeContextMap so any step emitted from
+  // within carries frameId/frameName/frameSrc for Playwright frameLocator() wrapping.
+  // Cross-origin iframes: cannot inject inside, but register the iframe element
+  // itself so handleClick() can emit SWITCH_FRAME when user clicks on it.
+  const _crossOriginIframes = new WeakSet(); // iframe elements that are cross-origin
+
+  function _doInjectIntoIframeDoc(iframe) {
+    try {
+      const doc = iframe.contentDocument;
+      if (!doc || doc.readyState === 'uninitialized') return;
+      if (doc.__qaInjected) return;
+      doc.__qaInjected = true;
+      _iframeContextMap.set(doc, {
+        frameId:   iframe.id   || null,
+        frameName: iframe.name || null,
+        frameSrc:  (() => { try { return iframe.contentWindow.location.href; } catch { return iframe.src || null; } })(),
+      });
+      attachToRoot(doc);
+      scanShadow(doc);
+      scanForIframes(doc);
+    } catch { _crossOriginIframes.add(iframe); }
+  }
+
   function injectIntoIframe(iframe) {
-    try { const doc = iframe.contentDocument; if (doc) { attachToRoot(doc); scanShadow(doc); } } catch {}
+    try {
+      const doc = iframe.contentDocument;
+      if (!doc) {
+        // null doc = cross-origin — mark the element for SWITCH_FRAME emission
+        _crossOriginIframes.add(iframe);
+        return;
+      }
+      // If iframe not yet loaded, wait for load event then inject into final document.
+      // No {once:true} — iframe may reload (e.g. React canvas re-render reloads src)
+      // and we must re-inject each time into the fresh document.
+      if (doc.readyState === 'loading' || doc.readyState === 'uninitialized' || doc.URL === 'about:blank') {
+        if (!iframe.__qaLoadWatcher) {
+          iframe.__qaLoadWatcher = true;
+          iframe.addEventListener('load', () => {
+            // Clear injected flag on old doc — new document needs fresh injection
+            try { if (iframe.contentDocument) delete iframe.contentDocument.__qaInjected; } catch {}
+            _doInjectIntoIframeDoc(iframe);
+          });
+        }
+        return;
+      }
+      if (doc.__qaInjected) return;
+      doc.__qaInjected = true;
+      // Register frame context so steps from this document carry frame metadata
+      _iframeContextMap.set(doc, {
+        frameId:   iframe.id   || null,
+        frameName: iframe.name || null,
+        frameSrc:  (() => { try { return iframe.contentWindow.location.href; } catch { return iframe.src || null; } })(),
+      });
+      attachToRoot(doc);
+      scanShadow(doc);
+      // G2: recurse into nested iframes inside this iframe
+      scanForIframes(doc);
+    } catch {
+      // cross-origin access denied — mark for SWITCH_FRAME
+      _crossOriginIframes.add(iframe);
+    }
+  }
+
+  // ── Cross-origin: emit SWITCH_FRAME when user clicks the iframe element ───────
+  // Playwright handles cross-origin frames via page.frameLocator(selector).
+  // We emit a SWITCH_FRAME step so codegen knows to wrap subsequent steps.
+  function _emitSwitchFrame(iframe) {
+    const loc  = bestSelector(iframe);
+    const name = iframe.name || iframe.id || iframe.src || '';
+    if (!shouldEmit('SWITCH_FRAME', loc.sel, name)) return;
+    recordEmit('SWITCH_FRAME', loc.sel, name);
+    postStep({
+      eventType:    'SWITCH_FRAME',
+      selector:     loc.sel,
+      selectorType: loc.type,
+      value:        name,
+      smartName:    `Switch to frame: ${name || loc.sel}`,
+      tagName:      'iframe',
+      url:          location.href,
+      frameContext: {
+        frameId:   iframe.id   || null,
+        frameName: iframe.name || null,
+        frameSrc:  iframe.src  || null,
+      },
+    });
+  }
+
+  // G2: scan a document for all iframes and inject into each
+  function scanForIframes(root) {
+    root.querySelectorAll('iframe').forEach(injectIntoIframe);
   }
 
   function scanShadow(root) {
@@ -887,38 +2331,111 @@
   function injectDialogInterceptor() {
     if (_dialogInterceptorInjected) return;
     _dialogInterceptorInjected = true;
-    chrome.runtime.sendMessage({ type: 'INJECT_DIALOG_PATCHER' });
+    if (chrome.runtime?.id) try { chrome.runtime.sendMessage({ type: 'INJECT_DIALOG_PATCHER' }, () => { void chrome.runtime.lastError; }); } catch {}
   }
 
   function attachListeners() {
     attachToRoot(document);
     scanShadow(document);
     document.querySelectorAll('iframe').forEach(injectIntoIframe);
-
-    _domObserver = new MutationObserver(muts => {
-      muts.forEach(m => m.addedNodes.forEach(n => {
-        if (!n || n.nodeType !== 1) return;
-        if (n.shadowRoot) injectIntoShadowRoot(n.shadowRoot);
-        if (n.tagName === 'IFRAME') injectIntoIframe(n);
-        if (n.querySelectorAll) {
-          n.querySelectorAll('*').forEach(c => { if (c.shadowRoot) injectIntoShadowRoot(c.shadowRoot); });
-          n.querySelectorAll('iframe').forEach(injectIntoIframe);
-        }
-      }));
+    // Window-level scroll (page scroll) — does not bubble through document root
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    injectShadowPatcher(); // G3: main-world attachShadow monkey-patch
+    // Listen for dynamically created shadow roots reported by MAIN world patcher
+    document.addEventListener('__qa_shadowroot', (e) => {
+      const host = e.detail && e.detail.host;
+      if (host && host.shadowRoot) injectIntoShadowRoot(host.shadowRoot);
     });
-    _domObserver.observe(document.documentElement, { childList: true, subtree: true });
 
-    // NOTE: SPA navigation (pushState / popstate) is intentionally NOT captured.
-    // Navigation steps are auto-generated by the test engine (generateNavBlock).
+    const _allAddedNodes = [];
+    _domObserver = new MutationObserver(muts => {
+      _allAddedNodes.length = 0;
+      let hasAttrMutation = false;
+      muts.forEach(m => {
+        if (m.type === 'childList') {
+          m.addedNodes.forEach(n => {
+            if (!n || n.nodeType !== 1) return;
+            _allAddedNodes.push(n);
+            if (n.shadowRoot) injectIntoShadowRoot(n.shadowRoot);
+            if (n.tagName === 'IFRAME') injectIntoIframe(n);
+            if (n.querySelectorAll) {
+              n.querySelectorAll('*').forEach(c => { if (c.shadowRoot) injectIntoShadowRoot(c.shadowRoot); });
+              n.querySelectorAll('iframe').forEach(injectIntoIframe);
+            }
+          });
+        } else if (m.type === 'attributes') {
+          // style/class/hidden changed on existing node — may be a toggle-visible toast
+          // (e.g. div#MessageAlert toggling display:none → display:block)
+          if (m.target && m.target.nodeType === 1) hasAttrMutation = true;
+        }
+      });
+      // Toast/validation detection: run on new nodes OR attribute-triggered visibility changes
+      if (_allAddedNodes.length > 0) _scanForToastsAndValidation(_allAddedNodes);
+      else if (hasAttrMutation) _scanForToastsAndValidation([]);
+    });
+    _domObserver.observe(document.documentElement, { childList: true, subtree: true, attributeFilter: ['class', 'style', 'hidden', 'aria-hidden'] });
+
+    // ── G1: SPA URL-change → ASSERT URL ──────────────────────────────────────
+    // Capture pushState / replaceState / popstate / hashchange and emit ASSERT_URL
+    // so the recorded script verifies the app actually navigated to the right route.
+    // Debounced 400ms to let the page settle before capturing the final URL.
+    let _urlAssertTimer = null;
+    let _lastAssertedUrl = location.href;
+    function _onUrlChange() {
+      if (!_active) return;
+      clearTimeout(_urlAssertTimer);
+      _urlAssertTimer = setTimeout(() => {
+        const newUrl = location.href;
+        if (newUrl === _lastAssertedUrl) return;
+        _lastAssertedUrl = newUrl;
+        // Emit a partial-path assert — strip origin, keep path+query for portability
+        let partial = newUrl;
+        // OLD: only captured pathname+search — hash-based routing (e.g. /#HomeMenu#Home) always gave "/"
+        try { const u = new URL(newUrl); partial = u.pathname + (u.search || '') + (u.hash || ''); } catch {}
+        if (!shouldEmit('ASSERT_URL', partial, partial)) return;
+        recordEmit('ASSERT_URL', partial, partial);
+        postStep({
+          eventType:    'ASSERT_URL',
+          selector:     '',
+          selectorType: 'css',
+          value:        partial,
+          smartName:    `Assert URL: ${partial.substring(0, 60)}`,
+          tagName:      '',
+          url:          newUrl,
+        });
+      }, 400);
+    }
+    // Hook pushState / replaceState in MAIN world via the dialog patcher mechanism
+    // (background.js already executes in MAIN world — we piggyback via a separate message)
+    window.addEventListener('popstate',    _onUrlChange);
+    window.addEventListener('hashchange',  _onUrlChange);
+    // pushState/replaceState must be hooked in main world — request injection
+    if (chrome.runtime?.id) try { chrome.runtime.sendMessage({ type: 'INJECT_URL_PATCHER' }, () => { void chrome.runtime.lastError; }); } catch {}
+    document.addEventListener('__qa_urlchange', _onUrlChange);
 
     injectDialogInterceptor();
     document.addEventListener('__qa_dialog', (e) => {
       if (!_active) return;
+      const dlgText = String(e.detail.value ?? '').trim();
+      // Auto-emit ASSERT_TEXT for the dialog message before the action step,
+      // so the recorded flow verifies the correct message appeared.
+      if (dlgText && dlgText.length >= 2 && shouldEmit('ASSERT_TEXT', 'dialog', dlgText)) {
+        recordEmit('ASSERT_TEXT', 'dialog', dlgText);
+        postStep({
+          eventType:    'ASSERT_TEXT',
+          selector:     'body',
+          selectorType: 'css',
+          value:        dlgText,
+          smartName:    `Assert dialog: ${dlgText.substring(0, 40)}`,
+          tagName:      '',
+          url:          location.href,
+        });
+      }
       postStep({
         eventType:    e.detail.type,
         selector:     '',
         selectorType: 'css',
-        value:        String(e.detail.value ?? ''),
+        value:        dlgText,
         smartName:    e.detail.smartName || 'Dialog',
         tagName:      '',
         url:          location.href,
@@ -929,6 +2446,10 @@
   function detachListeners() {
     flushPendingFill();  // CR2: emit any buffered fill before stopping
     detachFromRoot(document);
+    window.removeEventListener('scroll', handleScroll, { passive: true });
+    clearTimeout(_scrollTimer);
+    clearTimeout(_hoverTimer);
+    _dragState = null;
     if (_domObserver) { _domObserver.disconnect(); _domObserver = null; }
   }
 

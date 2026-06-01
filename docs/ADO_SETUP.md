@@ -27,6 +27,8 @@ All secrets are stored in a **Variable Group** — never hardcoded in YAML.
 | `APP_BASE_URL`    | `https://your-app.example.com`     | No      |
 | `APP_USERNAME`    | `automation@yourcompany.com`       | Yes ✓   |
 | `APP_PASSWORD`    | `••••••••`                         | Yes ✓   |
+| `LICENSE_KEY`     | `QA-XXXX-XXXX-XXXX-XXXX`          | Yes ✓   |
+| `HEADLESS`        | `true`                             | No      |
 
 > **Mark passwords and secrets as Secret** (padlock icon). Secret variables are masked in logs.
 
@@ -94,6 +96,8 @@ Shows pass/fail counts, duration, failure messages.
 | `failure-screenshots` | PNG screenshots from failed steps |
 | `playwright-traces` | `.zip` trace files — open with `npx playwright show-trace` |
 | `run-results-json` | Raw JSON run records |
+| `visual-regression-diffs` | Pixel-diff images from visual assertion failures (if visual regression enabled) |
+| `healed-locators-report` | JSON log of any locators auto-healed during the run |
 
 ### Opening a trace
 ```bash
@@ -169,6 +173,8 @@ pool:
 | `Permission to access resource` | Variable group not linked | See step 4 — Permit or pre-approve |
 | Tests fail on CI but pass locally | Headless mode differences | Check `HEADLESS=true` in CI env; add `--headed` flag for debugging |
 | Nightly run not triggering | Branch filter wrong | Confirm `main` is in `schedules.branches.include` |
+| `License invalid` on CI | `LICENSE_KEY` missing or wrong | Add `LICENSE_KEY` to `qa-agent-secrets` variable group |
+| Self-healing not running on CI | Page models not committed | Ensure `data/page-models/` is committed or restored via artifact |
 
 ---
 

@@ -138,11 +138,28 @@ function switchTab(tab) {
     execution: 'Execution',
     locators: 'Locator Repository', functions: 'Common Functions',
     commondata: 'Common Data', history: 'Execution History',
-    flaky: 'Flaky Test Detection',
+    flaky: 'Script Flakiness', analytics: 'Analytics Dashboard',
+    visual: 'Visual Baselines',
     projects: 'Projects', admin: 'Admin Panel',
+    'api-envs': 'API Environments',
+    'api-collections': 'API Collections',
+    'api-runs': 'API Runs',
+    'api-flakiness': 'API Flakiness',
+    'api-suites': 'API Suites',
+    'api-replay': 'Replay',
+    'worker-health': 'Execution Health',
+    'governance': 'Governance',
+    'api-plugins': 'Plugins',
+    'api-graph': 'Graph Editor',
+    'api-collab': 'Collaboration',
+    'api-copilot': 'Copilot',
+    'perf-dashboard': 'Performance',
+    'locator-health': 'Locator Health',
   }[tab] ?? tab;
   if (tab === 'history')   histLoad();
   if (tab === 'flaky')     flakyLoad();
+  if (tab === 'analytics') analyticsLoad();
+  if (tab === 'visual')    vrLoad();
   if (tab === 'execution') execLoad();
   hideRunPanel();
 }
@@ -846,7 +863,7 @@ connectWS();
     const res = await fetch('/api/branding');
     if (!res.ok) return;
     const { appName, logoUrl, primaryColor } = await res.json();
-    if (appName && appName !== 'QA Agent Platform') {
+    if (appName && appName !== 'QA Agent Platform' && appName !== 'TestForge') {
       document.title = appName;
       const nameEl = document.getElementById('nav-app-name');
       if (nameEl) nameEl.textContent = appName;
@@ -863,3 +880,22 @@ connectWS();
     }
   } catch { /* silently ignore */ }
 })();
+
+// ── Info-icon tooltip — event delegation (works for dynamically added icons) ──
+document.addEventListener('mouseover', e => {
+  const el = e.target.closest('.info-icon');
+  if (el && typeof _infoTipShow === 'function') _infoTipShow(el);
+});
+document.addEventListener('mouseout', e => {
+  const el = e.target.closest('.info-icon');
+  if (el && typeof _infoTipHide === 'function') _infoTipHide();
+});
+document.addEventListener('focusin', e => {
+  const el = e.target.closest('.info-icon');
+  if (el && typeof _infoTipShow === 'function') _infoTipShow(el);
+});
+document.addEventListener('focusout', e => {
+  const el = e.target.closest('.info-icon');
+  if (el && typeof _infoTipHide === 'function') _infoTipHide();
+});
+

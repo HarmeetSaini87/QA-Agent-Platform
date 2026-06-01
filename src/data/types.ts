@@ -2,7 +2,8 @@
  * types.ts — shared data model types
  */
 
-export type Role = 'admin' | 'tester';
+// OLD: type Role = 'admin' | 'tester' | 'viewer';
+export type Role = 'admin' | 'editor' | 'tester' | 'viewer';
 
 export interface User {
   id:                   string;
@@ -33,9 +34,11 @@ export interface Project {
   isActive:     boolean;
   createdAt:    string;
   createdBy:    string;
+  jiraProjectKey?: string;         // e.g. "BANK" — overrides global jira-config.json projectKey
   // Legacy — kept for backward compat with old data; ignored by new UI
   appUrl?:      string;
   credentials?: ProjectCredential[];
+  flakinessDefaults?: Partial<import('../utils/flakinessEngine').FlakinessConfig>;
 }
 
 export interface ProjectCredential {
@@ -99,17 +102,18 @@ export interface HealingProposal {
   newSelectorType: string;
   confidence:      number;
   healedAt:        string;
-  status:          'auto-applied' | 'pending-review' | 'approved' | 'rejected';
+  status:          'auto-applied' | 'pending-review' | 'approved' | 'approved-temporary' | 'rejected';
   reviewedBy?:     string;
   reviewedAt?:     string;
   screenshotPath?: string;
+  usedInRun?:      boolean;   // true = candidate was used to continue execution (non-blocking path)
 }
 
 export interface Locator {
   id:             string;
   name:           string;           // human-readable alias e.g. "Login Button"
   selector:       string;           // actual CSS/XPath/id
-  selectorType:   'css' | 'xpath' | 'id' | 'name' | 'text' | 'testid' | 'role' | 'label' | 'placeholder';
+  selectorType:   'css' | 'xpath' | 'id' | 'name' | 'text' | 'testid' | 'role' | 'label' | 'placeholder' | 'nth' | 'last';
   pageModule:     string;           // e.g. "Mediation Config - Gateway Type"
   projectId:      string | null;    // scoped to project or global
   description:    string;
@@ -123,6 +127,10 @@ export interface Locator {
   healingProfile?:   HealingProfile;       // element fingerprint for similarity matching
   healingStats?:     HealingStats;         // runtime heal event counters
   pageKey?:          string | null;        // normalised URL at time of recording
+  frameContext?:     string | null;        // iframe selector when locator lives inside iframe e.g. "#flowIframe"
+  // ── Name provenance (naming preservation feature) ─────────────────────────
+  nameSource?:       'auto' | 'user';      // 'auto' = recorder-generated, 'user' = human-renamed (immutable to recorder)
+  updatedBy?:        string;               // last editor username — audit trail, foundation for future optimistic locking
 }
 
 export interface CommonFunction {
@@ -181,6 +189,11 @@ export interface ScriptStep {
   storeScope?:   'session' | 'global';  // session = current script only; global = shared across suite
   storeSource?:  'text' | 'value' | 'attr' | 'js';  // only for SET VARIABLE keyword
   storeAttrName?: string;        // attribute name when storeSource = 'attr'
+  // ── Frame context (set by SWITCH_FRAME steps) ─────────────────────────────
+  // When non-null, this step executes inside an iframe. Value is the iframe
+  // CSS selector e.g. "#flowIframe". Propagated by recorderParser from
+  // RecorderEvent.frameContext and consumed by codegenGenerator + debugger.
+  frameContext?:  string | null;  // iframe selector e.g. "#flowIframe", null = top frame
 }
 
 export interface TestScript {
@@ -188,6 +201,7 @@ export interface TestScript {
   projectId:   string;
   tcId:        string;          // auto-generated e.g. "MED-01"
   component:   string;          // categorization e.g. "Login", "Billing"
+  subcomponent?: string;        // optional; matches Subcomponent.name at save time
   title:       string;
   description: string;
   tags:        string[];
@@ -199,6 +213,21 @@ export interface TestScript {
   modifiedAt:  string;
 }
 
+// ── Component / Subcomponent ──────────────────────────────────────────────────
+
+export interface Subcomponent {
+  id:   string;
+  name: string;
+}
+
+export interface ComponentDef {
+  id:            string;
+  projectId:     string;
+  name:          string;
+  subcomponents: Subcomponent[];
+  createdAt:     string;
+}
+
 // ── Common Data ───────────────────────────────────────────────────────────────
 
 export interface CommonData {
@@ -207,6 +236,7 @@ export interface CommonData {
   dataName:    string;   // unique per project+environment
   value:       string;   // stored as enc:<base64> when sensitive=true
   environment: string;   // e.g. "QA", "UAT", "DEV", "PROD"
+  moduleType:  'ui' | 'api' | 'shared';  // which module owns this record
   sensitive:   boolean;  // if true: value shown masked in UI, stored encrypted
   createdBy:   string;
   createdAt:   string;
@@ -243,6 +273,8 @@ export interface OverlayHandler {
   text?:  string;                                   // for prompt: text to type before accepting
 }
 
+export type BrowserName = 'chromium' | 'firefox' | 'webkit';
+
 export interface TestSuite {
   id:            string;
   projectId:     string;
@@ -251,15 +283,19 @@ export interface TestSuite {
   scriptIds:     string[];       // ordered list of TestScript IDs
   environmentId: string | null;  // selected environment for execution
   retries:       0 | 1 | 2;     // Playwright --retries flag (0 = disabled)
-  beforeEachSteps: SuiteHookStep[];  // run before every test() block
-  afterEachSteps:  SuiteHookStep[];  // run after every test() block (on top of built-in afterEach)
-  fastMode:        boolean;          // cache auth state once via storageState — skips re-login per test
-  fastModeSteps:   SuiteHookStep[];  // login steps to run once in beforeAll to capture auth state
-  overlayHandlers: OverlayHandler[]; // auto-handle unexpected dialogs/overlays during any test
+  browsers:      BrowserName[];  // browsers to run against; defaults to ['chromium']
+  beforeEachSteps: SuiteHookStep[];
+  afterEachSteps:  SuiteHookStep[];
+  fastMode:        boolean;
+  fastModeSteps:   SuiteHookStep[];
+  overlayHandlers: OverlayHandler[];
   createdBy:     string;
   createdAt:     string;
   modifiedBy:    string;
   modifiedAt:    string;
+  flakinessOverrides?: Partial<import('../utils/flakinessEngine').FlakinessConfig>;
+  beforeAllApiCollectionId?: string;
+  blockOnApiFailure?: boolean;
 }
 
 // ── Scheduled Run ─────────────────────────────────────────────────────────────
@@ -290,18 +326,66 @@ export interface AuditEntry {
   createdAt:    string;
 }
 
+export interface NotificationSettings {
+  // Email (SMTP)
+  emailEnabled:    boolean;
+  smtpHost:        string;
+  smtpPort:        number;
+  smtpSecure:      boolean;   // true = TLS (port 465), false = STARTTLS (port 587)
+  smtpUser:        string;
+  smtpPass:        string;
+  emailFrom:       string;    // "QA Platform <noreply@company.com>"
+  emailTo:         string;    // comma-separated recipient list
+  // Slack
+  slackEnabled:    boolean;
+  slackWebhook:    string;    // incoming webhook URL
+  // Microsoft Teams
+  teamsEnabled:    boolean;
+  teamsWebhook:    string;    // Power Automate / Office 365 connector URL
+  // Trigger rules
+  notifyOnFailure: boolean;   // send when a suite run has ≥1 failure
+  notifyOnSuccess: boolean;   // send when a suite run passes 100%
+  notifyOnAlways:  boolean;   // send on every completed run regardless
+}
+
 export interface AppSettings {
   sessionTimeoutMinutes: number;
   allowRegistration:     boolean;
   appName:               string;
   maxFailedLogins:       number;
+  notifications:         NotificationSettings;
+  nlProvider?:           string;   // 'anthropic'|'openai'|'groq'|'gemini'|'ollama'|'compatible'
+  nlApiKey?:             string;   // API key for cloud providers (stored server-side only)
+  nlModel?:              string;   // model name / tag
+  nlBaseUrl?:            string;   // Ollama or compatible endpoint base URL
+  // Legacy field — kept for backwards compat, migrated to nlApiKey on first save
+  anthropicApiKey?:      string;
 }
+
+export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
+  emailEnabled:    false,
+  smtpHost:        '',
+  smtpPort:        587,
+  smtpSecure:      false,
+  smtpUser:        '',
+  smtpPass:        '',
+  emailFrom:       '',
+  emailTo:         '',
+  slackEnabled:    false,
+  slackWebhook:    '',
+  teamsEnabled:    false,
+  teamsWebhook:    '',
+  notifyOnFailure: true,
+  notifyOnSuccess: false,
+  notifyOnAlways:  false,
+};
 
 export const DEFAULT_SETTINGS: AppSettings = {
   sessionTimeoutMinutes: 60,
   allowRegistration:     false,
   appName:               'QA Agent Platform',
   maxFailedLogins:       5,
+  notifications:         DEFAULT_NOTIFICATION_SETTINGS,
 };
 
 // ── Licensing ─────────────────────────────────────────────────────────────────
@@ -337,4 +421,366 @@ export interface LicensePayload {
     logoUrl?:     string;
     primaryColor?: string;   // CSS hex e.g. "#3b82f6"
   };
+}
+
+// ── Jira Defect Filing ───────────────────────────────────────────────
+
+export interface JiraConfig {
+  projectKey: string;
+  issueType: string;
+  defaultPriority: string;
+  parentLinkFieldId: string;
+  referSSFieldId: string;        // captured for future use; v1 uses /attachments endpoint
+  closeTransitionName: string;
+  maxAttachmentMB: number;
+  baseUrl?: string;              // overrides .env JIRA_BASE_URL when set
+  email?: string;                // overrides .env JIRA_EMAIL when set
+  apiTokenEnc?: string;          // AES-GCM encrypted token (overrides .env JIRA_API_TOKEN)
+  updatedAt: string;
+  updatedBy: string;
+}
+
+export type DefectAttachmentStatus = 'ok' | 'failed' | 'skipped';
+
+export interface DefectRecord {
+  defectKey: string;
+  jiraId: string;
+  testId: string;
+  testName: string;
+  suiteId: string;
+  suiteName: string;
+  environmentId: string;
+  environmentName: string;
+  projectId: string;
+  parentStoryKey: string;
+  status: 'open' | 'closed';
+  createdAt: string;
+  createdBy: string;
+  filedFromRunId: string;
+  closedAt?: string;
+  closedByRunId?: string;
+  jiraUrl: string;
+  attachments: {
+    screenshot?: DefectAttachmentStatus;
+    video?: DefectAttachmentStatus;
+    trace?: DefectAttachmentStatus;
+  };
+  comments: Array<{ runId: string; addedAt: string; addedBy: string }>;
+}
+
+export interface DefectsRegistry {
+  _schemaVersion: 1;
+  defects: DefectRecord[];
+}
+
+export type DismissCategory =
+  | 'script-issue'
+  | 'locator-issue'
+  | 'flaky'
+  | 'data-issue'
+  | 'env-issue';
+
+export interface DismissEntry {
+  timestamp: string;
+  runId: string;
+  testId: string;
+  testName: string;
+  suiteId: string;
+  category: DismissCategory;
+  dismissedBy: string;
+  errorMessage: string;
+}
+
+// ── NL Keyword Suggestion ─────────────────────────────────────────────────────
+
+export interface ConfidenceBreakdown {
+  verb:    number;   // 0–1
+  locator: number;   // 0–1
+  value:   number;   // 0–1
+}
+
+export interface SuggestedStep {
+  keyword:             string | null;
+  locatorName:         string | null;
+  value:               string | null;
+  confidence:          number;
+  confidenceBreakdown: ConfidenceBreakdown;
+  matched:             boolean;
+  source:              'rule' | 'ai';
+  originalSentence:    string;
+}
+
+export interface NlSuggestResponse {
+  version: 'v1';
+  steps:   SuggestedStep[];
+  meta: {
+    provider?:   string;
+    durationMs:  number;
+    cached:      boolean;
+    aiTimedOut?: boolean;
+  };
+}
+
+export interface NlConfig {
+  enabled:             boolean;
+  provider:            string;   // NlProviderType from nlProvider.ts
+  model:               string;
+  baseUrl:             string;
+  apiKeyEncrypted:     string;   // AES-GCM via encryptToken() in server.ts
+  confidenceThreshold: number;   // default 0.5
+  timeoutMs:           number;   // default 3000
+}
+
+export interface NlAliasMap {
+  [locatorName: string]: string[];   // up to 10 aliases per locator
+}
+
+// ── API Testing Module ─────────────────────────────────────────────────────────
+
+export interface ApiVariable {
+  key: string;
+  value: string;
+  sensitive?: boolean;
+}
+
+export interface ApiDynamicValue {
+  type: 'uuid' | 'timestamp' | 'env' | 'random_int' | 'random_string' | 'faker_name' | 'faker_email' | 'faker_uuid';
+  format?: string;
+}
+
+export interface ApiAuthConfig {
+  type: 'none' | 'bearer' | 'apiKey' | 'basic' | 'oauth2CC';
+  bearer?: { token: string };
+  apiKey?: { header: string; value: string };
+  basic?: { username: string; password: string };
+  oauth2CC?: { tokenUrl: string; clientId: string; clientSecret: string; scope?: string };
+}
+
+export interface ApiEnvironmentPingResult {
+  reachable: boolean;
+  statusCode: number | null;
+  latencyMs: number;
+  testedAt: string;
+  error?: string;
+}
+
+export interface ApiEnvironment {
+  id: string;
+  projectId?: string;
+  name: string;
+  baseUrl: string;
+  variables: ApiVariable[];
+  authConfig?: ApiAuthConfig;
+  description?: string;
+  envType?: 'development' | 'staging' | 'production' | 'custom';
+  tags?: string[];
+  lastPingResult?: ApiEnvironmentPingResult;
+}
+
+export interface ApiRequest {
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS';
+  url: string;
+  headers?: Record<string, string>;
+  queryParams?: Record<string, string>;
+  body?: unknown;
+  bodyType?: 'json' | 'form' | 'raw' | 'none';
+  openapiSpecId?: string;
+}
+
+export interface ApiAssertion {
+  field: string;
+  operator: 'eq' | 'neq' | 'equals' | 'notEquals' | 'contains' | 'notContains' | 'startsWith' | 'endsWith' | 'gt' | 'lt' | 'greaterThan' | 'lessThan' | 'greaterThanOrEqual' | 'lessThanOrEqual' | 'exists' | 'notExists' | 'matches' | 'isEmpty' | 'isType' | 'jsonSchemaValid' | 'arrayLengthEquals' | 'arrayLengthGreaterThan' | 'arrayLengthLessThan' | 'arrayNotEmpty' | 'arrayContains';
+  expected?: unknown;
+  weight?: number;
+  severity?: 'critical' | 'high' | 'medium' | 'low' | 'soft';
+  message?: string;
+}
+
+export interface ApiVariableExtraction {
+  name: string;
+  source: 'responseBody' | 'responseHeader' | 'statusCode';
+  path: string;
+  scope: 'step' | 'collection' | 'global';
+}
+
+export interface ApiStepExecution {
+  retryPolicy?: { maxRetries: number; delayMs: number; retryOn?: number[] };
+  idempotent?: boolean;
+  timeoutMs?: number;
+  preScript?: string;
+  postScript?: string;
+  variableWritePolicy?: 'merge' | 'replace';
+  onFailure?: 'stop' | 'continue' | 'skipDependents';
+  teardown?: boolean;
+  logLevel?: 'minimal' | 'standard' | 'verbose';
+  delayAfterMs?: number;
+  condition?: string;
+}
+
+// Flow Control — executed after each step by FlowControlEngine
+export type FlowRuleAction = '__stop__' | '__continue__' | '__jump__' | '__repeat__';
+
+export interface FlowRuleCondition {
+  field: string;       // same field encoding as ApiAssertion.field
+  operator: string;    // same operator set as ApiAssertion.operator
+  value: string;       // expected value (always string; engine coerces)
+}
+
+export interface FlowRule {
+  condition?: FlowRuleCondition; // omit = unconditional (always fires)
+  action: FlowRuleAction;
+  /** For __jump__: target step name. For __repeat__: max repeat count as string. */
+  target?: string;
+}
+
+export interface ApiTestStep {
+  id: string;
+  name: string;
+  request: ApiRequest;
+  assertions: ApiAssertion[];
+  extractVariables: ApiVariableExtraction[];
+  execution: ApiStepExecution;
+  dependsOn: string[];
+  group?: string;
+  order?: number;
+  captureBaseline?: boolean;
+  baselineRunId?: string;
+  flowRules?: FlowRule[];
+}
+
+export interface ApiCollection {
+  id: string;
+  projectId?: string;
+  tenantId?: string;          // governance: optional tenant scoping (Phase D Step 13)
+  name: string;
+  environmentId: string;
+  steps: ApiTestStep[];
+  variables: ApiVariable[];
+  onFailure: 'stop' | 'continue' | 'skipDependents';
+  executionMode: 'sequential' | 'parallel' | 'dag';
+  maxConcurrency?: number;
+  logLevel?: 'minimal' | 'standard' | 'verbose';
+  rateLimit?: { requestsPerSecond: number };
+  tags?: string[];
+  autoFileDefects?: boolean;
+}
+
+export interface ApiAssertionResult {
+  assertionIndex: number;
+  field: string;
+  operator: string;
+  passed: boolean;
+  actual: unknown;
+  expected: unknown;
+  message?: string;
+  confidenceScore?: number;
+}
+
+export interface JsonDiff {
+  path: string;
+  expected: unknown;
+  actual: unknown;
+}
+
+export interface BaselineDiff {
+  statusChanged: boolean;
+  headersAdded: string[];
+  headersRemoved: string[];
+  bodyDiff: JsonDiff[];
+}
+
+export interface ApiResponseSnapshot {
+  status: number;
+  headers: Record<string, string>;
+  body: unknown;
+  baselineDiff?: BaselineDiff;
+  bodyTruncated: boolean;
+  durationMs: number;
+  har?: unknown;
+}
+
+export interface ApiStepResult {
+  stepId: string;
+  stepName: string;
+  status: 'passed' | 'failed' | 'skipped' | 'error' | 'degraded';
+  request: ApiRequest;
+  response?: ApiResponseSnapshot;
+  assertionResults: ApiAssertionResult[];
+  extractedVariables: Record<string, string>;
+  durationMs: number;
+  contractViolations?: string[];
+  error?: string;
+  healingProposal?: string;
+  isTeardown?: boolean;
+  // Data File Runner — set when run was data-driven
+  iterationIndex?: number;
+  rowIdentifier?: string;
+}
+
+export interface ApiCollectionRunResult {
+  id: string;
+  collectionId: string;
+  projectId?: string;
+  triggeredBy?: string;
+  startedAt: string;
+  completedAt: string;
+  status: 'passed' | 'failed' | 'error' | 'running';
+  stepResults: ApiStepResult[];
+  variableContext: Record<string, string>;
+  // Data File Runner — populated when run was data-driven
+  dataFileId?: string;
+  dataFileName?: string;
+  iterationCount?: number;
+  iterationSummary?: Array<{
+    index: number;
+    rowIdentifier: string;
+    status: 'passed' | 'failed' | 'error' | 'skipped';
+    durationMs: number;
+  }>;
+}
+
+// Data File — saved on server for reuse across collection runs
+export interface ApiDataFile {
+  id: string;
+  name: string;             // user-given label e.g. "Admin Users"
+  originalFilename: string; // e.g. "users.csv"
+  columns: string[];        // detected column headers
+  rowCount: number;
+  createdAt: string;
+  lastUsedAt?: string;
+  projectId: string;
+}
+
+// Phase D Step 7 — per-node execution data merged into graph for run overlay
+export interface RunGraphNodeResult {
+  stepId: string;
+  stepName: string;
+  status: 'passed' | 'failed' | 'error' | 'skipped' | 'degraded' | 'running' | 'queued' | 'retrying' | 'timed_out' | 'pending';
+  durationMs: number | null;
+  retryCount: number;
+  retryHistory: Array<{
+    attempt: number;
+    startedAt: string;
+    completedAt: string;
+    durationMs: number;
+    httpStatus?: number;
+    error?: string;
+    resultStatus: string;
+    retriedAfter: boolean;
+  }>;
+  startedAt?: string;
+  completedAt?: string;
+  error?: string;
+  contractViolations?: string[];
+  assertionFailures?: string[];
+  isTeardown?: boolean;
+}
+
+export interface RunGraphProjection {
+  runId: string;
+  collectionId: string;
+  runStatus: 'passed' | 'failed' | 'error' | 'running';
+  startedAt: string;
+  completedAt: string;
+nodeResults: Record<string, RunGraphNodeResult>;
 }
