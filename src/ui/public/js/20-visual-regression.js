@@ -376,34 +376,132 @@ function vrViewDiff(id) {
   const b = _vrBaselines.find(x => x.id === id);
   if (!b) return;
   const imgBase = `/api/visual-baselines/${encodeURIComponent(id)}/image`;
+  const baseUrl = imgBase + '?type=baseline';
+  const actualUrl = imgBase + '?type=actual';
+  const diffUrl   = imgBase + '?type=diff';
+  const hasDiff   = b.diffPct > 0 || b.lastSavedPixels > 0;
   const win = window.open('', '_blank');
   // OLD: no null-check — crashes when popup is blocked
   if (!win) { alert('Popup blocked. Please allow popups for this page.'); return; }
-  win.document.write(`<!DOCTYPE html><html><head><title>Visual Diff — ${escHtml(b.testName)}</title>
-  <style>body{margin:0;background:#1e1e1e;font-family:sans-serif;color:#ccc}
-  .hdr{padding:16px;background:#252526;border-bottom:1px solid #333;display:flex;align-items:center;gap:16px}
-  .hdr h2{margin:0;font-size:16px}.meta{font-size:12px;color:#888}
-  .imgs{display:grid;grid-template-columns:1fr 1fr 1fr;gap:0;height:calc(100vh - 70px)}
-  .col{display:flex;flex-direction:column;border-right:1px solid #333}
-  .col:last-child{border-right:none}
-  .col-hdr{padding:8px 12px;font-size:12px;font-weight:700;background:#2d2d2d;text-align:center}
-  .col img{width:100%;flex:1;object-fit:contain;background:#1a1a1a}
-  .no-diff{display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;gap:12px;color:#555}
-  .no-diff svg{opacity:.4}.no-diff span{font-size:13px;font-weight:600;letter-spacing:.5px}
-  .no-diff small{font-size:11px;color:#444;text-align:center;line-height:1.5}
-  </style></head><body>
-  <div class="hdr"><h2>&#128247; Visual Diff</h2>
-  <div class="meta">${escHtml(b.testName)} · ${escHtml(b.locatorName)}${b.diffPct != null ? ' · ' + b.diffPct + '% diff' : ''}</div></div>
-  <div class="imgs">
-  <div class="col"><div class="col-hdr">Baseline (approved)</div><img src="${imgBase}?type=baseline" onerror="this.alt='No baseline'"></div>
-  <div class="col"><div class="col-hdr">Actual (last run)</div><img src="${imgBase}?type=actual" onerror="this.alt='No actual'"></div>
-  <div class="col"><div class="col-hdr">Diff${b.lastSavedPixels > 0 ? ' (Ignore Regions Active)' : ' (red = changed)'}</div>${(b.diffPct > 0 || b.lastSavedPixels > 0) ? `<img src="${imgBase}?type=diff" onerror="this.alt='No diff'">` : `<div class="no-diff"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#4caf50" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M8 12l3 3 5-5"/></svg><span style="color:#4caf50">No Differences</span><small>Baseline and actual images<br>are pixel-identical</small></div>`}${b.lastSavedPixels > 0 ? `
-    <div style="margin-top:8px;padding:8px 10px;background:#0a1628;border-radius:6px;font-family:sans-serif;">
-      <div style="font-size:13px;font-weight:700;color:#22c55e;">&#128737; ${b.totalRunsProtected || 1} false positive${(b.totalRunsProtected||1) > 1 ? 's' : ''} prevented</div>
-      <div style="font-size:11px;color:#64748b;margin-top:3px;">${b.lastSavedPixels.toLocaleString()} changed pixels neutralised this run</div>
-      ${(b.totalRunsProtected > 1) ? `<div style="font-size:11px;color:#4f46e5;margin-top:4px;border-top:1px solid #1e293b;padding-top:4px;">Total pixels saved across all runs: <strong style="color:#818cf8;">${(b.totalPixelsSavedAllTime||0).toLocaleString()}</strong></div>` : ''}
-    </div>` : ''}</div>
-  </div></body></html>`);
+
+  win.document.write(`<!DOCTYPE html><html><head>
+  <title>Visual Diff — ${escHtml(b.testName)}</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{background:#111;font-family:system-ui,sans-serif;color:#ccc;height:100vh;display:flex;flex-direction:column}
+    .hdr{padding:12px 20px;background:#1e1e1e;border-bottom:1px solid #333;display:flex;align-items:center;gap:16px;flex-shrink:0}
+    .hdr h2{font-size:15px;color:#fff}.meta{font-size:12px;color:#777}
+    .badge{font-size:10px;padding:2px 8px;border-radius:10px;font-weight:700}
+    .badge-diff{background:#fee2e2;color:#b91c1c}.badge-ok{background:#dcfce7;color:#166534}
+    .layout{display:grid;grid-template-columns:2fr 1fr;flex:1;min-height:0;overflow:hidden}
+    .panel{display:flex;flex-direction:column;border-right:1px solid #2a2a2a;overflow:hidden}
+    .panel:last-child{border-right:none}
+    .panel-hdr{padding:8px 14px;font-size:12px;font-weight:700;background:#1a1a1a;border-bottom:1px solid #2a2a2a;flex-shrink:0;display:flex;align-items:center;gap:8px;color:#aaa}
+    .panel-body{flex:1;overflow:auto;position:relative;background:#111}
+    .vr-slider{position:relative;overflow:hidden;cursor:ew-resize;user-select:none;outline:none;width:100%;height:100%}
+    .vr-slider img.actual{display:block;width:100%;height:100%;object-fit:contain;background:#111}
+    .vr-slider img.baseline{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;clip-path:inset(0 50% 0 0)}
+    .vr-slider .divider{position:absolute;top:0;bottom:0;left:50%;width:2px;background:rgba(255,255,255,.85);transform:translateX(-50%);pointer-events:none}
+    .vr-slider .knob{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:34px;height:34px;border-radius:50%;background:#fff;box-shadow:0 2px 12px rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;font-size:16px;pointer-events:none}
+    .vr-slider .lbl{position:absolute;top:8px;background:rgba(0,0,0,.75);color:#fff;font-size:10px;padding:3px 8px;border-radius:3px;pointer-events:none;font-weight:700}
+    .vr-slider .lbl-l{left:10px}.vr-slider .lbl-r{right:10px}
+    .vr-slider .pct{position:absolute;bottom:8px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.75);color:#fff;font-size:11px;padding:3px 9px;border-radius:3px;white-space:nowrap;pointer-events:none}
+    .diff-img{width:100%;height:100%;object-fit:contain;background:#111;display:block}
+    .no-diff{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:14px;color:#444}
+    .no-diff svg{opacity:.3}.no-diff span{font-size:14px;font-weight:600;color:#4caf50}
+    .no-diff small{font-size:11px;color:#444;text-align:center;line-height:1.6}
+    .protect-box{padding:12px 14px;background:#0a1628;border-top:1px solid #1e293b;font-size:12px;flex-shrink:0}
+    kbd{background:#2d2d2d;border:1px solid #444;border-radius:3px;padding:0 5px;font-size:10px;color:#ccc}
+  </style>
+  </head><body>
+  <div class="hdr">
+    <h2>&#128247; Visual Diff</h2>
+    <div class="meta">${escHtml(b.testName)} \xb7 ${escHtml(b.locatorName)}${b.diffPct != null ? ' \xb7 ' + b.diffPct + '% diff' : ''}</div>
+    ${hasDiff ? '<span class="badge badge-diff">Diff Detected</span>' : '<span class="badge badge-ok">Pixel-Identical</span>'}
+    <span style="margin-left:auto;font-size:11px;color:#555"><kbd>←</kbd><kbd>→</kbd> nudge \xb7 <kbd>Home</kbd>/<kbd>End</kbd> full</span>
+  </div>
+  <div class="layout">
+    <div class="panel">
+      <div class="panel-hdr">&#128247; Baseline vs Actual — drag to compare</div>
+      <div class="panel-body">
+        <div class="vr-slider" id="mainSlider" tabindex="0" role="slider" aria-label="Baseline vs Actual comparison slider" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50">
+          <img class="actual"   src="${actualUrl}"  alt="Actual"   onerror="this.style.opacity='.2'">
+          <img class="baseline" src="${baseUrl}"    alt="Baseline" onerror="this.style.opacity='.2'">
+          <div class="divider"></div>
+          <div class="knob">⤺</div>
+          <span class="lbl lbl-l">Baseline</span>
+          <span class="lbl lbl-r">Actual</span>
+          <span class="pct" id="sliderPct">50%</span>
+        </div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-hdr">&#9889; Diff${b.lastSavedPixels > 0 ? ' (Ignore Regions Active)' : ' (red = changed pixels)'}</div>
+      <div class="panel-body" style="display:flex;flex-direction:column">
+        ${hasDiff
+          ? `<img class="diff-img" src="${diffUrl}" alt="Diff" onerror="this.alt='No diff image'">`
+          : `<div class="no-diff"><svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="#4caf50" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M8 12l3 3 5-5"/></svg><span>No Differences</span><small>Baseline and actual are<br>pixel-identical</small></div>`}
+        ${b.lastSavedPixels > 0 ? `<div class="protect-box">
+          <div style="font-weight:700;color:#22c55e">&#128737; ${b.totalRunsProtected || 1} false positive${(b.totalRunsProtected||1)>1?'s':''} prevented</div>
+          <div style="color:#64748b;margin-top:3px">${b.lastSavedPixels.toLocaleString()} pixels neutralised this run</div>
+          ${b.totalRunsProtected>1?`<div style="color:#818cf8;margin-top:4px;border-top:1px solid #1e293b;padding-top:4px">All-time saved: <strong>${(b.totalPixelsSavedAllTime||0).toLocaleString()}</strong></div>`:''}
+        </div>` : ''}
+      </div>
+    </div>
+  </div>
+  <\x73cript>
+    (function() {
+      var el = document.getElementById('mainSlider');
+      if (!el) return;
+      var baseline = el.querySelector('.baseline');
+      var divider  = el.querySelector('.divider');
+      var knob     = el.querySelector('.knob');
+      var pctEl    = document.getElementById('sliderPct');
+      var dragging = false;
+
+      function setPos(pct) {
+        pct = Math.max(0, Math.min(100, pct));
+        baseline.style.clipPath = 'inset(0 ' + (100 - pct) + '% 0 0)';
+        divider.style.left = pct + '%';
+        knob.style.left    = pct + '%';
+        el.setAttribute('aria-valuenow', Math.round(pct));
+        if (pctEl) { pctEl.style.left = pct + '%'; pctEl.textContent = Math.round(pct) + '%'; }
+      }
+      function fromE(e) {
+        var rect = el.getBoundingClientRect();
+        var cx = e.touches ? e.touches[0].clientX : e.clientX;
+        return Math.max(0, Math.min(100, ((cx - rect.left) / rect.width) * 100));
+      }
+      function curPct() {
+        var m = baseline.style.clipPath.match(/inset\\(0 ([\\d.]+)% 0 0\\)/);
+        return m ? 100 - parseFloat(m[1]) : 50;
+      }
+
+      function onMouseMove(e) { if (dragging) setPos(fromE(e)); }
+      function onMouseUp()    { dragging = false; document.removeEventListener('mousemove', onMouseMove); document.removeEventListener('mouseup', onMouseUp); }
+      function onTouchMove(e) { if (dragging) { setPos(fromE(e)); e.preventDefault(); } }
+      function onTouchEnd()   { dragging = false; document.removeEventListener('touchmove', onTouchMove); document.removeEventListener('touchend', onTouchEnd); }
+
+      el.addEventListener('mousedown', function(e) {
+        dragging = true; setPos(fromE(e)); e.preventDefault();
+        document.addEventListener('mousemove', onMouseMove);
+        document.addEventListener('mouseup', onMouseUp);
+      });
+      el.addEventListener('touchstart', function(e) {
+        dragging = true; setPos(fromE(e)); e.preventDefault();
+        document.addEventListener('touchmove', onTouchMove, { passive: false });
+        document.addEventListener('touchend', onTouchEnd);
+      }, { passive: false });
+      el.addEventListener('keydown', function(e) {
+        if(e.key==='ArrowLeft') {setPos(curPct()-1);e.preventDefault();}
+        if(e.key==='ArrowRight'){setPos(curPct()+1);e.preventDefault();}
+        if(e.key==='Home'){setPos(0);e.preventDefault();}
+        if(e.key==='End'){setPos(100);e.preventDefault();}
+      });
+      setPos(50);
+    })();
+  </script>
+  </body></html>`);
   win.document.close();
 }
 
