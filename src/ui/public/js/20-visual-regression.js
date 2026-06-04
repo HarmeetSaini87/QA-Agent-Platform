@@ -90,6 +90,8 @@ function vrFilter() {
     groups.get(key).push(b);
   }
   grid.innerHTML = Array.from(groups.values()).map(entries => vrGroupedCard(entries)).join('');
+  // Init sliders now that HTML is in the DOM
+  vrSlidersInit(grid);
   // Show/hide bulk bar based on whether viewer mode
   const bulkBar = document.getElementById('vr-bulk-bar');
   if (bulkBar) bulkBar.style.display = isViewer() ? 'none' : 'flex';
