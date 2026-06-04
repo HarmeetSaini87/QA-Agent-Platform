@@ -10960,6 +10960,31 @@ function vrViewDiff(id) {
     .no-diff{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:14px}
     .no-diff svg{opacity:.3}.no-diff span{font-size:13px;font-weight:600;color:#4caf50}
     .protect-box{padding:10px 12px;background:#0a1628;border-top:1px solid #1e293b;font-size:11px;flex-shrink:0}
+    /* ── AI Analysis panel ── */
+    .vrt-ai-panel { display: none; margin-top: 6px; border: 1px solid #1e2536; border-radius: 8px; background: #0d1219; }
+    .vrt-ai-panel-inner { padding: 12px 14px; }
+    .vrt-chip { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 20px; margin: 2px 3px 2px 0; }
+    .vrt-chip-content   { background: rgba(59,130,246,.15);  color: #93c5fd; border: 1px solid rgba(59,130,246,.3); }
+    .vrt-chip-layout    { background: rgba(239,68,68,.15);   color: #fca5a5; border: 1px solid rgba(239,68,68,.3); }
+    .vrt-chip-style     { background: rgba(234,179,8,.12);   color: #fde68a; border: 1px solid rgba(234,179,8,.25); }
+    .vrt-chip-added     { background: rgba(34,197,94,.12);   color: #86efac; border: 1px solid rgba(34,197,94,.25); }
+    .vrt-chip-removed   { background: rgba(249,115,22,.12);  color: #fdba74; border: 1px solid rgba(249,115,22,.25); }
+    .vrt-chip-dynamic   { background: rgba(156,163,175,.08); color: #9ca3af; border: 1px solid rgba(156,163,175,.15); }
+    .vrt-chip-dimension { background: rgba(168,85,247,.12);  color: #d8b4fe; border: 1px solid rgba(168,85,247,.25); }
+    .vrt-rec { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 6px; margin-top: 8px; }
+    .vrt-rec-approve { border: 1px solid rgba(34,197,94,.4);  color: #4ade80; background: rgba(34,197,94,.08); }
+    .vrt-rec-review  { border: 1px solid rgba(234,179,8,.4);  color: #fbbf24; background: rgba(234,179,8,.08); }
+    .vrt-rec-flag    { border: 1px solid rgba(239,68,68,.4);  color: #f87171; background: rgba(239,68,68,.08); }
+    .vrt-rec-reason  { font-size: 11px; color: #64748b; margin-top: 5px; }
+    .vrt-ai-divider  { border: none; border-top: 1px solid #1e2536; margin: 10px 0; }
+    .vrt-enhance-btn { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; font-size: 11.5px; font-weight: 600; border: 1px solid rgba(234,179,8,.35); border-radius: 5px; background: rgba(234,179,8,.08); color: #fbbf24; cursor: pointer; }
+    .vrt-enhance-btn:disabled { opacity: .45; cursor: default; }
+    .vrt-ai-narrative { margin-top: 10px; font-size: 12px; color: #cbd5e1; line-height: 1.6; }
+    .vrt-model-tag    { font-size: 10.5px; color: #475569; margin-top: 6px; }
+    .vrt-ai-btn { display: inline-flex; align-items: center; gap: 6px; margin-top: 8px; padding: 5px 12px; font-size: 12px; font-weight: 600; border: 1px solid rgba(99,102,241,0.4); border-radius: 6px; background: rgba(99,102,241,0.1); color: #a5b4fc; cursor: pointer; }
+    .vrt-ai-error { font-size: 12px; color: #f87171; margin-top: 6px; }
+    .vrt-ai-spin { display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(99,102,241,.25); border-top-color: #818cf8; border-radius: 50%; animation: vrt-spin .7s linear infinite; vertical-align: middle; margin-right: 6px; }
+    @keyframes vrt-spin { to { transform: rotate(360deg); } }
   </style>
   </head><body>
   <div class="hdr">
@@ -10972,12 +10997,12 @@ function vrViewDiff(id) {
     data-test-name="${escHtml(b.testName || '')}"
     data-locator-name="${escHtml(b.locatorName || '')}"
     data-diff-pct="${b.diffPct || 0}"
-    data-diff-pixels="${b.diffPixels || 0}"
-    data-total-pixels="${b.totalPixels || ((b.baselineWidth || 0) * (b.baselineHeight || 0)) || 0}"
-    data-baseline-width="${b.baselineWidth || b.width || 0}"
-    data-baseline-height="${b.baselineHeight || b.height || 0}"
-    data-actual-width="${b.actualWidth || b.baselineWidth || b.width || 0}"
-    data-actual-height="${b.actualHeight || b.baselineHeight || b.height || 0}">
+    data-diff-pixels="${Math.round((b.diffPct || 0) / 100 * (b.width || 0) * (b.height || 0))}"
+    data-total-pixels="${(b.width || 0) * (b.height || 0)}"
+    data-baseline-width="${b.width || 0}"
+    data-baseline-height="${b.height || 0}"
+    data-actual-width="${b.width || 0}"
+    data-actual-height="${b.height || 0}">
     <!-- Left: multi-mode viewer -->
     <div class="left-panel">
       <div class="vr-mb-bar">
@@ -11048,6 +11073,107 @@ function vrViewDiff(id) {
     </div>
   </div>
   <\x73cript>
+  // ── Inline AI helpers (not accessible from parent window scope) ──
+  function vrAiChipClass(label) {
+    var map = {
+      'Content Change': 'vrt-chip-content',
+      'Layout Shift': 'vrt-chip-layout',
+      'Style Drift': 'vrt-chip-style',
+      'Element Added': 'vrt-chip-added',
+      'Element Removed': 'vrt-chip-removed',
+      'Dynamic Data': 'vrt-chip-dynamic',
+      'Dimension Change': 'vrt-chip-dimension'
+    };
+    return map[label] || 'vrt-chip-content';
+  }
+
+  function vrAiRenderPanel(panelEl, data) {
+    var chips = (data.classifications || []).map(function (c) {
+      return '<span class="vrt-chip ' + vrAiChipClass(c) + '">' + c + '</span>';
+    }).join('');
+    var recClass = 'vrt-rec-' + (data.recommendation || 'review');
+    var recIcon = data.recommendation === 'approve' ? '✓' : data.recommendation === 'flag' ? '✗' : '⚠';
+    var recLabel = (data.recommendation || 'review').charAt(0).toUpperCase() + (data.recommendation || 'review').slice(1);
+    var html = '<div class="vrt-ai-panel-inner">'
+      + (chips ? '<div>' + chips + '</div>' : '')
+      + '<div class="vrt-rec ' + recClass + '">' + recIcon + ' ' + recLabel + '</div>'
+      + (data.recommendationReason ? '<div class="vrt-rec-reason">' + data.recommendationReason + '</div>' : '')
+      + '<hr class="vrt-ai-divider">';
+    if (data.stage === 'ai-enhanced') {
+      html += '<div class="vrt-ai-narrative">' + (data.narrative || '') + '<div class="vrt-model-tag">Model: ' + (data.model || '') + ' · Confidence: ' + (data.confidence || 0) + '%</div></div>';
+    } else {
+      html += '<button class="vrt-enhance-btn" onclick="vrAiEnhance(this)">✨ Enhance with AI</button>';
+    }
+    html += '</div>';
+    panelEl.innerHTML = html;
+  }
+
+  function vrAiAnalyse(btn) {
+    var card = btn.closest('[data-baseline-id]') || btn.parentElement;
+    var baselineId = card ? (card.dataset.baselineId || card.getAttribute('data-baseline-id')) : '';
+    if (!baselineId) { console.error('vrAiAnalyse: no baselineId found'); return; }
+    var panel = btn.nextElementSibling;
+    if (!panel) return;
+    var cached = btn.dataset.cachedResult;
+    if (cached) { panel.style.display = panel.style.display === 'none' ? 'block' : 'none'; return; }
+    var runCtx = {
+      testName: card.dataset.testName || '',
+      locatorName: card.dataset.locatorName || '',
+      diffPct: parseFloat(card.dataset.diffPct || '0'),
+      diffPixels: parseInt(card.dataset.diffPixels || '0'),
+      totalPixels: parseInt(card.dataset.totalPixels || '0'),
+      baselineWidth: parseInt(card.dataset.baselineWidth || '0'),
+      baselineHeight: parseInt(card.dataset.baselineHeight || '0'),
+      actualWidth: parseInt(card.dataset.actualWidth || '0'),
+      actualHeight: parseInt(card.dataset.actualHeight || '0')
+    };
+    panel.style.display = 'block';
+    panel.innerHTML = '<div class="vrt-ai-panel-inner"><span class="vrt-ai-spin"></span> Analysing…</div>';
+    fetch('/api/visual-baselines/' + baselineId + '/ai-analysis', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enhance: false, runContext: runCtx })
+    }).then(function(r) { return r.json(); }).then(function(data) {
+      btn.dataset.cachedResult = '1';
+      vrAiRenderPanel(panel, data);
+    }).catch(function(err) {
+      panel.innerHTML = '<div class="vrt-ai-panel-inner"><div class="vrt-ai-error">Analysis failed: ' + err.message + '</div></div>';
+    });
+  }
+
+  function vrAiEnhance(enhanceBtn) {
+    enhanceBtn.disabled = true;
+    enhanceBtn.textContent = '⏳ Enhancing…';
+    var card = enhanceBtn.closest('[data-baseline-id]') || enhanceBtn.parentElement;
+    var baselineId = card ? (card.dataset.baselineId || card.getAttribute('data-baseline-id')) : '';
+    var runCtx = {
+      testName: card ? card.dataset.testName || '' : '',
+      locatorName: card ? card.dataset.locatorName || '' : '',
+      diffPct: parseFloat(card ? card.dataset.diffPct || '0' : '0'),
+      diffPixels: parseInt(card ? card.dataset.diffPixels || '0' : '0'),
+      totalPixels: parseInt(card ? card.dataset.totalPixels || '0' : '0'),
+      baselineWidth: parseInt(card ? card.dataset.baselineWidth || '0' : '0'),
+      baselineHeight: parseInt(card ? card.dataset.baselineHeight || '0' : '0'),
+      actualWidth: parseInt(card ? card.dataset.actualWidth || '0' : '0'),
+      actualHeight: parseInt(card ? card.dataset.actualHeight || '0' : '0')
+    };
+    fetch('/api/visual-baselines/' + baselineId + '/ai-analysis', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enhance: true, runContext: runCtx })
+    }).then(function(r) { return r.json(); }).then(function(data) {
+      if (data.error && data.error.match(/No AI provider/i)) {
+        enhanceBtn.replaceWith(Object.assign(document.createElement('div'), { className: 'vrt-ai-error', innerHTML: data.error + ' <a href="/admin#settings-ai">Configure AI →</a>' }));
+        return;
+      }
+      var panel = enhanceBtn.closest('.vrt-ai-panel');
+      if (panel) vrAiRenderPanel(panel, data);
+    }).catch(function(err) {
+      enhanceBtn.replaceWith(Object.assign(document.createElement('div'), { className: 'vrt-ai-error', textContent: err.message }));
+    });
+  }
+  // ── End inline AI helpers ──
+
   (function(){
     // ── Mode switching ──
     var mBtns   = document.querySelectorAll('.vr-mb');
