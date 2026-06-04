@@ -2,6 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import path from 'path';
 import * as analyser from '../vrtAiAnalyser';
 
+vi.mock('../../utils/nlStore', () => ({
+  loadNlConfig: vi.fn().mockResolvedValue(null),
+}));
+
 const BASE_CTX = {
   testName: 'Login Test',
   locatorName: '#submit-btn',
@@ -56,9 +60,6 @@ describe('classifyDiff', () => {
 
 describe('enhanceWithAi', () => {
   it('throws when no AI provider configured', async () => {
-    vi.mock('../../utils/nlStore', () => ({
-      loadNlConfig: vi.fn().mockResolvedValue(null),
-    }));
     const classResult = {
       classifications: ['Content Change'] as analyser.ChangeClassification[],
       regions: 1,

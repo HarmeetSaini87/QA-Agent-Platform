@@ -137,6 +137,15 @@ export async function analyseDiffPng(diffPngPath: string, ctx: RunContext): Prom
     }
   }
 
+  // Element Removed: large bounding box with sparse actual diff pixels (element disappeared)
+  for (const r of regions) {
+    const density = r.pixels / (r.w * r.h);
+    if (density < 0.3 && r.w * r.h > imageArea * 0.01) {
+      classifications.push('Element Removed');
+      break;
+    }
+  }
+
   // Dynamic Data — ignoreRegions overlap
   if (ctx.ignoreRegions?.length) {
     const dynamicCategories = new Set(['dynamic-data', 'temporal']);
