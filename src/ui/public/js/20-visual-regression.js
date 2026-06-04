@@ -256,7 +256,7 @@ function vrThumb(src, label) {
 // The baseline image is absolutely positioned + clipped from the right via clip-path.
 function vrSliderHtml(baseUrl, actualUrl) {
   if (!baseUrl || !actualUrl) return '';
-  return `<div class="vr-slider" tabindex="0" role="slider" aria-label="Baseline vs Actual comparison slider"
+  return `<div class="vr-slider" tabindex="0" role="slider" aria-label="Baseline vs Actual comparison slider" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50"
     style="position:relative;overflow:hidden;cursor:ew-resize;user-select:none;outline:none;background:#111;display:block">
     <img class="vr-slider-actual"   src="${actualUrl}"  draggable="false" alt="Actual"
       style="display:block;width:100%;object-fit:contain;background:#111">
@@ -288,6 +288,7 @@ function vrSliderInit(el) {
     baseline.style.clipPath = `inset(0 ${right}% 0 0)`;
     divider.style.left      = pct + '%';
     knob.style.left         = pct + '%';
+    el.setAttribute('aria-valuenow', Math.round(pct));
     if (pctEl) {
       pctEl.style.left    = pct + '%';
       pctEl.textContent   = Math.round(pct) + '%';
@@ -306,12 +307,26 @@ function vrSliderInit(el) {
   }
 
   let dragging = false;
-  el.addEventListener('mousedown',  e => { dragging = true; setPos(pctFromEvent(e)); e.preventDefault(); });
-  document.addEventListener('mousemove', e => { if (dragging) setPos(pctFromEvent(e)); });
-  document.addEventListener('mouseup',   () => { dragging = false; });
-  el.addEventListener('touchstart', e => { dragging = true; setPos(pctFromEvent(e)); e.preventDefault(); }, { passive: false });
-  document.addEventListener('touchmove', e => { if (dragging) { setPos(pctFromEvent(e)); e.preventDefault(); } }, { passive: false });
-  document.addEventListener('touchend',  () => { dragging = false; });
+
+  function onMouseMove(e) { if (dragging) setPos(pctFromEvent(e)); }
+  function onMouseUp()    { dragging = false; document.removeEventListener('mousemove', onMouseMove); document.removeEventListener('mouseup', onMouseUp); }
+  function onTouchMove(e) { if (dragging) { setPos(pctFromEvent(e)); e.preventDefault(); } }
+  function onTouchEnd()   { dragging = false; document.removeEventListener('touchmove', onTouchMove); document.removeEventListener('touchend', onTouchEnd); }
+
+  el.addEventListener('mousedown', e => {
+    dragging = true;
+    setPos(pctFromEvent(e));
+    e.preventDefault();
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  });
+  el.addEventListener('touchstart', e => {
+    dragging = true;
+    setPos(pctFromEvent(e));
+    e.preventDefault();
+    document.addEventListener('touchmove', onTouchMove, { passive: false });
+    document.addEventListener('touchend', onTouchEnd);
+  }, { passive: false });
   el.addEventListener('keydown', e => {
     if (e.key === 'ArrowLeft')  { setPos(curPct() - 1); e.preventDefault(); }
     if (e.key === 'ArrowRight') { setPos(curPct() + 1); e.preventDefault(); }
