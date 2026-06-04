@@ -220,10 +220,13 @@ function vrBrowserRow(b) {
         </div>
         <div style="font-size:10.5px;color:var(--neutral-400)">${lastRun}${b.width ? ` · ${b.width}×${b.height}` : ''}</div>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0;background:#1e1e1e">
-        ${vrThumb(imgBase + '?type=baseline', 'Baseline')}
-        ${vrThumb(imgBase + '?type=actual',   'Actual')}
-        ${hasDiff ? vrThumb(imgBase + '?type=diff', b.lastSavedPixels > 0 ? 'Diff (Regions)' : 'Diff') : `<div style="display:flex;align-items:center;justify-content:center;height:70px;color:#555;font-size:10px">No diff</div>`}
+      <div style="display:grid;grid-template-columns:${b.baselineUrl && b.actualUrl ? '2fr 1fr' : '1fr 1fr 1fr'};gap:0;background:#111">
+        ${b.baselineUrl && b.actualUrl
+          ? vrSliderHtml(imgBase + '?type=baseline', imgBase + '?type=actual')
+          : `${vrThumb(imgBase + '?type=baseline', 'Baseline')}${vrThumb(imgBase + '?type=actual', 'Actual')}`}
+        ${hasDiff
+          ? vrThumb(imgBase + '?type=diff', b.lastSavedPixels > 0 ? 'Diff (Regions)' : 'Diff')
+          : `<div style="display:flex;align-items:center;justify-content:center;height:70px;color:#555;font-size:10px">No diff</div>`}
       </div>
       <div style="padding:6px 10px;display:flex;gap:6px;flex-wrap:wrap">
         ${(!isViewer() && b.status === 'pending-review') ? `<button class="btn btn-primary btn-sm" onclick="vrApprove('${escHtml(b.id)}')">&#10003; Approve</button>` : ''}
