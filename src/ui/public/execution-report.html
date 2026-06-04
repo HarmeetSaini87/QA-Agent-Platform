@@ -372,18 +372,25 @@
       color: var(--g600); border-top: 1px solid var(--g100);
     }
     .diff-strip {
-      display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+      display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px;
     }
-    .diff-strip.single { grid-template-columns: 1fr; }
+    .diff-strip.panels-1 { grid-template-columns: 1fr; }
+    .diff-strip.panels-2 { grid-template-columns: 1fr 1fr; }
+    .diff-strip.panels-3 { grid-template-columns: 1fr 1fr 1fr; }
+    /* OLD: .diff-strip.single { grid-template-columns: 1fr; } */
     .diff-col { display: flex; flex-direction: column; gap: 5px; }
     .diff-tag {
       font-size: 10px; font-weight: 700; text-transform: uppercase;
-      letter-spacing: .05em;
+      letter-spacing: .05em; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
     }
     .diff-tag.before { color: var(--info); }
-    .diff-tag.after  { color: var(--danger); }
+    .diff-tag.after  { color: #d97706; }
+    .diff-tag.diff   { color: var(--danger); }
+    .diff-pct-badge { background: #fee2e2; color: #b91c1c; font-size: 9px; padding: 1px 5px; border-radius: 4px; font-weight: 700; }
+    .diff-loc-badge { color: var(--g500); font-weight: 500; font-size: 11px; }
     .diff-col img { width: 100%; border-radius: var(--radius-sm); cursor: pointer; border: 1px solid var(--g200); }
-    .diff-col.after-col img { border-color: #fca5a5; }
+    .diff-col.after-col img { border-color: #fde68a; }
+    .diff-col.diff-col img  { border-color: #fca5a5; }
 
     /* ── Steps section ────────────────────────────────────────────────────── */
     .steps-list { border: 1px solid var(--g200); border-radius: var(--radius-sm); overflow: hidden; }
@@ -626,7 +633,7 @@
     }
     .trace-det-hint { color: #94a3b8; font-style: italic; margin-top: 4px; }
 
-    /* ── Defect button + modal ─────────────────────────────────────────── */
+    /* ── Defect button badges ────────────────────────────────────────────── */
     .defect-btn {
       display: inline-flex; align-items: center; gap: 5px;
       padding: 4px 10px; border-radius: 14px;
@@ -635,51 +642,21 @@
     }
     .defect-btn-file   { background: #fef3c7; color: #92400e; }
     .defect-btn-file:hover { background: #fde68a; }
-    .defect-btn-file[disabled] { background: #e5e7eb; color: #9ca3af; cursor: not-allowed; }
     .defect-btn-open   { background: #fee2e2; color: #7f1d1d; }
     .defect-btn-closed { background: #d1fae5; color: #065f46; }
-
-    .defect-modal-overlay {
-      position: fixed; inset: 0; background: rgba(0,0,0,.7);
-      z-index: 9998; display: flex; align-items: center; justify-content: center;
-    }
-    .defect-modal-overlay[hidden] { display: none !important; }
-    .defect-modal-inner {
-      width: 80vw; max-width: 1100px; height: 90vh;
-      background: #fff; border-radius: 8px;
-      display: flex; flex-direction: column;
-    }
-    .defect-modal-header {
-      padding: 14px 18px; border-bottom: 1px solid #e5e7eb;
-      font-weight: 700; display: flex; align-items: center; justify-content: space-between;
-    }
-    .defect-modal-header button {
-      background: none; border: 1px solid #d1d5db; border-radius: 6px;
-      padding: 5px 10px; cursor: pointer; font-size: 12px;
-    }
-    .defect-modal-body { flex: 1; overflow: auto; padding: 16px 18px; }
-    .defect-modal-footer {
-      padding: 12px 18px; border-top: 1px solid #e5e7eb;
-      display: flex; gap: 8px; justify-content: flex-end; align-items: center; flex-wrap: wrap;
-    }
-    .defect-section { margin-bottom: 14px; }
-    .defect-section h4 { margin: 0 0 6px; font-size: 12.5px; color: #374151; }
-    .defect-section textarea, .defect-section input, .defect-section select {
-      width: 100%; box-sizing: border-box; padding: 7px 10px;
-      border: 1px solid #d1d5db; border-radius: 5px;
-      font: inherit; font-size: 13px;
-    }
-    .defect-section textarea { min-height: 220px; resize: vertical; font-family: ui-monospace, monospace; }
-    .defect-banner-warn  { padding: 10px 14px; background: #fff7ed; border: 1px solid #fed7aa; border-radius: 6px; color: #9a3412; margin-bottom: 14px; }
-    .defect-banner-error { padding: 10px 14px; background: #fee2e2; border: 1px solid #fca5a5; border-radius: 6px; color: #7f1d1d; margin-bottom: 14px; }
-    .defect-banner-ok    { padding: 10px 14px; background: #d1fae5; border: 1px solid #6ee7b7; border-radius: 6px; color: #065f46; margin-bottom: 14px; }
-    .defect-modal-footer .btn {
-      padding: 6px 14px; border-radius: 6px; font-size: 12.5px; font-weight: 600;
-      border: 1px solid #d1d5db; background: #fff; cursor: pointer;
-    }
-    .defect-modal-footer .btn-primary { background: #16a34a; color: #fff; border-color: #16a34a; }
-    .defect-modal-footer .btn-primary:hover { background: #15803d; }
+    /* ── Slider Overlay ── */
+    .vr-slider-wrap{position:relative;overflow:hidden;cursor:ew-resize;user-select:none;outline:2px solid transparent}
+    .vr-slider-wrap:focus{outline:2px solid #4f46e5}
+    .vr-slider-wrap img.vs-actual{display:block;width:100%;object-fit:contain;background:#111}
+    .vr-slider-wrap img.vs-baseline{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;clip-path:inset(0 50% 0 0)}
+    .vs-divider{position:absolute;top:0;bottom:0;left:50%;width:2px;background:rgba(255,255,255,.88);transform:translateX(-50%);pointer-events:none}
+    .vs-knob{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:28px;height:28px;border-radius:50%;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;font-size:13px;pointer-events:none}
+    .vs-lbl{position:absolute;top:6px;background:rgba(0,0,0,.72);color:#fff;font-size:10px;padding:2px 7px;border-radius:3px;pointer-events:none;font-weight:600}
+    .vs-lbl-l{left:8px}.vs-lbl-r{right:8px}
+    .vs-pct{position:absolute;bottom:6px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.72);color:#fff;font-size:10px;padding:2px 7px;border-radius:3px;white-space:nowrap;pointer-events:none}
+    .diff-strip.has-slider{grid-template-columns:2fr 1fr!important}
   </style>
+  <script src="js/28-defect-modal.js"></script>
 </head>
 <body>
 
@@ -788,6 +765,8 @@ function cleanTitle(name) {
 
 function screenshotSrc(p) {
   if (!p) return '';
+  // VRT compare URLs are already absolute API paths — pass through unchanged
+  if (p.startsWith('/api/')) return p;
   return `/screenshots/${esc(p.replace('test-results/',''))}`;
 }
 
@@ -987,6 +966,7 @@ function renderReport(r) {
       <p>QA Agent Platform — Execution Report &nbsp;|&nbsp; Run ID: <code>${esc(r.runId||'—')}</code></p>
     </div>
   `;
+  initSliders(document);
 
   // ── Populate Quarantined Section ──────────────────────────────────────────
   const quarantinedTests = (tests || []).filter(t => t.quarantined === true);
@@ -1142,26 +1122,67 @@ function buildDetailPanel(t, i, status, traceMode, runId) {
       </div>`);
   }
 
-  // ── Visual diff strip (only when before/after pair exists; not the same as column screenshot) ──
-  const hasBefore = !!t.screenshotBefore;
-  const hasAfter  = !!t.screenshotAfter;
-  if (hasBefore || hasAfter) {
-    const beforeSrc = hasBefore ? screenshotSrc(t.screenshotBefore) : '';
-    const afterSrc  = hasAfter  ? screenshotSrc(t.screenshotAfter)  : '';
-    const ssContent = `
-      <div class="diff-strip ${hasBefore && hasAfter ? '' : 'single'}">
-        ${hasBefore ? `<div class="diff-col"><div class="diff-tag before">&#128247; Before</div>
-          <img src="${beforeSrc}" alt="Before" loading="lazy" onclick="openModal('${beforeSrc}')" onerror="this.closest('.diff-col').style.display='none'"></div>` : ''}
-        ${hasAfter  ? `<div class="diff-col after-col"><div class="diff-tag after">&#9888; After (Failed)</div>
-          <img src="${afterSrc}" alt="After" loading="lazy" onclick="openModal('${afterSrc}')" onerror="this.closest('.diff-col').style.display='none'"></div>` : ''}
-      </div>`;
+  // ── Visual diff strip — one panel group per ASSERT VISUAL step ──
+  const visualResults = Array.isArray(t.visualResults) ? t.visualResults : [];
+  if (visualResults.length > 0) {
+    const stepsHtml = visualResults.map(vr => {
+      const hasBefore = !!vr.baselineUrl;
+      const hasAfter  = !!vr.actualUrl;
+      const hasDiff   = !!vr.diffUrl;
+      const beforeSrc = hasBefore ? screenshotSrc(vr.baselineUrl) : '';
+      const afterSrc  = hasAfter  ? screenshotSrc(vr.actualUrl)  : '';
+      const diffSrc   = hasDiff   ? screenshotSrc(vr.diffUrl)    : '';
+      const panelCount = [hasBefore, hasAfter, hasDiff].filter(Boolean).length;
+      const diffPct  = vr.diffPct > 0 ? `<span class="diff-pct-badge">${vr.diffPct.toFixed(2)}% diff</span>` : '';
+      const statusBadge = vr.status === 'new-baseline'
+        ? `<span style="font-size:10px;background:#e0f2fe;color:#0369a1;padding:1px 7px;border-radius:8px;font-weight:600">New Baseline</span>`
+        : vr.status === 'fail'
+          ? `<span style="font-size:10px;background:#fee2e2;color:#b91c1c;padding:1px 7px;border-radius:8px;font-weight:600">Diff Detected</span>`
+          : `<span style="font-size:10px;background:#dcfce7;color:#166534;padding:1px 7px;border-radius:8px;font-weight:600">Pass</span>`;
+      return `
+        <div style="border-bottom:1px solid var(--border);padding:10px 0 14px">
+          <div style="display:flex;align-items:center;gap:8px;padding:0 12px 8px;font-size:12px;font-weight:600;color:var(--g600)">
+            ${vr.browser ? browserBadge(vr.browser) : ''}
+            <span>&#128269; Step ${vr.stepOrder} — ${esc(vr.locatorName || 'full-page')}</span>
+            ${statusBadge} ${diffPct}
+          </div>
+          <div class="diff-strip panels-${panelCount} ${hasBefore && hasAfter ? 'has-slider' : ''}">
+            ${(hasBefore && hasAfter) ? `
+              <div class="diff-col">
+                <div class="diff-tag before">&#128247; Baseline vs Actual — drag to compare</div>
+                <div class="vr-slider-wrap" tabindex="0" role="slider" aria-label="Baseline vs Actual comparison slider" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50">
+                  <img class="vs-actual"   src="${afterSrc}"  alt="Actual"   loading="lazy" onerror="this.style.opacity='.2'">
+                  <img class="vs-baseline" src="${beforeSrc}" alt="Baseline" loading="lazy" onerror="this.style.opacity='.2'">
+                  <div class="vs-divider"></div>
+                  <div class="vs-knob">⟺</div>
+                  <span class="vs-lbl vs-lbl-l">Baseline</span>
+                  <span class="vs-lbl vs-lbl-r">Actual</span>
+                  <span class="vs-pct">50%</span>
+                </div>
+              </div>` : `
+              ${hasBefore ? `<div class="diff-col"><div class="diff-tag before">&#128247; Baseline (Approved)</div>
+                <img src="${beforeSrc}" alt="Baseline" loading="lazy" onclick="openModal('${beforeSrc}')" onerror="this.closest('.diff-col').style.display='none'"></div>` : ''}
+              ${hasAfter  ? `<div class="diff-col"><div class="diff-tag after">&#128064; Actual (This Run)</div>
+                <img src="${afterSrc}" alt="Actual" loading="lazy" onclick="openModal('${afterSrc}')" onerror="this.closest('.diff-col').style.display='none'"></div>` : ''}`}
+            ${hasDiff   ? `<div class="diff-col"><div class="diff-tag diff">&#9889; Diff (Changed Pixels) ${diffPct}</div>
+              <img src="${diffSrc}" alt="Diff" loading="lazy" onclick="openModal('${diffSrc}')" onerror="this.closest('.diff-col').style.display='none'">
+              ${(vr.ignoreRegions && vr.ignoreRegions.length > 0) ? (() => {
+                const IGN_COLORS = { 'dynamic-data':'#22c55e','temporal':'#3b82f6','advertisement':'#eab308','user-specific':'#a855f7','animated':'#f97316','third-party':'#94a3b8' };
+                const IGN_LABELS = { 'dynamic-data':'Dynamic Data','temporal':'Timestamp','advertisement':'Advertisement','user-specific':'User Content','animated':'Animated','third-party':'Third Party' };
+                return '<div style="margin-top:6px;padding:8px 10px;background:#0f172a;border-radius:6px;font-size:11px;color:#94a3b8;"><div style=\\"font-weight:700;margin-bottom:5px;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;\\">Ignored Regions</div>' + vr.ignoreRegions.map(r => '<span style=\\"display:inline-flex;align-items:center;gap:4px;margin-right:8px;margin-bottom:3px;\\"><span style=\\"width:10px;height:10px;border-radius:2px;background:' + (IGN_COLORS[r.category]||'#94a3b8') + ';display:inline-block;\\"></span><span style=\\"color:#e2e8f0;\\">' + r.name + '</span></span>').join('') + '</div>';
+              })() : ''}
+              ${(vr.totalSavedPixels && vr.totalSavedPixels > 0) ? '<div style=\\"margin-top:8px;padding:8px 10px;background:#0a1628;border-radius:6px;\\"><div style=\\"font-size:13px;font-weight:700;color:#22c55e;\\">&#128737; ' + (vr.totalRunsProtected||1) + ' false positive' + ((vr.totalRunsProtected||1) > 1 ? 's' : '') + ' prevented</div><div style=\\"font-size:11px;color:#64748b;margin-top:3px;\\">' + vr.totalSavedPixels.toLocaleString() + ' changed pixels neutralised this run</div>' + ((vr.totalRunsProtected > 1) ? '<div style=\\"font-size:11px;color:#4f46e5;margin-top:4px;border-top:1px solid #1e293b;padding-top:4px;\\">Total pixels saved across all runs: <strong style=\\"color:#818cf8;\\">' + (vr.totalPixelsSavedAllTime||0).toLocaleString() + '</strong></div>' : '') + '</div>' : ''}
+              </div>` : ''}
+          </div>
+        </div>`;
+    }).join('');
     sections.push(`
       <div class="det-section ${status !== 'fail' ? 'collapsed' : ''}">
         <div class="det-header" onclick="toggleDetSection(this)">
           <span class="det-arrow">&#9660;</span>
-          &#128247; Visual Diff (Before / After)
+          &#128247; Visual Diff — ${visualResults.length} checkpoint${visualResults.length > 1 ? 's' : ''}
         </div>
-        <div class="det-body">${ssContent}</div>
+        <div class="det-body" style="padding:0">${stepsHtml}</div>
       </div>`);
   }
 
@@ -1467,6 +1488,17 @@ body { background: #f1f5f9; }
 .export-banner { background: var(--dark); color: var(--g400); padding: 9px 24px; font-size: 11px; display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
 .export-banner b { color: var(--primary-lt); font-size: 12px; }
 .export-banner .eb-note { margin-left: auto; font-style: italic; color: var(--g500); }
+    /* ── Slider Overlay ── */
+    .vr-slider-wrap{position:relative;overflow:hidden;cursor:ew-resize;user-select:none;outline:2px solid transparent}
+    .vr-slider-wrap:focus{outline:2px solid #4f46e5}
+    .vr-slider-wrap img.vs-actual{display:block;width:100%;object-fit:contain;background:#111}
+    .vr-slider-wrap img.vs-baseline{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;clip-path:inset(0 50% 0 0)}
+    .vs-divider{position:absolute;top:0;bottom:0;left:50%;width:2px;background:rgba(255,255,255,.88);transform:translateX(-50%);pointer-events:none}
+    .vs-knob{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:28px;height:28px;border-radius:50%;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;font-size:13px;pointer-events:none}
+    .vs-lbl{position:absolute;top:6px;background:rgba(0,0,0,.72);color:#fff;font-size:10px;padding:2px 7px;border-radius:3px;pointer-events:none;font-weight:600}
+    .vs-lbl-l{left:8px}.vs-lbl-r{right:8px}
+    .vs-pct{position:absolute;bottom:6px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.72);color:#fff;font-size:10px;padding:2px 7px;border-radius:3px;white-space:nowrap;pointer-events:none}
+    .diff-strip.has-slider{grid-template-columns:2fr 1fr!important}
 </style>
 </head>
 <body>
@@ -1634,6 +1666,48 @@ document.addEventListener('keydown', function(e) {
     if (btn) { btn.innerHTML = origHtml || '&#8681; Export HTML'; btn.disabled = false; }
   }
 }
+
+  // ── Slider Overlay ────────────────────────────────────────────────────────
+  function vsInit(el) {
+    var baseline = el.querySelector('.vs-baseline');
+    var divider  = el.querySelector('.vs-divider');
+    var knob     = el.querySelector('.vs-knob');
+    var pctEl    = el.querySelector('.vs-pct');
+    if (!baseline || !divider || !knob) return;
+    var dragging = false;
+    function setPos(pct) {
+      pct = Math.max(0, Math.min(100, pct));
+      baseline.style.clipPath = 'inset(0 ' + (100-pct) + '% 0 0)';
+      divider.style.left = knob.style.left = pct + '%';
+      el.setAttribute('aria-valuenow', Math.round(pct));
+      if (pctEl) { pctEl.style.left = pct + '%'; pctEl.textContent = Math.round(pct) + '%'; }
+    }
+    function fromE(e) {
+      var rect = el.getBoundingClientRect();
+      var cx = e.touches ? e.touches[0].clientX : e.clientX;
+      return Math.max(0, Math.min(100, ((cx - rect.left) / rect.width) * 100));
+    }
+    function curPct() { var m = baseline.style.clipPath.match(/inset\(0 ([\d.]+)% 0 0\)/); return m ? 100-parseFloat(m[1]) : 50; }
+    function onMouseMove(e) { if (dragging) setPos(fromE(e)); }
+    function onMouseUp()    { dragging = false; document.removeEventListener('mousemove', onMouseMove); document.removeEventListener('mouseup', onMouseUp); }
+    function onTouchMove(e) { if (dragging) { setPos(fromE(e)); e.preventDefault(); } }
+    function onTouchEnd()   { dragging = false; document.removeEventListener('touchmove', onTouchMove); document.removeEventListener('touchend', onTouchEnd); }
+    el.addEventListener('mousedown', function(e){dragging=true;setPos(fromE(e));e.preventDefault();document.addEventListener('mousemove',onMouseMove);document.addEventListener('mouseup',onMouseUp);});
+    el.addEventListener('touchstart', function(e){dragging=true;setPos(fromE(e));e.preventDefault();document.addEventListener('touchmove',onTouchMove,{passive:false});document.addEventListener('touchend',onTouchEnd);},{passive:false});
+    el.addEventListener('keydown', function(e){
+      if(e.key==='ArrowLeft'){setPos(curPct()-1);e.preventDefault();}
+      if(e.key==='ArrowRight'){setPos(curPct()+1);e.preventDefault();}
+      if(e.key==='Home'){setPos(0);e.preventDefault();}
+      if(e.key==='End'){setPos(100);e.preventDefault();}
+    });
+    setPos(50);
+  }
+  function initSliders(root) {
+    (root||document).querySelectorAll('.vr-slider-wrap:not([data-vs-ready])').forEach(function(el){
+      el.dataset.vsReady = '1';
+      vsInit(el);
+    });
+  }
 </script>
 <script>
 // ── Trace Viewer Modal (live page) ───────────────────────────────────────────
@@ -1730,233 +1804,43 @@ document.addEventListener('keydown', function(e) {
   </div>
 </div>
 
-<!-- Defect Modal -->
-<div id="defect-modal" class="defect-modal-overlay" hidden>
-  <div class="defect-modal-inner">
-    <div class="defect-modal-header">
-      <span id="defect-modal-title">&#128030; File Defect to Jira</span>
-      <button onclick="closeDefectModal()">&#10005; Close</button>
-    </div>
-    <div class="defect-modal-body" id="defect-modal-body">Loading…</div>
-    <div class="defect-modal-footer" id="defect-modal-footer"></div>
-  </div>
-</div>
-
 <script>
-// ── Defect Modal (live page) ─────────────────────────────────────────
+// ── Defect Modal helpers (shared modal from js/28-defect-modal.js handles open/file/dismiss)
 
-let _defectDraft = null;
-
-async function openDefectModal(runId, testId) {
-  const m = document.getElementById('defect-modal');
-  const body = document.getElementById('defect-modal-body');
-  const footer = document.getElementById('defect-modal-footer');
-  m.hidden = false;
-  body.innerHTML = '⏳ Loading draft…';
-  footer.innerHTML = '';
-  let draft;
-  try {
-    const r = await fetch('/api/defects/draft', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ runId, testId }),
-    });
-    draft = await r.json();
-    if (!r.ok) throw new Error(draft?.error?.message || 'Draft failed');
-  } catch (e) {
-    body.innerHTML = '<div class="defect-banner-error">✗ ' + esc2(e.message) + '</div>';
-    footer.innerHTML = '<button class="btn" onclick="closeDefectModal()">Close</button>';
-    return;
-  }
-  _defectDraft = { runId, testId, draft };
-
-  if (draft.existingDefect) {
-    const d = draft.existingDefect;
-    body.innerHTML =
-      '<div class="defect-banner-warn">⚠ Already filed as <strong>' + esc2(d.defectKey) + '</strong> (' + esc2(d.status) + ').<br>' +
-      '<a href="' + esc2(d.jiraUrl) + '" target="_blank" rel="noopener">Open in Jira ↗</a></div>' +
-      '<p>You can add this run\'s failure as a comment on the existing ticket, or cancel.</p>';
-    footer.innerHTML =
-      '<button class="btn" onclick="closeDefectModal()">Cancel</button>' +
-      '<button class="btn btn-primary" onclick="commentOnExisting(' + esc2(JSON.stringify(d.defectKey)) + ')">Add as Comment</button>';
-    return;
-  }
-
-  if (!draft.config) {
-    body.innerHTML = '<div class="defect-banner-error">✗ Jira not configured. Ask an admin to configure mapping in Admin → Notification Settings.</div>';
-    footer.innerHTML = '<button class="btn" onclick="closeDefectModal()">Close</button>';
-    return;
-  }
-
-  const cfg = draft.config;
-  const attachRows = (draft.attachments || []).map(function(a) {
-    var sizeMb = (a.sizeBytes/1024/1024).toFixed(2);
-    var disabled = a.tooLarge ? 'disabled' : 'checked';
-    var note = a.tooLarge ? '<span style="color:#dc2626"> — too large, will be skipped</span>' : '';
-    return '<label style="display:block;margin:4px 0">' +
-      '<input type="checkbox" class="defect-attach" data-kind="' + esc2(a.kind) + '" ' + disabled + '> ' +
-      esc2(a.kind) + ' — ' + esc2(a.name) + ' (' + sizeMb + ' MB)' + note +
-    '</label>';
-  }).join('');
-
-  body.innerHTML =
-    // OLD: Project Key from global cfg.projectKey — now per-project
-    '<div class="defect-section"><h4>Jira Project</h4>' +
-      (draft.jiraProjectKey
-        ? '<div style="padding:6px 10px;background:#f0fdf4;border:1px solid #86efac;border-radius:5px;font-weight:700;color:#15803d;font-size:13px">' + esc2(draft.jiraProjectKey) + '</div>'
-        : '<div style="padding:6px 10px;background:#fef2f2;border:1px solid #fca5a5;border-radius:5px;color:#dc2626;font-size:12.5px">⚠ Jira Project Key not set for this project. Go to Admin → Project Management to configure it.</div>') + '</div>' +
-    '<div class="defect-section"><h4>Issue Type</h4>' +
-      '<input id="dfx-issue-type" type="text" value="' + esc2(cfg.issueType || 'Defect') + '" readonly></div>' +
-    '<div class="defect-section"><h4>Priority *</h4>' +
-      '<select id="dfx-priority">' +
-        ['Highest','High','Medium','Low','Lowest'].map(function(p) {
-          return '<option ' + (draft.suggestedPriority === p ? 'selected' : '') + '>' + p + '</option>';
-        }).join('') +
-      '</select></div>' +
-    '<div class="defect-section"><h4>User Story * (e.g. ' + esc2(cfg.projectKey || 'PROJ') + '-123)</h4>' +
-      '<input id="dfx-parent" type="text" placeholder="' + esc2(cfg.projectKey || 'PROJ') + '-_____"></div>' +
-    '<div class="defect-section"><h4>Summary *</h4>' +
-      '<input id="dfx-summary" type="text" value="' + esc2(draft.summary || '') + '" maxlength="255"></div>' +
-    '<div class="defect-section"><h4>Description (auto-built; rich text in Jira)</h4>' +
-      '<textarea id="dfx-description-preview" readonly>' + esc2(adfPreview(draft.descriptionADF)) + '</textarea>' +
-      '<div style="font-size:11.5px;color:#6b7280;margin-top:4px">Preview only — Jira will render the rich-text formatting. Edit "Expected Result" in Jira after creation.</div></div>' +
-    '<div class="defect-section"><h4>Attachments</h4>' + (attachRows || '<em>(no artifacts available)</em>') + '</div>' +
-    '<div id="dfx-msg" style="margin-top:8px;font-size:12.5px"></div>';
-
-  footer.innerHTML =
-    '<button class="btn" onclick="closeDefectModal()">Cancel</button>' +
-    '<select id="dfx-dismiss-cat" style="padding:6px 10px;border-radius:5px">' +
-      '<option value="">Not a Bug ▾</option>' +
-      '<option value="script-issue">script-issue</option>' +
-      '<option value="locator-issue">locator-issue</option>' +
-      '<option value="flaky">flaky</option>' +
-      '<option value="data-issue">data-issue</option>' +
-      '<option value="env-issue">env-issue</option>' +
-    '</select>' +
-    '<button class="btn" onclick="dismissDefectFromModal()">Dismiss</button>' +
-    (draft.jiraProjectKey
-      ? '<button class="btn btn-primary" onclick="approveAndFile()">Approve & File</button>'
-      : '<button class="btn btn-primary" disabled title="Set Jira Project Key in Admin → Project Management first">Approve & File</button>');
-}
-
-function adfPreview(adf) {
-  if (!adf || !adf.content) return '';
-  const lines = [];
-  for (const node of adf.content) {
-    if (node.type === 'heading') lines.push('\n## ' + (node.content && node.content[0] && node.content[0].text || ''));
-    else if (node.type === 'paragraph') lines.push((node.content || []).map(c => c.text || '').join(''));
-    else if (node.type === 'orderedList') (node.content || []).forEach((li, i) => {
-      const txt = li.content && li.content[0] && li.content[0].content && li.content[0].content[0] && li.content[0].content[0].text || '';
-      lines.push((i+1) + '. ' + txt);
-    });
-    else if (node.type === 'codeBlock') lines.push('```\n' + (node.content && node.content[0] && node.content[0].text || '') + '\n```');
-  }
-  return lines.join('\n');
-}
-
-function closeDefectModal() {
-  document.getElementById('defect-modal').hidden = true;
-  _defectDraft = null;
-}
-
-async function approveAndFile() {
-  if (!_defectDraft) return;
-  const parent = document.getElementById('dfx-parent').value.trim();
-  if (!/^[A-Z][A-Z0-9_]+-\d+$/.test(parent)) {
-    document.getElementById('dfx-msg').innerHTML = '<span style="color:#dc2626">User Story key must look like ABC-123</span>';
-    return;
-  }
-  const summary  = document.getElementById('dfx-summary').value.trim();
-  if (!summary) { document.getElementById('dfx-msg').innerHTML = '<span style="color:#dc2626">Summary required</span>'; return; }
-  const priority = document.getElementById('dfx-priority').value;
-  const attachKinds = Array.from(document.querySelectorAll('.defect-attach'))
-    .filter(c => c.checked && !c.disabled).map(c => c.dataset.kind);
-
-  document.getElementById('dfx-msg').textContent = '⏳ Filing…';
-  const r = await fetch('/api/defects/file', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      runId: _defectDraft.runId, testId: _defectDraft.testId,
-      summary, descriptionADF: _defectDraft.draft.descriptionADF,
-      priority, parentStoryKey: parent, attachKinds,
-    }),
-  });
-  const j = await r.json();
-  const msg = document.getElementById('dfx-msg');
-  if (r.ok) {
-    msg.innerHTML = '<div class="defect-banner-ok">✓ Filed as <strong>' + esc2(j.defectKey) + '</strong>. ' +
-      '<a href="' + esc2(j.jiraUrl) + '" target="_blank" rel="noopener">Open in Jira ↗</a></div>';
-    document.getElementById('defect-modal-footer').innerHTML =
-      '<button class="btn btn-primary" onclick="location.reload()">Close & Refresh</button>';
-  } else if (r.status === 409) {
-    const existing = j && j.error && j.error.details || {};
-    msg.innerHTML = '<div class="defect-banner-warn">⚠ Already filed as <strong>' + esc2(existing.defectKey) + '</strong>. ' +
-      '<a href="' + esc2(existing.jiraUrl) + '" target="_blank" rel="noopener">Open in Jira ↗</a></div>';
-  } else {
-    // OLD: msg.innerHTML = '<div class="defect-banner-error">✗ ' + esc2(j && j.error && j.error.message || 'File failed') + '</div>';
-    const errDetail = j && j.error && j.error.details ? '\n' + JSON.stringify(j.error.details, null, 2) : '';
-    msg.innerHTML = '<div class="defect-banner-error">✗ ' + esc2(j && j.error && j.error.message || 'File failed') +
-      (errDetail ? '<pre style="margin:6px 0 0;font-size:11px;white-space:pre-wrap;word-break:break-all">' + esc2(errDetail) + '</pre>' : '') + '</div>';
-  }
-}
-
-async function commentOnExisting(defectKey) {
-  if (!_defectDraft) return;
-  document.getElementById('defect-modal-body').innerHTML = '⏳ Posting comment…';
-  const r = await fetch('/api/defects/comment', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      defectKey, runId: _defectDraft.runId, testId: _defectDraft.testId,
-      attachKinds: ['screenshot'],
-    }),
-  });
-  const j = await r.json();
-  const body = document.getElementById('defect-modal-body');
-  if (r.ok) body.innerHTML = '<div class="defect-banner-ok">✓ Comment posted on ' + esc2(defectKey) + '</div>';
-  else body.innerHTML = '<div class="defect-banner-error">✗ ' + esc2(j && j.error && j.error.message || 'Comment failed') + '</div>';
-  document.getElementById('defect-modal-footer').innerHTML = '<button class="btn btn-primary" onclick="closeDefectModal()">Close</button>';
-}
-
-async function dismissDefectFromModal() {
-  if (!_defectDraft) return;
-  const cat = document.getElementById('dfx-dismiss-cat').value;
-  if (!cat) { document.getElementById('dfx-msg').innerHTML = '<span style="color:#dc2626">Pick a category</span>'; return; }
-  const r = await fetch('/api/defects/dismiss', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ runId: _defectDraft.runId, testId: _defectDraft.testId, category: cat }),
-  });
-  const body = document.getElementById('defect-modal-body');
-  if (r.ok) body.innerHTML = '<div class="defect-banner-ok">✓ Logged as: ' + esc2(cat) + '</div>';
-  else body.innerHTML = '<div class="defect-banner-error">✗ Dismiss failed</div>';
-  document.getElementById('defect-modal-footer').innerHTML = '<button class="btn btn-primary" onclick="closeDefectModal()">Close</button>';
-}
-
-// OLD: used /api/defects/open/:key server redirect — broke in new tab (relative redirect went to local host)
+// openDefectExisting — shows filed defect info in shared modal (no re-filing)
 async function openDefectExisting(defectKey, testId) {
-  const m = document.getElementById('defect-modal');
-  const body = document.getElementById('defect-modal-body');
-  const footer = document.getElementById('defect-modal-footer');
+  if (typeof window.openDefectModal !== 'function') return;
+  // Use the shared modal infrastructure — inject + show loading state
+  window._dfxInjectModal && window._dfxInjectModal();
+  var m    = document.getElementById('shared-defect-modal');
+  var bodyEl = document.getElementById('s-dfx-body');
+  var foot = document.getElementById('s-dfx-footer');
+  if (!m) return;
   m.hidden = false;
-  body.innerHTML = '<p>Defect <strong>' + esc2(defectKey) + '</strong> is filed for this test.</p>' +
-    '<p>Use the link below to open it in Jira.</p>';
-  footer.innerHTML = '<button class="btn" onclick="closeDefectModal()">Close</button><span style="font-size:12px;color:#6b7280">Loading…</span>';
+  bodyEl.innerHTML = '<p>Defect <strong>' + esc2(defectKey) + '</strong> is filed for this test.</p>' +
+    '<p style="color:#6b7280;font-size:12px">Loading Jira URL…</p>';
+  foot.innerHTML = '<button class="s-btn" onclick="closeDefectModal()">Close</button>';
   try {
-    const r = await fetch('/api/defects/by-test/' + encodeURIComponent(testId));
-    const j = r.ok ? await r.json() : null;
-    const rec = j && j.defects && j.defects.find(function(d) { return d.defectKey === defectKey; });
-    const url = (rec && rec.jiraUrl) || ('https://pnmx.atlassian.net/browse/' + encodeURIComponent(defectKey));
-    footer.innerHTML =
-      '<button class="btn" onclick="closeDefectModal()">Close</button>' +
-      '<a class="btn btn-primary" href="' + esc2(url) + '" target="_blank" rel="noopener">Open in Jira ↗</a>';
+    var r = await fetch('/api/defects/by-test/' + encodeURIComponent(testId));
+    var j = r.ok ? await r.json() : null;
+    var rec = j && j.defects && j.defects.find(function(d) { return d.defectKey === defectKey; });
+    var url = (rec && rec.jiraUrl) || ('https://pnmx.atlassian.net/browse/' + encodeURIComponent(defectKey));
+    var statusLabel = rec ? ' (' + esc2(rec.status || '') + ')' : '';
+    bodyEl.innerHTML = '<div class="s-dfx-warn">&#128030; Defect <strong>' + esc2(defectKey) + '</strong>' + statusLabel + ' is filed for this test.</div>' +
+      '<p style="font-size:13px;color:#374151">Use the link below to view it in Jira.</p>';
+    foot.innerHTML =
+      '<button class="s-btn" onclick="closeDefectModal()">Close</button>' +
+      '<a class="s-btn s-btn-primary" href="' + esc2(url) + '" target="_blank" rel="noopener">Open in Jira ↗</a>';
   } catch (_) {
-    footer.innerHTML =
-      '<button class="btn" onclick="closeDefectModal()">Close</button>' +
-      '<a class="btn btn-primary" href="' + esc2('/api/defects/open/' + encodeURIComponent(defectKey)) + '" target="_blank" rel="noopener">Open in Jira ↗</a>';
+    foot.innerHTML =
+      '<button class="s-btn" onclick="closeDefectModal()">Close</button>' +
+      '<a class="s-btn s-btn-primary" href="' + esc2('/api/defects/open/' + encodeURIComponent(defectKey)) + '" target="_blank" rel="noopener">Open in Jira ↗</a>';
   }
 }
 
 document.addEventListener('keydown', function(e) {
   if (e.key !== 'Escape') return;
-  const dm = document.getElementById('defect-modal');
+  var dm = document.getElementById('shared-defect-modal');
   if (dm && !dm.hidden) closeDefectModal();
 });
 </script>
