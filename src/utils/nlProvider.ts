@@ -194,6 +194,45 @@ export async function nlSuggest(
   }
 }
 
+// ── Raw prompt — arbitrary prompt string, returns text response ───────────────
+
+export async function nlRawPrompt(cfg: NlProviderConfig, prompt: string): Promise<string> {
+  switch (cfg.provider) {
+    case 'anthropic': {
+      const result = await callAnthropic(cfg, prompt);
+      return result.keyword ?? result.value ?? JSON.stringify(result);
+    }
+    case 'openai': {
+      const result = await callOpenAICompat(
+        { ...cfg, baseUrl: 'https://api.openai.com', model: cfg.model || 'gpt-4o-mini' },
+        prompt, 'openai',
+      );
+      return result.keyword ?? result.value ?? JSON.stringify(result);
+    }
+    case 'groq': {
+      const result = await callOpenAICompat(
+        { ...cfg, baseUrl: 'https://api.groq.com/openai', model: cfg.model || 'llama-3.1-8b-instant' },
+        prompt, 'groq',
+      );
+      return result.keyword ?? result.value ?? JSON.stringify(result);
+    }
+    case 'gemini' as any: {
+      const result = await callGemini(cfg, prompt);
+      return result.keyword ?? result.value ?? JSON.stringify(result);
+    }
+    case 'ollama': {
+      const result = await callOllama(cfg, prompt);
+      return result.keyword ?? result.value ?? JSON.stringify(result);
+    }
+    case 'compatible': {
+      const result = await callOpenAICompat(cfg, prompt, 'compatible');
+      return result.keyword ?? result.value ?? JSON.stringify(result);
+    }
+    default:
+      throw new Error(`nlRawPrompt: unsupported provider "${(cfg as any).provider}"`);
+  }
+}
+
 // ── Provider metadata (used by Admin UI) ─────────────────────────────────────
 
 export const NL_PROVIDERS: Array<{
