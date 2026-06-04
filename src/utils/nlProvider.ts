@@ -195,39 +195,140 @@ export async function nlSuggest(
 }
 
 // ── Raw prompt — arbitrary prompt string, returns text response ───────────────
+// OLD: nlRawPrompt routed through callAnthropic/callOpenAICompat/etc. which internally
+// OLD: called parseResponse() → JSON.parse(). This threw SyntaxError on prose responses
+// OLD: (e.g. VRT AI analysis). New implementation makes direct HTTP calls and extracts
+// OLD: raw text strings WITHOUT going through parseResponse().
 
 export async function nlRawPrompt(cfg: NlProviderConfig, prompt: string): Promise<string> {
   switch (cfg.provider) {
     case 'anthropic': {
-      const result = await callAnthropic(cfg, prompt);
-      return result.keyword ?? result.value ?? JSON.stringify(result);
+      // Replicate callAnthropic's HTTP call using the SDK but extract .content[0].text directly
+      const Anthropic = require('@anthropic-ai/sdk');
+      const client    = new Anthropic.default({ apiKey: cfg.apiKey });
+      const model     = cfg.model || 'claude-haiku-4-5-20251001';
+      const msg = await client.messages.create({
+        model,
+        max_tokens: 2048,
+        messages: [{ role: 'user', content: prompt }],
+      });
+      return (msg.content[0] as any)?.text ?? '';
     }
+
     case 'openai': {
-      const result = await callOpenAICompat(
-        { ...cfg, baseUrl: 'https://api.openai.com', model: cfg.model || 'gpt-4o-mini' },
-        prompt, 'openai',
-      );
-      return result.keyword ?? result.value ?? JSON.stringify(result);
+      const baseUrl = 'https://api.openai.com';
+      const model   = cfg.model || 'gpt-4o-mini';
+      const res = await fetch(`${baseUrl}/v1/chat/completions`, {
+        method:  'POST',
+        headers: {
+          'Content-Type':  'application/json',
+          'Authorization': `Bearer ${cfg.apiKey || ''}`,
+        },
+        body: JSON.stringify({
+          model,
+          max_tokens:  2048,
+          temperature: 0.1,
+          messages: [{ role: 'user', content: prompt }],
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.text();
+        throw new Error(`openai API error ${res.status}: ${err.slice(0, 200)}`);
+      }
+      const data = await res.json() as any;
+      return data.choices?.[0]?.message?.content ?? '';
     }
+
     case 'groq': {
-      const result = await callOpenAICompat(
-        { ...cfg, baseUrl: 'https://api.groq.com/openai', model: cfg.model || 'llama-3.1-8b-instant' },
-        prompt, 'groq',
-      );
-      return result.keyword ?? result.value ?? JSON.stringify(result);
+      const baseUrl = 'https://api.groq.com/openai';
+      const model   = cfg.model || 'llama-3.1-8b-instant';
+      const res = await fetch(`${baseUrl}/v1/chat/completions`, {
+        method:  'POST',
+        headers: {
+          'Content-Type':  'application/json',
+          'Authorization': `Bearer ${cfg.apiKey || ''}`,
+        },
+        body: JSON.stringify({
+          model,
+          max_tokens:  2048,
+          temperature: 0.1,
+          messages: [{ role: 'user', content: prompt }],
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.text();
+        throw new Error(`groq API error ${res.status}: ${err.slice(0, 200)}`);
+      }
+      const data = await res.json() as any;
+      return data.choices?.[0]?.message?.content ?? '';
     }
+
     case 'gemini' as any: {
-      const result = await callGemini(cfg, prompt);
-      return result.keyword ?? result.value ?? JSON.stringify(result);
+      const model  = cfg.model || 'gemini-1.5-flash';
+      const apiKey = cfg.apiKey || '';
+      const url    = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+      const res = await fetch(url, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { temperature: 0.1, maxOutputTokens: 2048 },
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.text();
+        throw new Error(`Gemini API error ${res.status}: ${err.slice(0, 200)}`);
+      }
+      const data = await res.json() as any;
+      return data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
     }
+
     case 'ollama': {
-      const result = await callOllama(cfg, prompt);
-      return result.keyword ?? result.value ?? JSON.stringify(result);
+      const baseUrl = (cfg.baseUrl || 'http://localhost:11434').replace(/\/$/, '');
+      const model   = cfg.model || 'qwen2.5:0.5b';
+      const res = await fetch(`${baseUrl}/api/chat`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model,
+          stream:   false,
+          options:  { temperature: 0.1, num_predict: 2048 },
+          messages: [{ role: 'user', content: prompt }],
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.text();
+        throw new Error(`Ollama error ${res.status}: ${err.slice(0, 200)}`);
+      }
+      const data = await res.json() as any;
+      return data.message?.content ?? '';
     }
+
     case 'compatible': {
-      const result = await callOpenAICompat(cfg, prompt, 'compatible');
-      return result.keyword ?? result.value ?? JSON.stringify(result);
+      if (!cfg.baseUrl) throw new Error('baseUrl is required for compatible provider');
+      const baseUrl = cfg.baseUrl.replace(/\/$/, '');
+      const model   = cfg.model || '';
+      const res = await fetch(`${baseUrl}/v1/chat/completions`, {
+        method:  'POST',
+        headers: {
+          'Content-Type':  'application/json',
+          'Authorization': `Bearer ${cfg.apiKey || ''}`,
+        },
+        body: JSON.stringify({
+          model,
+          max_tokens:  2048,
+          temperature: 0.1,
+          messages: [{ role: 'user', content: prompt }],
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.text();
+        throw new Error(`compatible API error ${res.status}: ${err.slice(0, 200)}`);
+      }
+      const data = await res.json() as any;
+      return data.choices?.[0]?.message?.content ?? '';
     }
+
     default:
       throw new Error(`nlRawPrompt: unsupported provider "${(cfg as any).provider}"`);
   }
