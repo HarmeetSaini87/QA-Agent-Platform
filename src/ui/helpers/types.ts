@@ -31,8 +31,20 @@ export interface TestEvent {
   errorMessage?: string;
   errorDetail?: string;
   screenshotPath?: string;
-  screenshotBefore?: string;
-  screenshotAfter?: string;
+  screenshotBefore?: string;   // URL: approved baseline image
+  screenshotAfter?: string;    // URL: actual (this run) image
+  screenshotDiff?: string;     // URL: pixel diff image (red = changed pixels)
+  visualDiffPct?: number;      // % of pixels that differ
+  visualLocatorName?: string;  // which locator was asserted
+  visualResults?: Array<{      // all ASSERT VISUAL steps in this test (one entry per step)
+    stepOrder:   number;
+    locatorName: string;
+    baselineUrl: string | null;
+    actualUrl:   string | null;
+    diffUrl:     string | null;
+    diffPct:     number;
+    status:      string;
+  }>;
   videoPath?: string;
   tracePath?: string;
   failureScreenshotPath?: string;

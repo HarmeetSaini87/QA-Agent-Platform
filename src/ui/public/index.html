@@ -177,10 +177,9 @@
         <!-- OLD: Plugin nav tab removed — plugin ecosystem deactivated, replaced by native assertion operators + domain library
         <div class="nav-item" data-tab="api-plugins">&#x1F9E9; Plugins</div>
         -->
-        <div class="nav-item" data-tab="api-graph">&#x1F5FA;&#xFE0F; Graph Editor</div>
-        <div class="nav-item" data-tab="api-collab">&#x1F4AC; Collaboration</div>
-        <div class="nav-item" data-tab="api-copilot">&#x1F916; Copilot</div>
+        <!-- HIDDEN: Performance Dashboard — instrumentation not yet wired to runtime; always shows zeros. Restore when profiler/cache/safeguards are integrated.
         <div class="nav-item" data-tab="perf-dashboard">&#x26A1; Performance</div>
+        -->
 
         <div class="nav-section-label admin-only" id="admin-section-label">Admin</div>
         <div class="nav-item admin-only" data-tab="projects" id="nav-projects">
@@ -1072,6 +1071,14 @@
                   <option value="pending-review">Pending Review</option>
                   <option value="no-baseline">No Baseline</option>
                 </select>
+                <select id="vr-browser-filter" class="fm-input" style="width:130px;font-size:12.5px"
+                  onchange="vrFilter()">
+                  <option value="">All browsers</option>
+                  <option value="chromium">Chromium</option>
+                  <option value="firefox">Firefox</option>
+                  <option value="webkit">WebKit</option>
+                  <option value="__legacy">Legacy (no browser)</option>
+                </select>
                 <button class="btn btn-outline btn-sm" onclick="vrLoad()">&#8635; Refresh</button>
               </div>
             </div>
@@ -1084,6 +1091,16 @@
             baselines.</div>
           <div id="vr-empty" style="display:none;text-align:center;padding:40px;color:#858585">No visual baselines found
             for this project.</div>
+
+          <!-- Bulk actions toolbar (shown when checkboxes are selected) -->
+          <div id="vr-bulk-bar" style="display:none;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 14px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;margin-bottom:12px;font-size:12.5px">
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:600">
+              <input type="checkbox" id="vr-select-all" onchange="vrSelectAll(this.checked)" style="cursor:pointer"> Select all
+            </label>
+            <span id="vr-bulk-count" style="color:#92400e"></span>
+            <button class="btn btn-sm" style="background:#ef4444;color:#fff;border:none" onclick="vrBulkDelete()">&#128465; Delete Selected</button>
+            <button class="btn btn-outline btn-sm" onclick="vrClearSelection()">Clear</button>
+          </div>
 
           <!-- Baseline grid -->
           <div id="vr-grid" style="display:none;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px">
@@ -1265,11 +1282,13 @@
                       <th style="width:42px;text-align:center">Sr.</th>
                       <th>Collection Name</th>
                       <th>Environment</th>
-                      <th>Started</th>
+                      <th>Start Time</th>
+                      <th>End Time</th>
                       <th>Duration</th>
                       <th style="text-align:center">Requests</th>
                       <th style="width:120px">Pass Rate</th>
                       <th style="text-align:center">Status</th>
+                      <th>Executed By</th>
                       <th style="width:80px"></th>
                     </tr>
                   </thead>
@@ -1522,147 +1541,10 @@
         </div>
         -->
 
-        <div class="panel" id="panel-api-graph">
-          <div class="card">
-            <div class="card-title">
-              &#x1F5FA;&#xFE0F; Graph Editor
-              <div style="display:flex;gap:8px;margin-left:auto;align-items:center">
-                <select id="graph-col-select" onchange="graphEditorSelectCollection(this.value)" style="min-width:220px">
-                  <option value="">&#x2014; Select Collection &#x2014;</option>
-                </select>
-                <button class="btn btn-secondary btn-sm" onclick="graphEditorValidate()">&#x2713; Validate DAG</button>
-                <button class="btn btn-secondary btn-sm" onclick="graphEditorSaveLayout()">&#x1F4BE; Save Layout</button>
-                <button class="btn btn-secondary btn-sm" onclick="graphEditorAddDep()">+ Add Dep</button>
-                <button class="btn btn-secondary btn-sm" onclick="graphEditorRemoveDep()">&#x2212; Remove Dep</button>
-                <button class="btn btn-secondary btn-sm" onclick="graphEditorZoomOut()">&#x2212;</button>
-                <span id="graph-zoom-label" style="font-size:12px;min-width:38px;text-align:center;color:var(--text-muted)">100%</span>
-                <button class="btn btn-secondary btn-sm" onclick="graphEditorZoomIn()">+</button>
-                <button class="btn btn-secondary btn-sm" onclick="graphEditorZoomReset()">&#x229E; Fit</button>
-              </div>
-            </div>
-            <div id="graph-editor-msg"></div>
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-              <div style="font-size:12px;color:var(--text-muted)">Click a node to select it (max 2). Drag to reposition. Use Add/Remove Dep with 2 selected nodes.</div>
-              <span id="graph-node-count" style="font-size:12px;color:var(--text-muted)"></span>
-            </div>
-            <div id="graph-canvas" style="overflow:auto;min-height:300px;background:var(--bg-secondary);border-radius:6px;padding:12px">
-              <div style="color:var(--text-muted)">Select a collection to view its workflow graph.</div>
-            </div>
-          </div>
-        </div><!-- /panel-api-graph -->
 
-        <div class="panel" id="panel-api-collab">
-          <div class="card">
-            <div class="card-title">
-              &#x1F4AC; Collaboration
-              <div style="display:flex;gap:8px;margin-left:auto;align-items:center">
-                <select id="collab-col-select" onchange="collabSelectCollection(this.value)" style="min-width:220px">
-                  <option value="">&#x2014; Select Collection &#x2014;</option>
-                </select>
-              </div>
-            </div>
-            <div style="display:flex;gap:8px;margin-bottom:12px">
-              <button class="sub-tab active" data-collabtab="revisions" onclick="collabTabSwitch('revisions',this)">&#x1F4CB; Revisions</button>
-              <button class="sub-tab" data-collabtab="comments" onclick="collabTabSwitch('comments',this)">&#x1F4AC; Comments</button>
-              <button class="sub-tab" data-collabtab="templates" onclick="collabTabSwitch('templates',this)">&#x1F4D1; Templates</button>
-            </div>
-            <div id="collab-panel-revisions">
-              <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;flex-wrap:wrap">
-                <input id="collab-revisions-search" type="text" placeholder="Search revisions…" oninput="collabFilterRevisions()" style="flex:1;min-width:180px">
-                <button class="btn btn-primary btn-sm" onclick="collabCreateRevisionModal()">+ Save Revision</button>
-                <button class="btn btn-secondary btn-sm" onclick="collabExportRevisions()">&#x2B07; Export CSV</button>
-              </div>
-              <div id="collab-revisions-msg"></div>
-              <table class="data-table">
-                <thead><tr><th>#</th><th>Status</th><th>Author</th><th>Description</th><th>Created</th><th>Actions</th></tr></thead>
-                <tbody id="collab-revisions-tbody"><tr><td colspan="6" style="text-align:center;color:var(--text-muted)">Select a collection.</td></tr></tbody>
-              </table>
-            </div>
-            <div id="collab-panel-comments" style="display:none">
-              <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;flex-wrap:wrap">
-                <input id="collab-comments-search" type="text" placeholder="Filter comments…" oninput="collabFilterComments()" style="flex:1;min-width:160px">
-                <select id="collab-comments-status-filter" onchange="collabFilterComments()" style="width:120px">
-                  <option value="">All statuses</option>
-                  <option value="open">Open</option>
-                  <option value="resolved">Resolved</option>
-                </select>
-              </div>
-              <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center">
-                <input id="collab-comment-body" type="text" placeholder="Add a comment&#x2026;" style="flex:1;min-width:200px">
-                <select id="collab-comment-target-type" style="width:140px">
-                  <option value="collection">collection</option>
-                  <option value="step">step</option>
-                  <option value="dependency">dependency</option>
-                  <option value="replay">replay</option>
-                </select>
-                <input id="collab-comment-target-id" type="text" placeholder="Target ID (optional)" style="width:160px">
-                <button class="btn btn-primary btn-sm" onclick="collabAddComment()">Post</button>
-              </div>
-              <div id="collab-comments-msg"></div>
-              <div id="collab-comments-list"><div style="color:var(--text-muted)">Select a collection.</div></div>
-            </div>
-            <div id="collab-panel-templates" style="display:none">
-              <div id="collab-templates-list"><div style="color:var(--text-muted)">Loading&#x2026;</div></div>
-            </div>
-          </div>
-        </div><!-- /panel-api-collab -->
 
-        <div class="panel" id="panel-api-copilot">
-          <div class="card">
-            <div class="card-title">
-              &#x1F916; Copilot
-              <div style="display:flex;gap:8px;margin-left:auto;align-items:center">
-                <select id="copilot-col-select" onchange="copilotSelectCollection(this.value)" style="min-width:220px">
-                  <option value="">&#x2014; Select Collection &#x2014;</option>
-                </select>
-              </div>
-            </div>
-            <div id="copilot-advisory" style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:6px;padding:10px 14px;margin-bottom:12px;font-size:13px">
-              &#x1F916; <strong>Advisory only.</strong> All guidance and predictions are AI-generated suggestions. Nothing is applied automatically.
-            </div>
-            <div style="display:flex;gap:8px;margin-bottom:12px">
-              <button class="sub-tab active" data-copilottab="guidance" onclick="copilotTabSwitch('guidance',this)">&#x1F4A1; Guidance</button>
-              <button class="sub-tab" data-copilottab="predict" onclick="copilotTabSwitch('predict',this)">&#x1F4CA; Predictions</button>
-              <button class="sub-tab" data-copilottab="history" onclick="copilotTabSwitch('history',this)">&#x1F4DC; History</button>
-            </div>
-            <div id="copilot-panel-guidance">
-              <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;align-items:center">
-                <select id="copilot-query-type" style="width:240px">
-                  <option value="workflow-guidance">workflow-guidance</option>
-                  <option value="orchestration-recommendation">orchestration-recommendation</option>
-                  <option value="replay-debug">replay-debug</option>
-                  <option value="flakiness-investigation">flakiness-investigation</option>
-                  <option value="dependency-optimization">dependency-optimization</option>
-                  <option value="retry-tuning">retry-tuning</option>
-                  <option value="environment-anomaly">environment-anomaly</option>
-                </select>
-                <input id="copilot-run-id" type="text" placeholder="Run ID (optional)" style="width:160px">
-                <button class="btn btn-primary btn-sm" onclick="copilotSubmitGuide()">&#x1F4A1; Get Guidance</button>
-              </div>
-              <div id="copilot-guidance-msg"></div>
-              <div id="copilot-guidance-result"></div>
-            </div>
-            <div id="copilot-panel-predict" style="display:none">
-              <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:center">
-                <button class="btn btn-secondary btn-sm" onclick="copilotPredictFlakiness()">&#x1F9EA; Flakiness Forecast</button>
-                <button class="btn btn-secondary btn-sm" onclick="copilotPredictRetryStorm()">&#x26A1; Retry Storm Risk</button>
-                <input id="copilot-sla-metric" type="text" placeholder="SLA metric name" style="width:150px">
-                <input id="copilot-sla-value" type="number" placeholder="Current value" style="width:120px">
-                <button class="btn btn-secondary btn-sm" onclick="copilotPredictSlaBreach()">SLA Breach?</button>
-              </div>
-              <div id="copilot-predict-msg"></div>
-              <div id="copilot-predict-result"></div>
-            </div>
-            <div id="copilot-panel-history" style="display:none">
-              <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center">
-                <input id="copilot-history-search" type="text" placeholder="Filter by query type…" oninput="copilotFilterHistory()" style="flex:1;max-width:300px">
-                <button class="btn btn-secondary btn-sm" onclick="copilotExportHistory()">&#x2B07; Export CSV</button>
-              </div>
-              <div id="copilot-history-result"><div style="color:var(--text-muted)">Select a collection.</div></div>
-            </div>
-          </div>
-        </div><!-- /panel-api-copilot -->
 
+        <!-- HIDDEN: Performance Dashboard panel — restore when runtime instrumentation is complete.
         <div class="panel" id="panel-perf-dashboard">
           <div class="card">
             <div class="card-title">
@@ -1684,7 +1566,8 @@
             </h3>
             <div id="perf-profile-result"><div style="color:var(--text-muted)">Loading&#x2026;</div></div>
           </div>
-        </div><!-- /panel-perf-dashboard -->
+        </div>
+        -->
 
         <!-- ── Tab: Projects ──────────────────────────────────────────────── -->
         <div class="panel admin-only" id="panel-projects">
@@ -1706,7 +1589,7 @@
             <button class="sub-tab" onclick="adminSubTab('audit',this)">Audit Log</button>
             <button class="sub-tab" onclick="adminSubTab('settings',this)">Settings</button>
             <button class="sub-tab" onclick="adminSubTab('license',this)">License</button>
-            <button class="sub-tab" onclick="adminSubTab('apikeys',this)">API Keys</button>
+            <button class="sub-tab" onclick="adminSubTab('apikeys',this)">CI/CD</button>
           </div>
 
           <!-- Users sub-panel -->
@@ -2447,6 +2330,7 @@
           <button id="proj-tab-environments" class="proj-tab"
             onclick="projTabSwitch('environments')">Environments</button>
           <button id="proj-tab-components" class="proj-tab" onclick="projTabSwitch('components')">Components</button>
+          <button id="proj-tab-vrt" class="proj-tab" onclick="projTabSwitch('vrt')">Visual Regression</button>
         </div>
 
         <!-- Tab: Details -->
@@ -2461,6 +2345,95 @@
               placeholder="Optional description" /></div>
           <div class="field"><label>Jira Project Key <span style="font-size:11px;color:var(--neutral-400);font-weight:400">(optional — e.g. BANK, CRM)</span></label>
             <input id="pm-jira-key" class="fm-input" placeholder="e.g. BSM" style="text-transform:uppercase" maxlength="20" /></div>
+        </div>
+
+        <!-- Tab: Visual Regression -->
+        <div id="proj-tab-panel-vrt" style="display:none">
+          <div style="font-size:12px;color:var(--neutral-400);margin-bottom:14px;line-height:1.6;background:var(--neutral-50);border:1px solid var(--neutral-200);border-radius:6px;padding:8px 12px">
+            &#9432; Project-wide defaults for all <strong>ASSERT VISUAL</strong> steps. Individual steps can override these in their VRT Options panel. Hover <strong>?</strong> for examples.
+          </div>
+          <div class="row-2">
+            <div class="field">
+              <label style="display:flex;align-items:center;gap:6px">Threshold (0–100)
+                <span style="font-size:10px;color:var(--neutral-400);font-weight:400">default 20</span>
+                <span class="step-tooltip-trigger" data-tooltip-json='{"what":"Colour difference tolerance per pixel using the YIQ colour space (0 = exact match, 100 = accept any colour change). Playwright default is 0.2 — enter 20 here.","example":"20 → tolerates subtle anti-aliasing and font rendering differences\n5  → strict; fails on minor colour shifts\n50 → lax; useful for pages with gradient or shadow variations","tip":"Start with 20 for most projects. Lower to 10 for pixel-perfect design systems. Raise to 30–40 for pages with dynamic shadows or gradients."}' onmouseenter="_kwTipShow(this)" onmouseleave="_kwTipHide()">?</span>
+              </label>
+              <input id="pm-vrt-threshold" class="fm-input" type="number" min="0" max="100" step="1" value="20" placeholder="20" />
+            </div>
+            <div class="field">
+              <label style="display:flex;align-items:center;gap:6px">Max Diff Pixel Ratio (0–100%)
+                <span style="font-size:10px;color:var(--neutral-400);font-weight:400">default 5</span>
+                <span class="step-tooltip-trigger" data-tooltip-json='{"what":"Maximum percentage of total pixels that are allowed to differ before the assertion fails. Applied after the threshold check — both must pass.","example":"5  → up to 5% of all pixels can differ (recommended for most UIs)\n1  → tight; good for static marketing pages\n10 → relaxed; useful for data-heavy dashboards with live values","tip":"Use this alongside Threshold. Threshold controls per-pixel colour sensitivity; this controls how many pixels overall are allowed to change."}' onmouseenter="_kwTipShow(this)" onmouseleave="_kwTipHide()">?</span>
+              </label>
+              <input id="pm-vrt-ratio" class="fm-input" type="number" min="0" max="100" step="1" value="5" placeholder="5" />
+            </div>
+          </div>
+          <div class="row-2">
+            <div class="field">
+              <label style="display:flex;align-items:center;gap:6px">Max Diff Pixels
+                <span style="font-size:10px;color:var(--neutral-400);font-weight:400">optional hard cap</span>
+                <span class="step-tooltip-trigger" data-tooltip-json='{"what":"Hard cap on the absolute number of pixels that may differ. If set, this overrides the ratio check — the assertion fails if either limit is exceeded. Leave blank to rely on ratio only.","example":"blank   → rely on ratio (recommended default)\n100     → fail if more than 100 pixels differ, regardless of page size\n500     → suitable for full-page captures of large dashboards","tip":"Useful when the page size varies across environments (desktop vs tablet) and you need a fixed budget rather than a relative one."}' onmouseenter="_kwTipShow(this)" onmouseleave="_kwTipHide()">?</span>
+              </label>
+              <input id="pm-vrt-maxpx" class="fm-input" type="number" min="0" step="1" placeholder="blank = disabled (use ratio only)" />
+            </div>
+            <div class="field">
+              <label style="display:flex;align-items:center;gap:6px">Animations
+                <span class="step-tooltip-trigger" data-tooltip-json='{"what":"Controls whether CSS and web animations are frozen before the screenshot is taken. Disabled freezes all animations at their start state, preventing timing-related false failures.","example":"Disabled → freeze all animations (recommended for all projects)\nAllow    → capture the live animated state — only use if you intentionally test animation frames","tip":"Always use Disabled unless you are specifically testing animation behaviour. Running animations are the #1 cause of false VRT failures."}' onmouseenter="_kwTipShow(this)" onmouseleave="_kwTipHide()">?</span>
+              </label>
+              <select id="pm-vrt-animations" class="fm-select">
+                <option value="disabled" selected>Disabled — freeze animations (recommended)</option>
+                <option value="allow">Allow — capture live state</option>
+              </select>
+            </div>
+          </div>
+          <div class="row-2">
+            <div class="field">
+              <label style="display:flex;align-items:center;gap:6px">Scale
+                <span class="step-tooltip-trigger" data-tooltip-json='{"what":"Controls pixel scaling for the screenshot. CSS uses logical pixels (same across devices). Device uses physical pixels which doubles on HiDPI/Retina screens.","example":"CSS    → 1280×720 screenshot on all machines (recommended — consistent baselines)\nDevice → 2560×1440 on a Retina Mac — baselines differ by machine","tip":"Always use CSS unless your team specifically requires HiDPI visual testing. Device mode means baselines captured on a MacBook Retina will fail on a standard monitor."}' onmouseenter="_kwTipShow(this)" onmouseleave="_kwTipHide()">?</span>
+              </label>
+              <select id="pm-vrt-scale" class="fm-select">
+                <option value="css" selected>CSS — logical pixels (recommended)</option>
+                <option value="device">Device — physical / HiDPI pixels</option>
+              </select>
+            </div>
+            <div class="field">
+              <label style="display:flex;align-items:center;gap:6px">Caret
+                <span class="step-tooltip-trigger" data-tooltip-json='{"what":"Controls whether the text cursor (blinking caret) is visible in screenshots. Hide removes it before capture to prevent false failures caused by cursor position.","example":"Hide    → no cursor in screenshot (recommended — avoids flaky diffs on text inputs)\nInitial → cursor shown wherever it currently is in the page","tip":"Use Hide for all projects unless you specifically need to verify cursor placement in an accessibility or UX test."}' onmouseenter="_kwTipShow(this)" onmouseleave="_kwTipHide()">?</span>
+              </label>
+              <select id="pm-vrt-caret" class="fm-select">
+                <option value="hide" selected>Hide — remove cursor (recommended)</option>
+                <option value="initial">Initial — show cursor as-is</option>
+              </select>
+            </div>
+          </div>
+          <div class="row-2">
+            <div class="field">
+              <label style="display:flex;align-items:center;gap:6px">Mask Color
+                <span style="font-size:10px;color:var(--neutral-400);font-weight:400">default #FF00FF</span>
+                <span class="step-tooltip-trigger" data-tooltip-json='{"what":"The CSS colour used to paint over elements listed in Mask Selectors before the screenshot is taken. The masked area is compared as a solid block of this colour in both baseline and actual.","example":"#FF00FF → magenta (Playwright default — easy to spot in diff images)\n#000000 → black mask — blends with dark UIs\n#FFFFFF → white mask — blends with light backgrounds","tip":"Keep the default magenta unless masked areas clash with your UI colours and make diff images hard to read."}' onmouseenter="_kwTipShow(this)" onmouseleave="_kwTipHide()">?</span>
+              </label>
+              <div style="display:flex;gap:6px;align-items:center">
+                <input type="color" id="pm-vrt-maskcolor-picker" value="#FF00FF" style="width:36px;height:34px;border:1px solid var(--neutral-200);border-radius:4px;padding:2px;cursor:pointer"
+                  oninput="document.getElementById('pm-vrt-maskcolor').value=this.value" />
+                <input id="pm-vrt-maskcolor" class="fm-input" type="text" style="font-family:monospace" value="#FF00FF" placeholder="#FF00FF"
+                  oninput="document.getElementById('pm-vrt-maskcolor-picker').value=this.value" />
+              </div>
+            </div>
+            <div class="field">
+              <label style="display:flex;align-items:center;gap:6px">Global Style Path
+                <span style="font-size:10px;color:var(--neutral-400);font-weight:400">optional</span>
+                <span class="step-tooltip-trigger" data-tooltip-json='{"what":"Path to a CSS file that is injected into every page before the screenshot is taken. Use it to hide project-wide dynamic elements that would otherwise cause false failures on every test.","example":"vrt-overrides.css containing:\n  .cookie-banner { display: none !important; }\n  .live-chat-widget { visibility: hidden; }\n  .notification-dot { opacity: 0; }","tip":"This is the most powerful way to suppress noise across all VRT steps. Create one file per project and list every element that changes between runs but is not part of what you are testing."}' onmouseenter="_kwTipShow(this)" onmouseleave="_kwTipHide()">?</span>
+              </label>
+              <input id="pm-vrt-stylepath" class="fm-input" type="text" placeholder="e.g. vrt-overrides.css (relative to project root)" />
+            </div>
+          </div>
+          <div class="field">
+            <label style="display:flex;align-items:center;gap:6px">Assertion Timeout (ms)
+              <span style="font-size:10px;color:var(--neutral-400);font-weight:400">default 5000</span>
+              <span class="step-tooltip-trigger" data-tooltip-json='{"what":"How long (in milliseconds) Playwright retries the visual assertion before declaring it a failure. Playwright automatically retries until the screenshot matches or the timeout expires.","example":"5000  → 5 seconds (Playwright default — suitable for most apps)\n10000 → 10 seconds — use for pages with slow animations or lazy-loaded images\n30000 → 30 seconds — use only for very slow server-side rendered pages","tip":"Increase this if your ASSERT VISUAL steps fail intermittently due to images or fonts loading slowly. Do not lower below 3000ms."}' onmouseenter="_kwTipShow(this)" onmouseleave="_kwTipHide()">?</span>
+            </label>
+            <input id="pm-vrt-timeout" class="fm-input" type="number" min="1000" step="1000" value="5000" placeholder="5000" style="max-width:220px" />
+          </div>
         </div>
 
         <!-- Tab: Environments -->
@@ -3477,10 +3450,6 @@
             <label class="fm-label">Rate Limit (req/s)</label>
             <input class="fm-input" id="api-col-ratelimit" type="number" min="1" max="100" value="10"/>
           </div>
-          <div class="fm-row" style="align-items:center;display:flex;gap:8px;padding-top:18px">
-            <input type="checkbox" id="api-col-autodefects"/>
-            <label for="api-col-autodefects">Auto-file Jira defects</label>
-          </div>
         </div>
         <div style="display:flex;align-items:center;gap:8px;margin:8px 0 4px">
           <strong>Collection Variables</strong>
@@ -3950,6 +3919,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.29.2/cytoscape.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
   <script src="app.js"></script>
   <script src="modules.js"></script>
+
 </body>
 
 </html>

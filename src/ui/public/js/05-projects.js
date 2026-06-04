@@ -254,6 +254,16 @@ function projOpenModal(id = null) {
     document.getElementById('pm-prefix').value = '';
     document.getElementById('pm-desc').value = '';
     document.getElementById('pm-jira-key').value = '';
+    document.getElementById('pm-vrt-threshold').value       = 20;
+    document.getElementById('pm-vrt-ratio').value            = 5;
+    document.getElementById('pm-vrt-maxpx').value            = '';
+    document.getElementById('pm-vrt-animations').value       = 'disabled';
+    document.getElementById('pm-vrt-scale').value            = 'css';
+    document.getElementById('pm-vrt-caret').value            = 'hide';
+    document.getElementById('pm-vrt-maskcolor').value        = '#FF00FF';
+    document.getElementById('pm-vrt-maskcolor-picker').value = '#FF00FF';
+    document.getElementById('pm-vrt-stylepath').value        = '';
+    document.getElementById('pm-vrt-timeout').value          = 5000;
     document.getElementById('proj-envs').innerHTML = '';
   }
   openModal('modal-project');
@@ -270,6 +280,19 @@ async function projEdit(id) {
   document.getElementById('pm-prefix').value = p.tcIdPrefix || '';
   document.getElementById('pm-desc').value = p.description || '';
   document.getElementById('pm-jira-key').value = p.jiraProjectKey || '';
+  // Populate VRT config
+  const vrt = p.vrtConfig || {};
+  document.getElementById('pm-vrt-threshold').value   = vrt.threshold         != null ? Math.round(vrt.threshold * 100)         : 20;
+  document.getElementById('pm-vrt-ratio').value       = vrt.maxDiffPixelRatio != null ? Math.round(vrt.maxDiffPixelRatio * 100) : 5;
+  document.getElementById('pm-vrt-maxpx').value       = vrt.maxDiffPixels     != null ? vrt.maxDiffPixels                       : '';
+  document.getElementById('pm-vrt-animations').value  = vrt.animations  || 'disabled';
+  document.getElementById('pm-vrt-scale').value       = vrt.scale       || 'css';
+  document.getElementById('pm-vrt-caret').value       = vrt.caret       || 'hide';
+  const mc = vrt.maskColor || '#FF00FF';
+  document.getElementById('pm-vrt-maskcolor').value        = mc;
+  document.getElementById('pm-vrt-maskcolor-picker').value = mc;
+  document.getElementById('pm-vrt-stylepath').value   = vrt.stylePath   || '';
+  document.getElementById('pm-vrt-timeout').value     = vrt.timeout     != null ? vrt.timeout : 5000;
   const envsEl = document.getElementById('proj-envs');
   envsEl.innerHTML = '';
   (p.environments || []).forEach(e => projAddEnv(e.id, e.name, e.url));
@@ -303,11 +326,31 @@ async function projSave() {
   })).filter(e => e.url);
 
   const jiraKey = (document.getElementById('pm-jira-key').value || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+
+  // Collect VRT config — only include fields that were explicitly set
+  const _vrtNum = (id) => { const v = parseFloat(document.getElementById(id)?.value); return isNaN(v) ? null : v; };
+  const _vrtStr = (id) => document.getElementById(id)?.value?.trim() || null;
+  const vrtThreshold = _vrtNum('pm-vrt-threshold');
+  const vrtRatio     = _vrtNum('pm-vrt-ratio');
+  const vrtMaxPx     = _vrtNum('pm-vrt-maxpx');
+  const vrtConfig = {
+    threshold:         vrtThreshold != null ? vrtThreshold / 100 : 0.2,
+    maxDiffPixelRatio: vrtRatio     != null ? vrtRatio     / 100 : 0.05,
+    maxDiffPixels:     vrtMaxPx     != null ? vrtMaxPx           : null,
+    animations:        document.getElementById('pm-vrt-animations')?.value || 'disabled',
+    scale:             document.getElementById('pm-vrt-scale')?.value      || 'css',
+    caret:             document.getElementById('pm-vrt-caret')?.value      || 'hide',
+    maskColor:         _vrtStr('pm-vrt-maskcolor') || '#FF00FF',
+    stylePath:         _vrtStr('pm-vrt-stylepath') || undefined,
+    timeout:           _vrtNum('pm-vrt-timeout')   != null ? _vrtNum('pm-vrt-timeout') : undefined,
+  };
+
   const body = {
     name, tcIdPrefix: prefix,
     description: document.getElementById('pm-desc').value.trim(),
     environments,
     jiraProjectKey: jiraKey || null,
+    vrtConfig,
   };
   const method = editingProjectId ? 'PUT' : 'POST';
   const apiUrl = editingProjectId ? `/api/projects/${editingProjectId}` : '/api/projects';
@@ -325,7 +368,7 @@ async function projDelete(id, name) {
 }
 
 function projTabSwitch(tab) {
-  ['details', 'environments', 'components'].forEach(t => {
+  ['details', 'environments', 'components', 'vrt'].forEach(t => {
     document.getElementById(`proj-tab-panel-${t}`).style.display = t === tab ? '' : 'none';
     document.getElementById(`proj-tab-${t}`).classList.toggle('proj-tab-active', t === tab);
   });

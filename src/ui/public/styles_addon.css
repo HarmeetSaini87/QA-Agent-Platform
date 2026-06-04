@@ -817,6 +817,29 @@ body[data-theme="light"] {
 .script-step-row { position: relative; }
 
 /* ── Step help label & tooltip ──────────────────────────────────────────── */
+.vrt-options-panel { margin: 6px 0 4px 0; }
+.vrt-options-toggle {
+  background: none; border: 1px solid var(--g200); border-radius: 6px;
+  padding: 5px 10px; font-size: 11.5px; color: var(--g600); cursor: pointer;
+  display: flex; align-items: center; gap: 6px; width: 100%;
+}
+.vrt-options-toggle:hover { background: var(--g50); }
+.vrt-toggle-arrow { font-size: 9px; transition: transform .15s; display:inline-block; }
+.vrt-options-hint { color: var(--g400); font-weight: 400; margin-left: 4px; }
+.vrt-options-body { padding: 10px; background: var(--g50); border: 1px solid var(--g200); border-top: none; border-radius: 0 0 6px 6px; }
+.vrt-options-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px 14px; margin-bottom: 10px; }
+.vrt-field label { font-size: 11px; color: var(--g600); display: block; margin-bottom: 3px; font-weight: 500; }
+.vrt-field input, .vrt-field select { width: 100%; }
+.vrt-clip-row { padding-top: 8px; border-top: 1px solid var(--g200); }
+.vrt-info-banner {
+  display: flex; align-items: flex-start; gap: 8px;
+  background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px;
+  padding: 7px 10px; margin-bottom: 8px; font-size: 11.5px; color: #1e40af;
+}
+.vrt-info-icon { font-size: 14px; flex-shrink: 0; margin-top: 1px; }
+.vrt-info-text { line-height: 1.6; }
+.vrt-mode-el  { color: #065f46; }
+.vrt-mode-fp  { color: #7c3aed; }
 .step-help-row {
   display: flex; align-items: center; gap: 6px;
   margin: -2px 0 6px 0; padding-left: 2px;

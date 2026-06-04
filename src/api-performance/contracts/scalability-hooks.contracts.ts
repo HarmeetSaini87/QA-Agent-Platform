@@ -4,18 +4,11 @@
 
 import type { AiGraphOverlayBundle } from '../../api-intelligence/contracts/graph-overlay-ai.contracts';
 import type { ReplaySession } from '../../api-observability/contracts/replay-event.contracts';
-import type { GraphProjection } from '../../workflow-graph/contracts/graph.contracts';
 
 /** E.3 — Future WebSocket-based incremental overlay push. */
 export interface IWebSocketOverlayChannel {
   pushOverlayUpdate(collectionId: string, overlay: Partial<AiGraphOverlayBundle>): void;
   isConnected(): boolean;
-}
-
-/** E.1 — Future large-graph node virtualization. */
-export interface IGraphVirtualizer {
-  virtualize(projection: GraphProjection, viewportNodeIds: readonly string[]): GraphProjection;
-  canVirtualize(nodeCount: number): boolean;
 }
 
 /** E.3 — Future distributed replay index for sharded execution history. */
@@ -53,13 +46,6 @@ export interface ICloudTelemetryEmitter {
 export class NoOpWebSocketOverlayChannel implements IWebSocketOverlayChannel {
   pushOverlayUpdate(_collectionId: string, _overlay: Partial<AiGraphOverlayBundle>): void {}
   isConnected(): boolean { return false; }
-}
-
-export class NoOpGraphVirtualizer implements IGraphVirtualizer {
-  virtualize(projection: GraphProjection, _viewportNodeIds: readonly string[]): GraphProjection {
-    return projection;
-  }
-  canVirtualize(_nodeCount: number): boolean { return false; }
 }
 
 export class NoOpAdaptivePoller implements IAdaptivePoller {

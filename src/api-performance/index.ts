@@ -6,7 +6,6 @@ export type { CompactionConfig, CompactedEventSummary, CompactionResult } from '
 export type { SafeguardViolation, SafeguardCheckResult, SafeguardThresholds, SafeguardCode } from './contracts/safeguard.contracts';
 export type {
   IWebSocketOverlayChannel,
-  IGraphVirtualizer,
   IAdaptivePoller,
   ICloudTelemetryEmitter,
   IShardCache,
@@ -16,7 +15,6 @@ export type {
 
 export { globalProfilerRegistry } from './profiling/profiler-registry';
 export { withProfilingSync, withProfilingAsync, recordSpan } from './profiling/execution-profiler';
-export { profiledProjection, buildProjectionCostReport } from './profiling/graph-profiler';
 export { profiledReplaySynthesis, buildReplayCostReport } from './profiling/replay-profiler';
 
 export { globalProjectionCache } from './optimization/graph-projection-cache';

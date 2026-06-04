@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>VRT Diff Viewer — 4 Mode Concepts</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,sans-serif;background:#0f172a;color:#e2e8f0;padding:28px}
+h1{font-size:18px;font-weight:800;color:#f1f5f9;margin-bottom:4px}
+.subtitle{font-size:11px;color:#64748b;margin-bottom:28px;line-height:1.7}
+
+/* ── Grid ── */
+.grid4{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:28px}
+.panel{background:#1e293b;border:1px solid #334155;border-radius:12px;overflow:hidden}
+.panel-head{padding:10px 14px;background:#0f172a;border-bottom:1px solid #334155;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.panel-title{font-size:12px;font-weight:800;color:#f1f5f9;flex:1}
+.badge{font-size:9px;font-weight:800;padding:2px 8px;border-radius:8px;letter-spacing:.4px}
+.b-slider{background:#7c3aed22;color:#a78bfa;border:1px solid #7c3aed44}
+.b-onion{background:#059669;color:#6ee7b7;border:none}
+.b-blink{background:#d9770622;color:#fbbf24;border:1px solid #d9770644}
+.b-diff{background:#0284c722;color:#38bdf8;border:1px solid #0284c744}
+.panel-body{padding:14px}
+.competitor{font-size:9px;color:#475569;font-style:italic}
+
+/* ── Shared image frame ── */
+.frame{position:relative;overflow:hidden;border-radius:6px;background:#f8fafc;height:72px;cursor:ew-resize;user-select:none}
+.frame img{display:block;width:100%;height:100%;object-fit:contain}
+
+/* ── Mode 1: Slider / B+C ── */
+.sl-baseline{position:absolute;inset:0;width:100%;height:100%;clip-path:inset(0 50% 0 0)}
+.sl-div{position:absolute;top:0;bottom:0;width:2px;transform:translateX(-50%);pointer-events:none;background:rgba(0,0,0,.3);transition:background .1s,box-shadow .1s}
+.sl-div.hot{background:#ef4444;box-shadow:0 0 12px 4px rgba(239,68,68,.7)}
+.sl-knob{position:absolute;top:50%;transform:translate(-50%,-50%);width:28px;height:28px;border-radius:50%;background:#1e293b;color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;pointer-events:none;box-shadow:0 2px 10px rgba(0,0,0,.6);transition:background .15s,box-shadow .15s;z-index:3}
+.sl-knob.hot{background:#ef4444;box-shadow:0 0 16px 5px rgba(239,68,68,.6)}
+.sl-lbl{position:absolute;top:5px;background:rgba(0,0,0,.7);color:#fff;font-size:9px;padding:1px 6px;border-radius:3px;font-weight:700;pointer-events:none;z-index:2}
+.sl-lbl-l{left:6px}.sl-lbl-r{right:6px}
+.sl-tip{position:absolute;bottom:calc(50% + 20px);transform:translateX(-50%);background:#1e293b;border:1px solid #475569;color:#f1f5f9;font-size:10px;padding:3px 10px;border-radius:6px;white-space:nowrap;pointer-events:none;font-weight:700;z-index:4;display:none}
+.sl-tip::after{content:'';position:absolute;top:100%;left:50%;transform:translateX(-50%);border:4px solid transparent;border-top-color:#475569}
+.sl-tip.hot{background:#7f1d1d;border-color:#ef4444;color:#fca5a5}
+.sl-tip.hot::after{border-top-color:#ef4444}
+
+/* ── Mode 2: Onion Skin ── */
+.onion-wrap{position:relative;border-radius:6px;overflow:hidden;background:#f8fafc;height:72px}
+.onion-actual{display:block;width:100%;height:100%;object-fit:contain}
+.onion-baseline{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;opacity:.5}
+.onion-ctrl{margin-top:8px;display:flex;align-items:center;gap:8px}
+.onion-ctrl label{font-size:10px;color:#94a3b8;font-weight:600;white-space:nowrap}
+.onion-ctrl input[type=range]{flex:1;accent-color:#059669;height:4px}
+.onion-pct{font-size:10px;color:#6ee7b7;font-weight:700;min-width:28px;text-align:right}
+
+/* ── Mode 3: Blink / Flicker ── */
+.blink-frame{position:relative;border-radius:6px;overflow:hidden;background:#f8fafc;height:72px}
+.blink-a,.blink-b{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
+.blink-b{opacity:0;transition:opacity 0s}
+.blink-ctrl{margin-top:8px;display:flex;align-items:center;gap:8px}
+.blink-btn{padding:4px 14px;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;background:#d9770622;color:#fbbf24;border:1px solid #d9770644}
+.blink-btn.active{background:#d97706;color:#fff;border-color:#d97706}
+.blink-speed{display:flex;align-items:center;gap:6px;font-size:10px;color:#94a3b8}
+.blink-speed select{background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:4px;padding:2px 6px;font-size:10px}
+.blink-lbl{position:absolute;top:5px;background:rgba(0,0,0,.7);color:#fff;font-size:9px;padding:1px 6px;border-radius:3px;font-weight:700;pointer-events:none}
+
+/* ── Mode 4: Diff-only ── */
+.diff-frame{position:relative;border-radius:6px;overflow:hidden;background:#1e293b;height:72px;display:flex;align-items:center;justify-content:center}
+.diff-frame img{display:block;width:100%;height:100%;object-fit:contain}
+.diff-legend{margin-top:8px;display:flex;gap:12px;align-items:center}
+.diff-swatch{width:10px;height:10px;border-radius:2px;flex-shrink:0}
+.diff-legend-txt{font-size:10px;color:#94a3b8}
+
+/* ── Heatmap track ── */
+.track{height:6px;background:#0f172a;position:relative;overflow:hidden;border-radius:0 0 4px 4px}
+.track canvas{display:block;width:100%;height:6px}
+.track-needle{position:absolute;top:0;bottom:0;width:2px;background:#fff;opacity:.6;transform:translateX(-50%);pointer-events:none}
+
+/* ── Note ── */
+.note{margin-top:10px;padding:8px 10px;background:#0f172a;border-radius:6px;font-size:10px;color:#64748b;line-height:1.6}
+.note strong{color:#94a3b8}
+.note em{color:#7dd3fc;font-style:normal}
+
+/* ── Pick bar ── */
+.pick{padding:16px;background:#1e293b;border:1px solid #334155;border-radius:12px;margin-top:4px}
+.pick h2{font-size:13px;font-weight:800;color:#f1f5f9;margin-bottom:12px}
+.pick-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.pbtn{padding:7px 18px;border:none;border-radius:8px;font-size:11px;font-weight:800;cursor:pointer;transition:opacity .15s}
+.pbtn:hover{opacity:.85}
+.pb-1{background:#7c3aed;color:#fff}
+.pb-2{background:#059669;color:#fff}
+.pb-3{background:#d97706;color:#fff}
+.pb-4{background:#0284c7;color:#fff}
+.pb-all{background:#0f172a;color:#94a3b8;border:1px solid #334155}
+.presult{font-size:11px;color:#22c55e;font-weight:700;margin-top:10px;display:none;padding:8px 10px;background:#052e16;border:1px solid #166534;border-radius:6px}
+
+/* ── Simulated content blocks ── */
+.sim-row{display:flex;align-items:center;padding:0 14px;width:100%;height:100%;gap:8px}
+.sim-label{font-size:10px;color:#64748b;white-space:nowrap}
+.sim-badge{font-size:16px;font-weight:800;padding:2px 10px;border-radius:5px}
+.sim-badge-b{color:#1e40af;background:#eff6ff}
+.sim-badge-a{color:#1d4ed8;background:#dbeafe}
+</style>
+</head>
+<body>
+
+<h1>VRT Diff Viewer — 4 Mode Concepts</h1>
+<p class="subtitle">
+  Competitive analysis: Percy / Chromatic / Applitools / GitLab each use a different primary mode.<br>
+  Pick one (or mix) to implement in the QA Platform. All demos use the same <strong>Step 14 — #vrt-dyn-counter-row</strong> checkpoint.<br>
+  <strong style="color:#fbbf24">Baseline: "261" counter &nbsp;→&nbsp; Actual: "430" counter</strong> &nbsp;— 0.14% diff, localised badge change.
+</p>
+
+<div class="grid4">
+
+  <!-- ══ MODE 1: Slider + B+C ══ -->
+  <div class="panel">
+    <div class="panel-head">
+      <span class="badge b-slider">MODE 1</span>
+      <span class="panel-title">Slider + Hot-Zone (B+C)</span>
+      <span class="competitor">Used by: BackstopJS, Percy</span>
+    </div>
+    <div class="panel-body">
+      <div class="frame" id="sl1">
+        <!-- Actual layer -->
+        <div class="sim-row" style="background:#f0f9ff;position:absolute;inset:0">
+          <span class="sim-label">LIVE SESSIONS</span>
+          <span class="sim-badge sim-badge-a">430</span>
+          <span class="sim-label">active sessions right now</span>
+        </div>
+        <!-- Baseline clipped layer -->
+        <div id="sl1-bl" style="position:absolute;inset:0;clip-path:inset(0 50% 0 0);background:#f0f9ff;display:flex;align-items:center;padding:0 14px;gap:8px">
+          <span class="sim-label">LIVE SESSIONS</span>
+          <span class="sim-badge sim-badge-b">261</span>
+          <span class="sim-label">active sessions right now</span>
+        </div>
+        <span class="sl-lbl sl-lbl-l">Baseline</span>
+        <span class="sl-lbl sl-lbl-r">Actual</span>
+        <div class="sl-div" id="sl1-div"></div>
+        <div class="sl-knob" id="sl1-knob">⟺</div>
+        <div class="sl-tip" id="sl1-tip"></div>
+      </div>
+      <div class="track"><canvas id="sl1-heat" height="6"></canvas><div class="track-needle" id="sl1-needle"></div></div>
+      <div class="note">
+        <strong>B+C:</strong> divider glows red + knob shows ⚡ only when crossing the diff zone (18–32%). Tooltip says "⚡ Diff here!".<br>
+        <em>USP:</em> User knows exactly where to drag. No guessing. The glow is the signal.
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ MODE 2: Onion Skin ══ -->
+  <div class="panel">
+    <div class="panel-head">
+      <span class="badge b-onion">MODE 2</span>
+      <span class="panel-title">Onion Skin (Opacity Blend)</span>
+      <span class="competitor">Used by: Green Onion, Figma, Applitools</span>
+    </div>
+    <div class="panel-body">
+      <div class="onion-wrap" id="onion1">
+        <!-- Actual (bottom) -->
+        <div style="position:absolute;inset:0;background:#f0f9ff;display:flex;align-items:center;padding:0 14px;gap:8px">
+          <span class="sim-label">LIVE SESSIONS</span>
+          <span class="sim-badge sim-badge-a">430</span>
+          <span class="sim-label">active sessions right now</span>
+        </div>
+        <!-- Baseline (top, opacity controlled) -->
+        <div id="onion-bl" style="position:absolute;inset:0;background:#f0f9ff;display:flex;align-items:center;padding:0 14px;gap:8px;opacity:0.5">
+          <span class="sim-label">LIVE SESSIONS</span>
+          <span class="sim-badge sim-badge-b" style="outline:2px dashed #f59e0b">261</span>
+          <span class="sim-label">active sessions right now</span>
+        </div>
+      </div>
+      <div class="onion-ctrl">
+        <label>Baseline opacity</label>
+        <input type="range" id="onionRange" min="0" max="100" value="50" oninput="setOnion(this.value)">
+        <span class="onion-pct" id="onionPct">50%</span>
+      </div>
+      <div class="note">
+        <strong>Onion skin:</strong> Drag opacity slider to ghost baseline over actual. At 0% = pure actual; at 100% = pure baseline.<br>
+        <em>Best for:</em> detecting positional drift (element moved 3px), size changes, layout shifts.
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ MODE 3: Blink / Flicker ══ -->
+  <div class="panel">
+    <div class="panel-head">
+      <span class="badge b-blink">MODE 3</span>
+      <span class="panel-title">Blink / Flicker Mode</span>
+      <span class="competitor">Used by: GitLab, Chromatic, Playwright UI</span>
+    </div>
+    <div class="panel-body">
+      <div class="blink-frame" id="blinkFrame">
+        <!-- Actual -->
+        <div class="blink-a" id="blinkActual" style="position:absolute;inset:0;background:#f0f9ff;display:flex;align-items:center;padding:0 14px;gap:8px">
+          <span class="sim-label">LIVE SESSIONS</span>
+          <span class="sim-badge sim-badge-a">430</span>
+          <span class="sim-label">active sessions right now</span>
+        </div>
+        <!-- Baseline -->
+        <div class="blink-b" id="blinkBaseline" style="position:absolute;inset:0;background:#f0f9ff;display:flex;align-items:center;padding:0 14px;gap:8px">
+          <span class="sim-label">LIVE SESSIONS</span>
+          <span class="sim-badge sim-badge-b">261</span>
+          <span class="sim-label">active sessions right now</span>
+        </div>
+        <span class="blink-lbl" id="blinkLabel" style="left:6px">Actual</span>
+      </div>
+      <div class="blink-ctrl">
+        <button class="blink-btn" id="blinkBtn" onclick="toggleBlink()">▶ Start Blink</button>
+        <div class="blink-speed">
+          Speed:
+          <select id="blinkSpeed" onchange="updateBlinkSpeed()">
+            <option value="800">Slow (0.8s)</option>
+            <option value="400" selected>Normal (0.4s)</option>
+            <option value="150">Fast (0.15s)</option>
+          </select>
+        </div>
+      </div>
+      <div class="note">
+        <strong>Flicker mode:</strong> Rapidly alternates baseline ↔ actual. The human eye catches the motion of the changed area instantly — no dragging needed.<br>
+        <em>Best for:</em> catching small text changes, colour shifts, icon swaps.
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ MODE 4: Diff Image Only ══ -->
+  <div class="panel">
+    <div class="panel-head">
+      <span class="badge b-diff">MODE 4</span>
+      <span class="panel-title">Diff Overlay (Bounding Box)</span>
+      <span class="competitor">Used by: Percy, Applitools Eyes, pixelmatch</span>
+    </div>
+    <div class="panel-body">
+      <!-- Simulated diff: actual with red bounding box drawn over changed area -->
+      <div style="position:relative;border-radius:6px;overflow:hidden;background:#f0f9ff;height:72px;display:flex;align-items:center;padding:0 14px;gap:8px">
+        <span class="sim-label">LIVE SESSIONS</span>
+        <!-- badge with red bounding box -->
+        <span style="position:relative;display:inline-block">
+          <span class="sim-badge sim-badge-a">430</span>
+          <!-- red border overlay -->
+          <span style="position:absolute;inset:-4px;border:2px solid #dc2626;border-radius:4px;background:rgba(220,38,38,.12);pointer-events:none"></span>
+        </span>
+        <span class="sim-label">active sessions right now</span>
+        <!-- diff % badge -->
+        <span style="position:absolute;top:5px;right:6px;background:#dc2626;color:#fff;font-size:9px;font-weight:800;padding:1px 7px;border-radius:10px">0.14% diff</span>
+      </div>
+      <div class="diff-legend">
+        <span class="diff-swatch" style="background:#dc2626;border:1px solid #ef4444"></span>
+        <span class="diff-legend-txt">Changed region (bounding box)</span>
+        <span class="diff-swatch" style="background:rgba(220,38,38,.12);border:1px solid #ef444466"></span>
+        <span class="diff-legend-txt">Fill highlight</span>
+      </div>
+      <div class="note">
+        <strong>Diff overlay:</strong> Actual screenshot with red bounding boxes drawn around changed pixel regions. Generated server-side by pixelmatch. Zero interaction required.<br>
+        <em>Best for:</em> quick triage in a review queue — open, see box, approve/reject.
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ══ COMBINED MODE: All 4 in one card ══ -->
+<div class="panel" style="margin-bottom:28px">
+  <div class="panel-head">
+    <span class="badge" style="background:#f1f5f922;color:#f1f5f9;border:1px solid #334155">ENTERPRISE</span>
+    <span class="panel-title">Combined Mode Switcher — Applitools / Percy Style</span>
+    <span class="competitor">Gold standard: slider default + mode toggle bar</span>
+  </div>
+  <div class="panel-body">
+    <!-- Mode switcher bar -->
+    <div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap">
+      <button class="mbtn active" id="mb-slider" onclick="switchMode('slider')">⟺ Slider</button>
+      <button class="mbtn" id="mb-onion"  onclick="switchMode('onion')">👁 Onion</button>
+      <button class="mbtn" id="mb-blink"  onclick="switchMode('blink2')">💡 Blink</button>
+      <button class="mbtn" id="mb-diff"   onclick="switchMode('diffonly')">▣ Diff</button>
+      <span style="font-size:10px;color:#475569;margin-left:6px;align-self:center">← Click to switch mode</span>
+    </div>
+
+    <!-- All modes stacked, shown/hidden by JS -->
+    <!-- Slider mode -->
+    <div id="mode-slider">
+      <div class="frame" id="sl2">
+        <div style="position:absolute;inset:0;background:#f0f9ff;display:flex;align-items:center;padding:0 14px;gap:8px">
+          <span class="sim-label">LIVE SESSIONS</span><span class="sim-badge sim-badge-a">430</span><span class="sim-label">active sessions right now</span>
+        </div>
+        <div id="sl2-bl" style="position:absolute;inset:0;clip-path:inset(0 50% 0 0);background:#f0f9ff;display:flex;align-items:center;padding:0 14px;gap:8px">
+          <span class="sim-label">LIVE SESSIONS</span><span class="sim-badge sim-badge-b">261</span><span class="sim-label">active sessions right now</span>
+        </div>
+        <span class="sl-lbl sl-lbl-l">Baseline</span><span class="sl-lbl sl-lbl-r">Actual</span>
+        <div class="sl-div" id="sl2-div"></div>
+        <div class="sl-knob" id="sl2-knob">⟺</div>
+        <div class="sl-tip" id="sl2-tip"></div>
+      </div>
+      <div class="track"><canvas id="sl2-heat" height="6"></canvas><div class="track-needle" id="sl2-needle"></div></div>
+    </div>
+
+    <!-- Onion mode -->
+    <div id="mode-onion" style="display:none">
+      <div style="position:relative;border-radius:6px;overflow:hidden;background:#f0f9ff;height:72px">
+        <div style="position:absolute;inset:0;background:#f0f9ff;display:flex;align-items:center;padding:0 14px;gap:8px">
+          <span class="sim-label">LIVE SESSIONS</span><span class="sim-badge sim-badge-a">430</span><span class="sim-label">active sessions right now</span>
+        </div>
+        <div id="combo-onion-bl" style="position:absolute;inset:0;background:#f0f9ff;display:flex;align-items:center;padding:0 14px;gap:8px;opacity:0.5">
+          <span class="sim-label">LIVE SESSIONS</span><span class="sim-badge sim-badge-b" style="outline:2px dashed #f59e0b">261</span><span class="sim-label">active sessions right now</span>
+        </div>
+      </div>
+      <div class="onion-ctrl" style="margin-top:8px">
+        <label style="font-size:10px;color:#94a3b8;font-weight:600">Baseline opacity</label>
+        <input type="range" id="comboOnionRange" min="0" max="100" value="50" oninput="setComboOnion(this.value)" style="flex:1;accent-color:#059669">
+        <span id="comboOnionPct" style="font-size:10px;color:#6ee7b7;font-weight:700;min-width:28px;text-align:right">50%</span>
+      </div>
+    </div>
+
+    <!-- Blink mode -->
+    <div id="mode-blink2" style="display:none">
+      <div style="position:relative;border-radius:6px;overflow:hidden;background:#f0f9ff;height:72px">
+        <div id="cb-actual" style="position:absolute;inset:0;background:#f0f9ff;display:flex;align-items:center;padding:0 14px;gap:8px">
+          <span class="sim-label">LIVE SESSIONS</span><span class="sim-badge sim-badge-a">430</span><span class="sim-label">active sessions right now</span>
+        </div>
+        <div id="cb-baseline" style="position:absolute;inset:0;background:#f0f9ff;display:flex;align-items:center;padding:0 14px;gap:8px;display:none">
+          <span class="sim-label">LIVE SESSIONS</span><span class="sim-badge sim-badge-b">261</span><span class="sim-label">active sessions right now</span>
+        </div>
+        <span id="cbLabel" style="position:absolute;top:5px;left:6px;background:rgba(0,0,0,.7);color:#fff;font-size:9px;padding:1px 6px;border-radius:3px;font-weight:700">Actual</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:8px">
+        <button class="blink-btn" id="cb-btn" onclick="toggleBlink2()">▶ Start Blink</button>
+        <span style="font-size:10px;color:#64748b">Alternates baseline ↔ actual at 400ms — eye catches the diff instantly</span>
+      </div>
+    </div>
+
+    <!-- Diff only mode -->
+    <div id="mode-diffonly" style="display:none">
+      <div style="position:relative;border-radius:6px;overflow:hidden;background:#f0f9ff;height:72px;display:flex;align-items:center;padding:0 14px;gap:8px">
+        <span class="sim-label">LIVE SESSIONS</span>
+        <span style="position:relative;display:inline-block">
+          <span class="sim-badge sim-badge-a">430</span>
+          <span style="position:absolute;inset:-4px;border:2px solid #dc2626;border-radius:4px;background:rgba(220,38,38,.12);pointer-events:none"></span>
+        </span>
+        <span class="sim-label">active sessions right now</span>
+        <span style="position:absolute;top:5px;right:6px;background:#dc2626;color:#fff;font-size:9px;font-weight:800;padding:1px 7px;border-radius:10px">0.14% diff</span>
+      </div>
+    </div>
+
+    <div class="note" style="margin-top:10px">
+      <strong>Combined switcher</strong> — default opens in Slider mode. User can switch anytime.<br>
+      This is the <em>Applitools / Percy gold standard</em>: one viewer, multiple lenses.
+    </div>
+  </div>
+</div>
+
+<!-- ══ Pick bar ══ -->
+<div class="pick">
+  <h2>Which mode(s) to implement in the QA Platform?</h2>
+  <div class="pick-row">
+    <button class="pbtn pb-1" onclick="pick('Mode 1 — Slider + B+C Hot-Zone')">⟺ Mode 1: Slider + B+C</button>
+    <button class="pbtn pb-2" onclick="pick('Mode 2 — Onion Skin opacity blend')">👁 Mode 2: Onion Skin</button>
+    <button class="pbtn pb-3" onclick="pick('Mode 3 — Blink / Flicker')">💡 Mode 3: Blink</button>
+    <button class="pbtn pb-4" onclick="pick('Mode 4 — Diff Bounding Box overlay')">▣ Mode 4: Diff Box</button>
+    <button class="pbtn pb-all" onclick="pick('All 4 modes with switcher — Enterprise Combined')">🏆 All 4 + Switcher</button>
+  </div>
+  <div class="presult" id="presult"></div>
+</div>
+
+<style>
+.mbtn{padding:5px 14px;border-radius:7px;border:1px solid #334155;background:#0f172a;color:#94a3b8;font-size:11px;font-weight:700;cursor:pointer;transition:all .15s}
+.mbtn.active{background:#334155;color:#f1f5f9;border-color:#475569}
+.mbtn:hover{background:#1e293b;color:#e2e8f0}
+</style>
+
+<script>
+// ── Heatmap ──────────────────────────────────────────────────────────────────
+function drawHeat(id, zones) {
+  var c = document.getElementById(id); if (!c) return;
+  c.width = Math.round((c.offsetWidth||400)*(window.devicePixelRatio||1));
+  var ctx = c.getContext('2d'), cw = c.width;
+  ctx.clearRect(0,0,cw,8);
+  for (var x=0;x<cw;x++) {
+    var pct=(x/cw)*100, intensity=0;
+    zones.forEach(function(z){
+      if(pct>=z.start&&pct<=z.end){
+        var mid=(z.start+z.end)/2,half=(z.end-z.start)/2,d=Math.abs(pct-mid)/half;
+        intensity=Math.max(intensity,Math.max(0,1-d*d*0.5));
+      }
+    });
+    ctx.fillStyle=intensity>0?'rgba(239,68,68,'+(0.3+intensity*0.7).toFixed(2)+')':'#0f172a';
+    ctx.fillRect(x,0,1,8);
+  }
+}
+
+// ── Slider factory ───────────────────────────────────────────────────────────
+function makeSlider(id, blId, divId, knobId, tipId, needleId, zones) {
+  var el=document.getElementById(id);
+  var blEl=document.getElementById(blId);
+  var divEl=document.getElementById(divId);
+  var knobEl=document.getElementById(knobId);
+  var tipEl=document.getElementById(tipId);
+  var needleEl=needleId?document.getElementById(needleId):null;
+  var dragging=false;
+  function inDiff(p){ return zones.some(function(z){return p>=z.start&&p<=z.end;}); }
+  function setPos(p) {
+    p=Math.max(0,Math.min(100,p));
+    blEl.style.clipPath='inset(0 '+(100-p)+'% 0 0)';
+    divEl.style.left=p+'%'; knobEl.style.left=p+'%';
+    if(needleEl) needleEl.style.left=p+'%';
+    var hot=inDiff(p);
+    divEl.className=hot?'sl-div hot':'sl-div';
+    knobEl.className=hot?'sl-knob hot':'sl-knob';
+    knobEl.textContent=hot?'⚡':'⟺';
+    if(tipEl){
+      tipEl.style.left=p+'%';
+      tipEl.style.display=dragging?'block':'none';
+      tipEl.textContent=hot?'⚡ Diff here!':'Baseline · '+Math.round(p)+'%';
+      tipEl.className=hot?'sl-tip hot':'sl-tip';
+    }
+  }
+  function fromE(e){var r=el.getBoundingClientRect(),cx=e.touches?e.touches[0].clientX:e.clientX;return((cx-r.left)/r.width)*100;}
+  function onMove(e){if(dragging)setPos(fromE(e));}
+  function onUp(){dragging=false;if(tipEl)tipEl.style.display='none';document.removeEventListener('mousemove',onMove);document.removeEventListener('mouseup',onUp);}
+  el.addEventListener('mousedown',function(e){dragging=true;setPos(fromE(e));document.addEventListener('mousemove',onMove);document.addEventListener('mouseup',onUp);e.preventDefault();});
+  setPos(50);
+}
+
+var ZONES = [{start:18,end:32,weight:1}];
+
+makeSlider('sl1','sl1-bl','sl1-div','sl1-knob','sl1-tip','sl1-needle', ZONES);
+makeSlider('sl2','sl2-bl','sl2-div','sl2-knob','sl2-tip','sl2-needle', ZONES);
+drawHeat('sl1-heat', ZONES);
+drawHeat('sl2-heat', ZONES);
+
+// ── Onion skin ───────────────────────────────────────────────────────────────
+function setOnion(v) {
+  document.getElementById('onion-bl').style.opacity = v/100;
+  document.getElementById('onionPct').textContent = v+'%';
+}
+function setComboOnion(v) {
+  document.getElementById('combo-onion-bl').style.opacity = v/100;
+  document.getElementById('comboOnionPct').textContent = v+'%';
+}
+
+// ── Blink (standalone) ───────────────────────────────────────────────────────
+var blinkTimer=null, blinkState=false;
+function toggleBlink(){
+  if(blinkTimer){clearInterval(blinkTimer);blinkTimer=null;document.getElementById('blinkBtn').className='blink-btn';document.getElementById('blinkBtn').textContent='▶ Start Blink';return;}
+  document.getElementById('blinkBtn').className='blink-btn active';
+  document.getElementById('blinkBtn').textContent='⏹ Stop';
+  var spd=parseInt(document.getElementById('blinkSpeed').value);
+  blinkTimer=setInterval(function(){
+    blinkState=!blinkState;
+    document.getElementById('blinkActual').style.opacity=blinkState?0:1;
+    document.getElementById('blinkBaseline').style.opacity=blinkState?1:0;
+    document.getElementById('blinkLabel').textContent=blinkState?'Baseline':'Actual';
+  },spd);
+}
+function updateBlinkSpeed(){if(blinkTimer){clearInterval(blinkTimer);blinkTimer=null;toggleBlink();}}
+
+// ── Blink (combo) ────────────────────────────────────────────────────────────
+var blink2Timer=null, blink2State=false;
+function toggleBlink2(){
+  if(blink2Timer){clearInterval(blink2Timer);blink2Timer=null;document.getElementById('cb-btn').className='blink-btn';document.getElementById('cb-btn').textContent='▶ Start Blink';return;}
+  document.getElementById('cb-btn').className='blink-btn active';
+  document.getElementById('cb-btn').textContent='⏹ Stop';
+  blink2Timer=setInterval(function(){
+    blink2State=!blink2State;
+    document.getElementById('cb-actual').style.display=blink2State?'none':'flex';
+    document.getElementById('cb-baseline').style.display=blink2State?'flex':'none';
+    document.getElementById('cbLabel').textContent=blink2State?'Baseline':'Actual';
+  },400);
+}
+
+// ── Mode switcher (combo card) ───────────────────────────────────────────────
+var currentMode='slider';
+function switchMode(m){
+  if(blink2Timer&&m!=='blink2'){clearInterval(blink2Timer);blink2Timer=null;document.getElementById('cb-btn').className='blink-btn';document.getElementById('cb-btn').textContent='▶ Start Blink';}
+  ['slider','onion','blink2','diffonly'].forEach(function(id){
+    document.getElementById('mode-'+id).style.display=id===m?'block':'none';
+  });
+  ['slider','onion','blink','diff'].forEach(function(id){
+    document.getElementById('mb-'+id).className='mbtn'+(m===id||m==='blink2'&&id==='blink'?'mbtn active':'mbtn');
+  });
+  document.getElementById('mb-'+( m==='blink2'?'blink':m==='diffonly'?'diff':m)).className='mbtn active';
+  currentMode=m;
+}
+
+// ── Pick ─────────────────────────────────────────────────────────────────────
+function pick(v){
+  var r=document.getElementById('presult');
+  r.style.display='block';
+  r.innerHTML='✅ <strong>Selected:</strong> '+v+' — Tell Claude to implement!';
+}
+</script>
+</body>
+</html>

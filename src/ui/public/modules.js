@@ -1020,6 +1020,16 @@ function projOpenModal(id = null) {
     document.getElementById('pm-prefix').value = '';
     document.getElementById('pm-desc').value = '';
     document.getElementById('pm-jira-key').value = '';
+    document.getElementById('pm-vrt-threshold').value       = 20;
+    document.getElementById('pm-vrt-ratio').value            = 5;
+    document.getElementById('pm-vrt-maxpx').value            = '';
+    document.getElementById('pm-vrt-animations').value       = 'disabled';
+    document.getElementById('pm-vrt-scale').value            = 'css';
+    document.getElementById('pm-vrt-caret').value            = 'hide';
+    document.getElementById('pm-vrt-maskcolor').value        = '#FF00FF';
+    document.getElementById('pm-vrt-maskcolor-picker').value = '#FF00FF';
+    document.getElementById('pm-vrt-stylepath').value        = '';
+    document.getElementById('pm-vrt-timeout').value          = 5000;
     document.getElementById('proj-envs').innerHTML = '';
   }
   openModal('modal-project');
@@ -1036,6 +1046,19 @@ async function projEdit(id) {
   document.getElementById('pm-prefix').value = p.tcIdPrefix || '';
   document.getElementById('pm-desc').value = p.description || '';
   document.getElementById('pm-jira-key').value = p.jiraProjectKey || '';
+  // Populate VRT config
+  const vrt = p.vrtConfig || {};
+  document.getElementById('pm-vrt-threshold').value   = vrt.threshold         != null ? Math.round(vrt.threshold * 100)         : 20;
+  document.getElementById('pm-vrt-ratio').value       = vrt.maxDiffPixelRatio != null ? Math.round(vrt.maxDiffPixelRatio * 100) : 5;
+  document.getElementById('pm-vrt-maxpx').value       = vrt.maxDiffPixels     != null ? vrt.maxDiffPixels                       : '';
+  document.getElementById('pm-vrt-animations').value  = vrt.animations  || 'disabled';
+  document.getElementById('pm-vrt-scale').value       = vrt.scale       || 'css';
+  document.getElementById('pm-vrt-caret').value       = vrt.caret       || 'hide';
+  const mc = vrt.maskColor || '#FF00FF';
+  document.getElementById('pm-vrt-maskcolor').value        = mc;
+  document.getElementById('pm-vrt-maskcolor-picker').value = mc;
+  document.getElementById('pm-vrt-stylepath').value   = vrt.stylePath   || '';
+  document.getElementById('pm-vrt-timeout').value     = vrt.timeout     != null ? vrt.timeout : 5000;
   const envsEl = document.getElementById('proj-envs');
   envsEl.innerHTML = '';
   (p.environments || []).forEach(e => projAddEnv(e.id, e.name, e.url));
@@ -1069,11 +1092,31 @@ async function projSave() {
   })).filter(e => e.url);
 
   const jiraKey = (document.getElementById('pm-jira-key').value || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+
+  // Collect VRT config — only include fields that were explicitly set
+  const _vrtNum = (id) => { const v = parseFloat(document.getElementById(id)?.value); return isNaN(v) ? null : v; };
+  const _vrtStr = (id) => document.getElementById(id)?.value?.trim() || null;
+  const vrtThreshold = _vrtNum('pm-vrt-threshold');
+  const vrtRatio     = _vrtNum('pm-vrt-ratio');
+  const vrtMaxPx     = _vrtNum('pm-vrt-maxpx');
+  const vrtConfig = {
+    threshold:         vrtThreshold != null ? vrtThreshold / 100 : 0.2,
+    maxDiffPixelRatio: vrtRatio     != null ? vrtRatio     / 100 : 0.05,
+    maxDiffPixels:     vrtMaxPx     != null ? vrtMaxPx           : null,
+    animations:        document.getElementById('pm-vrt-animations')?.value || 'disabled',
+    scale:             document.getElementById('pm-vrt-scale')?.value      || 'css',
+    caret:             document.getElementById('pm-vrt-caret')?.value      || 'hide',
+    maskColor:         _vrtStr('pm-vrt-maskcolor') || '#FF00FF',
+    stylePath:         _vrtStr('pm-vrt-stylepath') || undefined,
+    timeout:           _vrtNum('pm-vrt-timeout')   != null ? _vrtNum('pm-vrt-timeout') : undefined,
+  };
+
   const body = {
     name, tcIdPrefix: prefix,
     description: document.getElementById('pm-desc').value.trim(),
     environments,
     jiraProjectKey: jiraKey || null,
+    vrtConfig,
   };
   const method = editingProjectId ? 'PUT' : 'POST';
   const apiUrl = editingProjectId ? `/api/projects/${editingProjectId}` : '/api/projects';
@@ -1091,7 +1134,7 @@ async function projDelete(id, name) {
 }
 
 function projTabSwitch(tab) {
-  ['details', 'environments', 'components'].forEach(t => {
+  ['details', 'environments', 'components', 'vrt'].forEach(t => {
     document.getElementById(`proj-tab-panel-${t}`).style.display = t === tab ? '' : 'none';
     document.getElementById(`proj-tab-${t}`).classList.toggle('proj-tab-active', t === tab);
   });
@@ -3097,6 +3140,7 @@ function scriptAddStep(step = {}, insertBeforeRow = null, _skipReorder = false) 
   const needsLoc = curKw ? curKw.needsLocator : true;
   const needsVal = curKw ? curKw.needsValue : false;
   const isAuto = curKw?.autoFromProject || false;
+  const isVisual = step.keyword === 'ASSERT VISUAL';
   const valHint = curKw?.valueHint || 'Value';
   const helpLbl = curKw?.helpLabel || '';
   const tipObj = curKw?.tooltip || null;
@@ -3152,10 +3196,17 @@ function scriptAddStep(step = {}, insertBeforeRow = null, _skipReorder = false) 
       <span class="auto-config-badge">&#x2699; Auto from Project Config — URL &amp; credentials fetched automatically</span>
     </div>
     <div class="step-row-fields">
+      ${isVisual ? `<div class="vrt-info-banner">
+        <span class="vrt-info-icon">&#9432;</span>
+        <span class="vrt-info-text"><strong>Visual Regression Mode:</strong>
+          <span class="vrt-mode-el">&#128270; <strong>Element</strong> — fill the locator below to screenshot only that element (precise, component-level)</span> &nbsp;|&nbsp;
+          <span class="vrt-mode-fp">&#128444; <strong>Full Page</strong> — leave locator blank to capture the entire visible viewport</span>
+        </span>
+      </div>` : ''}
       <div class="se-step-locator"${needsLoc && !isAuto ? '' : ' style="display:none"'}>
         <div class="field" style="margin:0 0 6px 0">
           <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px">
-            <label style="font-size:11px;margin:0">Locator Name</label>
+            <label style="font-size:11px;margin:0">Locator Name${isVisual ? ' <span style="font-size:10px;color:var(--g400);font-weight:400">(optional — blank = full page)</span>' : ''}</label>
             <span class="loc-repo-badge" style="display:none">From Repo</span>
             <button type="button" class="loc-unlock-btn" style="display:none" onclick="scriptStepUnlockLoc(this)" title="Unlock to edit manually">&#x270E; Edit</button>
           </div>
@@ -3176,6 +3227,73 @@ function scriptAddStep(step = {}, insertBeforeRow = null, _skipReorder = false) 
           </div>
         </div>
       </div>
+      ${isVisual ? `<div class="vrt-options-panel">
+        <button type="button" class="vrt-options-toggle" onclick="vrtTogglePanel(this)">
+          <span class="vrt-toggle-arrow">&#9654;</span> &#9881; VRT Options <span class="vrt-options-hint">— leave blank to use project defaults</span>
+        </button>
+        <div class="vrt-options-body" style="display:none">
+          <div class="vrt-options-grid">
+            <div class="vrt-field">
+              <label>Threshold (0–100)</label>
+              <input class="fm-input vrt-threshold" type="number" min="0" max="100" step="1"
+                     placeholder="e.g. 20" value="${escHtml(String(step.vrtOptions?.threshold != null ? Math.round((step.vrtOptions.threshold)*100) : ''))}"
+                     title="Color diff tolerance per pixel. 20 = allow 20% colour variance. Default: project setting." />
+            </div>
+            <div class="vrt-field">
+              <label>Max Diff Pixels</label>
+              <input class="fm-input vrt-maxDiffPixels" type="number" min="0" step="1"
+                     placeholder="e.g. 200" value="${escHtml(String(step.vrtOptions?.maxDiffPixels ?? ''))}"
+                     title="Hard cap on differing pixels. If set, overrides ratio check for this step." />
+            </div>
+            <div class="vrt-field">
+              <label>Max Diff Pixel Ratio (0–100%)</label>
+              <input class="fm-input vrt-maxDiffPixelRatio" type="number" min="0" max="100" step="1"
+                     placeholder="e.g. 5" value="${escHtml(String(step.vrtOptions?.maxDiffPixelRatio != null ? Math.round((step.vrtOptions.maxDiffPixelRatio)*100) : ''))}"
+                     title="Max % of total pixels allowed to differ. 5 = 5% of all pixels. Default: project setting." />
+            </div>
+            <div class="vrt-field">
+              <label>Animations</label>
+              <select class="fm-select vrt-animations" title="Freeze CSS animations before capture to prevent flaky diffs.">
+                <option value="" ${!step.vrtOptions?.animations ? 'selected' : ''}>Project default</option>
+                <option value="disabled" ${step.vrtOptions?.animations === 'disabled' ? 'selected' : ''}>Disabled (freeze)</option>
+                <option value="allow"    ${step.vrtOptions?.animations === 'allow'    ? 'selected' : ''}>Allow (live)</option>
+              </select>
+            </div>
+            <div class="vrt-field" style="grid-column:1/-1">
+              <label>Mask Selectors <span style="font-weight:400;color:var(--g400)">(comma-separated CSS selectors — blanked before comparison)</span></label>
+              <input class="fm-input vrt-mask" type="text"
+                     placeholder="e.g. .timestamp, #live-counter, .user-avatar"
+                     value="${escHtml((step.vrtOptions?.mask ?? []).join(', '))}"
+                     title="These elements are hidden before the screenshot is taken. Use for timestamps, avatars, live counters." />
+            </div>
+            <div class="vrt-field">
+              <label>Mask Color</label>
+              <div style="display:flex;gap:6px;align-items:center">
+                <input type="color" class="vrt-maskColor-picker" value="${escHtml(step.vrtOptions?.maskColor ?? '#FF00FF')}" style="width:36px;height:28px;border:none;padding:0;cursor:pointer" />
+                <input class="fm-input vrt-maskColor" type="text" style="font-family:monospace;font-size:12px"
+                       placeholder="#FF00FF" value="${escHtml(step.vrtOptions?.maskColor ?? '')}"
+                       title="CSS color used to paint over masked elements." />
+              </div>
+            </div>
+            <div class="vrt-field" style="display:flex;align-items:center;gap:8px;padding-top:18px">
+              <label style="margin:0">Omit Background</label>
+              <input type="checkbox" class="vrt-omitBackground" ${step.vrtOptions?.omitBackground ? 'checked' : ''}
+                     title="Transparent PNG — use for overlay components or elements without a solid background." />
+              <span style="font-size:10px;color:var(--g400)">Transparent PNG</span>
+            </div>
+          </div>
+          <div class="vrt-clip-row" style="${step.locator ? 'display:none' : ''}">
+            <label style="font-size:11px;display:block;margin-bottom:4px">Clip Region <span style="font-weight:400;color:var(--g400)">(full-page mode only — pixel coordinates)</span></label>
+            <div style="display:flex;gap:8px;align-items:center">
+              <span style="font-size:11px;color:var(--g500)">X</span><input class="fm-input vrt-clip-x" type="number" min="0" style="width:70px" placeholder="0" value="${step.vrtOptions?.clip?.x ?? ''}" />
+              <span style="font-size:11px;color:var(--g500)">Y</span><input class="fm-input vrt-clip-y" type="number" min="0" style="width:70px" placeholder="0" value="${step.vrtOptions?.clip?.y ?? ''}" />
+              <span style="font-size:11px;color:var(--g500)">W</span><input class="fm-input vrt-clip-w" type="number" min="1" style="width:70px" placeholder="1280" value="${step.vrtOptions?.clip?.width ?? ''}" />
+              <span style="font-size:11px;color:var(--g500)">H</span><input class="fm-input vrt-clip-h" type="number" min="1" style="width:70px" placeholder="720" value="${step.vrtOptions?.clip?.height ?? ''}" />
+              <span style="font-size:10px;color:var(--g400)">px</span>
+            </div>
+          </div>
+        </div>
+      </div>` : ''}
       <div class="se-step-value"${needsVal && !isAuto ? '' : ' style="display:none"'}>
         <div class="field" style="margin:0">
           <label style="font-size:11px">Value Source</label>
@@ -3443,6 +3561,114 @@ function _seResolveLocName(row, name) {
     }).catch(() => { });
 }
 
+// ── VRT project defaults cache + loader ───────────────────────────────────
+let _vrtProjectCache = null;  // { projectId, config } — one entry, reset on project change
+
+async function _vrtLoadProjectDefaults(projectId) {
+  if (_vrtProjectCache && _vrtProjectCache.projectId === projectId) return _vrtProjectCache.config;
+  try {
+    const res = await fetch('/api/projects');
+    if (!res.ok) return null;
+    const list = await res.json();
+    const proj = list.find(p => p.id === projectId);
+    if (!proj) return null;
+    _vrtProjectCache = { projectId, config: proj.vrtConfig || {} };
+    return _vrtProjectCache.config;
+  } catch { return null; }
+}
+
+// Apply project VRT defaults as placeholders + dropdown hints on a VRT panel
+async function _vrtApplyProjectDefaults(panel, projectId) {
+  const cfg = await _vrtLoadProjectDefaults(projectId);
+  if (!cfg || !panel) return;
+
+  const numPlaceholder = (sel, val, unit = '') => {
+    const el = panel.querySelector(sel);
+    if (el) el.placeholder = val != null ? `${val}${unit} (project default)` : 'blank = disabled';
+  };
+  const dropdownDefault = (sel, val, labelMap) => {
+    const el = panel.querySelector(sel);
+    if (!el) return;
+    // Insert/update the "Project default" first option
+    let defOpt = el.querySelector('option[value=""]');
+    if (!defOpt) {
+      defOpt = document.createElement('option');
+      defOpt.value = '';
+      el.prepend(defOpt);
+    }
+    defOpt.textContent = `Project default — ${labelMap[val] || val}`;
+    // Only select it if no step-level value is already chosen
+    if (!el.dataset.stepValue) el.value = '';
+  };
+
+  const t  = cfg.threshold         != null ? Math.round(cfg.threshold * 100)         : 20;
+  const r  = cfg.maxDiffPixelRatio  != null ? Math.round(cfg.maxDiffPixelRatio * 100) : 5;
+  const mx = cfg.maxDiffPixels      != null ? cfg.maxDiffPixels                       : null;
+  const to = cfg.timeout            != null ? cfg.timeout                             : 5000;
+
+  numPlaceholder('.vrt-threshold',        t,  '');
+  numPlaceholder('.vrt-maxDiffPixelRatio', r,  '%');
+  numPlaceholder('.vrt-maxDiffPixels',    mx);
+  numPlaceholder('.vrt-timeout',          to, ' ms');
+
+  dropdownDefault('.vrt-animations', cfg.animations || 'disabled', { disabled: 'Disabled (freeze)', allow: 'Allow (live)' });
+  dropdownDefault('.vrt-scale',      cfg.scale      || 'css',      { css: 'CSS logical pixels',     device: 'Device HiDPI' });
+  dropdownDefault('.vrt-caret',      cfg.caret      || 'hide',     { hide: 'Hide cursor',           initial: 'Show cursor' });
+
+  // MaskColor — show picker row only when mask selectors has content
+  _vrtToggleMaskColor(panel);
+}
+
+function _vrtToggleMaskColor(panel) {
+  const maskInput = panel.querySelector('.vrt-mask');
+  const colorRow  = panel.querySelector('.vrt-maskcolor-row');
+  if (!maskInput || !colorRow) return;
+  const hasMask = maskInput.value.trim().length > 0;
+  colorRow.style.display = hasMask ? '' : 'none';
+}
+
+// ── VRT Options panel helpers ──────────────────────────────────────────────
+function vrtTogglePanel(btn) {
+  const body = btn.closest('.vrt-options-panel').querySelector('.vrt-options-body');
+  const arrow = btn.querySelector('.vrt-toggle-arrow');
+  const open = body.style.display === 'none';
+  body.style.display = open ? 'block' : 'none';
+  arrow.style.transform = open ? 'rotate(90deg)' : '';
+}
+
+function _seCollectVrtOptions(row) {
+  const panel = row.querySelector('.vrt-options-panel');
+  if (!panel) return undefined;
+  const get = (sel) => panel.querySelector(sel);
+  const numOrNull = (v) => { const n = parseFloat(v); return isNaN(n) ? null : n; };
+
+  const threshold        = numOrNull(get('.vrt-threshold')?.value);
+  const maxDiffPixels    = numOrNull(get('.vrt-maxDiffPixels')?.value);
+  const maxDiffPixelRatio = numOrNull(get('.vrt-maxDiffPixelRatio')?.value);
+  const animations       = get('.vrt-animations')?.value || null;
+  const maskRaw          = get('.vrt-mask')?.value?.trim() || '';
+  const mask             = maskRaw ? maskRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
+  const maskColor        = get('.vrt-maskColor')?.value?.trim() || null;
+  const omitBackground   = get('.vrt-omitBackground')?.checked || false;
+  const cx = numOrNull(get('.vrt-clip-x')?.value);
+  const cy = numOrNull(get('.vrt-clip-y')?.value);
+  const cw = numOrNull(get('.vrt-clip-w')?.value);
+  const ch = numOrNull(get('.vrt-clip-h')?.value);
+  const clip = (cx != null && cy != null && cw != null && ch != null)
+    ? { x: cx, y: cy, width: cw, height: ch } : null;
+
+  const opts = {};
+  if (threshold != null)        opts.threshold        = threshold / 100;
+  if (maxDiffPixels != null)    opts.maxDiffPixels    = maxDiffPixels;
+  if (maxDiffPixelRatio != null) opts.maxDiffPixelRatio = maxDiffPixelRatio / 100;
+  if (animations)               opts.animations       = animations;
+  if (mask.length)              opts.mask             = mask;
+  if (maskColor)                opts.maskColor        = maskColor;
+  if (omitBackground)           opts.omitBackground   = true;
+  if (clip)                     opts.clip             = clip;
+  return Object.keys(opts).length ? opts : undefined;
+}
+
 function scriptStepKwChange(sel) {
   const row = sel.closest('.script-step-row');
   const opt = sel.selectedOptions[0];
@@ -3503,6 +3729,90 @@ function scriptStepKwChange(sel) {
 
   const si = row.querySelector('.se-step-val-static');
   if (si) si.placeholder = hint;
+
+  // ── VRT info banner + options panel — inject/remove on keyword change ──
+  const isVisualKw = kwKey === 'ASSERT VISUAL';
+  // Info banner
+  let vrtBanner = row.querySelector('.vrt-info-banner');
+  if (isVisualKw && !vrtBanner) {
+    vrtBanner = document.createElement('div');
+    vrtBanner.className = 'vrt-info-banner';
+    vrtBanner.innerHTML = '<span class="vrt-info-icon">&#9432;</span>'
+      + '<span class="vrt-info-text"><strong>Visual Regression Mode:</strong>'
+      + ' <span class="vrt-mode-el">&#128270; <strong>Element</strong> — fill the locator to screenshot only that element</span>'
+      + ' &nbsp;|&nbsp; <span class="vrt-mode-fp">&#128444; <strong>Full Page</strong> — leave locator blank to capture the entire viewport</span>'
+      + '</span>';
+    const locDiv = row.querySelector('.se-step-locator');
+    if (locDiv) locDiv.before(vrtBanner);
+  } else if (!isVisualKw && vrtBanner) {
+    vrtBanner.remove();
+  }
+  // Locator label optional hint
+  const locLabel = row.querySelector('.se-step-locator label');
+  if (locLabel) {
+    let optSpan = locLabel.querySelector('.vrt-loc-optional');
+    if (isVisualKw && !optSpan) {
+      optSpan = document.createElement('span');
+      optSpan.className = 'vrt-loc-optional';
+      optSpan.style.cssText = 'font-size:10px;color:var(--g400);font-weight:400';
+      optSpan.textContent = ' (optional — blank = full page)';
+      locLabel.appendChild(optSpan);
+    } else if (!isVisualKw && optSpan) {
+      optSpan.remove();
+    }
+  }
+  // VRT Options panel
+  let vrtPanel = row.querySelector('.vrt-options-panel');
+  if (isVisualKw && !vrtPanel) {
+    vrtPanel = document.createElement('div');
+    vrtPanel.className = 'vrt-options-panel';
+    vrtPanel.innerHTML = '<button type="button" class="vrt-options-toggle" onclick="vrtTogglePanel(this)">'
+      + '<span class="vrt-toggle-arrow">&#9654;</span> &#9881; VRT Options'
+      + ' <span class="vrt-options-hint">— leave blank to use project defaults</span></button>'
+      + '<div class="vrt-options-body" style="display:none">'
+      + '<div class="vrt-options-grid">'
+      + '<div class="vrt-field"><label>Threshold (0–100)</label><input class="fm-input vrt-threshold" type="number" min="0" max="100" step="1" title="Color diff tolerance per pixel. 20 = allow 20% colour variance." /></div>'
+      + '<div class="vrt-field"><label>Max Diff Pixels</label><input class="fm-input vrt-maxDiffPixels" type="number" min="0" step="1" title="Hard cap on differing pixels. Blank = no pixel cap." /></div>'
+      + '<div class="vrt-field"><label>Max Diff Pixel Ratio (0–100%)</label><input class="fm-input vrt-maxDiffPixelRatio" type="number" min="0" max="100" step="1" title="Max % of total pixels allowed to differ." /></div>'
+      + '<div class="vrt-field"><label>Animations</label><select class="fm-select vrt-animations"><option value="">Loading project default…</option><option value="disabled">Disabled (freeze)</option><option value="allow">Allow (live)</option></select></div>'
+      + '<div class="vrt-field"><label>Scale</label><select class="fm-select vrt-scale"><option value="">Loading project default…</option><option value="css">CSS (device-independent)</option><option value="device">Device (physical pixels)</option></select></div>'
+      + '<div class="vrt-field"><label>Caret</label><select class="fm-select vrt-caret"><option value="">Loading project default…</option><option value="hide">Hide</option><option value="initial">Initial</option></select></div>'
+      + '<div class="vrt-field" style="grid-column:1/-1"><label>Mask Selectors <span style="font-weight:400;color:var(--g400)">(comma-separated CSS — blanked before comparison)</span></label>'
+      + '<input class="fm-input vrt-mask" type="text" placeholder="e.g. .timestamp, #live-counter, .user-avatar" title="Elements hidden before screenshot — use for timestamps, avatars, live counters."'
+      + ' oninput="_vrtToggleMaskColor(this.closest(\'.vrt-options-panel\'))" /></div>'
+      + '<div class="vrt-maskcolor-row" style="display:none"><div class="vrt-field"><label>Mask Color</label><div style="display:flex;gap:6px;align-items:center">'
+      + '<input type="color" class="vrt-maskColor-picker" value="#FF00FF" style="width:36px;height:28px;border:none;padding:0;cursor:pointer" oninput="this.nextElementSibling.value=this.value" />'
+      + '<input class="fm-input vrt-maskColor" type="text" style="font-family:monospace;font-size:12px" placeholder="#FF00FF" oninput="this.previousElementSibling.value=this.value" /></div></div></div>'
+      + '<div class="vrt-field" style="display:flex;align-items:center;gap:8px;padding-top:18px"><label style="margin:0">Omit Background</label>'
+      + '<input type="checkbox" class="vrt-omitBackground" title="Transparent PNG for overlay components." />'
+      + '<span style="font-size:10px;color:var(--g400)">Transparent PNG</span></div>'
+      + '</div>'
+      + '<div class="vrt-clip-row" style="display:none"><label style="font-size:11px;display:block;margin-bottom:4px">Clip Region <span style="font-weight:400;color:var(--g400)">(full-page mode only)</span></label>'
+      + '<div style="display:flex;gap:8px;align-items:center">'
+      + '<span style="font-size:11px;color:var(--g500)">X</span><input class="fm-input vrt-clip-x" type="number" min="0" style="width:70px" placeholder="0" />'
+      + '<span style="font-size:11px;color:var(--g500)">Y</span><input class="fm-input vrt-clip-y" type="number" min="0" style="width:70px" placeholder="0" />'
+      + '<span style="font-size:11px;color:var(--g500)">W</span><input class="fm-input vrt-clip-w" type="number" min="1" style="width:70px" placeholder="1280" />'
+      + '<span style="font-size:11px;color:var(--g500)">H</span><input class="fm-input vrt-clip-h" type="number" min="1" style="width:70px" placeholder="720" />'
+      + '<span style="font-size:10px;color:var(--g400)">px</span></div></div>'
+      + '</div>';
+    const valDiv = row.querySelector('.se-step-value');
+    if (valDiv) valDiv.before(vrtPanel);
+    // Load project-specific defaults as placeholders — isolated per project via currentProjectId global
+    _vrtApplyProjectDefaults(vrtPanel, currentProjectId);
+  } else if (!isVisualKw && vrtPanel) {
+    vrtPanel.remove();
+  }
+  // Show/hide clip row based on whether locator is filled
+  if (isVisualKw) {
+    const locInput = row.querySelector('.se-step-selector');
+    const clipRow = row.querySelector('.vrt-clip-row');
+    if (locInput && clipRow) {
+      locInput.addEventListener('input', () => {
+        clipRow.style.display = locInput.value.trim() ? 'none' : '';
+      }, { once: false });
+      clipRow.style.display = locInput.value.trim() ? 'none' : '';
+    }
+  }
 }
 
 function _populateFnSelect(row) {
@@ -4378,6 +4688,7 @@ async function scriptSave() {
         : (storeAs ? (badge?.dataset.storeScope || 'session') : undefined),
       storeSource: isSetVar ? storeSource : undefined,
       storeAttrName: storeAttr || undefined,
+      vrtOptions: kw === 'ASSERT VISUAL' ? _seCollectVrtOptions(row) : undefined,
     };
   });
 
@@ -9912,12 +10223,23 @@ function _analyticsRender(d) {
 
 let _vrBaselines = [];
 
+// Browser icon SVGs (inline, same as execution-report.html)
+const VR_BROWSER_ICONS = {
+  chromium: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10" fill="#4285F4"/><circle cx="12" cy="12" r="4" fill="white"/><path d="M12 8 A4 4 0 0 1 19.46 10 L22 10 A10 10 0 0 0 2.54 10 L8 10 A4 4 0 0 1 12 8Z" fill="#EA4335"/><path d="M8 10 A4 4 0 0 0 12 16 L9 20.93 A10 10 0 0 1 2.54 10Z" fill="#34A853"/><path d="M12 16 A4 4 0 0 0 19.46 14 L22 14 A10 10 0 0 1 9 20.93Z" fill="#FBBC05"/></svg>`,
+  firefox:  `<svg width="14" height="14" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10" fill="#FF6611"/><circle cx="12" cy="12" r="5" fill="#FFB830"/><circle cx="12" cy="12" r="2.5" fill="#FF6611"/></svg>`,
+  webkit:   `<svg width="14" height="14" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10" fill="#006EAF"/><circle cx="12" cy="12" r="3" fill="white"/><line x1="12" y1="4" x2="12" y2="20" stroke="white" stroke-width="1.5"/><line x1="4" y1="12" x2="20" y2="12" stroke="white" stroke-width="1.5"/></svg>`,
+};
+
+function vrBrowserIcon(browser) {
+  return VR_BROWSER_ICONS[(browser || 'chromium').toLowerCase()] || VR_BROWSER_ICONS.chromium;
+}
+
 async function vrLoad() {
   const loading = document.getElementById('vr-loading');
   const empty = document.getElementById('vr-empty');
   const grid = document.getElementById('vr-grid');
   const summary = document.getElementById('vr-summary');
-  if (!loading || !grid) return;
+  if (!loading || !grid || !empty) return;
 
   if (!currentProjectId) {
     loading.style.display = 'block';
@@ -9943,77 +10265,203 @@ async function vrLoad() {
 }
 
 function vrFilter() {
-  const search = (document.getElementById('vr-search')?.value || '').toLowerCase();
-  const status = document.getElementById('vr-status-filter')?.value || '';
+  const search  = (document.getElementById('vr-search')?.value || '').toLowerCase();
+  const status  = document.getElementById('vr-status-filter')?.value  || '';
+  const browser = document.getElementById('vr-browser-filter')?.value || '';
   const loading = document.getElementById('vr-loading');
-  const empty = document.getElementById('vr-empty');
-  const grid = document.getElementById('vr-grid');
+  const empty   = document.getElementById('vr-empty');
+  const grid    = document.getElementById('vr-grid');
   const summary = document.getElementById('vr-summary');
 
-  const filtered = _vrBaselines.filter(b => {
-    const matchText = !search || b.testName?.toLowerCase().includes(search) || b.locatorName?.toLowerCase().includes(search);
-    const matchStat = !status || b.status === status;
-    return matchText && matchStat;
+  let filtered = _vrBaselines.filter(b => {
+    const matchText    = !search  || b.testName?.toLowerCase().includes(search) || b.locatorName?.toLowerCase().includes(search);
+    const matchStatus  = !status  || b.status === status;
+    const bBrowser     = b.browser || '__legacy';
+    const matchBrowser = !browser || bBrowser === browser;
+    return matchText && matchStatus && matchBrowser;
   });
 
-  const approved = _vrBaselines.filter(b => b.status === 'approved').length;
-  const pending = _vrBaselines.filter(b => b.status === 'pending-review').length;
+  const approved  = _vrBaselines.filter(b => b.status === 'approved').length;
+  const pending   = _vrBaselines.filter(b => b.status === 'pending-review').length;
+  const logicalSet = new Set(_vrBaselines.map(b => `${b.testName}||${b.locatorName}`));
+  const browserEntries = _vrBaselines.filter(b => b.browser).length;
   if (summary) {
     summary.innerHTML = `
-      <span>Total: <strong>${_vrBaselines.length}</strong></span>
+      <span>Logical baselines: <strong>${logicalSet.size}</strong></span>
       <span style="color:#4ec9b0">Approved: <strong>${approved}</strong></span>
-      ${pending ? `<span style="color:#f48771">Pending Review: <strong>${pending}</strong></span>` : ''}
+      ${pending   ? `<span style="color:#f48771">Pending: <strong>${pending}</strong></span>` : ''}
+      ${browserEntries ? `<span style="color:#818cf8">Browser-scoped: <strong>${browserEntries}</strong></span>` : ''}
     `;
   }
 
   loading.style.display = 'none';
   if (!filtered.length) {
     empty.style.display = 'block';
-    grid.style.display = 'none';
+    grid.style.display  = 'none';
     return;
   }
   empty.style.display = 'none';
-  grid.style.display = 'grid';
-  grid.innerHTML = filtered.map(b => vrCard(b)).join('');
+  grid.style.display  = 'grid';
+
+  // Group by logical key (testName + locatorName)
+  const groups = new Map();
+  for (const b of filtered) {
+    const key = `${b.testName}||${b.locatorName}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(b);
+  }
+  grid.innerHTML = Array.from(groups.values()).map(entries => vrGroupedCard(entries)).join('');
+  // Init sliders now that HTML is in the DOM
+  vrSlidersInit(grid);
+  // Show/hide bulk bar based on whether viewer mode
+  const bulkBar = document.getElementById('vr-bulk-bar');
+  if (bulkBar) bulkBar.style.display = isViewer() ? 'none' : 'flex';
+  vrBulkBarUpdate();
 }
 
-function vrCard(b) {
-  const statusColor = b.status === 'approved' ? '#4ec9b0' : b.status === 'pending-review' ? '#f48771' : '#858585';
-  const statusLabel = b.status === 'approved' ? 'Approved' : b.status === 'pending-review' ? 'Pending Review' : 'No Baseline';
-  const diffPct = b.diffPct != null ? `${b.diffPct}% diff` : '';
-  const lastRun = b.lastRunAt ? new Date(b.lastRunAt).toLocaleString() : 'Never';
-  const imgBase = `/api/visual-baselines/${encodeURIComponent(b.id)}/image`;
+function vrGroupedCard(entries) {
+  const BROWSER_ORDER = { chromium: 0, firefox: 1, webkit: 2 };
+  entries.sort((a, b) => {
+    const oa = a.browser ? (BROWSER_ORDER[a.browser] ?? 9) : 99;
+    const ob = b.browser ? (BROWSER_ORDER[b.browser] ?? 9) : 99;
+    return oa - ob;
+  });
+
+  const rep = entries[0];
+  // Stable unique ID for collapse/expand toggle
+  // OLD: slicing to 40 chars caused ID collisions when all cards share the same long testName prefix
+  // const groupId = 'vrg-' + btoa(encodeURIComponent(rep.testName + '||' + rep.locatorName)).replace(/[^a-z0-9]/gi, '').slice(0, 40);
+  const groupId = 'vrg-' + btoa(encodeURIComponent(rep.projectId + '|' + rep.locatorName)).replace(/[^a-z0-9]/gi, '');
+  const allIdsJson = escHtml(JSON.stringify(entries.map(e => e.id)));
+
+  const approvedCount = entries.filter(e => e.status === 'approved').length;
+  const pendingCount  = entries.filter(e => e.status === 'pending-review').length;
+  const coverageBadge = entries.some(e => e.browser)
+    ? `<span style="font-size:10px;background:#ede9fe;color:#4f46e5;padding:2px 7px;border-radius:10px;font-weight:700" title="Browser-scoped baselines">${approvedCount}/${entries.length} ✓</span>`
+    : '';
+  const ignoreTotal = entries.reduce((s, e) => s + (e.ignoreRegions?.length || 0), 0);
+  const browserRows = entries.map(b => vrBrowserRow(b)).join('');
+  const pendingBadge = pendingCount
+    ? `<span style="font-size:11px;font-weight:700;color:#f48771;background:#f4877122;padding:2px 8px;border-radius:10px">${pendingCount} pending</span>`
+    : '';
+  const ignoreBadge = ignoreTotal
+    ? `<span style="font-size:10px;background:#dcfce7;color:#166534;padding:2px 7px;border-radius:10px;">&#127919; ${ignoreTotal} region${ignoreTotal > 1 ? 's' : ''}</span>`
+    : '';
+  const browserCountBadge = entries.length > 1
+    ? `<span style="font-size:10px;background:#f1f5f9;color:#64748b;padding:2px 7px;border-radius:10px">${entries.length} browser${entries.length > 1 ? 's' : ''}</span>`
+    : '';
 
   return `
     <div class="card" style="padding:0;overflow:hidden;border:1px solid var(--neutral-300)">
-      <!-- Header -->
-      <div style="padding:10px 14px;background:var(--neutral-100);border-bottom:1px solid var(--neutral-300);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">
-        <div>
-          <div style="font-size:12.5px;font-weight:700;color:var(--neutral-800);max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(b.testName)}">${escHtml(b.testName)}</div>
-          <div style="font-size:11.5px;color:var(--neutral-500);margin-top:2px">${escHtml(b.locatorName)}</div>
+      <!-- Group header — click to expand/collapse -->
+      <div style="padding:10px 14px;background:var(--neutral-100);border-bottom:1px solid var(--neutral-300);display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none" onclick="vrToggleGroup('${groupId}')">
+        ${isViewer() ? '' : `<input type="checkbox" class="vr-bulk-cb" data-ids='${allIdsJson}' onclick="event.stopPropagation();vrBulkBarUpdate()" style="margin:0;cursor:pointer;flex-shrink:0">`}
+        <span id="${groupId}-arrow" style="font-size:11px;color:var(--neutral-400);flex-shrink:0">▶</span>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:12.5px;font-weight:700;color:var(--neutral-800);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(rep.testName)}">${escHtml(rep.testName)}</div>
+          <div style="font-size:11.5px;color:var(--neutral-500);margin-top:2px">${escHtml(rep.locatorName)}</div>
         </div>
-        <span style="font-size:11px;font-weight:700;color:${statusColor};background:${statusColor}22;padding:2px 8px;border-radius:10px;white-space:nowrap">${statusLabel}${diffPct ? ' · ' + diffPct : ''}</span>
-      </div>
-
-      <!-- Image trio -->
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0;background:#1e1e1e">
-        ${vrThumb(imgBase + '?type=baseline', 'Baseline')}
-        ${vrThumb(imgBase + '?type=actual', 'Actual')}
-        ${b.status === 'pending-review' ? vrThumb(imgBase + '?type=diff', 'Diff') : `<div style="display:flex;align-items:center;justify-content:center;padding:10px;color:#555;font-size:11px">No diff</div>`}
-      </div>
-
-      <!-- Meta + actions -->
-      <div style="padding:10px 14px">
-        <div style="font-size:11.5px;color:var(--neutral-500);margin-bottom:10px">Last run: ${lastRun}${b.width ? ` · ${b.width}×${b.height}` : ''}</div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap">
-          ${(!isViewer() && b.status === 'pending-review') ? `<button class="btn btn-primary btn-sm" onclick="vrApprove('${b.id}')">&#10003; Approve</button>` : ''}
-          <button class="btn btn-outline btn-sm" onclick="vrViewDiff('${b.id}')">&#128247; View Images</button>
-          ${isViewer() ? '' : `<button class="btn btn-outline btn-sm" style="color:#f48771;border-color:#f48771" onclick="vrDelete('${b.id}', '${escHtml(b.testName)}')">&#128465; Delete</button>`}
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;flex-shrink:0" onclick="event.stopPropagation()">
+          ${browserCountBadge}${coverageBadge}${pendingBadge}${ignoreBadge}
         </div>
+      </div>
+      <!-- Browser rows — hidden by default, expanded on click -->
+      <div id="${groupId}-rows" style="display:none;padding:8px 14px;flex-direction:column;gap:8px">
+        ${browserRows}
       </div>
     </div>
   `;
 }
+
+function vrToggleGroup(groupId) {
+  const rows  = document.getElementById(groupId + '-rows');
+  const arrow = document.getElementById(groupId + '-arrow');
+  if (!rows) return;
+  const opening = rows.style.display === 'none';
+  rows.style.display  = opening ? 'flex' : 'none';
+  if (arrow) arrow.textContent = opening ? '▼' : '▶';
+  // Init any viewers that became visible (defensive — covers lazy-render edge cases)
+  if (opening) vrSlidersInit(rows);
+}
+
+function vrBulkBarUpdate() {
+  const cbs    = Array.from(document.querySelectorAll('.vr-bulk-cb'));
+  const checked = cbs.filter(c => c.checked);
+  const bar    = document.getElementById('vr-bulk-bar');
+  const count  = document.getElementById('vr-bulk-count');
+  const selAll = document.getElementById('vr-select-all');
+  if (!bar) return;
+  const totalIds = checked.flatMap(c => { try { return JSON.parse(c.dataset.ids); } catch { return []; } });
+  bar.style.display = cbs.length ? 'flex' : 'none';
+  if (count) count.textContent = checked.length ? `${totalIds.length} baseline${totalIds.length > 1 ? 's' : ''} selected` : 'None selected';
+  if (selAll) selAll.checked = cbs.length > 0 && checked.length === cbs.length;
+}
+
+function vrSelectAll(checked) {
+  document.querySelectorAll('.vr-bulk-cb').forEach(cb => { cb.checked = checked; });
+  vrBulkBarUpdate();
+}
+
+function vrClearSelection() {
+  document.querySelectorAll('.vr-bulk-cb').forEach(cb => { cb.checked = false; });
+  vrBulkBarUpdate();
+}
+
+async function vrBulkDelete() {
+  const checked = Array.from(document.querySelectorAll('.vr-bulk-cb:checked'));
+  if (!checked.length) return;
+  const ids = checked.flatMap(c => { try { return JSON.parse(c.dataset.ids); } catch { return []; } });
+  if (!ids.length) return;
+  if (!confirm(`Delete ${ids.length} baseline${ids.length > 1 ? 's' : ''}? The next test run will create fresh baselines for each.`)) return;
+  let failed = 0;
+  for (const id of ids) {
+    try {
+      const res = await fetch(`/api/visual-baselines/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      const d = await res.json();
+      if (!d.ok && !d.success) failed++;
+    } catch { failed++; }
+  }
+  if (failed) alert(`${failed} deletion${failed > 1 ? 's' : ''} failed. Refreshing…`);
+  await vrLoad();
+}
+
+function vrBrowserRow(b) {
+  const statusColor = b.status === 'approved' ? '#4ec9b0' : b.status === 'pending-review' ? '#f48771' : '#858585';
+  const statusLabel = b.status === 'approved' ? 'Approved' : b.status === 'pending-review' ? 'Pending' : 'No Baseline';
+  const diffPct     = b.diffPct != null && b.diffPct > 0 ? ` · ${b.diffPct}%` : '';
+  const browserLabel = b.browser
+    ? `<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:var(--neutral-700)">${vrBrowserIcon(b.browser)} ${b.browser.charAt(0).toUpperCase() + b.browser.slice(1)}</span>`
+    : `<span style="font-size:11px;color:#94a3b8;font-style:italic">Legacy (no browser)</span>`;
+  const imgBase = `/api/visual-baselines/${encodeURIComponent(b.id)}/image`;
+  // OLD: const hasDiff = b.diffPct > 0 || b.lastSavedPixels > 0;
+  const hasDiff = (b.diffPct != null && b.diffPct > 0) || b.lastSavedPixels > 0;
+  const lastRun = b.lastRunAt ? new Date(b.lastRunAt).toLocaleString() : 'Never run';
+
+  return `
+    <div style="border:1px solid var(--neutral-200);border-radius:8px;overflow:hidden">
+      <div style="padding:6px 10px;background:#fafafa;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;border-bottom:1px solid var(--neutral-200)">
+        <div style="display:flex;align-items:center;gap:8px">
+          ${browserLabel}
+          <span style="font-size:11px;color:${statusColor};background:${statusColor}22;padding:1px 7px;border-radius:8px;font-weight:600">${statusLabel}${diffPct}</span>
+          ${(b.ignoreRegions?.length) ? `<span style="font-size:10px;background:#dcfce7;color:#166534;padding:1px 6px;border-radius:8px">&#127919; ${b.ignoreRegions.length}</span>` : ''}
+        </div>
+        <div style="font-size:10.5px;color:var(--neutral-400)">${lastRun}${b.width ? ` · ${b.width}×${b.height}` : ''}</div>
+      </div>
+      <div style="background:#111">
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0">${vrThumb(imgBase + '?type=baseline', 'Baseline')}${vrThumb(imgBase + '?type=actual', 'Actual')}${hasDiff ? vrThumb(imgBase + '?type=diff', b.lastSavedPixels > 0 ? 'Diff (Regions)' : 'Diff') : '<div style="display:flex;align-items:center;justify-content:center;height:70px;color:#555;font-size:10px">No diff</div>'}</div>
+      </div>
+      <div style="padding:6px 10px;display:flex;gap:6px;flex-wrap:wrap">
+        ${(!isViewer() && b.status === 'pending-review') ? `<button class="btn btn-primary btn-sm" onclick="vrApprove('${escHtml(b.id)}')">&#10003; Approve</button>` : ''}
+        <button class="btn btn-outline btn-sm" onclick="vrViewDiff('${escHtml(b.id)}')">&#128247; View</button>
+        ${isViewer() ? '' : `<button class="btn btn-outline btn-sm" style="color:#f48771;border-color:#f48771" onclick="vrDelete('${escHtml(b.id)}', '${escHtml(b.testName)}')">&#128465;</button>`}
+        <button class="btn btn-outline btn-sm" onclick="vrtOpenIgnoreEditor('${escHtml(b.id)}')" style="color:#4f46e5;border-color:#4f46e5;font-size:11px">&#127919; Regions${(b.ignoreRegions?.length) ? ` <span style="background:#22c55e;color:#fff;border-radius:8px;padding:0 4px;font-size:9px;margin-left:3px">${b.ignoreRegions.length}</span>` : ''}</button>
+      </div>
+    </div>
+  `;
+}
+
+// Backward-compat alias — kept in case of any direct vrCard() calls elsewhere
+function vrCard(b) { return vrGroupedCard([b]); }
 
 function vrThumb(src, label) {
   return `
@@ -10023,6 +10471,278 @@ function vrThumb(src, label) {
       <div style="display:none;align-items:center;justify-content:center;height:100px;color:#555;font-size:11px">${label}: none</div>
       <div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,0.6);color:#fff;font-size:10px;text-align:center;padding:2px">${label}</div>
     </div>`;
+}
+
+// ── Multi-Mode Viewer Component ──────────────────────────────────────────────
+// 4 modes: Slider (B+C hot-zone), Onion Skin, Blink/Flicker, Diff-only.
+
+function vrSliderHtml(baseUrl, actualUrl, diffUrl) {
+  if (!baseUrl || !actualUrl) return '';
+  const mb = `style="padding:3px 10px;border:none;border-radius:5px;font-size:10px;font-weight:700;cursor:pointer;background:rgba(255,255,255,.08);color:#94a3b8;transition:all .15s"`;
+  const mbOn = `style="padding:3px 10px;border:none;border-radius:5px;font-size:10px;font-weight:700;cursor:pointer;background:#334155;color:#f1f5f9"`;
+  return `<div class="vr-viewer" data-diff="${diffUrl||''}" style="background:#111;display:block">
+    <div style="display:flex;gap:4px;padding:5px 6px;background:#0d0d0d;border-bottom:1px solid #1e1e1e">
+      <button class="vr-mb vr-mb-on" data-mode="slider" ${mbOn}>⟺ Slider</button>
+      <button class="vr-mb" data-mode="onion"  ${mb}>👁 Onion</button>
+      <button class="vr-mb" data-mode="blink"  ${mb}>💡 Blink</button>
+      ${diffUrl ? `<button class="vr-mb" data-mode="diff" ${mb}>▣ Diff</button>` : ''}
+    </div>
+    <div class="vr-m vr-m-slider">
+      <div class="vr-sl" style="position:relative;overflow:hidden;cursor:ew-resize;user-select:none">
+        <img class="vr-sl-a" src="${actualUrl}"  draggable="false" alt="Actual"   style="display:block;width:100%;object-fit:contain;background:#111">
+        <img class="vr-sl-b" src="${baseUrl}"    draggable="false" alt="Baseline" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;clip-path:inset(0 50% 0 0)">
+        <div class="vr-sl-d" style="position:absolute;top:0;bottom:0;left:50%;width:2px;transform:translateX(-50%);pointer-events:none;background:rgba(255,255,255,.85);transition:background .1s,box-shadow .1s"></div>
+        <div class="vr-sl-k" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:30px;height:30px;border-radius:50%;background:#fff;color:#333;box-shadow:0 2px 10px rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;font-size:14px;pointer-events:none;transition:background .15s,box-shadow .15s">⟺</div>
+        <div class="vr-sl-t" style="display:none;position:absolute;bottom:calc(50% + 20px);transform:translateX(-50%);background:#fff;border:1px solid #e2e8f0;color:#111;font-size:10px;padding:3px 10px;border-radius:6px;white-space:nowrap;pointer-events:none;font-weight:700;z-index:4;box-shadow:0 2px 8px rgba(0,0,0,.5)"></div>
+        <span style="position:absolute;bottom:0;left:0;right:0;display:flex;justify-content:space-between;pointer-events:none;padding:0 4px 2px">
+          <span style="background:rgba(0,0,0,.35);color:rgba(255,255,255,.45);font-size:8px;padding:0 4px;border-radius:2px;font-weight:600;letter-spacing:.03em">B</span>
+          <span style="background:rgba(0,0,0,.35);color:rgba(255,255,255,.45);font-size:8px;padding:0 4px;border-radius:2px;font-weight:600;letter-spacing:.03em">A</span>
+        </span>
+      </div>
+      ${diffUrl ? `<div style="height:4px;background:#0a0a0a;position:relative;overflow:hidden">
+        <canvas class="vr-ht-c" height="4" style="display:block;width:100%;height:4px"></canvas>
+        <div class="vr-ht-n" style="position:absolute;top:0;bottom:0;width:2px;background:#fff;opacity:.5;transform:translateX(-50%);left:50%;pointer-events:none"></div>
+      </div>` : ''}
+    </div>
+    <div class="vr-m vr-m-onion" style="display:none">
+      <div style="position:relative;overflow:hidden">
+        <img src="${actualUrl}"  draggable="false" alt="Actual"   style="display:block;width:100%;object-fit:contain;background:#111">
+        <img class="vr-onion-bl" src="${baseUrl}" draggable="false" alt="Baseline" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;opacity:.5">
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;padding:5px 8px;background:#0d0d0d;border-top:1px solid #1e1e1e">
+        <span style="font-size:10px;color:#555;white-space:nowrap">Baseline</span>
+        <input type="range" class="vr-onion-r" min="0" max="100" value="50" style="flex:1;accent-color:#059669;height:3px;cursor:pointer">
+        <span class="vr-onion-p" style="font-size:10px;color:#6ee7b7;font-weight:700;min-width:28px;text-align:right">50%</span>
+      </div>
+    </div>
+    <div class="vr-m vr-m-blink" style="display:none">
+      <div style="position:relative;overflow:hidden">
+        <img class="vr-blink-a" src="${actualUrl}"  draggable="false" alt="Actual"   style="display:block;width:100%;object-fit:contain;background:#111">
+        <img class="vr-blink-b" src="${baseUrl}"    draggable="false" alt="Baseline" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;opacity:0;transition:opacity 0s">
+        <span class="vr-blink-lbl" style="position:absolute;top:6px;left:8px;background:rgba(0,0,0,.72);color:#fff;font-size:10px;padding:2px 7px;border-radius:3px;font-weight:600">Actual</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;padding:5px 8px;background:#0d0d0d;border-top:1px solid #1e1e1e">
+        <button class="vr-blink-btn" style="padding:3px 12px;background:#d9770622;color:#fbbf24;border:1px solid #d9770644;border-radius:5px;font-size:10px;font-weight:700;cursor:pointer">▶ Blink</button>
+        <span style="font-size:10px;color:#444">Alternates baseline ↔ actual — eye catches the change</span>
+      </div>
+    </div>
+    ${diffUrl ? `<div class="vr-m vr-m-diff" style="display:none">
+      <img src="${diffUrl}" draggable="false" alt="Diff" style="display:block;width:100%;object-fit:contain;background:#111">
+    </div>` : ''}
+  </div>`;
+}
+
+function vrViewerInit(el) {
+  if (el.dataset.vrReady) return;
+  el.dataset.vrReady = '1';
+  const diffUrl = el.dataset.diff || '';
+  const mBtns  = el.querySelectorAll('.vr-mb');
+  const mPanels= el.querySelectorAll('.vr-m');
+  let blinkTimer = null;
+
+  // ── Mode switch ──────────────────────────────────────────────────
+  function applyModeStyles(btn, on) {
+    if (on) { btn.style.background='#334155'; btn.style.color='#f1f5f9'; }
+    else     { btn.style.background='rgba(255,255,255,.08)'; btn.style.color='#94a3b8'; }
+  }
+  function switchMode(m) {
+    if (blinkTimer && m !== 'blink') stopBlink();
+    mBtns.forEach(b => applyModeStyles(b, b.dataset.mode === m));
+    mPanels.forEach(p => { p.style.display = p.classList.contains('vr-m-' + m) ? '' : 'none'; });
+  }
+  mBtns.forEach(b => b.addEventListener('click', e => { e.stopPropagation(); switchMode(b.dataset.mode); }));
+
+  // ── Slider (B+C) ─────────────────────────────────────────────────
+  const slFrame = el.querySelector('.vr-sl');
+  const slBase  = el.querySelector('.vr-sl-b');
+  const slDiv   = el.querySelector('.vr-sl-d');
+  const slKnob  = el.querySelector('.vr-sl-k');
+  const slTip   = el.querySelector('.vr-sl-t');
+  const htNeedle= el.querySelector('.vr-ht-n');
+  let zones = [], dragging = false;
+
+  function inDiff(p) { return zones.some(z => p >= z.s && p <= z.e); }
+  function setSlPos(pct) {
+    pct = Math.max(0, Math.min(100, pct));
+    slBase.style.clipPath = `inset(0 ${100-pct}% 0 0)`;
+    slDiv.style.left = slKnob.style.left = pct + '%';
+    if (htNeedle) htNeedle.style.left = pct + '%';
+    const hot = inDiff(pct);
+    slDiv.style.background   = hot ? '#ef4444' : 'rgba(255,255,255,.85)';
+    slDiv.style.boxShadow    = hot ? '0 0 12px 4px rgba(239,68,68,.65)' : '';
+    slKnob.style.background  = hot ? '#ef4444' : '#fff';
+    slKnob.style.color       = hot ? '#fff' : '#333';
+    slKnob.style.boxShadow   = hot ? '0 0 16px 5px rgba(239,68,68,.55)' : '0 2px 10px rgba(0,0,0,.6)';
+    slKnob.textContent       = hot ? '⚡' : '⟺';
+    if (slTip) {
+      slTip.style.left    = pct + '%';
+      slTip.style.display = (dragging && zones.length) ? 'block' : 'none';
+      slTip.textContent   = hot ? '⚡ Diff here!' : `Baseline · ${Math.round(pct)}%`;
+      Object.assign(slTip.style, hot
+        ? { background:'#dc2626', borderColor:'#ef4444', color:'#fff' }
+        : { background:'#fff', borderColor:'#e2e8f0', color:'#111' });
+    }
+  }
+  function fromE(e) {
+    const r  = slFrame.getBoundingClientRect();
+    const cx = e.touches ? e.touches[0].clientX : e.clientX;
+    return ((cx - r.left) / r.width) * 100;
+  }
+  function onMove(e) { if (dragging) setSlPos(fromE(e)); }
+  function onUp()    { dragging=false; if(slTip) slTip.style.display='none'; document.removeEventListener('mousemove',onMove); document.removeEventListener('mouseup',onUp); }
+  if (slFrame) {
+    slFrame.addEventListener('mousedown', e => { dragging=true; setSlPos(fromE(e)); document.addEventListener('mousemove',onMove); document.addEventListener('mouseup',onUp); e.preventDefault(); });
+    slFrame.addEventListener('touchstart', e => { dragging=true; setSlPos(fromE(e)); e.preventDefault(); }, {passive:false});
+    slFrame.addEventListener('touchmove',  e => { if(dragging) setSlPos(fromE(e)); e.preventDefault(); }, {passive:false});
+    slFrame.addEventListener('touchend',   () => { dragging=false; if(slTip) slTip.style.display='none'; });
+  }
+  setSlPos(50);
+
+  // ── Canvas analysis — pixel-accurate B+C hot-zone ─────────────────
+  if (diffUrl) {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const W = img.naturalWidth, H = img.naturalHeight;
+        if (!W || !H) return;
+        const cv = document.createElement('canvas');
+        cv.width = W; cv.height = H;
+        const ctx = cv.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+        const px = ctx.getImageData(0, 0, W, H).data;
+        const cols = new Float32Array(W);
+        for (let y=0;y<H;y++) for (let x=0;x<W;x++) {
+          const i=(y*W+x)*4;
+          if (px[i]>180 && px[i+1]<80 && px[i+2]<80) cols[x]++;
+        }
+        const THRESH = Math.max(1, H*0.005);
+        const found=[]; let inZ=false, zS=0;
+        for (let x=0;x<W;x++) {
+          if (!inZ && cols[x]>THRESH) { inZ=true; zS=x; }
+          if (inZ && cols[x]<=THRESH) { inZ=false; const pad=W*0.02; found.push({s:Math.max(0,(zS-pad)/W*100),e:Math.min(100,(x+pad)/W*100)}); }
+        }
+        if (inZ) found.push({s:Math.max(0,(zS-W*0.02)/W*100),e:100});
+        if (found.length) { zones=found; drawHeatCols(el,cols,W); }
+      } catch(e) { /* canvas blocked — no hot-zone, plain slider still works */ }
+    };
+    img.src = diffUrl;
+  }
+
+  function drawHeatCols(viewer, cols, W) {
+    const canvas = viewer.querySelector('.vr-ht-c'); if(!canvas) return;
+    canvas.width = Math.round((canvas.offsetWidth||300)*(window.devicePixelRatio||1));
+    const ctx=canvas.getContext('2d'), cw=canvas.width;
+    let maxV=0; for(let i=0;i<cols.length;i++) if(cols[i]>maxV) maxV=cols[i];
+    for(let x=0;x<cw;x++){
+      const v=maxV>0?cols[Math.floor((x/cw)*W)]/maxV:0;
+      ctx.fillStyle=v>0.01?`rgba(239,68,68,${(0.25+v*0.75).toFixed(2)})`:'#0a0a0a';
+      ctx.fillRect(x,0,1,4);
+    }
+  }
+
+  // ── Onion skin ───────────────────────────────────────────────────
+  const onionBl = el.querySelector('.vr-onion-bl');
+  const onionR  = el.querySelector('.vr-onion-r');
+  const onionP  = el.querySelector('.vr-onion-p');
+  if (onionR) onionR.addEventListener('input', function() {
+    if (onionBl) onionBl.style.opacity = this.value/100;
+    if (onionP)  onionP.textContent = this.value+'%';
+  });
+
+  // ── Blink ────────────────────────────────────────────────────────
+  const blinkBtn = el.querySelector('.vr-blink-btn');
+  const blinkA   = el.querySelector('.vr-blink-a');
+  const blinkB   = el.querySelector('.vr-blink-b');
+  const blinkLbl = el.querySelector('.vr-blink-lbl');
+  let   blinkState = false;
+
+  // use opacity toggle — blinkA stays in flow so container height is stable
+  function stopBlink() {
+    if (!blinkTimer) return;
+    clearInterval(blinkTimer); blinkTimer=null;
+    if (blinkBtn) { blinkBtn.textContent='▶ Blink'; blinkBtn.style.background='#d9770622'; blinkBtn.style.color='#fbbf24'; }
+    if (blinkA)   blinkA.style.opacity='1';
+    if (blinkB)   blinkB.style.opacity='0';
+    if (blinkLbl) blinkLbl.textContent='Actual';
+    blinkState=false;
+  }
+  if (blinkBtn) blinkBtn.addEventListener('click', e => {
+    e.stopPropagation();
+    if (blinkTimer) { stopBlink(); return; }
+    blinkBtn.textContent='⏹ Stop'; blinkBtn.style.background='#d97706'; blinkBtn.style.color='#fff';
+    blinkTimer=setInterval(()=>{
+      blinkState=!blinkState;
+      if(blinkA)   blinkA.style.opacity   = blinkState?'0':'1';
+      if(blinkB)   blinkB.style.opacity   = blinkState?'1':'0';
+      if(blinkLbl) blinkLbl.textContent   = blinkState?'Baseline':'Actual';
+    },400);
+  });
+}
+
+// legacy alias kept so vrViewDiff popup (which still uses vrSliderInit) keeps working
+function vrSliderInit(el) {
+  const baseline = el.querySelector('.vr-slider-baseline') || el.querySelector('.baseline');
+  const divider  = el.querySelector('.vr-slider-divider')  || el.querySelector('.divider');
+  const knob     = el.querySelector('.vr-slider-knob')     || el.querySelector('.knob');
+  const pctEl    = el.querySelector('.vr-slider-pct');
+  if (!baseline || !divider || !knob) return;
+
+  function setPos(pct) {
+    pct = Math.max(0, Math.min(100, pct));
+    const right = 100 - pct;
+    baseline.style.clipPath = `inset(0 ${right}% 0 0)`;
+    divider.style.left      = pct + '%';
+    knob.style.left         = pct + '%';
+    el.setAttribute('aria-valuenow', Math.round(pct));
+    if (pctEl) {
+      pctEl.style.left    = pct + '%';
+      pctEl.textContent   = Math.round(pct) + '%';
+    }
+  }
+
+  function pctFromEvent(e) {
+    const rect = el.getBoundingClientRect();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    return Math.max(0, Math.min(100, ((clientX - rect.left) / rect.width) * 100));
+  }
+
+  function curPct() {
+    const m = baseline.style.clipPath.match(/inset\(0 ([\d.]+)% 0 0\)/);
+    return m ? 100 - parseFloat(m[1]) : 50;
+  }
+
+  let dragging = false;
+
+  function onMouseMove(e) { if (dragging) setPos(pctFromEvent(e)); }
+  function onMouseUp()    { dragging = false; document.removeEventListener('mousemove', onMouseMove); document.removeEventListener('mouseup', onMouseUp); }
+  function onTouchMove(e) { if (dragging) { setPos(pctFromEvent(e)); e.preventDefault(); } }
+  function onTouchEnd()   { dragging = false; document.removeEventListener('touchmove', onTouchMove); document.removeEventListener('touchend', onTouchEnd); }
+
+  el.addEventListener('mousedown', e => {
+    dragging = true;
+    setPos(pctFromEvent(e));
+    e.preventDefault();
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  });
+  el.addEventListener('touchstart', e => {
+    dragging = true;
+    setPos(pctFromEvent(e));
+    e.preventDefault();
+    document.addEventListener('touchmove', onTouchMove, { passive: false });
+    document.addEventListener('touchend', onTouchEnd);
+  }, { passive: false });
+  el.addEventListener('keydown', e => {
+    if (e.key === 'ArrowLeft')  { setPos(curPct() - 1); e.preventDefault(); }
+    if (e.key === 'ArrowRight') { setPos(curPct() + 1); e.preventDefault(); }
+    if (e.key === 'Home')       { setPos(0);   e.preventDefault(); }
+    if (e.key === 'End')        { setPos(100); e.preventDefault(); }
+  });
+  setPos(50); // initial 50/50 split
+}
+
+function vrSlidersInit(container) {
+  (container || document).querySelectorAll('.vr-viewer:not([data-vr-ready])').forEach(el => vrViewerInit(el));
 }
 
 async function vrApprove(id) {
@@ -10043,7 +10763,7 @@ async function vrDelete(id, name) {
   try {
     const res = await fetch(`/api/visual-baselines/${encodeURIComponent(id)}`, { method: 'DELETE' });
     const d = await res.json();
-    if (d.ok) { await vrLoad(); }
+    if (d.ok || d.success) { await vrLoad(); }
     else alert('Delete failed: ' + (d.error || 'unknown'));
   } catch (e) { alert('Delete failed: ' + e.message); }
 }
@@ -10051,26 +10771,653 @@ async function vrDelete(id, name) {
 function vrViewDiff(id) {
   const b = _vrBaselines.find(x => x.id === id);
   if (!b) return;
-  const imgBase = `/api/visual-baselines/${encodeURIComponent(id)}/image`;
+  const imgBase   = `/api/visual-baselines/${encodeURIComponent(id)}/image`;
+  const baseUrl   = imgBase + '?type=baseline';
+  const actualUrl = imgBase + '?type=actual';
+  const diffUrl   = imgBase + '?type=diff';
+  const hasDiff   = b.diffPct > 0 || b.lastSavedPixels > 0;
   const win = window.open('', '_blank');
-  win.document.write(`<!DOCTYPE html><html><head><title>Visual Diff — ${escHtml(b.testName)}</title>
-  <style>body{margin:0;background:#1e1e1e;font-family:sans-serif;color:#ccc}
-  .hdr{padding:16px;background:#252526;border-bottom:1px solid #333;display:flex;align-items:center;gap:16px}
-  .hdr h2{margin:0;font-size:16px}.meta{font-size:12px;color:#888}
-  .imgs{display:grid;grid-template-columns:1fr 1fr 1fr;gap:0;height:calc(100vh - 70px)}
-  .col{display:flex;flex-direction:column;border-right:1px solid #333}
-  .col:last-child{border-right:none}
-  .col-hdr{padding:8px 12px;font-size:12px;font-weight:700;background:#2d2d2d;text-align:center}
-  .col img{width:100%;flex:1;object-fit:contain;background:#1a1a1a}
-  </style></head><body>
-  <div class="hdr"><h2>&#128247; Visual Diff</h2>
-  <div class="meta">${escHtml(b.testName)} · ${escHtml(b.locatorName)}${b.diffPct != null ? ' · ' + b.diffPct + '% diff' : ''}</div></div>
-  <div class="imgs">
-  <div class="col"><div class="col-hdr">Baseline (approved)</div><img src="${imgBase}?type=baseline" onerror="this.alt='No baseline'"></div>
-  <div class="col"><div class="col-hdr">Actual (last run)</div><img src="${imgBase}?type=actual" onerror="this.alt='No actual'"></div>
-  <div class="col"><div class="col-hdr">Diff (red = changed)</div><img src="${imgBase}?type=diff" onerror="this.alt='No diff'"></div>
-  </div></body></html>`);
+  // OLD: no null-check — crashes when popup is blocked
+  if (!win) { alert('Popup blocked. Please allow popups for this page.'); return; }
+
+  const diffPctStr = b.diffPct != null ? b.diffPct + '% diff' : '';
+
+  win.document.write(`<!DOCTYPE html><html><head>
+  <title>Visual Diff — ${escHtml(b.testName)}</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{background:#0d0d0d;font-family:system-ui,sans-serif;color:#ccc;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+    .hdr{padding:10px 18px;background:#1a1a1a;border-bottom:1px solid #2a2a2a;display:flex;align-items:center;gap:12px;flex-shrink:0}
+    .hdr h2{font-size:14px;color:#fff;font-weight:700}
+    .meta{font-size:11px;color:#666}
+    .badge{font-size:10px;padding:2px 8px;border-radius:10px;font-weight:700}
+    .badge-diff{background:#fee2e2;color:#b91c1c}.badge-ok{background:#dcfce7;color:#166534}
+    .layout{display:grid;grid-template-columns:2fr 1fr;flex:1;min-height:0;overflow:hidden;gap:0}
+    .left-panel{display:flex;flex-direction:column;border-right:1px solid #2a2a2a;overflow:hidden}
+    .right-panel{display:flex;flex-direction:column;overflow:hidden}
+    .panel-hdr{padding:6px 12px;font-size:11px;font-weight:700;background:#161616;border-bottom:1px solid #222;flex-shrink:0;color:#888;display:flex;align-items:center;gap:8px}
+    .panel-body{flex:1;overflow:hidden;position:relative;background:#111}
+    /* ── Mode bar ── */
+    .vr-mb-bar{display:flex;gap:4px;padding:5px 8px;background:#0d0d0d;border-bottom:1px solid #1e1e1e;flex-shrink:0}
+    .vr-mb{padding:4px 12px;border:none;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer;background:rgba(255,255,255,.07);color:#64748b;transition:all .15s}
+    .vr-mb.on{background:#334155;color:#f1f5f9}
+    /* ── Slider mode ── */
+    .vr-sl{position:relative;overflow:hidden;cursor:ew-resize;user-select:none;width:100%;height:100%}
+    .vr-sl-a{display:block;width:100%;height:100%;object-fit:contain;background:#111}
+    .vr-sl-b{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;clip-path:inset(0 50% 0 0)}
+    .vr-sl-d{position:absolute;top:0;bottom:0;left:50%;width:2px;transform:translateX(-50%);pointer-events:none;background:rgba(255,255,255,.85);transition:background .1s,box-shadow .1s}
+    .vr-sl-k{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:36px;height:36px;border-radius:50%;background:#fff;color:#333;box-shadow:0 2px 12px rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;font-size:16px;pointer-events:none;transition:background .15s}
+    .vr-sl-t{display:none;position:absolute;bottom:calc(50% + 22px);transform:translateX(-50%);background:#fff;border:1px solid #e2e8f0;color:#111;font-size:11px;padding:4px 12px;border-radius:6px;white-space:nowrap;pointer-events:none;font-weight:700;z-index:4;box-shadow:0 2px 8px rgba(0,0,0,.5)}
+    .vr-ht-bar{height:4px;background:#0a0a0a;position:relative;overflow:hidden;flex-shrink:0}
+    /* ── Onion mode ── */
+    .vr-onion{position:relative;overflow:hidden;width:100%;height:100%}
+    .vr-onion-a{display:block;width:100%;height:100%;object-fit:contain;background:#111}
+    .vr-onion-bl{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;opacity:.5}
+    .vr-onion-bar{display:flex;align-items:center;gap:10px;padding:6px 12px;background:#0d0d0d;border-top:1px solid #1e1e1e;flex-shrink:0}
+    /* ── Blink mode ── */
+    .vr-blink-wrap{position:relative;overflow:hidden;width:100%;height:100%}
+    .vr-blink-a{display:block;width:100%;height:100%;object-fit:contain;background:#111}
+    .vr-blink-b{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;opacity:0;transition:opacity 0s}
+    .vr-blink-lbl{position:absolute;top:8px;left:10px;background:rgba(0,0,0,.72);color:#fff;font-size:11px;padding:2px 8px;border-radius:3px;font-weight:700}
+    .vr-blink-bar{display:flex;align-items:center;gap:10px;padding:6px 12px;background:#0d0d0d;border-top:1px solid #1e1e1e;flex-shrink:0}
+    /* ── Diff panel ── */
+    .diff-img{width:100%;height:100%;object-fit:contain;background:#111;display:block}
+    .no-diff{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:14px}
+    .no-diff svg{opacity:.3}.no-diff span{font-size:13px;font-weight:600;color:#4caf50}
+    .protect-box{padding:10px 12px;background:#0a1628;border-top:1px solid #1e293b;font-size:11px;flex-shrink:0}
+  </style>
+  </head><body>
+  <div class="hdr">
+    <h2>&#128247; Visual Diff</h2>
+    <div class="meta">${escHtml(b.testName)} &middot; ${escHtml(b.locatorName)}${diffPctStr ? ' &middot; ' + diffPctStr : ''}</div>
+    ${hasDiff ? '<span class="badge badge-diff">&#9889; Diff Detected</span>' : '<span class="badge badge-ok">&#10003; Pixel-Identical</span>'}
+  </div>
+  <div class="layout">
+    <!-- Left: multi-mode viewer -->
+    <div class="left-panel">
+      <div class="vr-mb-bar">
+        <button class="vr-mb on" data-mode="slider">&#8660; Slider</button>
+        <button class="vr-mb" data-mode="onion">&#128065; Onion</button>
+        <button class="vr-mb" data-mode="blink">&#128161; Blink</button>
+      </div>
+      <!-- Slider mode -->
+      <div class="vr-m vr-m-slider" style="display:flex;flex-direction:column;flex:1;min-height:0">
+        <div class="panel-body">
+          <div class="vr-sl" id="vr-sl">
+            <img class="vr-sl-a" src="${actualUrl}"  alt="Actual"   onerror="this.style.opacity='.2'">
+            <img class="vr-sl-b" src="${baseUrl}"    alt="Baseline" onerror="this.style.opacity='.2'">
+            <div class="vr-sl-d" id="vr-sl-d"></div>
+            <div class="vr-sl-k" id="vr-sl-k">&#8660;</div>
+            <div class="vr-sl-t" id="vr-sl-t"></div>
+          </div>
+        </div>
+        ${hasDiff ? '<div class="vr-ht-bar"><canvas id="vr-ht-c" height="4" style="display:block;width:100%;height:4px"></canvas><div id="vr-ht-n" style="position:absolute;top:0;bottom:0;width:2px;background:#fff;opacity:.5;transform:translateX(-50%);left:50%;pointer-events:none"></div></div>' : ''}
+      </div>
+      <!-- Onion mode -->
+      <div class="vr-m vr-m-onion" style="display:none;flex-direction:column;flex:1;min-height:0">
+        <div class="panel-body">
+          <div class="vr-onion">
+            <img class="vr-onion-a"  src="${actualUrl}"  alt="Actual">
+            <img class="vr-onion-bl" src="${baseUrl}"    alt="Baseline">
+          </div>
+        </div>
+        <div class="vr-onion-bar">
+          <span style="font-size:11px;color:#555;white-space:nowrap">Baseline opacity</span>
+          <input type="range" id="vr-onion-r" min="0" max="100" value="50" style="flex:1;accent-color:#059669;height:3px;cursor:pointer">
+          <span id="vr-onion-p" style="font-size:11px;color:#6ee7b7;font-weight:700;min-width:32px;text-align:right">50%</span>
+        </div>
+      </div>
+      <!-- Blink mode -->
+      <div class="vr-m vr-m-blink" style="display:none;flex-direction:column;flex:1;min-height:0">
+        <div class="panel-body">
+          <div class="vr-blink-wrap">
+            <img class="vr-blink-a" src="${actualUrl}"  alt="Actual">
+            <img class="vr-blink-b" src="${baseUrl}"    alt="Baseline">
+            <span class="vr-blink-lbl">Actual</span>
+          </div>
+        </div>
+        <div class="vr-blink-bar">
+          <button id="vr-blink-btn" style="padding:4px 14px;background:#d9770622;color:#fbbf24;border:1px solid #d9770644;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">&#9654; Blink</button>
+          <span style="font-size:11px;color:#444">Alternates baseline &harr; actual — eye catches the change</span>
+        </div>
+      </div>
+    </div>
+    <!-- Right: diff image -->
+    <div class="right-panel">
+      <div class="panel-hdr">&#9889; Diff ${diffPctStr ? '&mdash; ' + diffPctStr : '(red = changed pixels)'}</div>
+      <div class="panel-body" style="display:flex;flex-direction:column">
+        ${hasDiff
+          ? `<img class="diff-img" src="${diffUrl}" alt="Diff">`
+          : `<div class="no-diff"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#4caf50" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M8 12l3 3 5-5"/></svg><span>No Differences</span></div>`}
+        ${b.lastSavedPixels > 0 ? `<div class="protect-box">
+          <div style="font-weight:700;color:#22c55e">&#128737; ${b.totalRunsProtected||1} false positive${(b.totalRunsProtected||1)>1?'s':''} prevented</div>
+          <div style="color:#64748b;margin-top:2px">${b.lastSavedPixels.toLocaleString()} pixels neutralised</div>
+        </div>` : ''}
+      </div>
+    </div>
+  </div>
+  <\x73cript>
+  (function(){
+    // ── Mode switching ──
+    var mBtns   = document.querySelectorAll('.vr-mb');
+    var mPanels = document.querySelectorAll('.vr-m');
+    var blinkTimer = null;
+    function applyMb(btn, on){ btn.classList.toggle('on', on); }
+    function switchMode(m){
+      if(blinkTimer && m!=='blink') stopBlink();
+      mBtns.forEach(function(b){ applyMb(b, b.dataset.mode===m); });
+      mPanels.forEach(function(p){ p.style.display = p.classList.contains('vr-m-'+m)?'flex':'none'; });
+    }
+    mBtns.forEach(function(b){ b.addEventListener('click', function(){ switchMode(b.dataset.mode); }); });
+
+    // ── Slider ──
+    var slFrame = document.getElementById('vr-sl');
+    var slBase  = slFrame && slFrame.querySelector('.vr-sl-b');
+    var slDiv   = document.getElementById('vr-sl-d');
+    var slKnob  = document.getElementById('vr-sl-k');
+    var slTip   = document.getElementById('vr-sl-t');
+    var htNeedle= document.getElementById('vr-ht-n');
+    var zones=[], dragging=false;
+
+    function inDiff(p){ return zones.some(function(z){return p>=z.s&&p<=z.e;}); }
+    function setSlPos(pct){
+      pct=Math.max(0,Math.min(100,pct));
+      if(slBase)  slBase.style.clipPath='inset(0 '+(100-pct)+'% 0 0)';
+      if(slDiv)   slDiv.style.left=pct+'%';
+      if(slKnob)  slKnob.style.left=pct+'%';
+      if(htNeedle)htNeedle.style.left=pct+'%';
+      var hot=inDiff(pct);
+      if(slDiv){  slDiv.style.background=hot?'#ef4444':'rgba(255,255,255,.85)'; slDiv.style.boxShadow=hot?'0 0 12px 4px rgba(239,68,68,.65)':''; }
+      if(slKnob){ slKnob.style.background=hot?'#ef4444':'#fff'; slKnob.style.color=hot?'#fff':'#333'; slKnob.textContent=hot?'\\u26a1':'\\u21d4'; }
+      if(slTip){
+        slTip.style.left=pct+'%';
+        slTip.style.display=(dragging&&zones.length)?'block':'none';
+        slTip.textContent=hot?'\\u26a1 Diff here!':'Baseline \\xb7 '+Math.round(pct)+'%';
+        slTip.style.background=hot?'#dc2626':'#fff';
+        slTip.style.borderColor=hot?'#ef4444':'#e2e8f0';
+        slTip.style.color=hot?'#fff':'#111';
+      }
+    }
+    function fromE(e){ var r=slFrame.getBoundingClientRect(),cx=e.touches?e.touches[0].clientX:e.clientX; return((cx-r.left)/r.width)*100; }
+    function onMove(e){ if(dragging)setSlPos(fromE(e)); }
+    function onUp(){ dragging=false; if(slTip)slTip.style.display='none'; document.removeEventListener('mousemove',onMove); document.removeEventListener('mouseup',onUp); }
+    if(slFrame){
+      slFrame.addEventListener('mousedown',function(e){dragging=true;setSlPos(fromE(e));document.addEventListener('mousemove',onMove);document.addEventListener('mouseup',onUp);e.preventDefault();});
+      slFrame.addEventListener('touchstart',function(e){dragging=true;setSlPos(fromE(e));e.preventDefault();},{passive:false});
+      slFrame.addEventListener('touchmove',function(e){if(dragging)setSlPos(fromE(e));e.preventDefault();},{passive:false});
+      slFrame.addEventListener('touchend',function(){dragging=false;if(slTip)slTip.style.display='none';});
+    }
+    setSlPos(50);
+
+    // B+C hot-zone analysis
+    if('${hasDiff ? diffUrl : ''}'){
+      var di=new Image();
+      di.onload=function(){
+        try{
+          var W=di.naturalWidth,H=di.naturalHeight; if(!W||!H)return;
+          var cv=document.createElement('canvas'); cv.width=W; cv.height=H;
+          var ctx=cv.getContext('2d'); ctx.drawImage(di,0,0);
+          var px=ctx.getImageData(0,0,W,H).data, cols=new Float32Array(W);
+          for(var y=0;y<H;y++) for(var x=0;x<W;x++){var i=(y*W+x)*4; if(px[i]>180&&px[i+1]<80&&px[i+2]<80)cols[x]++;}
+          var THRESH=Math.max(1,H*0.005),found=[],inZ=false,zS=0;
+          for(var x=0;x<W;x++){
+            if(!inZ&&cols[x]>THRESH){inZ=true;zS=x;}
+            if(inZ&&cols[x]<=THRESH){inZ=false;var pad=W*0.02;found.push({s:Math.max(0,(zS-pad)/W*100),e:Math.min(100,(x+pad)/W*100)});}
+          }
+          if(inZ)found.push({s:Math.max(0,(zS-W*0.02)/W*100),e:100});
+          if(found.length){
+            zones=found;
+            var canvas=document.getElementById('vr-ht-c'); if(!canvas)return;
+            canvas.width=Math.round((canvas.offsetWidth||600)*(window.devicePixelRatio||1));
+            var ctx2=canvas.getContext('2d'),cw=canvas.width,maxV=0;
+            for(var i=0;i<cols.length;i++)if(cols[i]>maxV)maxV=cols[i];
+            for(var x=0;x<cw;x++){var v=maxV>0?cols[Math.floor((x/cw)*W)]/maxV:0;ctx2.fillStyle=v>0.01?'rgba(239,68,68,'+(0.25+v*0.75).toFixed(2)+')':'#0a0a0a';ctx2.fillRect(x,0,1,4);}
+          }
+        }catch(e){}
+      };
+      di.src='${hasDiff ? diffUrl : ''}';
+    }
+
+    // ── Onion ──
+    var onionBl=document.querySelector('.vr-onion-bl');
+    var onionR=document.getElementById('vr-onion-r');
+    var onionP=document.getElementById('vr-onion-p');
+    if(onionR) onionR.addEventListener('input',function(){ if(onionBl)onionBl.style.opacity=this.value/100; if(onionP)onionP.textContent=this.value+'%'; });
+
+    // ── Blink ──
+    var blinkBtn=document.getElementById('vr-blink-btn');
+    var blinkA=document.querySelector('.vr-blink-a');
+    var blinkB=document.querySelector('.vr-blink-b');
+    var blinkLbl=document.querySelector('.vr-blink-lbl');
+    var blinkState=false;
+    function stopBlink(){
+      if(!blinkTimer)return;
+      clearInterval(blinkTimer); blinkTimer=null;
+      if(blinkBtn){blinkBtn.textContent='\\u25b6 Blink';blinkBtn.style.background='#d9770622';blinkBtn.style.color='#fbbf24';}
+      if(blinkA)blinkA.style.opacity='1';
+      if(blinkB)blinkB.style.opacity='0';
+      if(blinkLbl)blinkLbl.textContent='Actual';
+      blinkState=false;
+    }
+    if(blinkBtn) blinkBtn.addEventListener('click',function(){
+      if(blinkTimer){stopBlink();return;}
+      blinkBtn.textContent='\\u23f9 Stop'; blinkBtn.style.background='#d97706'; blinkBtn.style.color='#fff';
+      blinkTimer=setInterval(function(){
+        blinkState=!blinkState;
+        if(blinkA)blinkA.style.opacity=blinkState?'0':'1';
+        if(blinkB)blinkB.style.opacity=blinkState?'1':'0';
+        if(blinkLbl)blinkLbl.textContent=blinkState?'Baseline':'Actual';
+      },400);
+    });
+  })();
+  </\x73cript>
+  </body></html>`);
   win.document.close();
+}
+
+// ── Ignore Region Editor ────────────────────────────────────────────────────
+
+const VRT_IGNORE_CATEGORIES = [
+  { value: 'dynamic-data',  label: 'Dynamic Data',  color: '#22c55e', desc: 'Live counters, metrics, prices' },
+  { value: 'temporal',      label: 'Timestamp',     color: '#3b82f6', desc: 'Clock, "2 mins ago", dates' },
+  { value: 'advertisement', label: 'Advertisement', color: '#eab308', desc: 'Rotating banners, promo slots' },
+  { value: 'user-specific', label: 'User Content',  color: '#a855f7', desc: 'Avatars, user names, role badges' },
+  { value: 'animated',      label: 'Animated',      color: '#f97316', desc: 'Spinners, carousels, transitions' },
+  { value: 'third-party',   label: 'Third Party',   color: '#94a3b8', desc: 'Chat widgets, maps, social feeds' },
+];
+
+let _vrtIgnoreBaselineId  = null;
+let _vrtIgnoreRegions     = [];
+let _vrtIgnoreDraw        = null;
+let _vrtIgnoreScale       = 1;
+let _vrtIgnorePending     = null;
+let _vrtIgnoreEditId      = null;   // regionId being edited (null = new)
+let _vrtIgnoreSelCategory = 'dynamic-data'; // currently selected category value
+
+function vrtEnsureIgnoreModal() {
+  if (document.getElementById('vrt-ignore-modal')) return;
+  // Build category picker rows with color dot + label (native <select> can't show colored dots)
+  const catPickerOptions = VRT_IGNORE_CATEGORIES.map(c =>
+    `<div class="vrt-cat-opt" data-value="${c.value}" onclick="vrtSelectCategory('${c.value}')"
+       style="display:flex;align-items:center;gap:8px;padding:7px 10px;cursor:pointer;border-radius:5px;font-size:12px;color:#cbd5e1;">
+      <span style="width:10px;height:10px;min-width:10px;border-radius:50%;background:${c.color};display:inline-block;"></span>
+      <span style="font-weight:600;color:#e2e8f0;">${c.label}</span>
+      <span style="color:#64748b;font-size:11px;">— ${c.desc}</span>
+    </div>`
+  ).join('');
+
+  document.body.insertAdjacentHTML('beforeend', `
+    <div id="vrt-ignore-modal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.85);flex-direction:column;">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 20px;background:#1e293b;color:#fff;flex-shrink:0;">
+        <div>
+          <span style="font-weight:700;font-size:15px;">&#127919; Ignore Regions Editor</span>
+          <span id="vrt-ignore-modal-subtitle" style="font-size:12px;color:#94a3b8;margin-left:12px;"></span>
+        </div>
+        <button onclick="vrtCloseIgnoreEditor()" style="background:none;border:none;color:#fff;font-size:20px;cursor:pointer;">&#10005;</button>
+      </div>
+      <div style="display:flex;flex:1;overflow:hidden;gap:0;">
+        <div style="flex:1;overflow:auto;padding:20px;display:flex;align-items:flex-start;justify-content:center;background:#0f172a;">
+          <div style="position:relative;display:inline-block;user-select:none;" id="vrt-ignore-img-wrap">
+            <img id="vrt-ignore-img" style="display:block;max-width:100%;border:1px solid #334155;" />
+            <canvas id="vrt-ignore-canvas" style="position:absolute;top:0;left:0;cursor:crosshair;"></canvas>
+            <div id="vrt-draw-hint" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,229,255,0.9);color:#0f172a;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:700;pointer-events:none;opacity:0;transition:opacity 0.3s;white-space:nowrap;">
+              &#8592; Draw a rectangle on the image
+            </div>
+          </div>
+        </div>
+        <div style="width:360px;min-width:360px;background:#1e293b;display:flex;flex-direction:column;border-left:1px solid #334155;">
+          <div style="padding:10px 16px;border-bottom:1px solid #334155;display:flex;align-items:center;justify-content:space-between;">
+            <span style="font-size:12px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.05em;">Ignore Regions <span id="vrt-ignore-count" style="color:#64748b;font-weight:400;"></span></span>
+            <button onclick="vrtPromptNewRegion()" style="padding:4px 10px;background:#4f46e5;color:#fff;border:none;border-radius:5px;font-size:11px;font-weight:600;cursor:pointer;">+ Add Region</button>
+          </div>
+          <div id="vrt-ignore-region-list" style="flex:1;overflow-y:auto;padding:8px 0;"></div>
+          <div id="vrt-ignore-add-form" style="display:none;padding:14px 16px;border-top:1px solid #334155;background:#0f172a;">
+            <div id="vrt-ignore-form-title" style="font-size:12px;font-weight:700;color:#94a3b8;margin-bottom:10px;text-transform:uppercase;">New Region</div>
+            <input id="vrt-ignore-name" placeholder="Name (e.g. Live Clock)" style="width:100%;padding:7px 10px;border-radius:6px;border:1px solid #334155;background:#1e293b;color:#fff;font-size:13px;margin-bottom:8px;" />
+            <!-- Custom category picker with color dots -->
+            <div style="position:relative;margin-bottom:8px;">
+              <div id="vrt-cat-trigger" onclick="vrtToggleCatDropdown()"
+                style="display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:6px;border:1px solid #334155;background:#1e293b;color:#fff;font-size:13px;cursor:pointer;">
+                <span id="vrt-cat-dot" style="width:10px;height:10px;min-width:10px;border-radius:50%;background:#22c55e;display:inline-block;"></span>
+                <span id="vrt-cat-label">Dynamic Data — Live counters, metrics, prices</span>
+                <span style="margin-left:auto;color:#64748b;">&#9660;</span>
+              </div>
+              <div id="vrt-cat-dropdown" style="display:none;position:absolute;bottom:100%;left:0;right:0;background:#0f172a;border:1px solid #334155;border-radius:6px;z-index:100;padding:4px;max-height:220px;overflow-y:auto;">
+                ${catPickerOptions}
+              </div>
+            </div>
+            <input id="vrt-ignore-selector" placeholder="CSS selector (optional, e.g. #live-clock)" style="width:100%;padding:7px 10px;border-radius:6px;border:1px solid #334155;background:#1e293b;color:#fff;font-size:13px;margin-bottom:8px;" />
+            <input id="vrt-ignore-reason" placeholder="Reason (optional)" style="width:100%;padding:7px 10px;border-radius:6px;border:1px solid #334155;background:#1e293b;color:#fff;font-size:13px;margin-bottom:10px;" />
+            <div style="display:flex;gap:8px;">
+              <button id="vrt-ignore-save-btn" onclick="vrtSaveIgnoreRegion()" style="flex:1;padding:8px;background:#4f46e5;color:#fff;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;">Save Region</button>
+              <button onclick="vrtCancelIgnoreDraw()" style="padding:8px 12px;background:#334155;color:#94a3b8;border:none;border-radius:6px;font-size:13px;cursor:pointer;">Cancel</button>
+            </div>
+          </div>
+          <div id="vrt-ignore-savings" style="padding:12px 16px;border-top:1px solid #334155;font-size:11px;color:#64748b;display:none;">
+            <span id="vrt-ignore-savings-text"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  `);
+}
+
+async function vrtOpenIgnoreEditor(baselineId) {
+  vrtEnsureIgnoreModal();
+  _vrtIgnoreBaselineId = baselineId;
+  const [regions] = await Promise.all([
+    fetch(`/api/visual-baselines/${encodeURIComponent(baselineId)}/ignore-regions`).then(r => r.json()),
+  ]);
+  _vrtIgnoreRegions = regions;
+  const entry = _vrBaselines.find(b => b.id === baselineId);
+  document.getElementById('vrt-ignore-modal-subtitle').textContent =
+    entry ? `${entry.testName} · ${entry.locatorName}` : baselineId;
+  document.getElementById('vrt-ignore-modal').style.display = 'flex';
+  document.getElementById('vrt-ignore-add-form').style.display = 'none';
+  const img = document.getElementById('vrt-ignore-img');
+  img.onload = () => vrtIgnoreInitCanvas(img);
+  img.src = `/api/visual-baselines/${encodeURIComponent(baselineId)}/image?type=baseline&_=${Date.now()}`;
+  vrtRenderIgnoreRegionList();
+  vrtUpdateIgnoreSavings(entry);
+}
+
+function vrtIgnoreInitCanvas(img) {
+  const canvas = document.getElementById('vrt-ignore-canvas');
+  canvas.width  = img.naturalWidth;
+  canvas.height = img.naturalHeight;
+  canvas.style.width  = img.offsetWidth  + 'px';
+  canvas.style.height = img.offsetHeight + 'px';
+  _vrtIgnoreScale = img.naturalWidth / img.offsetWidth;
+  const wrap = document.getElementById('vrt-ignore-img-wrap');
+  wrap.style.width  = img.offsetWidth  + 'px';
+  wrap.style.height = img.offsetHeight + 'px';
+  canvas.onmousedown = vrtIgnoreMouseDown;
+  canvas.onmousemove = vrtIgnoreMouseMove;
+  canvas.onmouseup   = vrtIgnoreMouseUp;
+  vrtIgnoreRedrawCanvas();
+}
+
+function vrtIgnoreCanvasPos(e) {
+  const canvas = document.getElementById('vrt-ignore-canvas');
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: Math.round((e.clientX - rect.left) * _vrtIgnoreScale),
+    y: Math.round((e.clientY - rect.top)  * _vrtIgnoreScale),
+  };
+}
+
+function vrtIgnoreMouseDown(e) {
+  const pos = vrtIgnoreCanvasPos(e);
+  _vrtIgnoreDraw = { startX: pos.x, startY: pos.y, currentX: pos.x, currentY: pos.y };
+}
+
+function vrtIgnoreMouseMove(e) {
+  if (!_vrtIgnoreDraw) return;
+  const pos = vrtIgnoreCanvasPos(e);
+  _vrtIgnoreDraw.currentX = pos.x;
+  _vrtIgnoreDraw.currentY = pos.y;
+  vrtIgnoreRedrawCanvas();
+}
+
+function vrtIgnoreMouseUp(e) {
+  if (!_vrtIgnoreDraw) return;
+  const pos = vrtIgnoreCanvasPos(e);
+  const x = Math.min(_vrtIgnoreDraw.startX, pos.x);
+  const y = Math.min(_vrtIgnoreDraw.startY, pos.y);
+  const w = Math.abs(pos.x - _vrtIgnoreDraw.startX);
+  const h = Math.abs(pos.y - _vrtIgnoreDraw.startY);
+  _vrtIgnoreDraw = null;
+  if (w < 10 || h < 10) { vrtIgnoreRedrawCanvas(); return; }
+  _vrtIgnorePending = { x, y, width: w, height: h };
+  _vrtIgnoreEditId  = null;
+  document.getElementById('vrt-ignore-form-title').textContent = 'New Region';
+  document.getElementById('vrt-ignore-save-btn').textContent   = 'Save Region';
+  document.getElementById('vrt-ignore-add-form').style.display = 'block';
+  document.getElementById('vrt-ignore-name').focus();
+  vrtIgnoreRedrawCanvas();
+}
+
+function vrtIgnoreRedrawCanvas() {
+  const canvas = document.getElementById('vrt-ignore-canvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  for (const region of _vrtIgnoreRegions) {
+    const cat   = VRT_IGNORE_CATEGORIES.find(c => c.value === region.category);
+    const color = cat ? cat.color : '#94a3b8';
+    vrtIgnoreDrawRegionOnCanvas(ctx, region.x, region.y, region.width, region.height, color, region.name);
+  }
+  if (_vrtIgnorePending) {
+    vrtIgnoreDrawRegionOnCanvas(ctx, _vrtIgnorePending.x, _vrtIgnorePending.y, _vrtIgnorePending.width, _vrtIgnorePending.height, '#ffffff', '...');
+  }
+  if (_vrtIgnoreDraw) {
+    const x = Math.min(_vrtIgnoreDraw.startX, _vrtIgnoreDraw.currentX);
+    const y = Math.min(_vrtIgnoreDraw.startY, _vrtIgnoreDraw.currentY);
+    const w = Math.abs(_vrtIgnoreDraw.currentX - _vrtIgnoreDraw.startX);
+    const h = Math.abs(_vrtIgnoreDraw.currentY - _vrtIgnoreDraw.startY);
+    ctx.save();
+    // Bright cyan outline — highly visible on both light and dark backgrounds
+    ctx.strokeStyle = '#00e5ff';
+    ctx.lineWidth = 3;
+    ctx.setLineDash([8, 4]);
+    ctx.strokeRect(x, y, w, h);
+    // Semi-transparent cyan fill so user can see what's being selected
+    ctx.fillStyle = 'rgba(0, 229, 255, 0.12)';
+    ctx.fillRect(x, y, w, h);
+    // Corner size indicator
+    if (w > 40 && h > 20) {
+      ctx.setLineDash([]);
+      ctx.font = 'bold 11px system-ui';
+      ctx.fillStyle = '#00e5ff';
+      ctx.fillText(`${Math.round(w)}×${Math.round(h)}`, x + 4, y + h - 4);
+    }
+    ctx.restore();
+  }
+}
+
+function vrtIgnoreDrawRegionOnCanvas(ctx, x, y, w, h, color, label) {
+  ctx.save();
+  const HATCH_STEP = 10;
+  ctx.beginPath();
+  ctx.rect(x, y, w, h);
+  ctx.clip();
+  ctx.strokeStyle = color;
+  ctx.globalAlpha = 0.45;
+  ctx.lineWidth = 2;
+  for (let i = -h; i < w + h; i += HATCH_STEP) {
+    ctx.beginPath();
+    ctx.moveTo(x + i, y);
+    ctx.lineTo(x + i + h, y + h);
+    ctx.stroke();
+  }
+  ctx.restore();
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.globalAlpha = 0.9;
+  ctx.strokeRect(x, y, w, h);
+  ctx.restore();
+  if (label) {
+    ctx.save();
+    ctx.font = 'bold 11px system-ui';
+    const textW = ctx.measureText(label).width;
+    const pillW = textW + 10;
+    const pillH = 18;
+    const pillX = x + 4;
+    const pillY = y + 4;
+    ctx.fillStyle = color;
+    ctx.globalAlpha = 0.92;
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(pillX, pillY, pillW, pillH, 4);
+    else ctx.rect(pillX, pillY, pillW, pillH);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = '#fff';
+    ctx.fillText(label, pillX + 5, pillY + 13);
+    ctx.restore();
+  }
+}
+
+// ── Category dropdown helpers ──────────────────────────────────────────────
+function vrtToggleCatDropdown() {
+  const dd = document.getElementById('vrt-cat-dropdown');
+  if (dd) dd.style.display = dd.style.display === 'none' ? 'block' : 'none';
+}
+
+function vrtSelectCategory(value) {
+  _vrtIgnoreSelCategory = value;
+  const cat = VRT_IGNORE_CATEGORIES.find(c => c.value === value);
+  if (!cat) return;
+  const dot   = document.getElementById('vrt-cat-dot');
+  const label = document.getElementById('vrt-cat-label');
+  if (dot)   dot.style.background = cat.color;
+  if (label) label.textContent = `${cat.label} — ${cat.desc}`;
+  // Highlight selected row
+  document.querySelectorAll('.vrt-cat-opt').forEach(el => {
+    el.style.background = el.dataset.value === value ? '#1e3a5f' : 'transparent';
+  });
+  const dd = document.getElementById('vrt-cat-dropdown');
+  if (dd) dd.style.display = 'none';
+}
+
+// Close dropdown when clicking outside
+document.addEventListener('click', (e) => {
+  const trigger = document.getElementById('vrt-cat-trigger');
+  const dd      = document.getElementById('vrt-cat-dropdown');
+  if (dd && trigger && !trigger.contains(e.target) && !dd.contains(e.target)) {
+    dd.style.display = 'none';
+  }
+});
+
+async function vrtSaveIgnoreRegion() {
+  const name     = document.getElementById('vrt-ignore-name').value.trim();
+  const category = _vrtIgnoreSelCategory;
+  const selector = document.getElementById('vrt-ignore-selector').value.trim();
+  const reason   = document.getElementById('vrt-ignore-reason').value.trim();
+  if (!name) { alert('Please enter a name for this region.'); return; }
+
+  const isEdit = !!_vrtIgnoreEditId;
+
+  if (isEdit) {
+    // PUT — update existing region (can edit any field including selector/reason)
+    const res = await fetch(`/api/visual-baselines/${encodeURIComponent(_vrtIgnoreBaselineId)}/ignore-regions/${_vrtIgnoreEditId}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, category, ...(selector ? { selector } : {}), ...(reason ? { reason } : {}) }),
+    });
+    if (!res.ok) { alert('Failed to update region'); return; }
+    const updated = await res.json();
+    const idx = _vrtIgnoreRegions.findIndex(r => r.id === _vrtIgnoreEditId);
+    if (idx >= 0) _vrtIgnoreRegions[idx] = updated;
+    _vrtIgnoreEditId = null;
+  } else {
+    // POST — create new region
+    if (!_vrtIgnorePending) return;
+    const body = { name, category, ...(selector ? { selector } : {}), ...(reason ? { reason } : {}), ..._vrtIgnorePending };
+    const res  = await fetch(`/api/visual-baselines/${encodeURIComponent(_vrtIgnoreBaselineId)}/ignore-regions`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    if (!res.ok) { alert('Failed to save region'); return; }
+    const saved = await res.json();
+    _vrtIgnoreRegions.push(saved);
+    _vrtIgnorePending = null;
+  }
+
+  document.getElementById('vrt-ignore-name').value     = '';
+  document.getElementById('vrt-ignore-selector').value = '';
+  document.getElementById('vrt-ignore-reason').value   = '';
+  document.getElementById('vrt-ignore-add-form').style.display = 'none';
+  vrtSelectCategory('dynamic-data');
+  vrtRenderIgnoreRegionList();
+  vrtIgnoreRedrawCanvas();
+  vrLoad();
+}
+
+function vrtCancelIgnoreDraw() {
+  _vrtIgnorePending = null;
+  _vrtIgnoreEditId  = null;
+  document.getElementById('vrt-ignore-add-form').style.display = 'none';
+  vrtIgnoreRedrawCanvas();
+}
+
+function vrtPromptNewRegion() {
+  // Close any open form, reset state, show instruction hint on canvas
+  _vrtIgnorePending = null;
+  _vrtIgnoreEditId  = null;
+  document.getElementById('vrt-ignore-add-form').style.display = 'none';
+  // Flash a hint overlay on the canvas area
+  const hint = document.getElementById('vrt-draw-hint');
+  if (hint) { hint.style.opacity = '1'; setTimeout(() => { hint.style.opacity = '0'; }, 2000); }
+}
+
+function vrtEditIgnoreRegion(regionId) {
+  const region = _vrtIgnoreRegions.find(r => r.id === regionId);
+  if (!region) return;
+  _vrtIgnoreEditId  = regionId;
+  _vrtIgnorePending = null; // not drawing a new rect — editing existing
+  // Pre-fill form
+  document.getElementById('vrt-ignore-name').value     = region.name;
+  document.getElementById('vrt-ignore-selector').value = region.selector || '';
+  document.getElementById('vrt-ignore-reason').value   = region.reason   || '';
+  vrtSelectCategory(region.category);
+  document.getElementById('vrt-ignore-form-title').textContent = 'Edit Region';
+  document.getElementById('vrt-ignore-save-btn').textContent   = 'Update Region';
+  document.getElementById('vrt-ignore-add-form').style.display = 'block';
+  document.getElementById('vrt-ignore-name').focus();
+}
+
+function vrtCloseIgnoreEditor() {
+  document.getElementById('vrt-ignore-modal').style.display = 'none';
+  _vrtIgnoreBaselineId = null;
+  _vrtIgnoreRegions    = [];
+}
+
+async function vrtDeleteIgnoreRegion(regionId) {
+  if (!confirm('Delete this ignore region?')) return;
+  await fetch(`/api/visual-baselines/${encodeURIComponent(_vrtIgnoreBaselineId)}/ignore-regions/${regionId}`, { method: 'DELETE' });
+  _vrtIgnoreRegions = _vrtIgnoreRegions.filter(r => r.id !== regionId);
+  vrtRenderIgnoreRegionList();
+  vrtIgnoreRedrawCanvas();
+  vrLoad();
+}
+
+function vrtRenderIgnoreRegionList() {
+  const list  = document.getElementById('vrt-ignore-region-list');
+  const count = document.getElementById('vrt-ignore-count');
+  count.textContent = `(${_vrtIgnoreRegions.length})`;
+  if (!_vrtIgnoreRegions.length) {
+    list.innerHTML = `<div style="padding:24px 16px;text-align:center;color:#475569;font-size:13px;">
+      No ignore regions defined.<br><span style="font-size:11px;color:#334155;">Draw a rectangle on the image to add one.</span>
+    </div>`;
+    return;
+  }
+  list.innerHTML = _vrtIgnoreRegions.map(r => {
+    const cat   = VRT_IGNORE_CATEGORIES.find(c => c.value === r.category);
+    const color = cat ? cat.color : '#94a3b8';
+    const label = cat ? cat.label : r.category;
+    return `<div style="padding:10px 14px;border-bottom:1px solid #1e293b;display:flex;align-items:flex-start;gap:10px;">
+      <div style="width:12px;height:12px;min-width:12px;border-radius:2px;background:${color};margin-top:3px;"></div>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:13px;font-weight:600;color:#e2e8f0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(r.name)}</div>
+        <div style="font-size:11px;color:#64748b;margin-top:2px;">${label} · ${r.width}×${r.height}px @ (${r.x},${r.y})</div>
+        ${r.selector ? `<div style="font-size:10px;color:#4f46e5;margin-top:2px;font-family:monospace;">${escHtml(r.selector)}</div>` : ''}
+        ${r.reason   ? `<div style="font-size:10px;color:#475569;margin-top:2px;">${escHtml(r.reason)}</div>` : ''}
+      </div>
+      <button onclick="vrtEditIgnoreRegion('${r.id}')" style="background:none;border:none;color:#4f46e5;cursor:pointer;font-size:13px;padding:0 4px;" title="Edit">&#9998;</button>
+      <button onclick="vrtDeleteIgnoreRegion('${r.id}')" style="background:none;border:none;color:#475569;cursor:pointer;font-size:14px;padding:0 4px;" title="Delete">&#128465;</button>
+    </div>`;
+  }).join('');
+}
+
+function vrtUpdateIgnoreSavings(entry) {
+  const el = document.getElementById('vrt-ignore-savings');
+  if (!el) return;
+  if (entry && entry.ignoreRegions && entry.ignoreRegions.length > 0 && entry.diffPct != null) {
+    el.style.display = 'block';
+    document.getElementById('vrt-ignore-savings-text').textContent =
+      `Last run: ${entry.diffPct}% diff detected. ${entry.ignoreRegions.length} region(s) active.`;
+  } else {
+    el.style.display = 'none';
+  }
 }
 
 // ── Locator Health ────────────────────────────────────────────────────────────
@@ -13843,7 +15190,7 @@ function _apiRunsRenderPagination(totalPages, total) {
   const rppOpts = [10, 25, 50, 100, 200].map(n =>
     `<option value="${n}"${_apiRunsPageSize === n ? ' selected' : ''}>${n}</option>`
   ).join('');
-  tfoot.innerHTML = `<tr><td colspan="9" style="padding:6px 4px">
+  tfoot.innerHTML = `<tr><td colspan="11" style="padding:6px 4px">
     <div class="lt-pagination">
       <label style="font-size:12px;color:var(--text-muted)">Rows per page:
         <select class="fm-input" style="padding:2px 6px;font-size:12px;width:auto"
@@ -13910,7 +15257,7 @@ function _apiRunsRenderList() {
 
   // Empty state
   if (pageRows.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--text-muted)">No runs match the current filters.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="11" style="text-align:center;padding:24px;color:var(--text-muted)">No runs match the current filters.</td></tr>`;
     _apiRunsRenderPagination(totalPages, filtered.length);
     return;
   }
@@ -13958,20 +15305,25 @@ function _apiRunsRenderList() {
       if (hasFlaky) flakyBadge = ' <span title="Contains flaky requests" style="font-size:10px;color:#f59e0b">⚡</span>';
     }
 
-    // Started (relative + full on hover)
-    const startedRel  = r.startedAt ? _apiRunsRelTime(r.startedAt) : '—';
-    const startedFull = r.startedAt ? new Date(r.startedAt).toLocaleString() : '';
+    // Start Time / End Time (formatted locale string)
+    const startTimeFmt = r.startedAt   ? new Date(r.startedAt).toLocaleString()   : '—';
+    const endTimeFmt   = r.completedAt ? new Date(r.completedAt).toLocaleString() : '—';
+
+    // Executed By
+    const executedBy = r.triggeredBy || r.executedBy || r.createdBy || '—';
 
     const dataFileBadge = r.dataFileName ? `<span title="Data file: ${_apiRunsEsc(r.dataFileName)}" style="font-size:10px;background:#6366f1;color:#fff;padding:1px 5px;border-radius:8px;margin-left:4px">📂 ${_apiRunsEsc(r.dataFileName)} (${r.iterationCount||0} rows)</span>` : '';
     return `<tr>
       <td style="text-align:center;color:var(--text-muted);font-size:12px">${sr}</td>
       <td style="font-weight:500">${_apiRunsEsc(colName)}${dataFileBadge}</td>
       <td style="color:var(--text-muted);font-size:12px">${_apiRunsEsc(envName)}</td>
-      <td title="${_apiRunsEsc(startedFull)}" style="font-size:12px;color:var(--text-muted)">${startedRel}</td>
+      <td style="font-size:12px;color:var(--text-muted);white-space:nowrap">${startTimeFmt}</td>
+      <td style="font-size:12px;color:var(--text-muted);white-space:nowrap">${endTimeFmt}</td>
       <td style="font-size:12px">${durStr}</td>
       <td style="text-align:center;font-size:12px">${stepsStr}</td>
       ${_apiRunsPassRateCell(passed, total)}
       <td style="text-align:center">${statusBadge}${flakyBadge}</td>
+      <td style="font-size:12px;color:var(--text-muted)">${_apiRunsEsc(executedBy)}</td>
       <td><button class="tbl-btn" data-run-id="${_apiRunsEsc(r.id)}">View</button></td>
     </tr>`;
   }).join('');
@@ -14869,65 +16221,20 @@ async function _apiRunsFetchStepDefect(stepId) {
   }
 }
 
-async function _apiRunsFileDefect(runId, stepId) {
-  var parentStoryKey = prompt('Enter parent story key (e.g. PROJ-123):');
-  if (!parentStoryKey || !/^[A-Z][A-Z0-9]*-\d+$/.test(parentStoryKey.trim())) {
-    if (parentStoryKey !== null) modAlert('api-runs-alert', 'error', 'Invalid story key format. Use ABC-123.');
-    return;
-  }
-
-  var draft;
-  try {
-    var draftRes = await fetch('/api/api-defects/draft', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ runId: runId, stepId: stepId }),
-    });
-    if (draftRes.status === 409) {
-      var d409 = await draftRes.json();
-      modAlert('api-runs-alert', 'info', 'Defect already filed: ' + (d409.error && d409.error.details ? d409.error.details.defectKey : 'existing'));
-      return;
-    }
-    if (!draftRes.ok) {
-      var derr = await draftRes.json();
-      throw new Error((derr.error && derr.error.message) || 'Draft failed');
-    }
-    draft = await draftRes.json();
-  } catch (e) {
-    modAlert('api-runs-alert', 'error', 'Draft error: ' + e.message);
-    return;
-  }
-
-  try {
-    var fileRes = await fetch('/api/api-defects/file', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        runId: runId,
-        stepId: stepId,
-        summary: draft.summary,
-        descriptionADF: draft.descriptionADF,
-        priority: draft.suggestedPriority,
-        parentStoryKey: parentStoryKey.trim(),
-      }),
-    });
-    if (fileRes.status === 409) {
-      var f409 = await fileRes.json();
-      modAlert('api-runs-alert', 'info', 'Defect already filed: ' + (f409.error && f409.error.details ? f409.error.details.defectKey : ''));
-      return;
-    }
-    if (!fileRes.ok) {
-      var ferr = await fileRes.json();
-      throw new Error((ferr.error && ferr.error.message) || 'File failed');
-    }
-    var result = await fileRes.json();
-    delete _apiRunsApiDefectCache[stepId];
-    modAlert('api-runs-alert', 'success', 'Defect filed: ' + result.defectKey);
-    var refEl = document.getElementById('jira-defect-ref-' + stepId);
-    if (refEl) refEl.innerHTML = '<span class="api-defect-pill">🔗 <a href="' + escHtml(result.jiraUrl) + '" target="_blank">' + escHtml(result.defectKey) + '</a></span>';
-  } catch (e) {
-    modAlert('api-runs-alert', 'error', 'File error: ' + e.message);
-  }
+// Thin wrapper — delegates to the shared defect modal in 28-defect-modal.js
+function _apiRunsFileDefect(runId, stepId) {
+  openDefectModal({
+    mode: 'api-step',
+    runId: runId,
+    contextId: stepId,
+    onSuccess: function (result) {
+      delete _apiRunsApiDefectCache[stepId];
+      var refEl = document.getElementById('jira-defect-ref-' + stepId);
+      if (refEl) refEl.innerHTML =
+        '<span class="api-defect-pill">🔗 <a href="' + escHtml(result.jiraUrl) + '" target="_blank">' +
+        escHtml(result.defectKey) + '</a></span>';
+    },
+  });
 }
 
 async function _apiRunsLoadJiraPanel(stepId) {
@@ -16092,6 +17399,359 @@ function _obsSnapshotRow(label, value) {
     + '<div style="font-weight:600">' + escHtml(String(value ?? '—')) + '</div>'
     + '</div>';
 }
+// Shared Defect-to-Jira modal — works for both UI-test and API-step failures.
+// Usage:
+//   openDefectModal(runId, testId)                          ← legacy positional (ui-test)
+//   openDefectModal({ mode:'ui-test',  runId, contextId:testId })
+//   openDefectModal({ mode:'api-step', runId, contextId:stepId, onSuccess:fn })
+
+(function () {
+  'use strict';
+
+  function _dfxEsc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  function _dfxInjectModal() {
+    if (document.getElementById('shared-defect-modal')) return;
+
+    var style = document.createElement('style');
+    style.textContent = [
+      '.s-dfx-overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9998;display:flex;align-items:center;justify-content:center}',
+      '.s-dfx-overlay[hidden]{display:none!important}',
+      '.s-dfx-inner{width:88vw;max-width:1200px;height:92vh;background:#fff;border-radius:8px;display:flex;flex-direction:column}',
+      '.s-dfx-header{padding:14px 18px;border-bottom:1px solid #e5e7eb;font-weight:700;display:flex;align-items:center;justify-content:space-between}',
+      '.s-dfx-header button{background:none;border:1px solid #d1d5db;border-radius:6px;padding:5px 10px;cursor:pointer;font-size:12px}',
+      '.s-dfx-body{flex:1;overflow:auto;padding:16px 18px}',
+      '.s-dfx-footer{padding:12px 18px;border-top:1px solid #e5e7eb;display:flex;gap:8px;justify-content:flex-end;align-items:center;flex-wrap:wrap}',
+      '.s-dfx-section{margin-bottom:14px}',
+      '.s-dfx-section h4{margin:0 0 6px;font-size:12.5px;color:#374151}',
+      '.s-dfx-section textarea,.s-dfx-section input,.s-dfx-section select{width:100%;box-sizing:border-box;padding:7px 10px;border:1px solid #d1d5db;border-radius:5px;font:inherit;font-size:13px}',
+      '.s-dfx-section textarea{height:320px!important;min-height:200px!important;resize:vertical!important;font-family:ui-monospace,monospace;width:100%!important}',
+      '.s-dfx-warn{padding:10px 14px;background:#fff7ed;border:1px solid #fed7aa;border-radius:6px;color:#9a3412;margin-bottom:14px}',
+      '.s-dfx-error{padding:10px 14px;background:#fee2e2;border:1px solid #fca5a5;border-radius:6px;color:#7f1d1d;margin-bottom:14px}',
+      '.s-dfx-ok{padding:10px 14px;background:#d1fae5;border:1px solid #6ee7b7;border-radius:6px;color:#065f46;margin-bottom:14px}',
+      '.s-dfx-footer .s-btn{padding:6px 14px;border-radius:6px;font-size:12.5px;font-weight:600;border:1px solid #d1d5db;background:#fff;cursor:pointer}',
+      '.s-dfx-footer .s-btn-primary{background:#16a34a;color:#fff;border-color:#16a34a}',
+      '.s-dfx-footer .s-btn-primary:hover{background:#15803d}',
+      '.s-dfx-footer .s-btn-primary[disabled]{background:#9ca3af;border-color:#9ca3af;cursor:not-allowed}',
+    ].join('');
+    document.head.appendChild(style);
+
+    var wrap = document.createElement('div');
+    wrap.innerHTML =
+      '<div id="shared-defect-modal" class="s-dfx-overlay" hidden>' +
+      '  <div class="s-dfx-inner">' +
+      '    <div class="s-dfx-header">' +
+      '      <span>&#128030; File Defect to Jira</span>' +
+      '      <button onclick="closeDefectModal()">&#10005; Close</button>' +
+      '    </div>' +
+      '    <div class="s-dfx-body" id="s-dfx-body">Loading…</div>' +
+      '    <div class="s-dfx-footer" id="s-dfx-footer"></div>' +
+      '  </div>' +
+      '</div>';
+    document.body.appendChild(wrap.firstElementChild);
+  }
+
+  var _dfxDraft = null; // { mode, runId, contextId, draft, onSuccess }
+
+  function closeDefectModal() {
+    var m = document.getElementById('shared-defect-modal');
+    if (m) m.hidden = true;
+    _dfxDraft = null;
+  }
+
+  function _dfxAdfPreview(adf) {
+    if (!adf || !adf.content) return '';
+    var lines = [];
+    for (var i = 0; i < adf.content.length; i++) {
+      var node = adf.content[i];
+      if (node.type === 'heading')
+        lines.push('\n## ' + (node.content && node.content[0] && node.content[0].text || ''));
+      else if (node.type === 'paragraph')
+        lines.push((node.content || []).map(function (c) { return c.text || ''; }).join(''));
+      else if (node.type === 'orderedList')
+        (node.content || []).forEach(function (li, idx) {
+          var txt = li.content && li.content[0] && li.content[0].content &&
+            li.content[0].content[0] && li.content[0].content[0].text || '';
+          lines.push((idx + 1) + '. ' + txt);
+        });
+      else if (node.type === 'codeBlock')
+        lines.push('```\n' + (node.content && node.content[0] && node.content[0].text || '') + '\n```');
+    }
+    return lines.join('\n');
+  }
+
+  // Convert edited plain-text description back to minimal ADF so Jira renders it
+  function _dfxTextToAdf(text) {
+    var nodes = [];
+    var lines = (text || '').split('\n');
+    var i = 0;
+    while (i < lines.length) {
+      var line = lines[i];
+      if (line.indexOf('## ') === 0) {
+        nodes.push({ type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: line.slice(3) }] });
+        i++;
+      } else if (line === '```') {
+        var codeLines = [];
+        i++;
+        while (i < lines.length && lines[i] !== '```') { codeLines.push(lines[i]); i++; }
+        nodes.push({ type: 'codeBlock', content: [{ type: 'text', text: codeLines.join('\n') }] });
+        i++;
+      } else if (line.trim() === '') {
+        i++;
+      } else {
+        nodes.push({ type: 'paragraph', content: [{ type: 'text', text: line }] });
+        i++;
+      }
+    }
+    return { version: 1, type: 'doc', content: nodes.length ? nodes : [{ type: 'paragraph', content: [] }] };
+  }
+
+  async function _dfxApproveAndFile() {
+    if (!_dfxDraft) return;
+    var parent  = document.getElementById('s-dfx-parent').value.trim();
+    var summary = document.getElementById('s-dfx-summary').value.trim();
+    var msgEl   = document.getElementById('s-dfx-msg');
+    if (!/^[A-Z][A-Z0-9_]+-\d+$/.test(parent)) {
+      msgEl.innerHTML = '<span style="color:#dc2626">User Story key must look like ABC-123</span>';
+      return;
+    }
+    if (!summary) { msgEl.innerHTML = '<span style="color:#dc2626">Summary required</span>'; return; }
+    var priority = document.getElementById('s-dfx-priority').value;
+    msgEl.textContent = '⏳ Filing…';
+
+    // If user edited the description textarea, convert their text to ADF; otherwise use original ADF
+    var descEl = document.getElementById('s-dfx-desc');
+    var originalPreview = _dfxAdfPreview(_dfxDraft.draft.descriptionADF);
+    var descriptionADF = (descEl && descEl.value !== originalPreview)
+      ? _dfxTextToAdf(descEl.value)
+      : _dfxDraft.draft.descriptionADF;
+
+    var body = {
+      summary: summary,
+      descriptionADF: descriptionADF,
+      priority: priority,
+      parentStoryKey: parent,
+    };
+    if (_dfxDraft.mode === 'ui-test') {
+      body.runId  = _dfxDraft.runId;
+      body.testId = _dfxDraft.contextId;
+      var attachEls = document.querySelectorAll('.s-dfx-attach');
+      body.attachKinds = Array.from(attachEls)
+        .filter(function (c) { return c.checked && !c.disabled; })
+        .map(function (c) { return c.dataset.kind; });
+    } else {
+      body.runId  = _dfxDraft.runId;
+      body.stepId = _dfxDraft.contextId;
+    }
+
+    var endpoint = _dfxDraft.mode === 'ui-test' ? '/api/defects/file' : '/api/api-defects/file';
+    var r = await fetch(endpoint, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    var j = await r.json();
+
+    if (r.ok) {
+      msgEl.innerHTML = '<div class="s-dfx-ok">✓ Filed as <strong>' + _dfxEsc(j.defectKey) + '</strong>. ' +
+        '<a href="' + _dfxEsc(j.jiraUrl) + '" target="_blank" rel="noopener">Open in Jira ↗</a></div>';
+      var closeLabel = _dfxDraft.mode === 'ui-test' ? 'Close &amp; Refresh' : 'Close';
+      var closeExtra = _dfxDraft.mode === 'ui-test' ? ';location.reload()' : '';
+      document.getElementById('s-dfx-footer').innerHTML =
+        '<button class="s-btn s-btn-primary" onclick="closeDefectModal()' + closeExtra + '">' + closeLabel + '</button>';
+      if (_dfxDraft.onSuccess) _dfxDraft.onSuccess(j);
+    } else if (r.status === 409) {
+      var ex = j && j.error && j.error.details || {};
+      msgEl.innerHTML = '<div class="s-dfx-warn">⚠ Already filed as <strong>' + _dfxEsc(ex.defectKey || '') + '</strong>.' +
+        (ex.jiraUrl ? ' <a href="' + _dfxEsc(ex.jiraUrl) + '" target="_blank" rel="noopener">Open in Jira ↗</a>' : '') + '</div>';
+    } else {
+      var errMsg = j && j.error && j.error.message || 'File failed';
+      var errDetail = j && j.error && j.error.details ? '\n' + JSON.stringify(j.error.details, null, 2) : '';
+      msgEl.innerHTML = '<div class="s-dfx-error">✗ ' + _dfxEsc(errMsg) +
+        (errDetail ? '<pre style="margin:6px 0 0;font-size:11px;white-space:pre-wrap;word-break:break-all">' + _dfxEsc(errDetail) + '</pre>' : '') + '</div>';
+    }
+  }
+
+  async function dismissDefectFromModal() {
+    if (!_dfxDraft || _dfxDraft.mode !== 'ui-test') return;
+    var catEl = document.getElementById('s-dfx-dismiss-cat');
+    var cat = catEl && catEl.value;
+    if (!cat) { alert('Select a dismiss category first'); return; }
+    var r = await fetch('/api/defects/dismiss', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ runId: _dfxDraft.runId, testId: _dfxDraft.contextId, category: cat }),
+    });
+    if (r.ok) { closeDefectModal(); location.reload(); }
+    else { var j = await r.json(); alert('Dismiss failed: ' + (j && j.error && j.error.message || 'error')); }
+  }
+
+  async function commentOnExisting(defectKey) {
+    if (!_dfxDraft) return;
+    var r = await fetch('/api/defects/comment', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ runId: _dfxDraft.runId, testId: _dfxDraft.contextId, defectKey: defectKey }),
+    });
+    var j = await r.json();
+    var bodyEl = document.getElementById('s-dfx-body');
+    if (r.ok) {
+      bodyEl.innerHTML = '<div class="s-dfx-ok">✓ Comment added to <strong>' + _dfxEsc(defectKey) + '</strong>.</div>';
+      document.getElementById('s-dfx-footer').innerHTML =
+        '<button class="s-btn s-btn-primary" onclick="closeDefectModal();location.reload()">Close &amp; Refresh</button>';
+    } else {
+      bodyEl.innerHTML += '<div class="s-dfx-error">✗ ' + _dfxEsc((j && j.error && j.error.message) || 'Comment failed') + '</div>';
+    }
+  }
+
+  async function openDefectModal(opts, legacyTestId) {
+    // Legacy positional call: openDefectModal(runId, testId)
+    if (typeof opts === 'string') {
+      opts = { mode: 'ui-test', runId: opts, contextId: legacyTestId };
+    }
+    var mode      = opts.mode || 'ui-test';
+    var runId     = opts.runId;
+    var contextId = opts.contextId;
+    var onSuccess = opts.onSuccess || null;
+
+    _dfxInjectModal();
+
+    var m    = document.getElementById('shared-defect-modal');
+    var bodyEl = document.getElementById('s-dfx-body');
+    var foot = document.getElementById('s-dfx-footer');
+    m.hidden = false;
+    bodyEl.innerHTML = '⏳ Loading draft…';
+    foot.innerHTML = '';
+
+    var draftEndpoint = mode === 'ui-test' ? '/api/defects/draft' : '/api/api-defects/draft';
+    var draftBody = mode === 'ui-test'
+      ? { runId: runId, testId: contextId }
+      : { runId: runId, stepId: contextId };
+
+    var draft;
+    try {
+      var draftRes = await fetch(draftEndpoint, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(draftBody),
+      });
+      if (draftRes.status === 409) {
+        var d409 = await draftRes.json();
+        var ex409 = d409.error && d409.error.details || {};
+        if (mode === 'ui-test' && ex409.defectKey) {
+          bodyEl.innerHTML =
+            '<div class="s-dfx-warn">⚠ Already filed as <strong>' + _dfxEsc(ex409.defectKey) + '</strong>' +
+            (ex409.status ? ' (' + _dfxEsc(ex409.status) + ')' : '') + '.<br>' +
+            '<a href="' + _dfxEsc(ex409.jiraUrl || '') + '" target="_blank" rel="noopener">Open in Jira ↗</a></div>' +
+            '<p>You can add this run\'s failure as a comment on the existing ticket, or cancel.</p>';
+          foot.innerHTML =
+            '<button class="s-btn" onclick="closeDefectModal()">Cancel</button>' +
+            '<button class="s-btn s-btn-primary" onclick="commentOnExisting(' + JSON.stringify(ex409.defectKey) + ')">Add as Comment</button>';
+        } else {
+          bodyEl.innerHTML =
+            '<div class="s-dfx-warn">⚠ Already filed as <strong>' + _dfxEsc(ex409.defectKey || 'existing') + '</strong>.' +
+            (ex409.jiraUrl ? ' <a href="' + _dfxEsc(ex409.jiraUrl) + '" target="_blank" rel="noopener">Open in Jira ↗</a>' : '') + '</div>';
+          foot.innerHTML = '<button class="s-btn s-btn-primary" onclick="closeDefectModal()">Close</button>';
+        }
+        return;
+      }
+      if (!draftRes.ok) {
+        var derr = await draftRes.json();
+        throw new Error((derr.error && derr.error.message) || 'Draft failed');
+      }
+      draft = await draftRes.json();
+    } catch (e) {
+      bodyEl.innerHTML = '<div class="s-dfx-error">✗ ' + _dfxEsc(e.message) + '</div>';
+      foot.innerHTML = '<button class="s-btn" onclick="closeDefectModal()">Close</button>';
+      return;
+    }
+
+    _dfxDraft = { mode: mode, runId: runId, contextId: contextId, draft: draft, onSuccess: onSuccess };
+
+    var isConfigured = mode === 'ui-test' ? !!draft.config : !!draft.isJiraConfigured;
+    if (!isConfigured) {
+      bodyEl.innerHTML = '<div class="s-dfx-error">✗ Jira not configured. Ask an admin to configure it in Admin → Notification Settings.</div>';
+      foot.innerHTML = '<button class="s-btn" onclick="closeDefectModal()">Close</button>';
+      return;
+    }
+
+    if (draft.existingDefect) {
+      var d = draft.existingDefect;
+      bodyEl.innerHTML =
+        '<div class="s-dfx-warn">⚠ Already filed as <strong>' + _dfxEsc(d.defectKey) + '</strong> (' + _dfxEsc(d.status) + ').<br>' +
+        '<a href="' + _dfxEsc(d.jiraUrl) + '" target="_blank" rel="noopener">Open in Jira ↗</a></div>' +
+        (mode === 'ui-test'
+          ? '<p>You can add this run\'s failure as a comment on the existing ticket, or cancel.</p>'
+          : '<p style="font-size:13px;color:#374151;margin:0">This step already has an open defect.</p>');
+      foot.innerHTML =
+        '<button class="s-btn" onclick="closeDefectModal()">Cancel</button>' +
+        (mode === 'ui-test'
+          ? '<button class="s-btn s-btn-primary" onclick="commentOnExisting(' + JSON.stringify(d.defectKey) + ')">Add as Comment</button>'
+          : '<button class="s-btn s-btn-primary" onclick="closeDefectModal()">Close</button>');
+      return;
+    }
+
+    var cfg = draft.config || {};
+    var projectKey = draft.jiraProjectKey || cfg.projectKey || '';
+    var projectKeyHtml = projectKey
+      ? '<div style="padding:6px 10px;background:#f0fdf4;border:1px solid #86efac;border-radius:5px;font-weight:700;color:#15803d;font-size:13px">' + _dfxEsc(projectKey) + '</div>'
+      : '<div style="padding:6px 10px;background:#fef2f2;border:1px solid #fca5a5;border-radius:5px;color:#dc2626;font-size:12.5px">⚠ Jira Project Key not set for this project. Go to Admin → Project Management to configure it.</div>';
+
+    var attachSection = '';
+    if (mode === 'ui-test') {
+      var attachRows = (draft.attachments || []).map(function (a) {
+        var sizeMb = (a.sizeBytes / 1024 / 1024).toFixed(2);
+        return '<label style="display:block;margin:4px 0"><input type="checkbox" class="s-dfx-attach" data-kind="' + _dfxEsc(a.kind) + '" ' +
+          (a.tooLarge ? 'disabled' : 'checked') + '> ' + _dfxEsc(a.kind) + ' — ' + _dfxEsc(a.name) +
+          ' (' + sizeMb + ' MB)' + (a.tooLarge ? '<span style="color:#dc2626"> — too large, will be skipped</span>' : '') + '</label>';
+      }).join('');
+      attachSection = '<div class="s-dfx-section"><h4>Attachments</h4>' + (attachRows || '<em>(no artifacts available)</em>') + '</div>';
+    }
+
+    bodyEl.innerHTML =
+      '<div class="s-dfx-section"><h4>Jira Project</h4>' + projectKeyHtml + '</div>' +
+      '<div class="s-dfx-section"><h4>Issue Type</h4><input type="text" value="' + _dfxEsc(cfg.issueType || 'Defect') + '" readonly></div>' +
+      '<div class="s-dfx-section"><h4>Priority *</h4><select id="s-dfx-priority">' +
+        ['Highest', 'High', 'Medium', 'Low', 'Lowest'].map(function (p) {
+          return '<option' + (draft.suggestedPriority === p ? ' selected' : '') + '>' + p + '</option>';
+        }).join('') +
+      '</select></div>' +
+      '<div class="s-dfx-section"><h4>User Story * (e.g. ' + _dfxEsc(projectKey || 'PROJ') + '-123)</h4>' +
+        '<input id="s-dfx-parent" type="text" placeholder="' + _dfxEsc(projectKey || 'PROJ') + '-_____"></div>' +
+      '<div class="s-dfx-section"><h4>Summary *</h4>' +
+        '<input id="s-dfx-summary" type="text" value="' + _dfxEsc(draft.summary || '') + '" maxlength="255"></div>' +
+      '<div class=”s-dfx-section”><h4>Description <span style=”font-size:11px;color:#6b7280;font-weight:400”>(editable — Jira renders as rich text)</span></h4>' +
+        '<textarea id=”s-dfx-desc” style=”height:320px;min-height:200px;resize:vertical;width:100%;box-sizing:border-box;font-family:ui-monospace,monospace;font-size:13px;padding:7px 10px;border:1px solid #d1d5db;border-radius:5px”>' + _dfxEsc(_dfxAdfPreview(draft.descriptionADF)) + '</textarea>' +
+        '<div style=”font-size:11px;color:#6b7280;margin-top:3px”>Edit freely. Changes are sent to Jira as plain-text ADF paragraphs.</div></div>' +
+      attachSection +
+      '<div id=”s-dfx-msg” style=”margin-top:8px;font-size:12.5px”></div>';
+
+    foot.innerHTML =
+      '<button class="s-btn" onclick="closeDefectModal()">Cancel</button>' +
+      (mode === 'ui-test'
+        ? '<select id="s-dfx-dismiss-cat" style="padding:6px 10px;border-radius:5px">' +
+            '<option value="">Categorise Issue ▾</option>' +
+            '<option value="aut-bug">AUT Bug</option>' +
+            '<option value="script-issue">Script Issue</option>' +
+            '<option value="locator-issue">Locator Issue</option>' +
+            '<option value="flaky">Flaky</option>' +
+            '<option value="data-issue">Data Issue</option>' +
+            '<option value="env-issue">Env Issue</option>' +
+          '</select><button class="s-btn" onclick="dismissDefectFromModal()">Dismiss</button>'
+        : '') +
+      (projectKey
+        ? '<button class="s-btn s-btn-primary" onclick="_dfxApproveAndFile()">Approve &amp; File</button>'
+        : '<button class="s-btn s-btn-primary" disabled title="Set Jira Project Key in Admin → Project Management first">Approve &amp; File</button>');
+  }
+
+  // Expose on window — accessible from inline onclick handlers in both pages
+  window.openDefectModal        = openDefectModal;
+  window.closeDefectModal       = closeDefectModal;
+  window.commentOnExisting      = commentOnExisting;
+  window.dismissDefectFromModal = dismissDefectFromModal;
+  window._dfxApproveAndFile     = _dfxApproveAndFile;
+
+}());
 // API FLAKINESS ANALYTICS MODULE
 // Redesigned 2026-05-29: matches Flaky Tests page layout pattern
 // All colours use --afl-* CSS tokens (defined in styles_addon.css) — works in both dark & light themes
@@ -17718,672 +19378,6 @@ function apiPluginsExport() {
   showToast('success', 'Plugins exported to plugins.csv');
 }
 */ // END OLD plugin ecosystem module
-// ══════════════════════════════════════════════════════════════════════════════
-// GRAPH EDITOR MODULE — SVG DAG visualizer with drag, dep edit, layout save
-// ══════════════════════════════════════════════════════════════════════════════
-
-let _graphColId = '';
-let _graphSteps = [];
-let _graphDepMap = {}; // stepId → string[] (dependsOn)
-let _graphPositions = {}; // stepId → {x, y}
-let _graphSelected = []; // max 2 stepIds
-let _graphDragging = null; // {stepId, startX, startY, origX, origY}
-let _graphZoom = 1.0;
-const _ZOOM_MIN = 0.3, _ZOOM_MAX = 3.0, _ZOOM_STEP = 0.2;
-
-const _GN_W = 160, _GN_H = 44, _GN_HGAP = 80, _GN_VGAP = 20, _GN_PAD = 20;
-
-async function graphEditorLoad() {
-  const sel = document.getElementById('graph-col-select');
-  if (!sel) return;
-  sel.innerHTML = '<option value="">— Select Collection —</option>';
-  const cols = await fetch('/api/api-collections').then(r => r.ok ? r.json() : []).catch(() => []);
-  (Array.isArray(cols) ? cols : []).forEach(c => {
-    sel.innerHTML += `<option value="${escHtml(c.id)}">${escHtml(c.name)}</option>`;
-  });
-  document.getElementById('graph-canvas').innerHTML = '<div style="color:var(--text-muted)">Select a collection to view its workflow graph.</div>';
-}
-
-async function graphEditorSelectCollection(colId) {
-  _graphColId = colId;
-  _graphSelected = [];
-  _graphDragging = null;
-  _graphZoom = 1.0;
-  const canvas = document.getElementById('graph-canvas');
-  if (!colId) { canvas.innerHTML = '<div style="color:var(--text-muted)">Select a collection to view its workflow graph.</div>'; return; }
-  canvas.innerHTML = '<div style="color:var(--text-muted)">Loading…</div>';
-
-  const colRes = await fetch('/api/api-collections/' + encodeURIComponent(colId));
-  if (!colRes.ok) { canvas.innerHTML = '<div style="color:#ef4444">Failed to load collection.</div>'; return; }
-  const col = await colRes.json();
-  _graphSteps = col.steps || [];
-  _graphDepMap = {};
-  _graphSteps.forEach(s => { _graphDepMap[s.stepId] = Array.isArray(s.dependsOn) ? s.dependsOn : []; });
-
-  let savedPositions = {};
-  const layoutRes = await fetch('/api/graph-editor/' + encodeURIComponent(colId) + '/layout');
-  if (layoutRes.ok) {
-    const layout = await layoutRes.json();
-    savedPositions = layout.positions || {};
-  }
-
-  _graphPositions = _graphComputePositions(savedPositions);
-  _graphRender();
-}
-
-function _graphComputePositions(savedPositions) {
-  if (!_graphSteps.length) return {};
-  const allSaved = _graphSteps.every(s => savedPositions[s.stepId]);
-  if (allSaved) return Object.assign({}, savedPositions);
-
-  const layerOf = {};
-  const inDeg = {};
-  _graphSteps.forEach(s => { inDeg[s.stepId] = (_graphDepMap[s.stepId] || []).length; });
-  let queue = _graphSteps.filter(s => inDeg[s.stepId] === 0).map(s => s.stepId);
-  queue.forEach(id => { layerOf[id] = 0; });
-
-  while (queue.length) {
-    const next = [];
-    queue.forEach(id => {
-      _graphSteps.forEach(s => {
-        if ((_graphDepMap[s.stepId] || []).includes(id)) {
-          const nl = (layerOf[id] || 0) + 1;
-          if (layerOf[s.stepId] === undefined || layerOf[s.stepId] < nl) layerOf[s.stepId] = nl;
-          if (!next.includes(s.stepId)) next.push(s.stepId);
-        }
-      });
-    });
-    queue = next;
-  }
-  _graphSteps.forEach(s => { if (layerOf[s.stepId] === undefined) layerOf[s.stepId] = 0; });
-
-  const layerCtr = {};
-  const positions = {};
-  _graphSteps.forEach(s => {
-    const l = layerOf[s.stepId];
-    layerCtr[l] = layerCtr[l] || 0;
-    positions[s.stepId] = {
-      x: _GN_PAD + l * (_GN_W + _GN_HGAP),
-      y: _GN_PAD + layerCtr[l] * (_GN_H + _GN_VGAP)
-    };
-    layerCtr[l]++;
-  });
-  return positions;
-}
-
-function _graphRender() {
-  const canvas = document.getElementById('graph-canvas');
-  if (!canvas) return;
-  const countEl = document.getElementById('graph-node-count');
-  if (countEl) {
-    const edgeCount = Object.values(_graphDepMap).reduce((s, deps) => s + deps.length, 0);
-    countEl.textContent = _graphSteps.length + ' nodes · ' + edgeCount + ' edges';
-  }
-  if (!_graphSteps.length) {
-    canvas.innerHTML = '<div style="color:var(--text-muted)">No steps in this collection.</div>';
-    return;
-  }
-
-  const xs = Object.values(_graphPositions).map(p => p.x + _GN_W);
-  const ys = Object.values(_graphPositions).map(p => p.y + _GN_H);
-  const svgW = Math.max(...xs) + _GN_PAD;
-  const svgH = Math.max(...ys) + _GN_PAD;
-
-  const zoomLbl = document.getElementById('graph-zoom-label');
-  if (zoomLbl) zoomLbl.textContent = Math.round(_graphZoom * 100) + '%';
-  let svg = `<svg id="graph-svg" width="${svgW}" height="${svgH}" style="cursor:default;user-select:none;display:block;transform:scale(${_graphZoom});transform-origin:top left"
-    onmouseup="_graphDragEnd(event)" onmousemove="_graphDragMove(event)" onmouseleave="_graphDragEnd(event)">
-    <defs>
-      <marker id="arr" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
-        <path d="M0,0 L0,6 L8,3 z" fill="#9ca3af"/>
-      </marker>
-    </defs>`;
-
-  _graphSteps.forEach(s => {
-    (_graphDepMap[s.stepId] || []).forEach(depId => {
-      const fr = _graphPositions[depId], to = _graphPositions[s.stepId];
-      if (!fr || !to) return;
-      svg += `<line x1="${fr.x + _GN_W}" y1="${fr.y + _GN_H / 2}" x2="${to.x - 2}" y2="${to.y + _GN_H / 2}"
-        stroke="#9ca3af" stroke-width="1.5" marker-end="url(#arr)"/>`;
-    });
-  });
-
-  _graphSteps.forEach(s => {
-    const p = _graphPositions[s.stepId];
-    if (!p) return;
-    const isSel = _graphSelected.includes(s.stepId);
-    const label = (s.name || s.stepId || '').substring(0, 22);
-    svg += `<g onmousedown="_graphDragStart(event,'${escHtml(s.stepId)}')" onclick="_graphNodeClick(event,'${escHtml(s.stepId)}')" style="cursor:pointer">
-      <rect x="${p.x}" y="${p.y}" width="${_GN_W}" height="${_GN_H}" rx="6"
-        fill="var(--bg)" stroke="${isSel ? '#3b82f6' : '#d1d5db'}" stroke-width="${isSel ? 2 : 1}"
-        filter="drop-shadow(0 1px 2px rgba(0,0,0,.12))"/>
-      <text x="${p.x + _GN_W / 2}" y="${p.y + _GN_H / 2 + 5}" text-anchor="middle"
-        font-size="12" fill="var(--text)" font-family="system-ui,sans-serif">${escHtml(label)}</text>
-    </g>`;
-  });
-
-  svg += '</svg>';
-  canvas.innerHTML = svg;
-}
-
-function _graphNodeClick(event, stepId) {
-  if (_graphDragging) return;
-  const idx = _graphSelected.indexOf(stepId);
-  if (idx >= 0) _graphSelected.splice(idx, 1);
-  else { if (_graphSelected.length >= 2) _graphSelected.shift(); _graphSelected.push(stepId); }
-  _graphRender();
-}
-
-function _graphDragStart(event, stepId) {
-  event.stopPropagation();
-  const svg = document.getElementById('graph-svg');
-  if (!svg) return;
-  const pos = _graphPositions[stepId];
-  if (!pos) return;
-  const rect = svg.getBoundingClientRect();
-  _graphDragging = { stepId, startX: event.clientX - rect.left, startY: event.clientY - rect.top,
-    origX: pos.x, origY: pos.y };
-}
-
-function _graphDragMove(event) {
-  if (!_graphDragging) return;
-  const svg = document.getElementById('graph-svg');
-  if (!svg) return;
-  const rect = svg.getBoundingClientRect();
-  const dx = (event.clientX - rect.left) - _graphDragging.startX;
-  const dy = (event.clientY - rect.top) - _graphDragging.startY;
-  _graphPositions[_graphDragging.stepId] = {
-    x: Math.max(0, _graphDragging.origX + dx),
-    y: Math.max(0, _graphDragging.origY + dy)
-  };
-  _graphRender();
-}
-
-function _graphDragEnd() { _graphDragging = null; }
-
-async function graphEditorSaveLayout() {
-  if (!_graphColId) return;
-  const res = await fetch('/api/graph-editor/' + encodeURIComponent(_graphColId) + '/layout', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ positions: _graphPositions, nodeCount: _graphSteps.length })
-  });
-  modAlert('graph-editor-msg', res.ok ? 'success' : 'error', res.ok ? 'Layout saved.' : 'Failed to save layout.');
-}
-
-async function graphEditorValidate() {
-  if (!_graphColId || !_graphSteps.length) { modAlert('graph-editor-msg', 'error', 'Select a collection first.'); return; }
-  const res = await fetch('/api/graph-editor/' + encodeURIComponent(_graphColId) + '/validate-dag', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ nodeIds: _graphSteps.map(s => s.stepId), dependsOn: _graphDepMap })
-  });
-  if (!res.ok) { modAlert('graph-editor-msg', 'error', 'Validation request failed.'); return; }
-  const result = await res.json();
-  if (result.valid) {
-    const order = (result.topologicalOrder || []).join(' → ');
-    modAlert('graph-editor-msg', 'success', '✓ DAG is valid.' + (order ? ' Order: ' + order : ''));
-  } else {
-    const msgs = (result.violations || []).map(v => `${v.type}${v.fromStepId ? ': ' + v.fromStepId + '→' + v.toStepId : ''}`).join('; ');
-    modAlert('graph-editor-msg', 'error', '⚠️ Violations: ' + msgs);
-  }
-}
-
-async function graphEditorAddDep() {
-  if (_graphSelected.length !== 2) { modAlert('graph-editor-msg', 'error', 'Select exactly 2 nodes first.'); return; }
-  const [fromId, toId] = _graphSelected;
-  const currentDependsOn = {};
-  _graphSteps.forEach(s => { currentDependsOn[s.stepId] = _graphDepMap[s.stepId] || []; });
-  const res = await fetch('/api/graph-editor/' + encodeURIComponent(_graphColId) + '/dependency', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ nodeIds: _graphSteps.map(s => s.stepId), currentDependsOn, fromStepId: fromId, toStepId: toId, operation: 'add' })
-  });
-  if (!res.ok) { modAlert('graph-editor-msg', 'error', 'Failed to add dependency.'); return; }
-  const result = await res.json();
-  if (!result.success) {
-    const msgs = (result.violations || []).map(v => v.message || v.type).join('; ');
-    modAlert('graph-editor-msg', 'error', 'Cannot add dependency: ' + (msgs || result.error || 'unknown'));
-    return;
-  }
-  if (result.updatedDependsOn) _graphDepMap = result.updatedDependsOn;
-  _graphSelected = [];
-  _graphRender();
-  modAlert('graph-editor-msg', 'success', 'Dependency added.');
-}
-
-async function graphEditorRemoveDep() {
-  if (_graphSelected.length !== 2) { modAlert('graph-editor-msg', 'error', 'Select exactly 2 nodes first.'); return; }
-  const [fromId, toId] = _graphSelected;
-  const currentDependsOn = {};
-  _graphSteps.forEach(s => { currentDependsOn[s.stepId] = _graphDepMap[s.stepId] || []; });
-  const res = await fetch('/api/graph-editor/' + encodeURIComponent(_graphColId) + '/dependency', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ nodeIds: _graphSteps.map(s => s.stepId), currentDependsOn, fromStepId: fromId, toStepId: toId, operation: 'remove' })
-  });
-  if (!res.ok) { modAlert('graph-editor-msg', 'error', 'Failed to remove dependency.'); return; }
-  const result = await res.json();
-  if (result.updatedDependsOn) _graphDepMap = result.updatedDependsOn;
-  _graphSelected = [];
-  _graphRender();
-  modAlert('graph-editor-msg', 'success', 'Dependency removed.');
-}
-
-function graphEditorZoomIn()    { _graphZoom = Math.min(_ZOOM_MAX, +(_graphZoom + _ZOOM_STEP).toFixed(1)); _graphRender(); }
-function graphEditorZoomOut()   { _graphZoom = Math.max(_ZOOM_MIN, +(_graphZoom - _ZOOM_STEP).toFixed(1)); _graphRender(); }
-function graphEditorZoomReset() { _graphZoom = 1.0; _graphRender(); }
-// ══════════════════════════════════════════════════════════════════════════════
-// COLLABORATION MODULE — revisions, review comments, workflow templates
-// ══════════════════════════════════════════════════════════════════════════════
-
-let _collabColId = '';
-let _collabRevisions = [];
-let _collabActiveTab = 'revisions';
-
-async function collabLoad() {
-  const sel = document.getElementById('collab-col-select');
-  if (!sel) return;
-  sel.innerHTML = '<option value="">— Select Collection —</option>';
-  const cols = await fetch('/api/api-collections').then(r => r.ok ? r.json() : []).catch(() => []);
-  (Array.isArray(cols) ? cols : []).forEach(c => {
-    sel.innerHTML += `<option value="${escHtml(c.id)}">${escHtml(c.name)}</option>`;
-  });
-  collabLoadTemplates();
-}
-
-async function collabSelectCollection(colId) {
-  _collabColId = colId;
-  if (!colId) return;
-  if (_collabActiveTab === 'revisions') collabLoadRevisions(colId);
-  if (_collabActiveTab === 'comments') collabLoadComments(colId);
-}
-
-function collabTabSwitch(tab, btn) {
-  _collabActiveTab = tab;
-  document.querySelectorAll('[data-collabtab]').forEach(b => b.classList.remove('active'));
-  if (btn) btn.classList.add('active');
-  ['revisions', 'comments', 'templates'].forEach(t => {
-    const el = document.getElementById('collab-panel-' + t);
-    if (el) el.style.display = t === tab ? '' : 'none';
-  });
-  if (tab === 'revisions' && _collabColId) collabLoadRevisions(_collabColId);
-  if (tab === 'comments' && _collabColId) collabLoadComments(_collabColId);
-  if (tab === 'templates') collabLoadTemplates();
-}
-
-// ─── REVISIONS ───────────────────────────────────────────────────────────────
-
-async function collabLoadRevisions(colId) {
-  const tbody = document.getElementById('collab-revisions-tbody');
-  if (!tbody) return;
-  tbody.innerHTML = '<tr><td colspan="6" style="color:var(--text-muted)">Loading…</td></tr>';
-  const res = await fetch('/api/collaboration/' + encodeURIComponent(colId) + '/revisions');
-  if (!res.ok) { tbody.innerHTML = '<tr><td colspan="6" style="color:#ef4444">Failed to load revisions.</td></tr>'; return; }
-  const data = await res.json();
-  _collabRevisions = data.revisions || [];
-  if (!_collabRevisions.length) { tbody.innerHTML = '<tr><td colspan="6" style="color:var(--text-muted)">No revisions yet.</td></tr>'; return; }
-  _collabRenderRevisions();
-}
-
-function _collabRenderRevisions() {
-  const tbody = document.getElementById('collab-revisions-tbody');
-  if (!tbody) return;
-  const q = (document.getElementById('collab-revisions-search')?.value || '').toLowerCase();
-  const filtered = q
-    ? _collabRevisions.filter(r =>
-        (r.description || '').toLowerCase().includes(q) ||
-        (r.authorId || '').toLowerCase().includes(q) ||
-        (r.status || '').toLowerCase().includes(q))
-    : _collabRevisions;
-  if (!filtered.length) {
-    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--text-muted)">${q ? 'No revisions match the search.' : 'No revisions yet.'}</td></tr>`;
-    return;
-  }
-  tbody.innerHTML = filtered.map(r => `<tr>
-    <td>${escHtml(String(r.revisionNumber))}</td>
-    <td><span class="badge">${escHtml(r.status)}</span></td>
-    <td>${escHtml(r.authorId || '—')}</td>
-    <td>${escHtml(r.description || '—')}</td>
-    <td style="font-size:11px;color:var(--text-muted)">${r.createdAt ? new Date(r.createdAt).toLocaleString() : '—'}</td>
-    <td>
-      <button class="tbl-btn" onclick="collabRollback('${escHtml(r.revisionId)}')">Rollback</button>
-      <button class="tbl-btn" onclick="collabShowDiff('${escHtml(r.revisionId)}')">Diff</button>
-    </td>
-  </tr>`).join('');
-}
-
-function collabFilterRevisions() { _collabRenderRevisions(); }
-
-function collabCreateRevisionModal() {
-  if (!_collabColId) { modAlert('collab-revisions-msg', 'error', 'Select a collection first.'); return; }
-  const desc = prompt('Revision description (optional):');
-  if (desc === null) return;
-  collabCreateRevision(_collabColId, desc || '');
-}
-
-async function collabCreateRevision(colId, description) {
-  const res = await fetch('/api/collaboration/' + encodeURIComponent(colId) + '/revisions', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ authorId: 'ui-user', description, stepSnapshot: [] })
-  });
-  if (!res.ok) { modAlert('collab-revisions-msg', 'error', 'Failed to create revision.'); return; }
-  modAlert('collab-revisions-msg', 'success', 'Revision saved.');
-  collabLoadRevisions(colId);
-}
-
-async function collabRollback(revisionId) {
-  if (!_collabColId) return;
-  if (!confirm('Roll back to this revision?')) return;
-  const res = await fetch('/api/collaboration/' + encodeURIComponent(_collabColId) + '/revisions/rollback', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ toRevisionId: revisionId, actorId: 'ui-user' })
-  });
-  modAlert('collab-revisions-msg', res.ok ? 'success' : 'error', res.ok ? 'Rollback complete.' : 'Rollback failed.');
-  if (res.ok) collabLoadRevisions(_collabColId);
-}
-
-async function collabShowDiff(revisionId) {
-  if (!_collabColId || _collabRevisions.length < 2) { modAlert('collab-revisions-msg', 'error', 'Need at least 2 revisions to diff.'); return; }
-  const other = _collabRevisions.find(r => r.revisionId !== revisionId);
-  if (!other) return;
-  const res = await fetch('/api/collaboration/' + encodeURIComponent(_collabColId) + '/revisions/diff', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ fromRevisionId: other.revisionId, toRevisionId: revisionId })
-  });
-  if (!res.ok) { modAlert('collab-revisions-msg', 'error', 'Diff request failed.'); return; }
-  const diff = await res.json();
-  const added = (diff.stepsAdded || []).map(s => `+${escHtml(s.stepId)}`).join(', ') || 'none';
-  const removed = (diff.stepsRemoved || []).map(s => `-${escHtml(s.stepId)}`).join(', ') || 'none';
-  const deps = (diff.dependenciesChanged || []).length;
-  modAlert('collab-revisions-msg', 'success', `Diff: Added: ${added} | Removed: ${removed} | Dependency changes: ${deps}`);
-}
-
-// ─── COMMENTS ────────────────────────────────────────────────────────────────
-
-let _collabComments = [];
-
-async function collabLoadComments(colId) {
-  const list = document.getElementById('collab-comments-list');
-  if (!list) return;
-  list.innerHTML = '<div style="color:var(--text-muted)">Loading…</div>';
-  const res = await fetch('/api/collaboration/' + encodeURIComponent(colId) + '/comments');
-  if (!res.ok) { list.innerHTML = '<div style="color:#ef4444">Failed to load comments.</div>'; return; }
-  _collabComments = await res.json();
-  if (!Array.isArray(_collabComments)) _collabComments = [];
-  _collabRenderComments();
-}
-
-function _collabRenderComments() {
-  const list = document.getElementById('collab-comments-list');
-  if (!list) return;
-  const q = (document.getElementById('collab-comments-search')?.value || '').toLowerCase();
-  const statusFilter = document.getElementById('collab-comments-status-filter')?.value || '';
-  const filtered = _collabComments.filter(c =>
-    (!statusFilter || c.status === statusFilter) &&
-    (!q || (c.body || '').toLowerCase().includes(q) || (c.authorId || '').toLowerCase().includes(q))
-  );
-  if (!filtered.length) { list.innerHTML = '<div style="color:var(--text-muted)">No comments match the filter.</div>'; return; }
-  list.innerHTML = filtered.map(c => `
-    <div style="border:1px solid var(--border);border-radius:6px;padding:10px;margin-bottom:8px">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
-        <span style="font-weight:600">${escHtml(c.authorId || '—')}</span>
-        <span style="font-size:11px;color:var(--text-muted)">${escHtml(c.targetType)}${c.targetId ? ':' + escHtml(c.targetId) : ''} · ${escHtml(c.status)}</span>
-      </div>
-      <div style="margin-bottom:6px">${escHtml(c.body)}</div>
-      ${c.status === 'open' ? `<button class="tbl-btn" onclick="collabResolveComment('${escHtml(c.commentId)}')">Resolve</button>` : '<span style="color:#22c55e;font-size:12px">✓ Resolved</span>'}
-    </div>`).join('');
-}
-
-function collabFilterComments() { _collabRenderComments(); }
-
-async function collabAddComment() {
-  if (!_collabColId) { modAlert('collab-comments-msg', 'error', 'Select a collection first.'); return; }
-  const body = document.getElementById('collab-comment-body')?.value?.trim();
-  if (!body) { modAlert('collab-comments-msg', 'error', 'Comment body is required.'); return; }
-  const targetType = document.getElementById('collab-comment-target-type')?.value || 'collection';
-  const targetId = document.getElementById('collab-comment-target-id')?.value?.trim() || _collabColId;
-  const res = await fetch('/api/collaboration/' + encodeURIComponent(_collabColId) + '/comments', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ authorId: 'ui-user', targetType, targetId, body })
-  });
-  if (!res.ok) { modAlert('collab-comments-msg', 'error', 'Failed to post comment.'); return; }
-  const bodyEl = document.getElementById('collab-comment-body');
-  if (bodyEl) bodyEl.value = '';
-  modAlert('collab-comments-msg', 'success', 'Comment posted.');
-  collabLoadComments(_collabColId);
-}
-
-async function collabResolveComment(commentId) {
-  const res = await fetch('/api/collaboration/comments/' + encodeURIComponent(commentId) + '/resolve', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ actorId: 'ui-user' })
-  });
-  if (res.ok && _collabColId) collabLoadComments(_collabColId);
-}
-
-// ─── TEMPLATES ───────────────────────────────────────────────────────────────
-
-async function collabLoadTemplates() {
-  const list = document.getElementById('collab-templates-list');
-  if (!list) return;
-  list.innerHTML = '<div style="color:var(--text-muted)">Loading…</div>';
-  const res = await fetch('/api/collaboration/templates');
-  if (!res.ok) { list.innerHTML = '<div style="color:#ef4444">Failed to load templates.</div>'; return; }
-  const templates = await res.json();
-  if (!Array.isArray(templates) || !templates.length) { list.innerHTML = '<div style="color:var(--text-muted)">No templates available.</div>'; return; }
-  list.innerHTML = templates.map(t => `
-    <div style="border:1px solid var(--border);border-radius:6px;padding:12px;margin-bottom:10px">
-      <div style="font-weight:600;margin-bottom:4px">${escHtml(t.name || t.templateId)}</div>
-      <div style="color:var(--text-muted);font-size:12px;margin-bottom:6px">${escHtml(t.description || '')} <span class="badge">${escHtml(t.category || '')}</span></div>
-      <div class="advisory-banner" style="margin-bottom:8px">ℹ️ Instantiate creates an advisory scaffold only. No collection is created automatically.</div>
-      <button class="tbl-btn" onclick="collabInstantiateTemplate('${escHtml(t.templateId)}')">Instantiate</button>
-    </div>`).join('');
-}
-
-async function collabInstantiateTemplate(templateId) {
-  const res = await fetch('/api/collaboration/templates/' + encodeURIComponent(templateId) + '/instantiate', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ targetCollectionId: _collabColId || undefined })
-  });
-  if (!res.ok) { modAlert('collab-revisions-msg', 'error', 'Instantiation failed.'); return; }
-  const scaffold = await res.json();
-  const summary = escHtml((scaffold.steps || scaffold.stepCount || JSON.stringify(scaffold)).toString().substring(0, 200));
-  modAlert('collab-revisions-msg', 'success', 'Advisory scaffold returned. Steps: ' + summary);
-}
-
-function collabExportRevisions() {
-  if (!_collabRevisions.length) { showToast('error', 'No revisions to export.'); return; }
-  downloadCSV('revisions.csv',
-    ['Revision #', 'Status', 'Author', 'Description', 'Created At'],
-    _collabRevisions.map(r => [
-      r.revisionNumber, r.status, r.authorId || '',
-      r.description || '',
-      r.createdAt ? new Date(r.createdAt).toLocaleString() : ''
-    ])
-  );
-  showToast('success', 'Revisions exported to revisions.csv');
-}
-// ══════════════════════════════════════════════════════════════════════════════
-// COPILOT MODULE — AI guidance, flakiness/retry-storm/SLA predictions
-// ══════════════════════════════════════════════════════════════════════════════
-
-let _copilotColId = '';
-let _copilotHistory = [];
-
-async function copilotLoad() {
-  const sel = document.getElementById('copilot-col-select');
-  if (!sel) return;
-  sel.innerHTML = '<option value="">— Select Collection —</option>';
-  const cols = await fetch('/api/api-collections').then(r => r.ok ? r.json() : []).catch(() => []);
-  (Array.isArray(cols) ? cols : []).forEach(c => {
-    sel.innerHTML += `<option value="${escHtml(c.id)}">${escHtml(c.name)}</option>`;
-  });
-}
-
-function copilotSelectCollection(colId) {
-  _copilotColId = colId;
-  const gr = document.getElementById('copilot-guidance-result');
-  const pr = document.getElementById('copilot-predict-result');
-  const hr = document.getElementById('copilot-history-result');
-  if (gr) gr.innerHTML = '';
-  if (pr) pr.innerHTML = '';
-  if (hr) hr.innerHTML = '<div style="color:var(--text-muted)">Select a collection then switch to History tab.</div>';
-}
-
-function copilotTabSwitch(tab, btn) {
-  document.querySelectorAll('[data-copilottab]').forEach(b => b.classList.remove('active'));
-  if (btn) btn.classList.add('active');
-  ['guidance', 'predict', 'history'].forEach(t => {
-    const el = document.getElementById('copilot-panel-' + t);
-    if (el) el.style.display = t === tab ? '' : 'none';
-  });
-  if (tab === 'history' && _copilotColId) copilotLoadHistory(_copilotColId);
-}
-
-// ─── GUIDANCE ────────────────────────────────────────────────────────────────
-
-async function copilotSubmitGuide() {
-  if (!_copilotColId) { modAlert('copilot-guidance-msg', 'error', 'Select a collection first.'); return; }
-  const queryType = document.getElementById('copilot-query-type')?.value || 'workflow-guidance';
-  const runIdEl = document.getElementById('copilot-run-id');
-  const runId = runIdEl?.value?.trim() || undefined;
-  const result = document.getElementById('copilot-guidance-result');
-  if (!result) return;
-  result.innerHTML = '<div style="color:var(--text-muted)">Asking Copilot…</div>';
-  modAlert('copilot-guidance-msg', 'success', '');
-  const res = await fetch('/api/copilot/guide', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ queryType, collectionId: _copilotColId, runId, actorId: 'ui-user', context: {} })
-  });
-  if (!res.ok) { result.innerHTML = '<div style="color:#ef4444">Copilot request failed.</div>'; return; }
-  const data = await res.json();
-  _copilotRenderGuidance(data, result);
-}
-
-function _copilotRenderGuidance(data, container) {
-  const items = data.items || [];
-  if (!items.length) { container.innerHTML = '<div style="color:var(--text-muted)">No guidance items returned.</div>'; return; }
-  const sevColor = { info: '#3b82f6', warning: '#f59e0b', critical: '#ef4444' };
-  container.innerHTML = `
-    <div class="advisory-banner" style="margin-bottom:10px">🤖 ${escHtml(data.governanceNote || 'Advisory only — review before acting.')}</div>
-    <table class="data-table"><thead><tr><th>Severity</th><th>Title</th><th>Guidance</th><th>Confidence</th><th>Action Hint</th></tr></thead>
-    <tbody>${items.map(it => `<tr>
-      <td><span style="color:${sevColor[it.severity] || '#9ca3af'};font-weight:600">${escHtml(it.severity)}</span></td>
-      <td>${escHtml(it.title)}</td>
-      <td style="max-width:300px">${escHtml(it.body)}</td>
-      <td>${escHtml(String(it.confidence))}%</td>
-      <td style="font-size:12px;color:var(--text-muted)">${escHtml(it.actionHint || '—')}</td>
-    </tr>`).join('')}</tbody></table>`;
-}
-
-async function copilotLoadHistory(colId) {
-  const container = document.getElementById('copilot-history-result');
-  if (!container) return;
-  container.innerHTML = '<div style="color:var(--text-muted)">Loading…</div>';
-  const res = await fetch('/api/copilot/history/' + encodeURIComponent(colId));
-  if (!res.ok) { container.innerHTML = '<div style="color:#ef4444">Failed to load history.</div>'; return; }
-  const history = await res.json();
-  _copilotHistory = Array.isArray(history) ? history : (history.items || []);
-  _copilotRenderHistory();
-}
-
-function _copilotRenderHistory() {
-  const container = document.getElementById('copilot-history-result');
-  if (!container) return;
-  const q = (document.getElementById('copilot-history-search')?.value || '').toLowerCase();
-  const filtered = q ? _copilotHistory.filter(h => (h.queryType || '').toLowerCase().includes(q)) : _copilotHistory;
-  if (!filtered.length) { container.innerHTML = `<div style="color:var(--text-muted)">${q ? 'No history matches filter.' : 'No guidance history yet.'}</div>`; return; }
-  container.innerHTML = `<table class="data-table"><thead><tr><th>Query Type</th><th>Items</th><th>Generated At</th></tr></thead>
-    <tbody>${filtered.map(h => `<tr>
-      <td>${escHtml(h.queryType)}</td>
-      <td>${escHtml(String((h.items || []).length))}</td>
-      <td style="font-size:11px;color:var(--text-muted)">${h.generatedAt ? new Date(h.generatedAt).toLocaleString() : '—'}</td>
-    </tr>`).join('')}</tbody></table>`;
-}
-
-function copilotFilterHistory() { _copilotRenderHistory(); }
-
-// ─── PREDICTIONS ─────────────────────────────────────────────────────────────
-
-async function copilotPredictFlakiness() {
-  if (!_copilotColId) { modAlert('copilot-predict-msg', 'error', 'Select a collection first.'); return; }
-  const result = document.getElementById('copilot-predict-result');
-  if (!result) return;
-  result.innerHTML = '<div style="color:var(--text-muted)">Forecasting flakiness…</div>';
-  const res = await fetch('/api/copilot/predict/flakiness', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ collectionId: _copilotColId })
-  });
-  if (!res.ok) { result.innerHTML = '<div style="color:#ef4444">Flakiness forecast failed.</div>'; return; }
-  const data = await res.json();
-  const forecasts = data.forecasts || [];
-  if (!forecasts.length) { result.innerHTML = '<div style="color:var(--text-muted)">No flakiness forecasts available.</div>'; return; }
-  result.innerHTML = `<h4 style="margin:0 0 8px">🧪 Flakiness Forecast</h4>
-    <table class="data-table"><thead><tr><th>Step ID</th><th>Predicted Score</th><th>Confidence</th><th>Contributing Factors</th></tr></thead>
-    <tbody>${forecasts.map(f => {
-      const score = f.predictedFlakinessScore || 0;
-      const col = score > 70 ? '#ef4444' : score > 40 ? '#f59e0b' : '#22c55e';
-      return `<tr>
-        <td style="font-size:12px">${escHtml(f.stepId)}</td>
-        <td><span style="color:${col};font-weight:600">${escHtml(String(score))}%</span></td>
-        <td>${escHtml(String(f.confidence))}%</td>
-        <td style="font-size:12px;color:var(--text-muted)">${escHtml((f.contributingFactors || []).join(', ') || '—')}</td>
-      </tr>`;
-    }).join('')}</tbody></table>`;
-}
-
-async function copilotPredictRetryStorm() {
-  if (!_copilotColId) { modAlert('copilot-predict-msg', 'error', 'Select a collection first.'); return; }
-  const result = document.getElementById('copilot-predict-result');
-  if (!result) return;
-  result.innerHTML = '<div style="color:var(--text-muted)">Forecasting retry storm…</div>';
-  const res = await fetch('/api/copilot/predict/retry-storm', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ collectionId: _copilotColId })
-  });
-  if (!res.ok) { result.innerHTML = '<div style="color:#ef4444">Retry storm forecast failed.</div>'; return; }
-  const f = await res.json();
-  const riskColor = { low: '#22c55e', medium: '#f59e0b', high: '#ef4444' };
-  result.innerHTML = `<h4 style="margin:0 0 8px">⚡ Retry Storm Forecast</h4>
-    <div style="margin-bottom:8px">Risk: <strong style="color:${riskColor[f.stormRisk] || '#9ca3af'}">${escHtml(f.stormRisk || '—')}</strong>
-      &nbsp;Predicted retry rate: <strong>${((f.predictedRetryRate || 0) * 100).toFixed(1)}%</strong>
-      &nbsp;Confidence: ${escHtml(String(f.confidence || 0))}%</div>
-    ${(f.affectedStepIds || []).length ? '<div style="font-size:12px;color:var(--text-muted)">Affected steps: ' + f.affectedStepIds.map(id => escHtml(id)).join(', ') + '</div>' : ''}`;
-}
-
-async function copilotPredictSlaBreach() {
-  if (!_copilotColId) { modAlert('copilot-predict-msg', 'error', 'Select a collection first.'); return; }
-  const slaMetricEl = document.getElementById('copilot-sla-metric');
-  const slaValueEl = document.getElementById('copilot-sla-value');
-  const slaMetric = slaMetricEl?.value?.trim();
-  const currentValue = parseFloat(slaValueEl?.value || '0');
-  if (!slaMetric) { modAlert('copilot-predict-msg', 'error', 'Enter SLA metric name.'); return; }
-  const result = document.getElementById('copilot-predict-result');
-  if (!result) return;
-  result.innerHTML = '<div style="color:var(--text-muted)">Forecasting SLA breach…</div>';
-  const res = await fetch('/api/copilot/predict/sla-breach', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ collectionId: _copilotColId, slaMetric, currentValue })
-  });
-  if (!res.ok) { result.innerHTML = '<div style="color:#ef4444">SLA breach forecast failed.</div>'; return; }
-  const f = await res.json();
-  const likelihood = ((f.breachLikelihood || 0) * 100).toFixed(1);
-  const col = f.breachLikelihood > 0.7 ? '#ef4444' : f.breachLikelihood > 0.4 ? '#f59e0b' : '#22c55e';
-  result.innerHTML = `<h4 style="margin:0 0 8px">SLA Breach Forecast — ${escHtml(slaMetric)}</h4>
-    <div>Breach likelihood: <strong style="color:${col}">${likelihood}%</strong>
-      &nbsp;Current value: ${escHtml(String(currentValue))}
-      &nbsp;Forecasted value: ${f.forecastedValue !== undefined ? escHtml(String(f.forecastedValue)) : '—'}</div>`;
-}
-
-function copilotExportHistory() {
-  if (!_copilotHistory.length) { showToast('error', 'No history to export.'); return; }
-  downloadCSV('copilot-history.csv',
-    ['Query Type', 'Items', 'Generated At'],
-    _copilotHistory.map(h => [
-      h.queryType,
-      (h.items || []).length,
-      h.generatedAt ? new Date(h.generatedAt).toLocaleString() : ''
-    ])
-  );
-  showToast('success', 'Copilot history exported to copilot-history.csv');
-}
 // ══════════════════════════════════════════════════════════════════════════════
 // PERFORMANCE DASHBOARD MODULE — profiling, cache stats, safeguards
 // ══════════════════════════════════════════════════════════════════════════════

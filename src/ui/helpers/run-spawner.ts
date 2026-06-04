@@ -172,40 +172,10 @@ function attachStepsFromJson(record: RunRecord, jsonReportPath: string): void {
   } catch { /* skip */ }
 }
 
-function attachVisualDiff(record: RunRecord): void {
-  const ssDir = path.join(config.paths.testResults, record.runId);
-  if (!fs.existsSync(ssDir)) return;
-  const files = fs.readdirSync(ssDir);
-  const beforeRe = /^(\d+)-(chromium|firefox|webkit)-before-(\d+)\.png$/;
-  const afterRe = /^(\d+)-(chromium|firefox|webkit)-after-(\d+)\.png$/;
-  const beforeReLegacy = /^(\d+)-before-(\d+)\.png$/;
-  const afterReLegacy = /^(\d+)-after-(\d+)\.png$/;
-  type StepMap = Map<number, string>;
-  const beforeMap = new Map<string, StepMap>();
-  const afterMap = new Map<string, StepMap>();
-  for (const f of files) {
-    const bm = f.match(beforeRe) || (() => { const m = f.match(beforeReLegacy); return m ? [m[0], m[1], 'chromium', m[2]] : null; })();
-    if (bm) { const key = `${bm[1]}-${bm[2]}`; const so = parseInt(bm[3], 10); if (!beforeMap.has(key)) beforeMap.set(key, new Map()); beforeMap.get(key)!.set(so, f); }
-    const am = f.match(afterRe) || (() => { const m = f.match(afterReLegacy); return m ? [m[0], m[1], 'chromium', m[2]] : null; })();
-    if (am) { const key = `${am[1]}-${am[2]}`; const so = parseInt(am[3], 10); if (!afterMap.has(key)) afterMap.set(key, new Map()); afterMap.get(key)!.set(so, f); }
-  }
-  const browserCounter = new Map<string, number>();
-  record.tests.forEach((ev) => {
-    const browser = (ev.browser || 'chromium').toLowerCase();
-    const scriptIdx = browserCounter.get(browser) ?? 0;
-    browserCounter.set(browser, scriptIdx + 1);
-    const key = `${scriptIdx}-${browser}`;
-    const beforeSteps = beforeMap.get(key);
-    const afterSteps = afterMap.get(key);
-    if (!beforeSteps && !afterSteps) return;
-    if (ev.status === 'fail') {
-      if (afterSteps && afterSteps.size > 0) { const lastFailStep = Math.max(...afterSteps.keys()); ev.screenshotAfter = `test-results/${record.runId}/${afterSteps.get(lastFailStep)}`; if (beforeSteps?.has(lastFailStep)) { ev.screenshotBefore = `test-results/${record.runId}/${beforeSteps.get(lastFailStep)}`; } }
-      else if (beforeSteps && beforeSteps.size > 0) { const lastStep = Math.max(...beforeSteps.keys()); ev.screenshotBefore = `${record.runId}/${beforeSteps.get(lastStep)}`; }
-    } else {
-      if (beforeSteps && beforeSteps.size > 0) { const lastStep = Math.max(...beforeSteps.keys()); ev.screenshotPath = `${record.runId}/${beforeSteps.get(lastStep)}`; }
-    }
-  });
-}
+// REMOVED: attachVisualDiff() — retired in favour of the real VRT pipeline.
+// screenshotBefore/screenshotAfter/screenshotDiff are now exclusively populated by
+// attachVisualResults() which reads ASSERT VISUAL sidecar JSONs (pixelmatch-based).
+// failureScreenshotPath continues to be set by attachFailureScreenshots() independently.
 
 // Reorder record.tests[] to match the suite scriptIds order using the JSON report.
 // With parallel workers tests complete out of order — JSON report has the authoritative
@@ -330,6 +300,51 @@ export function backfillScriptsAndFunctions(
     logger.info(`[backfill] locator=${locatorId} name="${locatorName}" → ${newSelectorType}:${newSelector} | scripts=${scriptsDirty} fns=${fnsDirty}`);
   } catch (err) {
     logger.warn(`[backfill] Failed: ${(err as Error).message}`);
+  }
+}
+
+function attachVisualResults(record: RunRecord): void {
+  const ssDir = path.join(config.paths.testResults, record.runId);
+  if (!fs.existsSync(ssDir)) return;
+  let files: string[];
+  try { files = fs.readdirSync(ssDir); } catch { return; }
+  const sidecarFiles = files.filter(f => /^visual-\d+-.+\.json$/.test(f));
+  if (!sidecarFiles.length) return;
+
+  for (const f of sidecarFiles) {
+    try {
+      const data = JSON.parse(fs.readFileSync(path.join(ssDir, f), 'utf-8')) as {
+        testTitle: string; browser?: string; stepOrder: number; locatorName: string;
+        baselineUrl: string | null; actualUrl: string | null; diffUrl: string | null;
+        diffPct: number; status: string;
+      };
+      const titleLower   = (data.testTitle || '').toLowerCase();
+      const sidecarBrowser = (data.browser || '').toLowerCase();
+      // OLD: // Match sidecar to the TestEvent by test title (case-insensitive partial match)
+      // OLD: const ev = record.tests.find(t => (t.name || '').toLowerCase() === titleLower)
+      // OLD:         ?? record.tests.find(t => titleLower.includes((t.name || '').toLowerCase()));
+      // Prefer exact browser+title match; fall back to title-only for legacy sidecars (no browser field)
+      const ev = record.tests.find(t =>
+        (t.browser || 'chromium').toLowerCase() === sidecarBrowser &&
+        (t.name || '').toLowerCase() === titleLower
+      ) ?? record.tests.find(t => (t.name || '').toLowerCase() === titleLower)
+        ?? record.tests.find(t => titleLower.includes((t.name || '').toLowerCase()));
+      if (!ev) continue;
+      // Push into visualResults array — one entry per ASSERT VISUAL step
+      if (!(ev as any).visualResults) (ev as any).visualResults = [];
+      (ev as any).visualResults.push({
+        stepOrder:   data.stepOrder,
+        locatorName: data.locatorName,
+        browser:     data.browser || null,
+        baselineUrl: data.baselineUrl || null,
+        actualUrl:   data.actualUrl   || null,
+        diffUrl:     data.diffUrl     || null,
+        diffPct:     data.diffPct     ?? 0,
+        status:      data.status,
+      });
+      // Sort by stepOrder so display order matches script order
+      (ev as any).visualResults.sort((a: any, b: any) => a.stepOrder - b.stepOrder);
+    } catch { /* skip malformed sidecar */ }
   }
 }
 
@@ -511,7 +526,7 @@ export function spawnRunWithSpec(record: RunRecord, specPath: string, headed?: b
     if (pending) { for (const [idxStr, errors] of Object.entries(pending)) { const ev = record.tests[parseInt(idxStr, 10)]; if (ev && errors.length) ev.consoleErrors = errors; } delete (record as any).__pendingConsoleErrors; }
     reorderTestsByJsonReport(record, jsonReportPath);  // sort before artifact attachment
     attachFailureScreenshots(record);
-    attachVisualDiff(record);
+    attachVisualResults(record);
     attachVideoAndTrace(record);
     attachStepsFromJson(record, jsonReportPath);
     attachHealEvents(record);

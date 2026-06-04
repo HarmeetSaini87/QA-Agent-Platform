@@ -4,12 +4,13 @@ import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { config } from '../../framework/config';
 import { logger } from '../../utils/logger';
-import { readAll, upsert, findById, LOCATORS } from '../../data/store';
-import type { Locator, HealingProposal } from '../../data/types';
+import { readAll, upsert, findById, LOCATORS, PROJECTS } from '../../data/store';
+import type { Locator, HealingProposal, Project, VrtStepOptions } from '../../data/types';
 import { scoreCandidates, T3_AUTO_THRESHOLD } from '../../utils/healingEngine';
 import type { DomCandidate } from '../../utils/healingEngine';
 import { upsertPageModel, listPageModels } from '../../utils/pageModelManager';
-import { getAllBaselines, getBaseline, approveBaseline, deleteBaseline, compareScreenshot, baselineImagePath } from '../../utils/visualRegression';
+import { getAllBaselines, getBaseline, approveBaseline, deleteBaseline, compareScreenshot, baselineImagePath, mergeVrtConfig, makeBaselineId, getIgnoreRegions, addIgnoreRegion, updateIgnoreRegion, deleteIgnoreRegion } from '../../utils/visualRegression';
+import type { IgnoreRegion, IgnoreRegionCategory } from '../../utils/visualRegression';
 import { logAudit } from '../../auth/audit';
 import { requireAuth, requireEditor, requireAuthOrApiKey } from '../../auth/middleware';
 import { backfillScriptsAndFunctions } from '../helpers/run-spawner';
@@ -45,10 +46,83 @@ export function registerVisualRoutes(app: express.Application): void {
     res.json({ success: true });
   });
 
+  // ── Ignore Regions CRUD ─────────────────────────────────────
+
+  // GET /api/visual-baselines/:id/ignore-regions
+  app.get('/api/visual-baselines/:id/ignore-regions', requireAuth, (req: Request, res: Response) => {
+    const entry = getBaseline(req.params.id);
+    if (!entry) { res.status(404).json({ error: 'Baseline not found' }); return; }
+    res.json(getIgnoreRegions(req.params.id));
+  });
+
+  // POST /api/visual-baselines/:id/ignore-regions
+  app.post('/api/visual-baselines/:id/ignore-regions', requireAuth, requireEditor, (req: Request, res: Response) => {
+    const { name, category, x, y, width, height, selector, reason } = req.body as {
+      name: string; category: IgnoreRegionCategory;
+      x: number; y: number; width: number; height: number;
+      selector?: string; reason?: string;
+    };
+    if (!name || !category || x == null || y == null || width == null || height == null) {
+      res.status(400).json({ error: 'name, category, x, y, width, height required' }); return;
+    }
+    const region = addIgnoreRegion(req.params.id, {
+      name, category, x, y, width, height, selector, reason,
+      createdBy: req.session.username ?? 'unknown',
+    });
+    if (!region) { res.status(404).json({ error: 'Baseline not found' }); return; }
+    logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'VRT_IGNORE_REGION_ADDED', resourceType: 'visual-baseline', resourceId: req.params.id, details: JSON.stringify({ regionId: region.id, name, category }), ip: req.ip ?? null });
+    res.status(201).json(region);
+  });
+
+  // PUT /api/visual-baselines/:id/ignore-regions/:regionId
+  app.put('/api/visual-baselines/:id/ignore-regions/:regionId', requireAuth, requireEditor, (req: Request, res: Response) => {
+    const { name, category, x, y, width, height, selector, reason } = req.body as Partial<IgnoreRegion>;
+    const region = updateIgnoreRegion(req.params.id, req.params.regionId, { name, category, x, y, width, height, selector, reason });
+    if (!region) { res.status(404).json({ error: 'Baseline or region not found' }); return; }
+    res.json(region);
+  });
+
+  // DELETE /api/visual-baselines/:id/ignore-regions/:regionId
+  app.delete('/api/visual-baselines/:id/ignore-regions/:regionId', requireAuth, requireEditor, (req: Request, res: Response) => {
+    const ok = deleteIgnoreRegion(req.params.id, req.params.regionId);
+    if (!ok) { res.status(404).json({ error: 'Baseline or region not found' }); return; }
+    logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'VRT_IGNORE_REGION_DELETED', resourceType: 'visual-baseline', resourceId: req.params.id, details: JSON.stringify({ regionId: req.params.regionId }), ip: req.ip ?? null });
+    res.json({ success: true });
+  });
+
   app.post('/api/visual-baselines/compare', requireAuthOrApiKey, (req: Request, res: Response) => {
-    const { projectId, testName, locatorName, imageBase64, threshold } = req.body as { projectId: string; testName: string; locatorName: string; imageBase64: string; threshold?: number };
+    // OLD: const { projectId, testName, locatorName, imageBase64, vrtOptions } = req.body as {
+    // OLD:   projectId: string; testName: string; locatorName: string; imageBase64: string;
+    // OLD:   vrtOptions?: VrtStepOptions;
+    // OLD: };
+    const { projectId, testName, locatorName, imageBase64, vrtOptions, browser } = req.body as {
+      projectId: string; testName: string; locatorName: string; imageBase64: string;
+      vrtOptions?: VrtStepOptions; browser?: string;
+    };
     if (!projectId || !testName || !locatorName || !imageBase64) { res.status(400).json({ error: 'projectId, testName, locatorName and imageBase64 required' }); return; }
-    try { const buffer = Buffer.from(imageBase64, 'base64'); const result = compareScreenshot(projectId, testName, locatorName, buffer, threshold ?? 0.1); res.json(result); } catch (err) { res.status(500).json({ error: (err as Error).message }); }
+    try {
+      const buffer = Buffer.from(imageBase64, 'base64');
+      const project = readAll<Project>(PROJECTS).find(p => p.id === projectId);
+      const resolvedConfig = mergeVrtConfig(project?.vrtConfig, vrtOptions);
+      // OLD: const result = compareScreenshot(projectId, testName, locatorName, buffer, resolvedConfig);
+      // OLD: const baselineId = makeBaselineId(projectId, testName, locatorName);
+      const sanitizedBrowser = browser && ['chromium', 'firefox', 'webkit'].includes(browser) ? browser : undefined;
+      const result = compareScreenshot(projectId, testName, locatorName, buffer, resolvedConfig, undefined, sanitizedBrowser);
+      const baselineId = makeBaselineId(projectId, testName, locatorName, sanitizedBrowser);
+      const imageBase = `/api/visual-baselines/${encodeURIComponent(baselineId)}/image`;
+      const baselineEntry = getBaseline(baselineId);
+      res.json({
+        ...result,
+        baselineId,
+        browser: sanitizedBrowser ?? null,
+        baselineUrl:             `${imageBase}?type=baseline`,
+        actualUrl:               `${imageBase}?type=actual`,
+        diffUrl:                 result.hasDiff ? `${imageBase}?type=diff` : null,
+        ignoreRegions:           baselineEntry?.ignoreRegions ?? [],
+        totalRunsProtected:      baselineEntry?.totalRunsProtected      ?? 0,
+        totalPixelsSavedAllTime: baselineEntry?.totalPixelsSavedAllTime ?? 0,
+      });
+    } catch (err) { res.status(500).json({ error: (err as Error).message }); }
   });
 
   // Heal log

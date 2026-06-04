@@ -15,7 +15,7 @@ export function registerProjectsRoutes(app: express.Application): void {
   app.get('/api/projects', (req: Request, res: Response) => { res.json(readAll<Project>('projects').filter(p => p.isActive)); });
   app.get('/api/projects/all', requireAdmin, (_req, res) => { res.json(readAll<Project>('projects')); });
   app.post('/api/projects', requireAdmin, (req: Request, res: Response) => {
-    const { name, description, tcIdPrefix, environments, jiraProjectKey } = req.body as any;
+    const { name, description, tcIdPrefix, environments, jiraProjectKey, vrtConfig } = req.body as any;
     if (!name) { res.status(400).json({ error: 'Project name is required' }); return; }
     const existing = readAll<Project>('projects'); if (existing.find(p => p.name === name.trim())) { res.status(409).json({ error: 'Project name already exists' }); return; }
     // Enforce maxProjects license gate
@@ -29,15 +29,16 @@ export function registerProjectsRoutes(app: express.Application): void {
       }
     }
     const normJiraKey = jiraProjectKey ? String(jiraProjectKey).trim().toUpperCase().replace(/[^A-Z0-9]/g, '') : undefined;
-    const project: Project = { id: uuidv4(), name: sanitizeInput(name), description: sanitizeInput(description ?? ''), tcIdPrefix: sanitizeInput(tcIdPrefix || 'TC'), tcIdCounter: 1, environments: (environments ?? []) as ProjectEnvironment[], isActive: true, createdAt: new Date().toISOString(), createdBy: req.session.username!, ...(normJiraKey ? { jiraProjectKey: normJiraKey } : {}) };
+    const project: Project = { id: uuidv4(), name: sanitizeInput(name), description: sanitizeInput(description ?? ''), tcIdPrefix: sanitizeInput(tcIdPrefix || 'TC'), tcIdCounter: 1, environments: (environments ?? []) as ProjectEnvironment[], isActive: true, createdAt: new Date().toISOString(), createdBy: req.session.username!, ...(normJiraKey ? { jiraProjectKey: normJiraKey } : {}), ...(vrtConfig ? { vrtConfig } : {}) };
     upsert('projects', project); logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'PROJECT_CREATED', resourceType: 'project', resourceId: project.id, details: project.name, ip: req.ip ?? null });
     res.json({ success: true, id: project.id });
   });
   app.put('/api/projects/:id', requireAdmin, (req: Request, res: Response) => {
     const project = findById<Project>('projects', req.params.id); if (!project) { res.status(404).json({ error: 'Not found' }); return; }
-    const { name, description, tcIdPrefix, environments, isActive, jiraProjectKey } = req.body as any;
+    const { name, description, tcIdPrefix, environments, isActive, jiraProjectKey, vrtConfig } = req.body as any;
     if (name) project.name = sanitizeInput(name); if (description !== undefined) project.description = sanitizeInput(description); if (tcIdPrefix) project.tcIdPrefix = sanitizeInput(tcIdPrefix); if (environments) project.environments = environments; if (isActive !== undefined) project.isActive = !!isActive;
     if (jiraProjectKey !== undefined) project.jiraProjectKey = jiraProjectKey ? String(jiraProjectKey).trim().toUpperCase().replace(/[^A-Z0-9]/g, '') || undefined : undefined;
+    if (vrtConfig !== undefined) project.vrtConfig = vrtConfig;
     upsert('projects', project); logAudit({ userId: req.session.userId!, username: req.session.username!, action: 'PROJECT_UPDATED', resourceType: 'project', resourceId: project.id, details: project.name, ip: req.ip ?? null }); res.json({ success: true });
   });
   app.post('/api/projects/:id/next-tc-id', requireAuth, (req: Request, res: Response) => {

@@ -39,11 +39,34 @@ export interface Project {
   appUrl?:      string;
   credentials?: ProjectCredential[];
   flakinessDefaults?: Partial<import('../utils/flakinessEngine').FlakinessConfig>;
+  vrtConfig?:         VrtConfig;   // project-level VRT defaults
 }
 
 export interface ProjectCredential {
   key:   string;
   value: string;
+}
+
+// ── Visual Regression Testing config ─────────────────────────────────────────
+export interface VrtConfig {
+  // Pixelmatch tolerance params (project-level defaults; step can override)
+  threshold?:         number;   // 0–1 colour diff per pixel, default 0.2
+  maxDiffPixels?:     number | null;   // absolute pixel cap; null = disabled
+  maxDiffPixelRatio?: number;   // 0–1 ratio of total pixels, default 0.05
+  // Capture behaviour
+  animations?:        'disabled' | 'allow';  // default 'disabled'
+  scale?:             'css' | 'device';      // default 'css'
+  caret?:             'hide' | 'initial';    // default 'hide'
+  maskColor?:         string;   // CSS color for masked elements, default '#FF00FF'
+  stylePath?:         string;   // path to CSS file applied before capture
+  timeout?:           number;   // assertion timeout ms
+}
+
+// Step-level VRT overrides (superset of VrtConfig + step-only fields)
+export interface VrtStepOptions extends Partial<VrtConfig> {
+  mask?:            string[];   // CSS selectors to blank before comparison
+  omitBackground?:  boolean;    // transparent PNG (for overlay components)
+  clip?:            { x: number; y: number; width: number; height: number };  // viewport region (full-page mode only)
 }
 
 // ── Self-Healing Locator types ────────────────────────────────────────────────
@@ -194,6 +217,7 @@ export interface ScriptStep {
   // CSS selector e.g. "#flowIframe". Propagated by recorderParser from
   // RecorderEvent.frameContext and consumed by codegenGenerator + debugger.
   frameContext?:  string | null;  // iframe selector e.g. "#flowIframe", null = top frame
+  vrtOptions?:    VrtStepOptions; // ASSERT VISUAL step-level overrides
 }
 
 export interface TestScript {
@@ -721,6 +745,7 @@ export interface ApiCollectionRunResult {
   id: string;
   collectionId: string;
   projectId?: string;
+  triggeredBy?: string;
   startedAt: string;
   completedAt: string;
   status: 'passed' | 'failed' | 'error' | 'running';
@@ -781,6 +806,5 @@ export interface RunGraphProjection {
   runStatus: 'passed' | 'failed' | 'error' | 'running';
   startedAt: string;
   completedAt: string;
-  graph: import('../workflow-graph/contracts/graph.contracts').GraphProjection;
-  nodeResults: Record<string, RunGraphNodeResult>;
+nodeResults: Record<string, RunGraphNodeResult>;
 }

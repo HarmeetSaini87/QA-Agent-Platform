@@ -27,6 +27,7 @@ import { requireAuth, requireAdmin, requireEditor, requireAuthOrApiKey, sanitize
 import { validateLicenseKey, validateLicFile, storeLicense, loadStoredLicense, getLicensePayload, refreshLicenseCache, clearLicenseCache, isAutoTrial, trialDaysRemaining, AUTO_TRIAL_DAYS, isFeatureEnabled, checkMachineBinding, checkExpiryTick, getMachineId, getSeatsUsed, getSeatUsageRatio, recordLogin, recordLogout, isSeatAvailable, transferLicense, activateAutoTrial, checkStoredLicFile } from '../utils/licenseManager';
 import { broadcast, subscribe, unsubscribe } from './helpers/ws-broadcast';
 import { execHealthGetSnapshot } from '../utils/exec-health-store';
+import { ensureSystemRunnerKey } from '../utils/systemRunnerKey';
 
 // Shared mutable state
 import { runs, debugSessions, debugPollers, cronJobs } from './helpers/state';
@@ -56,7 +57,6 @@ import { registerSchedulesRoutes } from './routes/schedules.routes';
 import { registerLicenseRoutes } from './routes/license.routes';
 import { registerApiTestingRoutes } from './routes/api-testing.routes';
 import { registerDataFileRoutes } from './routes/data-file.routes';
-import { registerWorkflowGraphRoutes } from '../workflow-graph/routes/workflow-graph.routes';
 import { registerFlakinessRoutes } from '../api-flakiness/routes/api-flakiness.routes';
 import { registerApiDefectsRoutes } from '../api-defects/routes/api-defects.routes';
 import { registerApiSuiteRoutes } from '../api-suite/routes/api-suites.routes';
@@ -70,13 +70,10 @@ import { registerRemediationRoutes } from '../api-remediation/routes/remediation
 import { registerPerformanceRoutes } from '../api-performance/routes/performance.routes';
 import { registerOrchestrationRoutes } from '../api-orchestration/routes/orchestration.routes';
 import { registerSecurityRoutes } from '../api-security/routes/security.routes';
-import { registerGraphEditorRoutes } from '../api-graph-editor/routes/graph-editor.routes';
 import { registerCloudRoutes } from '../api-cloud/routes/cloud.routes';
 import { registerAnalyticsRoutes as registerEnterpriseAnalyticsRoutes } from '../api-analytics/routes/analytics.routes';
 // OLD: Plugin ecosystem removed — concluded no user value; replaced by native assertion operators + domain library
 // import { registerPluginRoutes } from '../api-plugins/routes/plugins.routes';
-import { registerCollaborationRoutes } from '../api-collaboration/routes/collaboration.routes';
-import { registerCopilotRoutes } from '../api-copilot/routes/copilot.routes';
 import { registerAutonomousRoutes } from '../api-autonomous/routes/autonomous.routes';
 import { registerFederationRoutes } from '../api-federation/routes/federation.routes';
 import { registerMeshRoutes } from '../api-mesh/routes/mesh.routes';
@@ -259,7 +256,6 @@ registerSchedulesRoutes(app);
 registerLicenseRoutes(app, sessionStore);
 registerApiTestingRoutes(app);
 registerDataFileRoutes(app);
-registerWorkflowGraphRoutes(app);
 registerFlakinessRoutes(app);
 registerApiDefectsRoutes(app);
 registerApiSuiteRoutes(app);
@@ -273,12 +269,9 @@ registerRemediationRoutes(app);
 registerPerformanceRoutes(app);
 registerOrchestrationRoutes(app);
 registerSecurityRoutes(app);
-registerGraphEditorRoutes(app);
 registerCloudRoutes(app);
 registerEnterpriseAnalyticsRoutes(app);
 // OLD: registerPluginRoutes(app); — plugin ecosystem deactivated
-registerCollaborationRoutes(app);
-registerCopilotRoutes(app);
 registerAutonomousRoutes(app);
 registerFederationRoutes(app);
 registerMeshRoutes(app);
@@ -394,6 +387,7 @@ server.listen(PORT, '0.0.0.0', async () => {
   }
 
   await seedDefaults();
+  ensureSystemRunnerKey();
 
   // Auto-Trial
   if (!getLicensePayload()) {

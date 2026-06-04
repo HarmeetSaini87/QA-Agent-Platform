@@ -4,25 +4,21 @@
 
 import {
   NoOpWebSocketOverlayChannel,
-  NoOpGraphVirtualizer,
   NoOpAdaptivePoller,
   NoOpCloudTelemetryEmitter,
   type IWebSocketOverlayChannel,
-  type IGraphVirtualizer,
   type IAdaptivePoller,
   type ICloudTelemetryEmitter,
 } from '../contracts/scalability-hooks.contracts';
 
 export interface ScalabilityExtensionRegistry {
   readonly wsOverlayChannel: IWebSocketOverlayChannel;
-  readonly graphVirtualizer: IGraphVirtualizer;
   readonly adaptivePoller: IAdaptivePoller;
   readonly cloudTelemetry: ICloudTelemetryEmitter;
 }
 
 export const globalScalabilityRegistry: ScalabilityExtensionRegistry = {
   wsOverlayChannel: new NoOpWebSocketOverlayChannel(),
-  graphVirtualizer: new NoOpGraphVirtualizer(),
   adaptivePoller: new NoOpAdaptivePoller(),
   cloudTelemetry: new NoOpCloudTelemetryEmitter(),
 };

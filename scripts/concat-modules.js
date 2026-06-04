@@ -34,13 +34,11 @@ const MANIFEST = [
   '23-api-envs.js',
   '24-api-collections.js',
   '25-api-runs.js',
+  '28-defect-modal.js',
   '26-api-flakiness.js',
   '27-api-suites.js',
   '29-worker-health.js',
   '31-api-plugins.js',
-  '32-api-graph-editor.js',
-  '33-api-collaboration.js',
-  '34-api-copilot.js',
   '35-api-performance.js',
 ];
 

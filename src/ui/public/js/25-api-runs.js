@@ -67,7 +67,7 @@ function _apiRunsRenderPagination(totalPages, total) {
   const rppOpts = [10, 25, 50, 100, 200].map(n =>
     `<option value="${n}"${_apiRunsPageSize === n ? ' selected' : ''}>${n}</option>`
   ).join('');
-  tfoot.innerHTML = `<tr><td colspan="9" style="padding:6px 4px">
+  tfoot.innerHTML = `<tr><td colspan="11" style="padding:6px 4px">
     <div class="lt-pagination">
       <label style="font-size:12px;color:var(--text-muted)">Rows per page:
         <select class="fm-input" style="padding:2px 6px;font-size:12px;width:auto"
@@ -134,7 +134,7 @@ function _apiRunsRenderList() {
 
   // Empty state
   if (pageRows.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--text-muted)">No runs match the current filters.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="11" style="text-align:center;padding:24px;color:var(--text-muted)">No runs match the current filters.</td></tr>`;
     _apiRunsRenderPagination(totalPages, filtered.length);
     return;
   }
@@ -182,20 +182,25 @@ function _apiRunsRenderList() {
       if (hasFlaky) flakyBadge = ' <span title="Contains flaky requests" style="font-size:10px;color:#f59e0b">⚡</span>';
     }
 
-    // Started (relative + full on hover)
-    const startedRel  = r.startedAt ? _apiRunsRelTime(r.startedAt) : '—';
-    const startedFull = r.startedAt ? new Date(r.startedAt).toLocaleString() : '';
+    // Start Time / End Time (formatted locale string)
+    const startTimeFmt = r.startedAt   ? new Date(r.startedAt).toLocaleString()   : '—';
+    const endTimeFmt   = r.completedAt ? new Date(r.completedAt).toLocaleString() : '—';
+
+    // Executed By
+    const executedBy = r.triggeredBy || r.executedBy || r.createdBy || '—';
 
     const dataFileBadge = r.dataFileName ? `<span title="Data file: ${_apiRunsEsc(r.dataFileName)}" style="font-size:10px;background:#6366f1;color:#fff;padding:1px 5px;border-radius:8px;margin-left:4px">📂 ${_apiRunsEsc(r.dataFileName)} (${r.iterationCount||0} rows)</span>` : '';
     return `<tr>
       <td style="text-align:center;color:var(--text-muted);font-size:12px">${sr}</td>
       <td style="font-weight:500">${_apiRunsEsc(colName)}${dataFileBadge}</td>
       <td style="color:var(--text-muted);font-size:12px">${_apiRunsEsc(envName)}</td>
-      <td title="${_apiRunsEsc(startedFull)}" style="font-size:12px;color:var(--text-muted)">${startedRel}</td>
+      <td style="font-size:12px;color:var(--text-muted);white-space:nowrap">${startTimeFmt}</td>
+      <td style="font-size:12px;color:var(--text-muted);white-space:nowrap">${endTimeFmt}</td>
       <td style="font-size:12px">${durStr}</td>
       <td style="text-align:center;font-size:12px">${stepsStr}</td>
       ${_apiRunsPassRateCell(passed, total)}
       <td style="text-align:center">${statusBadge}${flakyBadge}</td>
+      <td style="font-size:12px;color:var(--text-muted)">${_apiRunsEsc(executedBy)}</td>
       <td><button class="tbl-btn" data-run-id="${_apiRunsEsc(r.id)}">View</button></td>
     </tr>`;
   }).join('');
@@ -1093,65 +1098,20 @@ async function _apiRunsFetchStepDefect(stepId) {
   }
 }
 
-async function _apiRunsFileDefect(runId, stepId) {
-  var parentStoryKey = prompt('Enter parent story key (e.g. PROJ-123):');
-  if (!parentStoryKey || !/^[A-Z][A-Z0-9]*-\d+$/.test(parentStoryKey.trim())) {
-    if (parentStoryKey !== null) modAlert('api-runs-alert', 'error', 'Invalid story key format. Use ABC-123.');
-    return;
-  }
-
-  var draft;
-  try {
-    var draftRes = await fetch('/api/api-defects/draft', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ runId: runId, stepId: stepId }),
-    });
-    if (draftRes.status === 409) {
-      var d409 = await draftRes.json();
-      modAlert('api-runs-alert', 'info', 'Defect already filed: ' + (d409.error && d409.error.details ? d409.error.details.defectKey : 'existing'));
-      return;
-    }
-    if (!draftRes.ok) {
-      var derr = await draftRes.json();
-      throw new Error((derr.error && derr.error.message) || 'Draft failed');
-    }
-    draft = await draftRes.json();
-  } catch (e) {
-    modAlert('api-runs-alert', 'error', 'Draft error: ' + e.message);
-    return;
-  }
-
-  try {
-    var fileRes = await fetch('/api/api-defects/file', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        runId: runId,
-        stepId: stepId,
-        summary: draft.summary,
-        descriptionADF: draft.descriptionADF,
-        priority: draft.suggestedPriority,
-        parentStoryKey: parentStoryKey.trim(),
-      }),
-    });
-    if (fileRes.status === 409) {
-      var f409 = await fileRes.json();
-      modAlert('api-runs-alert', 'info', 'Defect already filed: ' + (f409.error && f409.error.details ? f409.error.details.defectKey : ''));
-      return;
-    }
-    if (!fileRes.ok) {
-      var ferr = await fileRes.json();
-      throw new Error((ferr.error && ferr.error.message) || 'File failed');
-    }
-    var result = await fileRes.json();
-    delete _apiRunsApiDefectCache[stepId];
-    modAlert('api-runs-alert', 'success', 'Defect filed: ' + result.defectKey);
-    var refEl = document.getElementById('jira-defect-ref-' + stepId);
-    if (refEl) refEl.innerHTML = '<span class="api-defect-pill">🔗 <a href="' + escHtml(result.jiraUrl) + '" target="_blank">' + escHtml(result.defectKey) + '</a></span>';
-  } catch (e) {
-    modAlert('api-runs-alert', 'error', 'File error: ' + e.message);
-  }
+// Thin wrapper — delegates to the shared defect modal in 28-defect-modal.js
+function _apiRunsFileDefect(runId, stepId) {
+  openDefectModal({
+    mode: 'api-step',
+    runId: runId,
+    contextId: stepId,
+    onSuccess: function (result) {
+      delete _apiRunsApiDefectCache[stepId];
+      var refEl = document.getElementById('jira-defect-ref-' + stepId);
+      if (refEl) refEl.innerHTML =
+        '<span class="api-defect-pill">🔗 <a href="' + escHtml(result.jiraUrl) + '" target="_blank">' +
+        escHtml(result.defectKey) + '</a></span>';
+    },
+  });
 }
 
 async function _apiRunsLoadJiraPanel(stepId) {

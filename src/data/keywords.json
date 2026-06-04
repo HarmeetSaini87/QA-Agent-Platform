@@ -564,11 +564,12 @@
         },
         {
           "key": "ASSERT VISUAL", "label": "Assert Visual", "needsLocator": true, "needsValue": false, "valueHint": "Threshold 0–100 (default 10 = 10% pixel diff tolerance)",
-          "helpLabel": "Captures a screenshot of the element and compares it to the stored baseline",
+          "helpLabel": "Captures a screenshot and compares it to the stored baseline — locator = element only; blank = full page",
+          "visualLocatorOptional": true,
           "tooltip": {
-            "what": "Captures a screenshot of the target element and compares it pixel-by-pixel against the approved baseline image. Fails if the visual difference exceeds the threshold.\n\nOn first run: captures the element and saves it as the baseline automatically.\nOn subsequent runs: diffs against the baseline and reports the % of changed pixels.",
-            "example": "Locator: #dashboard-chart  →  captures chart, compares to baseline\nLocator: .patient-card      →  detects layout or style regressions on the card",
-            "tip": "Leave value blank to use the default 10% threshold. Set a higher value (e.g. 20) for elements with dynamic content like timestamps. Approve or reset baselines from the Visual Baselines tab."
+            "what": "Captures a screenshot and compares it pixel-by-pixel against the approved baseline image using pixelmatch.\n\n📌 TWO MODES:\n• Locator filled → screenshots only that element (precise, component-level)\n• Locator blank → screenshots the entire visible viewport (full-page mode)\n\nOn first run: captures and saves as baseline automatically.\nOn subsequent runs: diffs against the baseline and reports % changed pixels.\n\n⚙ Tolerance is controlled by project-level VRT defaults (Admin → Edit Project). Use VRT Options below to override for this step only.",
+            "example": "Element mode:  Locator: #dashboard-chart  →  captures chart only\nFull-page mode: leave locator blank  →  captures full viewport\nMask dynamic content:  Mask Selectors: .timestamp, #live-counter",
+            "tip": "Use Mask Selectors to blank out timestamps, avatars, and live counters before comparison — these are the #1 cause of false failures in VRT."
           }
         },
         {

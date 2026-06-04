@@ -384,17 +384,17 @@ export function registerApiTestingRoutes(app: express.Application): void {
       const dataRows = getDataFileRows(dataFileId);
       if (!dataRows.length) { res.status(400).json({ error: 'Data file has no rows' }); return; }
 
-      runCollectionWithDataFile(col, env, runId, dataRows, dataFileId, dataFileMeta.name, stopOnFail)
+      runCollectionWithDataFile(col, env, runId, dataRows, dataFileId, dataFileMeta.name, stopOnFail, undefined, req.session.username ?? 'unknown')
         .then(r => execHealthComplete(runId, r.status === 'passed' ? 'passed' : 'failed', r.stepResults.filter(s => s.status === 'passed').length, r.stepResults.filter(s => s.status === 'failed').length, r.stepResults.length))
         .catch(() => execHealthComplete(runId, 'error', 0, 0, 0));
     } else if (USE_COORDINATOR) {
       // Phase C Track 1: route through ExecutionCoordinator when feature flag is set
       getCoordinatorBridge().dispatchRun(col, env, runId, (_cId, _eId, rId) =>
-        runCollection(col, env, rId)
+        runCollection(col, env, rId, undefined, req.session.username ?? 'unknown')
       );
     } else {
       // OLD: direct runCollection — preserved as default path
-      runCollection(col, env, runId)
+      runCollection(col, env, runId, undefined, req.session.username ?? 'unknown')
         .then(r => execHealthComplete(runId, r.status === 'passed' ? 'passed' : 'failed', r.stepResults.filter(s => s.status === 'passed').length, r.stepResults.filter(s => s.status === 'failed').length, r.stepResults.length))
         .catch(() => execHealthComplete(runId, 'error', 0, 0, 0));
     }

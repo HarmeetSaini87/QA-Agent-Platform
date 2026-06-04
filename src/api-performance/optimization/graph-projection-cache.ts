@@ -2,7 +2,8 @@
 // Phase E Step 1: TTL-based in-memory cache for GraphProjection results.
 // Wraps projection-service — projection semantics and WorkflowEnvelope authority unchanged.
 
-import type { GraphProjection } from '../../workflow-graph/contracts/graph.contracts';
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type GraphProjection = any;
 
 interface CacheEntry {
   readonly projection: GraphProjection;

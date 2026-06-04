@@ -165,6 +165,7 @@ export async function runCollection(
   environment: ApiEnvironment,
   runId: string,
   inheritedContext?: Record<string, string>,
+  triggeredBy?: string,
 ): Promise<ApiCollectionRunResult> {
   // Phase B Step 5: orchestration delegated to WorkflowEngine.
   // Phase B Step 10: this function = context init + engine wiring + Jira side-effect only.
@@ -203,7 +204,8 @@ export async function runCollection(
     },
   });
 
-  const result = await engine.execute(collection, environment, runId, initialContext);
+  const rawResult = await engine.execute(collection, environment, runId, initialContext);
+  const result: ApiCollectionRunResult = triggeredBy ? { ...rawResult, triggeredBy } : rawResult;
 
   // Phase B Step 8: final persist delegated to artifact-engine (masks sensitive headers/vars)
   // OLD: if (!fs.existsSync(RUNS_DIR)) fs.mkdirSync(...); fs.writeFileSync(...)
@@ -272,6 +274,7 @@ export async function runCollectionWithDataFile(
   dataFileName: string,
   stopOnFailure: boolean,
   inheritedContext?: Record<string, string>,
+  triggeredBy?: string,
 ): Promise<ApiCollectionRunResult> {
   const allStepResults: ApiStepResult[] = [];
   const iterationSummary: ApiCollectionRunResult['iterationSummary'] = [];
@@ -314,6 +317,7 @@ export async function runCollectionWithDataFile(
     id:               runId,
     collectionId:     collection.id,
     projectId:        collection.projectId ?? '',
+    ...(triggeredBy ? { triggeredBy } : {}),
     startedAt,
     completedAt:      new Date().toISOString(),
     status:           anyFailed ? 'failed' : 'passed',

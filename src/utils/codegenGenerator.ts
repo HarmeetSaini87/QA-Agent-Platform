@@ -16,6 +16,7 @@ import { TestScript, ScriptStep, Project, ProjectEnvironment, CommonFunction, Co
 import { readAll, COMMON_DATA, LOCATORS } from '../data/store';
 import { logger } from './logger';
 import { DOM_SCANNER_IIFE } from './healingEngine';
+import { getSystemRunnerKey } from './systemRunnerKey';
 
 // ── Stable per-test identifier: TID_<8-hex> ──────────────────────────────────
 // Deterministic: same suiteId + testName always yields the same testId.
@@ -1154,32 +1155,66 @@ function _generateStepCode(
       return locExpr ? line(`await expect(${locExpr}).toHaveCount(${val});`) : line(`// ASSERT COUNT: missing locator`);
 
     case 'ASSERT VISUAL': {
-      if (!locExpr) return line(`// ASSERT VISUAL: missing locator`);
-      const threshold = (step.value && !isNaN(parseFloat(step.value)))
-        ? parseFloat(step.value) / 100   // user enters 0–100, pixelmatch expects 0–1
-        : 0.1;
-      const locName = step.locator || 'element';
+      // Full-page mode when no locator provided; element mode when locator is set
+      const isFullPage = !locExpr;
+      const locName    = step.locator || 'full-page';
+      // Build step-level VRT options — merge Value field (threshold shorthand) with vrtOptions object
+      const vrtOpts    = { ...(step.vrtOptions ?? {}) } as Record<string, any>;
+      if (step.value && !isNaN(parseFloat(step.value))) {
+        vrtOpts.threshold = parseFloat(step.value) / 100; // user enters 0–100, pixelmatch expects 0–1
+      }
+      if (vrtOpts.maxDiffPixelRatio != null) vrtOpts.maxDiffPixelRatio = vrtOpts.maxDiffPixelRatio / 100;
+      const vrtOptsJson = JSON.stringify(vrtOpts);
+      // Mask selectors: blank out dynamic elements client-side before screenshotting
+      const maskSelectors: string[] = Array.isArray(vrtOpts.mask) ? vrtOpts.mask : [];
+      const maskCode = maskSelectors.length
+        ? `${indent}  // Mask dynamic elements before capture\n${indent}  for (const sel of ${JSON.stringify(maskSelectors)}) { try { await page.locator(sel).evaluateAll(els => els.forEach((e: any) => { e.style.visibility='hidden'; })); } catch {} }\n`
+        : '';
+      const unmaskCode = maskSelectors.length
+        ? `${indent}  // Restore masked elements\n${indent}  for (const sel of ${JSON.stringify(maskSelectors)}) { try { await page.locator(sel).evaluateAll(els => els.forEach((e: any) => { e.style.visibility=''; })); } catch {} }\n`
+        : '';
+      // Clip option for full-page mode
+      const clipObj = (!locExpr && vrtOpts.clip) ? `, clip: ${JSON.stringify(vrtOpts.clip)}` : '';
       return line(
         `{
-${indent}  // ASSERT VISUAL — capture and compare against stored baseline
-${indent}  await ${locExpr}.waitFor({ state: 'visible', timeout: 10000 });
-${indent}  const __vsBuffer = await ${locExpr}.screenshot({ type: 'png' });
-${indent}  const __vsPort = process.env.QA_SERVER_PORT || '3003';
+${indent}  // ASSERT VISUAL — ${isFullPage ? 'full-page viewport capture' : 'element capture'} — compare against stored baseline
+${indent}  ${isFullPage ? '' : `await ${locExpr}.waitFor({ state: 'visible', timeout: 10000 });`}
+${maskCode}${indent}  const __vsBuffer = await ${isFullPage ? `page.screenshot({ type: 'png', fullPage: false${clipObj} })` : `${locExpr}.screenshot({ type: 'png'${vrtOpts.omitBackground ? ', omitBackground: true' : ''} })`};
+${unmaskCode}${indent}  const __vsPort = process.env.QA_SERVER_PORT || '3003';
 ${indent}  const __vsResult = await fetch(\`http://localhost:\${__vsPort}/api/visual-baselines/compare\`, {
 ${indent}    method: 'POST',
-${indent}    headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.QA_INTERNAL_API_KEY || '' },
+${indent}    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ${getSystemRunnerKey() || ''}' },
 ${indent}    body: JSON.stringify({
 ${indent}      projectId:   '${project.id}',
 ${indent}      testName:    test.info().title,
 ${indent}      locatorName: ${JSON.stringify(locName)},
 ${indent}      imageBase64: __vsBuffer.toString('base64'),
-${indent}      threshold:   ${threshold},
+${indent}      vrtOptions:  ${vrtOptsJson},
+${indent}      browser:     __browser,
 ${indent}    }),
 ${indent}  }).then(r => r.json());
+${indent}  // Write sidecar JSON so run-spawner can attach image URLs to the TestEvent
+${indent}  try {
+${indent}    const __vsSafeTitle = test.info().title.replace(/[^a-z0-9]/gi, '-').slice(0, 60);
+${indent}    // OLD: const __vsSidecar = \`\${__SS_DIR}/visual-${step.order}-\${__vsSafeTitle}.json\`;
+    const __vsSidecar = \`\${__SS_DIR}/visual-${step.order}-\${__vsSafeTitle}-\${__browser}.json\`;
+${indent}    _fs.writeFileSync(__vsSidecar, JSON.stringify({
+${indent}      testTitle:    test.info().title,
+${indent}      browser:      __browser,
+${indent}      stepOrder:    ${step.order},
+${indent}      locatorName:  ${JSON.stringify(locName)},
+${indent}      baselineUrl:  __vsResult.baselineUrl  || null,
+${indent}      actualUrl:    __vsResult.actualUrl    || null,
+${indent}      diffUrl:      __vsResult.diffUrl      || null,
+${indent}      diffPct:      __vsResult.diffPct      ?? 0,
+${indent}      status:       __vsResult.status,
+${indent}    }));
+${indent}  } catch { /* non-fatal */ }
 ${indent}  if (__vsResult.status === 'new-baseline') {
 ${indent}    console.log('[VISUAL] New baseline captured for: ${locName}');
 ${indent}  } else if (__vsResult.status === 'fail') {
-${indent}    throw new Error(\`[VISUAL] ${locName}: \${__vsResult.message}\`);
+${indent}    // OLD: throw new Error(\`[VISUAL] ${locName}: \${__vsResult.message}\`);
+${indent}    __vrtFailures.push(\`Step ${step.order} (${locName}): \${__vsResult.diffPct}% pixels differ\`);
 ${indent}  } else {
 ${indent}    console.log(\`[VISUAL] OK — \${__vsResult.message}\`);
 ${indent}  }
@@ -1942,7 +1977,8 @@ export function generateCodegenSpec(input: CodegenInput): string {
   } as unknown as ScriptStep);
 
   // ── One test.describe per suite, one test() per script (or per data row) ─────
-  lines.push(`test.describe.serial('${suiteName.replace(/'/g, "\\'")}', () => {`);
+  // OLD: test.describe.serial — caused subsequent tests to be skipped on first failure
+  lines.push(`test.describe('${suiteName.replace(/'/g, "\\'")}', () => {`);
   lines.push(``);
 
   // ── Fast Mode: capture auth state once, reuse across all tests ───────────────
@@ -2164,6 +2200,8 @@ export function generateCodegenSpec(input: CodegenInput): string {
       lines.push(``);
       lines.push(`    // ── Console error collection ──────────────────────────────────────────────`);
       lines.push(`    const __qaConsoleErrors: string[] = [];`);
+      lines.push(`    // ── VRT soft-failure collector — all ASSERT VISUAL steps run even if one fails`);
+      lines.push(`    const __vrtFailures: string[] = [];`);
       lines.push(`    (page as any).__qaConsoleErrors = __qaConsoleErrors;`);
       lines.push(`    page.on('console', msg => { if (msg.type() === 'error') __qaConsoleErrors.push(\`[console.error] \${msg.text()}\`); });`);
       lines.push(`    page.on('pageerror', err => { __qaConsoleErrors.push(\`[JS exception] \${err.message}\`); });`);
@@ -2338,6 +2376,8 @@ export function generateCodegenSpec(input: CodegenInput): string {
         // OLD: closed __fastCtx here — caused afterEach fixture page to be blank + status mismatch for passing tests
         // context is now closed in afterEach after screenshot is taken
       }
+      lines.push(`    // VRT soft-fail: throw after all steps have run`);
+      lines.push(`    if (__vrtFailures.length) throw new Error('Visual regression failures:\\n' + __vrtFailures.join('\\n'));`);
       lines.push(`  });`);
       lines.push(``);
     }

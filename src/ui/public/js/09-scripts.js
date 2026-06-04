@@ -640,6 +640,7 @@ function scriptAddStep(step = {}, insertBeforeRow = null, _skipReorder = false) 
   const needsLoc = curKw ? curKw.needsLocator : true;
   const needsVal = curKw ? curKw.needsValue : false;
   const isAuto = curKw?.autoFromProject || false;
+  const isVisual = step.keyword === 'ASSERT VISUAL';
   const valHint = curKw?.valueHint || 'Value';
   const helpLbl = curKw?.helpLabel || '';
   const tipObj = curKw?.tooltip || null;
@@ -695,10 +696,17 @@ function scriptAddStep(step = {}, insertBeforeRow = null, _skipReorder = false) 
       <span class="auto-config-badge">&#x2699; Auto from Project Config — URL &amp; credentials fetched automatically</span>
     </div>
     <div class="step-row-fields">
+      ${isVisual ? `<div class="vrt-info-banner">
+        <span class="vrt-info-icon">&#9432;</span>
+        <span class="vrt-info-text"><strong>Visual Regression Mode:</strong>
+          <span class="vrt-mode-el">&#128270; <strong>Element</strong> — fill the locator below to screenshot only that element (precise, component-level)</span> &nbsp;|&nbsp;
+          <span class="vrt-mode-fp">&#128444; <strong>Full Page</strong> — leave locator blank to capture the entire visible viewport</span>
+        </span>
+      </div>` : ''}
       <div class="se-step-locator"${needsLoc && !isAuto ? '' : ' style="display:none"'}>
         <div class="field" style="margin:0 0 6px 0">
           <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px">
-            <label style="font-size:11px;margin:0">Locator Name</label>
+            <label style="font-size:11px;margin:0">Locator Name${isVisual ? ' <span style="font-size:10px;color:var(--g400);font-weight:400">(optional — blank = full page)</span>' : ''}</label>
             <span class="loc-repo-badge" style="display:none">From Repo</span>
             <button type="button" class="loc-unlock-btn" style="display:none" onclick="scriptStepUnlockLoc(this)" title="Unlock to edit manually">&#x270E; Edit</button>
           </div>
@@ -719,6 +727,73 @@ function scriptAddStep(step = {}, insertBeforeRow = null, _skipReorder = false) 
           </div>
         </div>
       </div>
+      ${isVisual ? `<div class="vrt-options-panel">
+        <button type="button" class="vrt-options-toggle" onclick="vrtTogglePanel(this)">
+          <span class="vrt-toggle-arrow">&#9654;</span> &#9881; VRT Options <span class="vrt-options-hint">— leave blank to use project defaults</span>
+        </button>
+        <div class="vrt-options-body" style="display:none">
+          <div class="vrt-options-grid">
+            <div class="vrt-field">
+              <label>Threshold (0–100)</label>
+              <input class="fm-input vrt-threshold" type="number" min="0" max="100" step="1"
+                     placeholder="e.g. 20" value="${escHtml(String(step.vrtOptions?.threshold != null ? Math.round((step.vrtOptions.threshold)*100) : ''))}"
+                     title="Color diff tolerance per pixel. 20 = allow 20% colour variance. Default: project setting." />
+            </div>
+            <div class="vrt-field">
+              <label>Max Diff Pixels</label>
+              <input class="fm-input vrt-maxDiffPixels" type="number" min="0" step="1"
+                     placeholder="e.g. 200" value="${escHtml(String(step.vrtOptions?.maxDiffPixels ?? ''))}"
+                     title="Hard cap on differing pixels. If set, overrides ratio check for this step." />
+            </div>
+            <div class="vrt-field">
+              <label>Max Diff Pixel Ratio (0–100%)</label>
+              <input class="fm-input vrt-maxDiffPixelRatio" type="number" min="0" max="100" step="1"
+                     placeholder="e.g. 5" value="${escHtml(String(step.vrtOptions?.maxDiffPixelRatio != null ? Math.round((step.vrtOptions.maxDiffPixelRatio)*100) : ''))}"
+                     title="Max % of total pixels allowed to differ. 5 = 5% of all pixels. Default: project setting." />
+            </div>
+            <div class="vrt-field">
+              <label>Animations</label>
+              <select class="fm-select vrt-animations" title="Freeze CSS animations before capture to prevent flaky diffs.">
+                <option value="" ${!step.vrtOptions?.animations ? 'selected' : ''}>Project default</option>
+                <option value="disabled" ${step.vrtOptions?.animations === 'disabled' ? 'selected' : ''}>Disabled (freeze)</option>
+                <option value="allow"    ${step.vrtOptions?.animations === 'allow'    ? 'selected' : ''}>Allow (live)</option>
+              </select>
+            </div>
+            <div class="vrt-field" style="grid-column:1/-1">
+              <label>Mask Selectors <span style="font-weight:400;color:var(--g400)">(comma-separated CSS selectors — blanked before comparison)</span></label>
+              <input class="fm-input vrt-mask" type="text"
+                     placeholder="e.g. .timestamp, #live-counter, .user-avatar"
+                     value="${escHtml((step.vrtOptions?.mask ?? []).join(', '))}"
+                     title="These elements are hidden before the screenshot is taken. Use for timestamps, avatars, live counters." />
+            </div>
+            <div class="vrt-field">
+              <label>Mask Color</label>
+              <div style="display:flex;gap:6px;align-items:center">
+                <input type="color" class="vrt-maskColor-picker" value="${escHtml(step.vrtOptions?.maskColor ?? '#FF00FF')}" style="width:36px;height:28px;border:none;padding:0;cursor:pointer" />
+                <input class="fm-input vrt-maskColor" type="text" style="font-family:monospace;font-size:12px"
+                       placeholder="#FF00FF" value="${escHtml(step.vrtOptions?.maskColor ?? '')}"
+                       title="CSS color used to paint over masked elements." />
+              </div>
+            </div>
+            <div class="vrt-field" style="display:flex;align-items:center;gap:8px;padding-top:18px">
+              <label style="margin:0">Omit Background</label>
+              <input type="checkbox" class="vrt-omitBackground" ${step.vrtOptions?.omitBackground ? 'checked' : ''}
+                     title="Transparent PNG — use for overlay components or elements without a solid background." />
+              <span style="font-size:10px;color:var(--g400)">Transparent PNG</span>
+            </div>
+          </div>
+          <div class="vrt-clip-row" style="${step.locator ? 'display:none' : ''}">
+            <label style="font-size:11px;display:block;margin-bottom:4px">Clip Region <span style="font-weight:400;color:var(--g400)">(full-page mode only — pixel coordinates)</span></label>
+            <div style="display:flex;gap:8px;align-items:center">
+              <span style="font-size:11px;color:var(--g500)">X</span><input class="fm-input vrt-clip-x" type="number" min="0" style="width:70px" placeholder="0" value="${step.vrtOptions?.clip?.x ?? ''}" />
+              <span style="font-size:11px;color:var(--g500)">Y</span><input class="fm-input vrt-clip-y" type="number" min="0" style="width:70px" placeholder="0" value="${step.vrtOptions?.clip?.y ?? ''}" />
+              <span style="font-size:11px;color:var(--g500)">W</span><input class="fm-input vrt-clip-w" type="number" min="1" style="width:70px" placeholder="1280" value="${step.vrtOptions?.clip?.width ?? ''}" />
+              <span style="font-size:11px;color:var(--g500)">H</span><input class="fm-input vrt-clip-h" type="number" min="1" style="width:70px" placeholder="720" value="${step.vrtOptions?.clip?.height ?? ''}" />
+              <span style="font-size:10px;color:var(--g400)">px</span>
+            </div>
+          </div>
+        </div>
+      </div>` : ''}
       <div class="se-step-value"${needsVal && !isAuto ? '' : ' style="display:none"'}>
         <div class="field" style="margin:0">
           <label style="font-size:11px">Value Source</label>
@@ -986,6 +1061,114 @@ function _seResolveLocName(row, name) {
     }).catch(() => { });
 }
 
+// ── VRT project defaults cache + loader ───────────────────────────────────
+let _vrtProjectCache = null;  // { projectId, config } — one entry, reset on project change
+
+async function _vrtLoadProjectDefaults(projectId) {
+  if (_vrtProjectCache && _vrtProjectCache.projectId === projectId) return _vrtProjectCache.config;
+  try {
+    const res = await fetch('/api/projects');
+    if (!res.ok) return null;
+    const list = await res.json();
+    const proj = list.find(p => p.id === projectId);
+    if (!proj) return null;
+    _vrtProjectCache = { projectId, config: proj.vrtConfig || {} };
+    return _vrtProjectCache.config;
+  } catch { return null; }
+}
+
+// Apply project VRT defaults as placeholders + dropdown hints on a VRT panel
+async function _vrtApplyProjectDefaults(panel, projectId) {
+  const cfg = await _vrtLoadProjectDefaults(projectId);
+  if (!cfg || !panel) return;
+
+  const numPlaceholder = (sel, val, unit = '') => {
+    const el = panel.querySelector(sel);
+    if (el) el.placeholder = val != null ? `${val}${unit} (project default)` : 'blank = disabled';
+  };
+  const dropdownDefault = (sel, val, labelMap) => {
+    const el = panel.querySelector(sel);
+    if (!el) return;
+    // Insert/update the "Project default" first option
+    let defOpt = el.querySelector('option[value=""]');
+    if (!defOpt) {
+      defOpt = document.createElement('option');
+      defOpt.value = '';
+      el.prepend(defOpt);
+    }
+    defOpt.textContent = `Project default — ${labelMap[val] || val}`;
+    // Only select it if no step-level value is already chosen
+    if (!el.dataset.stepValue) el.value = '';
+  };
+
+  const t  = cfg.threshold         != null ? Math.round(cfg.threshold * 100)         : 20;
+  const r  = cfg.maxDiffPixelRatio  != null ? Math.round(cfg.maxDiffPixelRatio * 100) : 5;
+  const mx = cfg.maxDiffPixels      != null ? cfg.maxDiffPixels                       : null;
+  const to = cfg.timeout            != null ? cfg.timeout                             : 5000;
+
+  numPlaceholder('.vrt-threshold',        t,  '');
+  numPlaceholder('.vrt-maxDiffPixelRatio', r,  '%');
+  numPlaceholder('.vrt-maxDiffPixels',    mx);
+  numPlaceholder('.vrt-timeout',          to, ' ms');
+
+  dropdownDefault('.vrt-animations', cfg.animations || 'disabled', { disabled: 'Disabled (freeze)', allow: 'Allow (live)' });
+  dropdownDefault('.vrt-scale',      cfg.scale      || 'css',      { css: 'CSS logical pixels',     device: 'Device HiDPI' });
+  dropdownDefault('.vrt-caret',      cfg.caret      || 'hide',     { hide: 'Hide cursor',           initial: 'Show cursor' });
+
+  // MaskColor — show picker row only when mask selectors has content
+  _vrtToggleMaskColor(panel);
+}
+
+function _vrtToggleMaskColor(panel) {
+  const maskInput = panel.querySelector('.vrt-mask');
+  const colorRow  = panel.querySelector('.vrt-maskcolor-row');
+  if (!maskInput || !colorRow) return;
+  const hasMask = maskInput.value.trim().length > 0;
+  colorRow.style.display = hasMask ? '' : 'none';
+}
+
+// ── VRT Options panel helpers ──────────────────────────────────────────────
+function vrtTogglePanel(btn) {
+  const body = btn.closest('.vrt-options-panel').querySelector('.vrt-options-body');
+  const arrow = btn.querySelector('.vrt-toggle-arrow');
+  const open = body.style.display === 'none';
+  body.style.display = open ? 'block' : 'none';
+  arrow.style.transform = open ? 'rotate(90deg)' : '';
+}
+
+function _seCollectVrtOptions(row) {
+  const panel = row.querySelector('.vrt-options-panel');
+  if (!panel) return undefined;
+  const get = (sel) => panel.querySelector(sel);
+  const numOrNull = (v) => { const n = parseFloat(v); return isNaN(n) ? null : n; };
+
+  const threshold        = numOrNull(get('.vrt-threshold')?.value);
+  const maxDiffPixels    = numOrNull(get('.vrt-maxDiffPixels')?.value);
+  const maxDiffPixelRatio = numOrNull(get('.vrt-maxDiffPixelRatio')?.value);
+  const animations       = get('.vrt-animations')?.value || null;
+  const maskRaw          = get('.vrt-mask')?.value?.trim() || '';
+  const mask             = maskRaw ? maskRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
+  const maskColor        = get('.vrt-maskColor')?.value?.trim() || null;
+  const omitBackground   = get('.vrt-omitBackground')?.checked || false;
+  const cx = numOrNull(get('.vrt-clip-x')?.value);
+  const cy = numOrNull(get('.vrt-clip-y')?.value);
+  const cw = numOrNull(get('.vrt-clip-w')?.value);
+  const ch = numOrNull(get('.vrt-clip-h')?.value);
+  const clip = (cx != null && cy != null && cw != null && ch != null)
+    ? { x: cx, y: cy, width: cw, height: ch } : null;
+
+  const opts = {};
+  if (threshold != null)        opts.threshold        = threshold / 100;
+  if (maxDiffPixels != null)    opts.maxDiffPixels    = maxDiffPixels;
+  if (maxDiffPixelRatio != null) opts.maxDiffPixelRatio = maxDiffPixelRatio / 100;
+  if (animations)               opts.animations       = animations;
+  if (mask.length)              opts.mask             = mask;
+  if (maskColor)                opts.maskColor        = maskColor;
+  if (omitBackground)           opts.omitBackground   = true;
+  if (clip)                     opts.clip             = clip;
+  return Object.keys(opts).length ? opts : undefined;
+}
+
 function scriptStepKwChange(sel) {
   const row = sel.closest('.script-step-row');
   const opt = sel.selectedOptions[0];
@@ -1046,6 +1229,90 @@ function scriptStepKwChange(sel) {
 
   const si = row.querySelector('.se-step-val-static');
   if (si) si.placeholder = hint;
+
+  // ── VRT info banner + options panel — inject/remove on keyword change ──
+  const isVisualKw = kwKey === 'ASSERT VISUAL';
+  // Info banner
+  let vrtBanner = row.querySelector('.vrt-info-banner');
+  if (isVisualKw && !vrtBanner) {
+    vrtBanner = document.createElement('div');
+    vrtBanner.className = 'vrt-info-banner';
+    vrtBanner.innerHTML = '<span class="vrt-info-icon">&#9432;</span>'
+      + '<span class="vrt-info-text"><strong>Visual Regression Mode:</strong>'
+      + ' <span class="vrt-mode-el">&#128270; <strong>Element</strong> — fill the locator to screenshot only that element</span>'
+      + ' &nbsp;|&nbsp; <span class="vrt-mode-fp">&#128444; <strong>Full Page</strong> — leave locator blank to capture the entire viewport</span>'
+      + '</span>';
+    const locDiv = row.querySelector('.se-step-locator');
+    if (locDiv) locDiv.before(vrtBanner);
+  } else if (!isVisualKw && vrtBanner) {
+    vrtBanner.remove();
+  }
+  // Locator label optional hint
+  const locLabel = row.querySelector('.se-step-locator label');
+  if (locLabel) {
+    let optSpan = locLabel.querySelector('.vrt-loc-optional');
+    if (isVisualKw && !optSpan) {
+      optSpan = document.createElement('span');
+      optSpan.className = 'vrt-loc-optional';
+      optSpan.style.cssText = 'font-size:10px;color:var(--g400);font-weight:400';
+      optSpan.textContent = ' (optional — blank = full page)';
+      locLabel.appendChild(optSpan);
+    } else if (!isVisualKw && optSpan) {
+      optSpan.remove();
+    }
+  }
+  // VRT Options panel
+  let vrtPanel = row.querySelector('.vrt-options-panel');
+  if (isVisualKw && !vrtPanel) {
+    vrtPanel = document.createElement('div');
+    vrtPanel.className = 'vrt-options-panel';
+    vrtPanel.innerHTML = '<button type="button" class="vrt-options-toggle" onclick="vrtTogglePanel(this)">'
+      + '<span class="vrt-toggle-arrow">&#9654;</span> &#9881; VRT Options'
+      + ' <span class="vrt-options-hint">— leave blank to use project defaults</span></button>'
+      + '<div class="vrt-options-body" style="display:none">'
+      + '<div class="vrt-options-grid">'
+      + '<div class="vrt-field"><label>Threshold (0–100)</label><input class="fm-input vrt-threshold" type="number" min="0" max="100" step="1" title="Color diff tolerance per pixel. 20 = allow 20% colour variance." /></div>'
+      + '<div class="vrt-field"><label>Max Diff Pixels</label><input class="fm-input vrt-maxDiffPixels" type="number" min="0" step="1" title="Hard cap on differing pixels. Blank = no pixel cap." /></div>'
+      + '<div class="vrt-field"><label>Max Diff Pixel Ratio (0–100%)</label><input class="fm-input vrt-maxDiffPixelRatio" type="number" min="0" max="100" step="1" title="Max % of total pixels allowed to differ." /></div>'
+      + '<div class="vrt-field"><label>Animations</label><select class="fm-select vrt-animations"><option value="">Loading project default…</option><option value="disabled">Disabled (freeze)</option><option value="allow">Allow (live)</option></select></div>'
+      + '<div class="vrt-field"><label>Scale</label><select class="fm-select vrt-scale"><option value="">Loading project default…</option><option value="css">CSS (device-independent)</option><option value="device">Device (physical pixels)</option></select></div>'
+      + '<div class="vrt-field"><label>Caret</label><select class="fm-select vrt-caret"><option value="">Loading project default…</option><option value="hide">Hide</option><option value="initial">Initial</option></select></div>'
+      + '<div class="vrt-field" style="grid-column:1/-1"><label>Mask Selectors <span style="font-weight:400;color:var(--g400)">(comma-separated CSS — blanked before comparison)</span></label>'
+      + '<input class="fm-input vrt-mask" type="text" placeholder="e.g. .timestamp, #live-counter, .user-avatar" title="Elements hidden before screenshot — use for timestamps, avatars, live counters."'
+      + ' oninput="_vrtToggleMaskColor(this.closest(\'.vrt-options-panel\'))" /></div>'
+      + '<div class="vrt-maskcolor-row" style="display:none"><div class="vrt-field"><label>Mask Color</label><div style="display:flex;gap:6px;align-items:center">'
+      + '<input type="color" class="vrt-maskColor-picker" value="#FF00FF" style="width:36px;height:28px;border:none;padding:0;cursor:pointer" oninput="this.nextElementSibling.value=this.value" />'
+      + '<input class="fm-input vrt-maskColor" type="text" style="font-family:monospace;font-size:12px" placeholder="#FF00FF" oninput="this.previousElementSibling.value=this.value" /></div></div></div>'
+      + '<div class="vrt-field" style="display:flex;align-items:center;gap:8px;padding-top:18px"><label style="margin:0">Omit Background</label>'
+      + '<input type="checkbox" class="vrt-omitBackground" title="Transparent PNG for overlay components." />'
+      + '<span style="font-size:10px;color:var(--g400)">Transparent PNG</span></div>'
+      + '</div>'
+      + '<div class="vrt-clip-row" style="display:none"><label style="font-size:11px;display:block;margin-bottom:4px">Clip Region <span style="font-weight:400;color:var(--g400)">(full-page mode only)</span></label>'
+      + '<div style="display:flex;gap:8px;align-items:center">'
+      + '<span style="font-size:11px;color:var(--g500)">X</span><input class="fm-input vrt-clip-x" type="number" min="0" style="width:70px" placeholder="0" />'
+      + '<span style="font-size:11px;color:var(--g500)">Y</span><input class="fm-input vrt-clip-y" type="number" min="0" style="width:70px" placeholder="0" />'
+      + '<span style="font-size:11px;color:var(--g500)">W</span><input class="fm-input vrt-clip-w" type="number" min="1" style="width:70px" placeholder="1280" />'
+      + '<span style="font-size:11px;color:var(--g500)">H</span><input class="fm-input vrt-clip-h" type="number" min="1" style="width:70px" placeholder="720" />'
+      + '<span style="font-size:10px;color:var(--g400)">px</span></div></div>'
+      + '</div>';
+    const valDiv = row.querySelector('.se-step-value');
+    if (valDiv) valDiv.before(vrtPanel);
+    // Load project-specific defaults as placeholders — isolated per project via currentProjectId global
+    _vrtApplyProjectDefaults(vrtPanel, currentProjectId);
+  } else if (!isVisualKw && vrtPanel) {
+    vrtPanel.remove();
+  }
+  // Show/hide clip row based on whether locator is filled
+  if (isVisualKw) {
+    const locInput = row.querySelector('.se-step-selector');
+    const clipRow = row.querySelector('.vrt-clip-row');
+    if (locInput && clipRow) {
+      locInput.addEventListener('input', () => {
+        clipRow.style.display = locInput.value.trim() ? 'none' : '';
+      }, { once: false });
+      clipRow.style.display = locInput.value.trim() ? 'none' : '';
+    }
+  }
 }
 
 function _populateFnSelect(row) {
@@ -1921,6 +2188,7 @@ async function scriptSave() {
         : (storeAs ? (badge?.dataset.storeScope || 'session') : undefined),
       storeSource: isSetVar ? storeSource : undefined,
       storeAttrName: storeAttr || undefined,
+      vrtOptions: kw === 'ASSERT VISUAL' ? _seCollectVrtOptions(row) : undefined,
     };
   });
 

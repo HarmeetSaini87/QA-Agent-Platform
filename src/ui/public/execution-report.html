@@ -644,16 +644,16 @@
     .defect-btn-file:hover { background: #fde68a; }
     .defect-btn-open   { background: #fee2e2; color: #7f1d1d; }
     .defect-btn-closed { background: #d1fae5; color: #065f46; }
-    /* ── Slider Overlay ── */
-    .vr-slider-wrap{position:relative;overflow:hidden;cursor:ew-resize;user-select:none;outline:2px solid transparent}
-    .vr-slider-wrap:focus{outline:2px solid #4f46e5}
-    .vr-slider-wrap img.vs-actual{display:block;width:100%;object-fit:contain;background:#111}
-    .vr-slider-wrap img.vs-baseline{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;clip-path:inset(0 50% 0 0)}
-    .vs-divider{position:absolute;top:0;bottom:0;left:50%;width:2px;background:rgba(255,255,255,.88);transform:translateX(-50%);pointer-events:none}
-    .vs-knob{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:28px;height:28px;border-radius:50%;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;font-size:13px;pointer-events:none}
-    .vs-lbl{position:absolute;top:6px;background:rgba(0,0,0,.72);color:#fff;font-size:10px;padding:2px 7px;border-radius:3px;pointer-events:none;font-weight:600}
-    .vs-lbl-l{left:8px}.vs-lbl-r{right:8px}
-    .vs-pct{position:absolute;bottom:6px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.72);color:#fff;font-size:10px;padding:2px 7px;border-radius:3px;white-space:nowrap;pointer-events:none}
+    /* ── Multi-Mode Viewer ── */
+    .vr-viewer{background:#111;display:block}
+    .vr-mb{padding:3px 10px;border:none;border-radius:5px;font-size:10px;font-weight:700;cursor:pointer;background:rgba(255,255,255,.08);color:#94a3b8;transition:all .15s}
+    .vr-mb.vr-mb-on{background:#334155;color:#f1f5f9}
+    .vr-sl{position:relative;overflow:hidden;cursor:ew-resize;user-select:none}
+    .vr-sl-a{display:block;width:100%;object-fit:contain;background:#111}
+    .vr-sl-b{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;clip-path:inset(0 50% 0 0)}
+    .vr-sl-d{position:absolute;top:0;bottom:0;left:50%;width:2px;transform:translateX(-50%);pointer-events:none;background:rgba(255,255,255,.85);transition:background .1s,box-shadow .1s}
+    .vr-sl-k{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:28px;height:28px;border-radius:50%;background:#fff;color:#333;box-shadow:0 2px 8px rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;font-size:13px;pointer-events:none;transition:background .15s,box-shadow .15s}
+    .vr-sl-t{display:none;position:absolute;top:8px;transform:translateX(-50%);background:#fff;border:1px solid #e2e8f0;color:#111;font-size:10px;padding:3px 9px;border-radius:6px;white-space:nowrap;pointer-events:none;font-weight:700;z-index:4;box-shadow:0 2px 8px rgba(0,0,0,.4)}
     .diff-strip.has-slider{grid-template-columns:2fr 1fr!important}
   </style>
   <script src="js/28-defect-modal.js"></script>
@@ -1146,18 +1146,52 @@ function buildDetailPanel(t, i, status, traceMode, runId) {
             <span>&#128269; Step ${vr.stepOrder} — ${esc(vr.locatorName || 'full-page')}</span>
             ${statusBadge} ${diffPct}
           </div>
-          <div class="diff-strip panels-${panelCount} ${hasBefore && hasAfter ? 'has-slider' : ''}">
+          <div class="diff-strip ${hasBefore && hasAfter ? 'has-slider panels-2' : 'panels-'+panelCount}">
             ${(hasBefore && hasAfter) ? `
               <div class="diff-col">
                 <div class="diff-tag before">&#128247; Baseline vs Actual — drag to compare</div>
-                <div class="vr-slider-wrap" tabindex="0" role="slider" aria-label="Baseline vs Actual comparison slider" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50">
-                  <img class="vs-actual"   src="${afterSrc}"  alt="Actual"   loading="lazy" onerror="this.style.opacity='.2'">
-                  <img class="vs-baseline" src="${beforeSrc}" alt="Baseline" loading="lazy" onerror="this.style.opacity='.2'">
-                  <div class="vs-divider"></div>
-                  <div class="vs-knob">⟺</div>
-                  <span class="vs-lbl vs-lbl-l">Baseline</span>
-                  <span class="vs-lbl vs-lbl-r">Actual</span>
-                  <span class="vs-pct">50%</span>
+                <div class="vr-viewer" data-diff="${hasDiff ? diffSrc : ''}">
+                  <div style="display:flex;gap:4px;padding:5px 6px;background:#0d0d0d;border-bottom:1px solid #1e1e1e">
+                    <button class="vr-mb vr-mb-on" data-mode="slider">⟺ Slider</button>
+                    <button class="vr-mb" data-mode="onion">👁 Onion</button>
+                    <button class="vr-mb" data-mode="blink">💡 Blink</button>
+                  </div>
+                  <div class="vr-m vr-m-slider">
+                    <div class="vr-sl">
+                      <img class="vr-sl-a" src="${afterSrc}"  alt="Actual"   loading="lazy" onerror="this.style.opacity='.2'">
+                      <img class="vr-sl-b" src="${beforeSrc}" alt="Baseline" loading="lazy" onerror="this.style.opacity='.2'">
+                      <div class="vr-sl-d"></div>
+                      <div class="vr-sl-k">⟺</div>
+                      <div class="vr-sl-t"></div>
+                      <span style="position:absolute;bottom:0;left:0;right:0;display:flex;justify-content:space-between;pointer-events:none;padding:0 4px 2px">
+                        <span style="background:rgba(0,0,0,.55);color:rgba(255,255,255,.80);font-size:8px;padding:0 4px;border-radius:2px;font-weight:600;letter-spacing:.03em">B</span>
+                        <span style="background:rgba(0,0,0,.55);color:rgba(255,255,255,.80);font-size:8px;padding:0 4px;border-radius:2px;font-weight:600;letter-spacing:.03em">A</span>
+                      </span>
+                    </div>
+                    ${hasDiff ? `<div style="height:4px;background:#0a0a0a;position:relative;overflow:hidden"><canvas class="vr-ht-c" height="4" style="display:block;width:100%;height:4px"></canvas><div class="vr-ht-n" style="position:absolute;top:0;bottom:0;width:2px;background:#fff;opacity:.5;transform:translateX(-50%);left:50%;pointer-events:none"></div></div>` : ''}
+                  </div>
+                  <div class="vr-m vr-m-onion" style="display:none">
+                    <div style="position:relative;overflow:hidden">
+                      <img src="${afterSrc}"  draggable="false" style="display:block;width:100%;object-fit:contain;background:#111">
+                      <img class="vr-onion-bl" src="${beforeSrc}" draggable="false" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;opacity:.5">
+                    </div>
+                    <div style="display:flex;align-items:center;gap:8px;padding:5px 8px;background:#0d0d0d;border-top:1px solid #1e1e1e">
+                      <span style="font-size:10px;color:#555;white-space:nowrap">Baseline</span>
+                      <input type="range" class="vr-onion-r" min="0" max="100" value="50" style="flex:1;accent-color:#059669;height:3px;cursor:pointer">
+                      <span class="vr-onion-p" style="font-size:10px;color:#6ee7b7;font-weight:700;min-width:28px;text-align:right">50%</span>
+                    </div>
+                  </div>
+                  <div class="vr-m vr-m-blink" style="display:none">
+                    <div style="position:relative;overflow:hidden">
+                      <img class="vr-blink-a" src="${afterSrc}"  draggable="false" style="display:block;width:100%;object-fit:contain;background:#111">
+                      <img class="vr-blink-b" src="${beforeSrc}" draggable="false" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;opacity:0;transition:opacity 0s">
+                      <span class="vr-blink-lbl" style="position:absolute;bottom:2px;right:4px;background:rgba(0,0,0,.55);color:rgba(255,255,255,.80);font-size:8px;padding:0 4px;border-radius:2px;font-weight:600;pointer-events:none">A</span>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:8px;padding:5px 8px;background:#0d0d0d;border-top:1px solid #1e1e1e">
+                      <button class="vr-blink-btn" style="padding:3px 12px;background:#d9770622;color:#fbbf24;border:1px solid #d9770644;border-radius:5px;font-size:10px;font-weight:700;cursor:pointer">▶ Blink</button>
+                      <span style="font-size:10px;color:#555">Alternates baseline ↔ actual — eye catches the change</span>
+                    </div>
+                  </div>
                 </div>
               </div>` : `
               ${hasBefore ? `<div class="diff-col"><div class="diff-tag before">&#128247; Baseline (Approved)</div>
@@ -1656,46 +1690,112 @@ document.addEventListener('keydown', function(e) {
   }
 }
 
-  // ── Slider Overlay ────────────────────────────────────────────────────────
+  // ── Multi-Mode Viewer ──────────────────────────────────────────────────────
   function vsInit(el) {
-    var baseline = el.querySelector('.vs-baseline');
-    var divider  = el.querySelector('.vs-divider');
-    var knob     = el.querySelector('.vs-knob');
-    var pctEl    = el.querySelector('.vs-pct');
-    if (!baseline || !divider || !knob) return;
-    var dragging = false;
-    function setPos(pct) {
-      pct = Math.max(0, Math.min(100, pct));
-      baseline.style.clipPath = 'inset(0 ' + (100-pct) + '% 0 0)';
-      divider.style.left = knob.style.left = pct + '%';
-      el.setAttribute('aria-valuenow', Math.round(pct));
-      if (pctEl) { pctEl.style.left = pct + '%'; pctEl.textContent = Math.round(pct) + '%'; }
+    if (el.dataset.vsReady) return;
+    el.dataset.vsReady = '1';
+    var diffUrl = el.dataset.diff || '';
+    var mBtns   = el.querySelectorAll('.vr-mb');
+    var mPanels = el.querySelectorAll('.vr-m');
+    var blinkTimer = null;
+
+    function applyMb(btn, on) { btn.classList.toggle('vr-mb-on', on); }
+    function switchMode(m) {
+      if (blinkTimer && m !== 'blink') stopBlink();
+      mBtns.forEach(function(b){ applyMb(b, b.dataset.mode===m); });
+      mPanels.forEach(function(p){ p.style.display = p.classList.contains('vr-m-'+m)?'':'none'; });
     }
-    function fromE(e) {
-      var rect = el.getBoundingClientRect();
-      var cx = e.touches ? e.touches[0].clientX : e.clientX;
-      return Math.max(0, Math.min(100, ((cx - rect.left) / rect.width) * 100));
+    mBtns.forEach(function(b){ b.addEventListener('click', function(e){ e.stopPropagation(); switchMode(b.dataset.mode); }); });
+
+    var slFrame  = el.querySelector('.vr-sl');
+    var slBase   = el.querySelector('.vr-sl-b');
+    var slDiv    = el.querySelector('.vr-sl-d');
+    var slKnob   = el.querySelector('.vr-sl-k');
+    var slTip    = el.querySelector('.vr-sl-t');
+    var htNeedle = el.querySelector('.vr-ht-n');
+    var zones=[], dragging=false;
+
+    function inDiff(p){ return zones.some(function(z){return p>=z.s&&p<=z.e;}); }
+    function setSlPos(pct) {
+      pct=Math.max(0,Math.min(100,pct));
+      slBase.style.clipPath='inset(0 '+(100-pct)+'% 0 0)';
+      slDiv.style.left=slKnob.style.left=pct+'%';
+      if(htNeedle) htNeedle.style.left=pct+'%';
+      var hot=inDiff(pct);
+      slDiv.style.background   = hot?'#ef4444':'rgba(255,255,255,.85)';
+      slDiv.style.boxShadow    = hot?'0 0 12px 4px rgba(239,68,68,.65)':'';
+      slKnob.style.background  = hot?'#ef4444':'#fff';
+      slKnob.style.color       = hot?'#fff':'#333';
+      slKnob.style.boxShadow   = hot?'0 0 16px 5px rgba(239,68,68,.55)':'0 2px 8px rgba(0,0,0,.6)';
+      slKnob.textContent       = hot?'⚡':'⟺';
+      if(slTip){
+        slTip.style.left=pct+'%';
+        slTip.style.display=(dragging&&zones.length)?'block':'none';
+        slTip.textContent=hot?'⚡ Diff here!':'Baseline · '+Math.round(pct)+'%';
+        slTip.style.background  = hot?'#dc2626':'#fff';
+        slTip.style.borderColor = hot?'#ef4444':'#e2e8f0';
+        slTip.style.color       = hot?'#fff':'#111';
+      }
     }
-    function curPct() { var m = baseline.style.clipPath.match(/inset\(0 ([\d.]+)% 0 0\)/); return m ? 100-parseFloat(m[1]) : 50; }
-    function onMouseMove(e) { if (dragging) setPos(fromE(e)); }
-    function onMouseUp()    { dragging = false; document.removeEventListener('mousemove', onMouseMove); document.removeEventListener('mouseup', onMouseUp); }
-    function onTouchMove(e) { if (dragging) { setPos(fromE(e)); e.preventDefault(); } }
-    function onTouchEnd()   { dragging = false; document.removeEventListener('touchmove', onTouchMove); document.removeEventListener('touchend', onTouchEnd); }
-    el.addEventListener('mousedown', function(e){dragging=true;setPos(fromE(e));e.preventDefault();document.addEventListener('mousemove',onMouseMove);document.addEventListener('mouseup',onMouseUp);});
-    el.addEventListener('touchstart', function(e){dragging=true;setPos(fromE(e));e.preventDefault();document.addEventListener('touchmove',onTouchMove,{passive:false});document.addEventListener('touchend',onTouchEnd);},{passive:false});
-    el.addEventListener('keydown', function(e){
-      if(e.key==='ArrowLeft'){setPos(curPct()-1);e.preventDefault();}
-      if(e.key==='ArrowRight'){setPos(curPct()+1);e.preventDefault();}
-      if(e.key==='Home'){setPos(0);e.preventDefault();}
-      if(e.key==='End'){setPos(100);e.preventDefault();}
-    });
-    setPos(50);
+    function fromE(e){ var r=slFrame.getBoundingClientRect(),cx=e.touches?e.touches[0].clientX:e.clientX; return((cx-r.left)/r.width)*100; }
+    function onMove(e){ if(dragging) setSlPos(fromE(e)); }
+    function onUp(){ dragging=false; if(slTip) slTip.style.display='none'; document.removeEventListener('mousemove',onMove); document.removeEventListener('mouseup',onUp); }
+    if(slFrame){
+      slFrame.addEventListener('mousedown',function(e){dragging=true;setSlPos(fromE(e));document.addEventListener('mousemove',onMove);document.addEventListener('mouseup',onUp);e.preventDefault();});
+      slFrame.addEventListener('touchstart',function(e){dragging=true;setSlPos(fromE(e));e.preventDefault();},{passive:false});
+      slFrame.addEventListener('touchmove', function(e){if(dragging)setSlPos(fromE(e));e.preventDefault();},{passive:false});
+      slFrame.addEventListener('touchend',  function(){dragging=false;if(slTip)slTip.style.display='none';});
+    }
+    setSlPos(50);
+
+    if(diffUrl){
+      var dimg=new Image();
+      dimg.onload=function(){
+        try{
+          var W=dimg.naturalWidth,H=dimg.naturalHeight; if(!W||!H) return;
+          var cv=document.createElement('canvas'); cv.width=W; cv.height=H;
+          var ctx=cv.getContext('2d'); ctx.drawImage(dimg,0,0);
+          var px=ctx.getImageData(0,0,W,H).data, cols=new Float32Array(W);
+          for(var y=0;y<H;y++) for(var x=0;x<W;x++){var i=(y*W+x)*4; if(px[i]>180&&px[i+1]<80&&px[i+2]<80) cols[x]++;}
+          var THRESH=Math.max(1,H*0.005),found=[],inZ=false,zS=0;
+          for(var x=0;x<W;x++){
+            if(!inZ&&cols[x]>THRESH){inZ=true;zS=x;}
+            if(inZ&&cols[x]<=THRESH){inZ=false;var pad=W*0.02;found.push({s:Math.max(0,(zS-pad)/W*100),e:Math.min(100,(x+pad)/W*100)});}
+          }
+          if(inZ) found.push({s:Math.max(0,(zS-W*0.02)/W*100),e:100});
+          if(found.length){zones=found;drawHeatCols(el,cols,W);}
+        }catch(e){}
+      };
+      dimg.src=diffUrl;
+    }
+
+    function drawHeatCols(viewer,cols,W){
+      var canvas=viewer.querySelector('.vr-ht-c'); if(!canvas) return;
+      canvas.width=Math.round((canvas.offsetWidth||300)*(window.devicePixelRatio||1));
+      var ctx=canvas.getContext('2d'),cw=canvas.width,maxV=0;
+      for(var i=0;i<cols.length;i++) if(cols[i]>maxV) maxV=cols[i];
+      for(var x=0;x<cw;x++){var v=maxV>0?cols[Math.floor((x/cw)*W)]/maxV:0;ctx.fillStyle=v>0.01?'rgba(239,68,68,'+(0.25+v*0.75).toFixed(2)+')':'#0a0a0a';ctx.fillRect(x,0,1,4);}
+    }
+
+    var onionBl=el.querySelector('.vr-onion-bl'),onionR=el.querySelector('.vr-onion-r'),onionP=el.querySelector('.vr-onion-p');
+    if(onionR) onionR.addEventListener('input',function(){if(onionBl)onionBl.style.opacity=this.value/100;if(onionP)onionP.textContent=this.value+'%';});
+
+    var blinkBtn=el.querySelector('.vr-blink-btn'),blinkA=el.querySelector('.vr-blink-a'),blinkB=el.querySelector('.vr-blink-b'),blinkLbl=el.querySelector('.vr-blink-lbl'),blinkState=false;
+    // use opacity toggle — keeps container height stable (blinkA always in flow)
+    function stopBlink(){if(!blinkTimer)return;clearInterval(blinkTimer);blinkTimer=null;if(blinkBtn){blinkBtn.textContent='▶ Blink';blinkBtn.style.background='#d9770622';blinkBtn.style.color='#fbbf24';}if(blinkA)blinkA.style.opacity='1';if(blinkB)blinkB.style.opacity='0';if(blinkLbl)blinkLbl.textContent='A';blinkState=false;}
+    if(blinkBtn) blinkBtn.addEventListener('click',function(e){e.stopPropagation();if(blinkTimer){stopBlink();return;}blinkBtn.textContent='⏹ Stop';blinkBtn.style.background='#d97706';blinkBtn.style.color='#fff';blinkTimer=setInterval(function(){blinkState=!blinkState;if(blinkA)blinkA.style.opacity=blinkState?'0':'1';if(blinkB)blinkB.style.opacity=blinkState?'1':'0';if(blinkLbl)blinkLbl.textContent=blinkState?'B':'A';},400);});
+
   }
   function initSliders(root) {
-    (root||document).querySelectorAll('.vr-slider-wrap:not([data-vs-ready])').forEach(function(el){
-      el.dataset.vsReady = '1';
-      vsInit(el);
-    });
+    (root||document).querySelectorAll('.vr-viewer:not([data-vs-ready])').forEach(function(el){ vsInit(el); });
+  }
+  function vsDiffToggle(btn) {
+    var overlay = btn.closest('.vr-slider-wrap').querySelector('.vs-diff');
+    if (!overlay) return;
+    var isOn = overlay.style.opacity !== '0';
+    overlay.style.opacity = isOn ? '0' : '0.55';
+    btn.innerHTML = isOn ? '&#9889; DIFF OFF' : '&#9889; DIFF ON';
+    btn.style.background = isOn ? 'rgba(80,80,80,.75)' : 'rgba(220,38,38,.85)';
   }
 </script>
 <script>
