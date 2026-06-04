@@ -1,6 +1,7 @@
 import express, { Request, Response } from 'express';
 import * as fs from 'fs';
 import * as path from 'path';
+import { classifyDiff, enhanceWithAi } from '../../utils/vrtAiAnalyser';
 import { v4 as uuidv4 } from 'uuid';
 import { config } from '../../framework/config';
 import { logger } from '../../utils/logger';
@@ -198,5 +199,46 @@ export function registerVisualRoutes(app: express.Application): void {
     cp.spawn('npx', ['playwright', 'test', relSpec, '--project=chromium', '--reporter=list'], { cwd: path.resolve('.'), shell: true, env: { ...process.env, HEADLESS: 'true', APP_BASE_URL: url }, stdio: 'ignore' });
     logger.info(`[prescan-trigger] scanId=${scanId} url=${url} pageKey=${pk}`);
     res.json({ scanId, pageKey: pk });
+  });
+
+  // POST /api/visual-baselines/:id/ai-analysis
+  app.post('/api/visual-baselines/:id/ai-analysis', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const { enhance = false, runContext } = req.body;
+
+      if (!runContext) {
+        return res.status(400).json({ error: 'runContext is required' });
+      }
+
+      // Load baseline to get ignore regions (merge into runContext)
+      const baseline = getBaseline(id);
+
+      const ctx = {
+        ...runContext,
+        ignoreRegions: baseline?.ignoreRegions ?? [],
+      };
+
+      // Stage 1: rule-based classification
+      const classResult = await classifyDiff(id, ctx);
+
+      if (!enhance) {
+        return res.json(classResult);
+      }
+
+      // Stage 2: AI enhancement
+      try {
+        const aiResult = await enhanceWithAi(classResult, ctx);
+        return res.json(aiResult);
+      } catch (err: any) {
+        if (err.message?.includes('No AI provider configured')) {
+          return res.status(422).json({ error: err.message });
+        }
+        throw err;
+      }
+    } catch (err: any) {
+      console.error('ai-analysis error:', err);
+      res.status(500).json({ error: err.message ?? 'Internal error' });
+    }
   });
 }
