@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { PNG } from 'pngjs';
+import type { NlProviderConfig } from './nlProvider';
 
 export type ChangeClassification =
   | 'Content Change'
@@ -35,7 +36,7 @@ export interface ClassificationResult {
   stage: 'rule-based';
 }
 
-export interface AiEnhancedResult extends ClassificationResult {
+export interface AiEnhancedResult extends Omit<ClassificationResult, 'stage'> {
   narrative: string;
   confidence: number;
   suggestedAction: Recommendation;
@@ -225,7 +226,7 @@ Provide:
 
 Respond in JSON: { "narrative": "...", "suggestedAction": "approve|review|flag", "confidence": 85 }`;
 
-  const raw = await nlRawPrompt(cfg, prompt);
+  const raw = await nlRawPrompt(cfg as NlProviderConfig, prompt);
 
   let parsed: { narrative: string; suggestedAction: Recommendation; confidence: number };
   try {
