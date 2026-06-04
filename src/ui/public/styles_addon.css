@@ -3171,3 +3171,165 @@ body[data-theme="light"] .exec-graph-timeline-bar-wrap { background: #e8e0d0; }
   color: var(--text);
   margin: 0;
 }
+
+/* ── VRT Heatmap + AI Analysis Layer ───────────────────────────────── */
+
+/* Heatmap canvas overlay */
+.vr-heat-canvas {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+  display: none;
+}
+.vr-heat-canvas.vr-heat-on {
+  display: block;
+}
+
+/* AI Analysis footer button */
+.vrt-ai-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid rgba(99,102,241,0.4);
+  border-radius: 6px;
+  background: rgba(99,102,241,0.1);
+  color: #a5b4fc;
+  cursor: pointer;
+  transition: background .15s, border-color .15s;
+}
+.vrt-ai-btn:hover {
+  background: rgba(99,102,241,0.2);
+  border-color: rgba(99,102,241,0.65);
+}
+
+/* AI result panel */
+.vrt-ai-panel {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height .3s ease;
+  margin-top: 6px;
+  border: 1px solid #1e2536;
+  border-radius: 8px;
+  background: #0d1219;
+}
+.vrt-ai-panel.vrt-ai-open {
+  max-height: 600px;
+}
+.vrt-ai-panel-inner {
+  padding: 12px 14px;
+}
+
+/* Classification chips */
+.vrt-chip {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 20px;
+  margin: 2px 3px 2px 0;
+  letter-spacing: .3px;
+}
+.vrt-chip-content   { background: rgba(59,130,246,.15);  color: #93c5fd; border: 1px solid rgba(59,130,246,.3); }
+.vrt-chip-layout    { background: rgba(239,68,68,.15);   color: #fca5a5; border: 1px solid rgba(239,68,68,.3); }
+.vrt-chip-style     { background: rgba(234,179,8,.12);   color: #fde68a; border: 1px solid rgba(234,179,8,.25); }
+.vrt-chip-added     { background: rgba(34,197,94,.12);   color: #86efac; border: 1px solid rgba(34,197,94,.25); }
+.vrt-chip-removed   { background: rgba(249,115,22,.12);  color: #fdba74; border: 1px solid rgba(249,115,22,.25); }
+.vrt-chip-dynamic   { background: rgba(156,163,175,.08); color: #9ca3af; border: 1px solid rgba(156,163,175,.15); }
+.vrt-chip-dimension { background: rgba(168,85,247,.12);  color: #d8b4fe; border: 1px solid rgba(168,85,247,.25); }
+
+/* Recommendation badges */
+.vrt-rec {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 6px;
+  margin-top: 8px;
+}
+.vrt-rec-approve { border: 1px solid rgba(34,197,94,.4);  color: #4ade80; background: rgba(34,197,94,.08); }
+.vrt-rec-review  { border: 1px solid rgba(234,179,8,.4);  color: #fbbf24; background: rgba(234,179,8,.08); }
+.vrt-rec-flag    { border: 1px solid rgba(239,68,68,.4);  color: #f87171; background: rgba(239,68,68,.08); }
+
+.vrt-rec-reason {
+  font-size: 11px;
+  color: #64748b;
+  margin-top: 5px;
+  margin-left: 2px;
+}
+
+/* Divider inside panel */
+.vrt-ai-divider {
+  border: none;
+  border-top: 1px solid #1e2536;
+  margin: 10px 0;
+}
+
+/* Enhance with AI button */
+.vrt-enhance-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  font-size: 11.5px;
+  font-weight: 600;
+  border: 1px solid rgba(234,179,8,.35);
+  border-radius: 5px;
+  background: rgba(234,179,8,.08);
+  color: #fbbf24;
+  cursor: pointer;
+  transition: background .15s;
+}
+.vrt-enhance-btn:hover {
+  background: rgba(234,179,8,.15);
+}
+.vrt-enhance-btn:disabled {
+  opacity: .45;
+  cursor: default;
+}
+
+/* AI narrative block */
+.vrt-ai-narrative {
+  margin-top: 10px;
+  font-size: 12px;
+  color: #cbd5e1;
+  line-height: 1.6;
+}
+.vrt-ai-narrative .vrt-model-tag {
+  font-size: 10.5px;
+  color: #475569;
+  margin-top: 6px;
+}
+
+/* Loading spinner */
+.vrt-ai-spin {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(99,102,241,.25);
+  border-top-color: #818cf8;
+  border-radius: 50%;
+  animation: vrt-spin .7s linear infinite;
+  vertical-align: middle;
+  margin-right: 6px;
+}
+@keyframes vrt-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Error state */
+.vrt-ai-error {
+  font-size: 12px;
+  color: #f87171;
+  margin-top: 6px;
+}
+.vrt-ai-error a {
+  color: #93c5fd;
+  text-decoration: underline;
+}
