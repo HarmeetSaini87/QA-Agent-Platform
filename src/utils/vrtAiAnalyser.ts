@@ -71,15 +71,21 @@ function detectRegions(redMap: boolean[][], width: number, height: number): Regi
       if (!redMap[y][x] || visited[y][x]) continue;
       // BFS flood fill
       const queue: [number, number][] = [[x, y]];
+      visited[y][x] = true; // mark at enqueue
       let minX = x, maxX = x, minY = y, maxY = y, pixels = 0;
       while (queue.length) {
         const [cx, cy] = queue.shift()!;
-        if (cx < 0 || cy < 0 || cx >= width || cy >= height || visited[cy][cx] || !redMap[cy][cx]) continue;
-        visited[cy][cx] = true;
+        // OLD: if (cx < 0 || cy < 0 || cx >= width || cy >= height || visited[cy][cx] || !redMap[cy][cx]) continue;
+        // OLD: visited[cy][cx] = true;
         pixels++;
         if (cx < minX) minX = cx; if (cx > maxX) maxX = cx;
         if (cy < minY) minY = cy; if (cy > maxY) maxY = cy;
-        queue.push([cx+1,cy],[cx-1,cy],[cx,cy+1],[cx,cy-1]);
+        for (const [nx, ny] of [[cx+1,cy],[cx-1,cy],[cx,cy+1],[cx,cy-1]] as [number,number][]) {
+          if (nx >= 0 && ny >= 0 && nx < width && ny < height && !visited[ny][nx] && redMap[ny][nx]) {
+            visited[ny][nx] = true; // mark at enqueue
+            queue.push([nx, ny]);
+          }
+        }
       }
       if (pixels > 4) regions.push({ x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1, pixels });
     }
@@ -87,7 +93,8 @@ function detectRegions(redMap: boolean[][], width: number, height: number): Regi
   return regions;
 }
 
-export async function analyseDiffPng(diffPngPath: string, ctx: RunContext): Promise<ChangeClassification[]> {
+// OLD: export async function analyseDiffPng(diffPngPath: string, ctx: RunContext): Promise<ChangeClassification[]> {
+export async function analyseDiffPng(diffPngPath: string, ctx: RunContext): Promise<{ classifications: ChangeClassification[]; regionCount: number }> {
   const classifications: ChangeClassification[] = [];
   const totalPixels = ctx.totalPixels || (ctx.baselineWidth * ctx.baselineHeight);
 
@@ -96,7 +103,8 @@ export async function analyseDiffPng(diffPngPath: string, ctx: RunContext): Prom
     const buf = fs.readFileSync(diffPngPath);
     png = PNG.sync.read(buf);
   } catch {
-    return classifications;
+    // OLD: return classifications;
+    return { classifications: [], regionCount: 0 };
   }
 
   const { width, height, data } = png;
@@ -156,12 +164,14 @@ export async function analyseDiffPng(diffPngPath: string, ctx: RunContext): Prom
     if (hasDynamic) classifications.push('Dynamic Data');
   }
 
-  return [...new Set(classifications)];
+  // OLD: return [...new Set(classifications)];
+  return { classifications: [...new Set(classifications)], regionCount: regions.length };
 }
 
 export async function classifyDiff(baselineId: string, ctx: RunContext): Promise<ClassificationResult> {
   const classifications: ChangeClassification[] = [];
   let dimensionMismatch = false;
+  let regionCount = 0;
 
   if (ctx.baselineWidth !== ctx.actualWidth || ctx.baselineHeight !== ctx.actualHeight) {
     classifications.push('Dimension Change');
@@ -170,8 +180,11 @@ export async function classifyDiff(baselineId: string, ctx: RunContext): Promise
 
   if (!dimensionMismatch) {
     const diffPngPath = path.join(process.cwd(), 'data', 'baselines', `${baselineId}-diff.png`);
-    const detected = await analyseDiffPng(diffPngPath, ctx);
+    // OLD: const detected = await analyseDiffPng(diffPngPath, ctx);
+    // OLD: classifications.push(...detected);
+    const { classifications: detected, regionCount: rc } = await analyseDiffPng(diffPngPath, ctx);
     classifications.push(...detected);
+    regionCount = rc;
   }
 
   const recommendation = buildRecommendation(classifications, ctx.diffPct);
@@ -179,7 +192,8 @@ export async function classifyDiff(baselineId: string, ctx: RunContext): Promise
 
   return {
     classifications,
-    regions: classifications.length,
+    // OLD: regions: classifications.length,
+    regions: dimensionMismatch ? 0 : regionCount,
     recommendation,
     recommendationReason,
     dimensionMismatch,
