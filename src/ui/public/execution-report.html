@@ -655,6 +655,31 @@
     .vr-sl-k{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:28px;height:28px;border-radius:50%;background:#fff;color:#333;box-shadow:0 2px 8px rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;font-size:13px;pointer-events:none;transition:background .15s,box-shadow .15s}
     .vr-sl-t{display:none;position:absolute;top:8px;transform:translateX(-50%);background:#fff;border:1px solid #e2e8f0;color:#111;font-size:10px;padding:3px 9px;border-radius:6px;white-space:nowrap;pointer-events:none;font-weight:700;z-index:4;box-shadow:0 2px 8px rgba(0,0,0,.4)}
     .diff-strip.has-slider{grid-template-columns:2fr 1fr!important}
+    /* ── Heatmap canvas overlay ── */
+    .vr-heat-canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;opacity:0;transition:opacity .2s;object-fit:contain}
+    .vr-heat-canvas.vr-heat-on{opacity:1}
+    /* ── AI Analysis panel ── */
+    .vrt-ai-btn{display:block;width:100%;padding:7px 0;background:#0f172a;color:#7dd3fc;border:none;border-top:1px solid #1e293b;font-size:11px;font-weight:700;cursor:pointer;letter-spacing:.04em;transition:background .15s}
+    .vrt-ai-btn:hover{background:#1e3a5f;color:#bae6fd}
+    .vrt-ai-panel{overflow:hidden;max-height:0;transition:max-height .3s ease}
+    .vrt-ai-panel.vrt-ai-open{max-height:600px}
+    .vrt-ai-panel-inner{padding:10px 12px;background:#0a0f1a;border-top:1px solid #1e293b;font-size:12px;color:#cbd5e1}
+    .vrt-chip{display:inline-flex;align-items:center;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;margin:2px 3px 2px 0}
+    .vrt-chip-content{background:#fef3c7;color:#92400e}.vrt-chip-layout{background:#ede9fe;color:#5b21b6}
+    .vrt-chip-style{background:#e0f2fe;color:#0369a1}.vrt-chip-added{background:#dcfce7;color:#166534}
+    .vrt-chip-removed{background:#fee2e2;color:#991b1b}.vrt-chip-dynamic{background:#f3f4f6;color:#374151}
+    .vrt-chip-dimension{background:#fef9c3;color:#713f12}
+    .vrt-rec{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;margin:6px 0 4px}
+    .vrt-rec-approve{background:#dcfce7;color:#166534}.vrt-rec-flag{background:#fee2e2;color:#991b1b}.vrt-rec-review{background:#fef3c7;color:#92400e}
+    .vrt-rec-reason{font-size:11px;color:#94a3b8;margin-bottom:6px}
+    .vrt-ai-divider{border:none;border-top:1px solid #1e293b;margin:8px 0}
+    .vrt-ai-narrative{font-size:12px;color:#cbd5e1;line-height:1.6}
+    .vrt-model-tag{font-size:10px;color:#475569;margin-top:6px}
+    .vrt-enhance-btn{padding:5px 14px;background:#1e3a5f;color:#7dd3fc;border:1px solid #2563eb44;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;margin-top:4px}
+    .vrt-enhance-btn:hover{background:#1e40af;color:#bae6fd}
+    .vrt-ai-error{color:#f87171;font-size:11.5px;padding:6px 0}
+    .vrt-ai-spin{display:inline-block;width:14px;height:14px;border:2px solid #334155;border-top-color:#7dd3fc;border-radius:50%;animation:vrt-spin .7s linear infinite;margin-right:6px;vertical-align:middle}
+    @keyframes vrt-spin{to{transform:rotate(360deg)}}
   </style>
   <script src="js/28-defect-modal.js"></script>
 </head>
@@ -1150,16 +1175,28 @@ function buildDetailPanel(t, i, status, traceMode, runId) {
             ${(hasBefore && hasAfter) ? `
               <div class="diff-col">
                 <div class="diff-tag before">&#128247; Baseline vs Actual — drag to compare</div>
-                <div class="vr-viewer" data-diff="${hasDiff ? diffSrc : ''}">
+                <div class="vr-viewer" data-diff="${hasDiff ? diffSrc : ''}"
+                  data-baseline-id="${esc(vr.baselineId || '')}"
+                  data-test-name="${esc(t.name || '')}"
+                  data-locator-name="${esc(vr.locatorName || '')}"
+                  data-diff-pct="${vr.diffPct || 0}"
+                  data-diff-pixels="${vr.diffPixels || 0}"
+                  data-total-pixels="${vr.totalPixels || 0}"
+                  data-baseline-width="${vr.baselineWidth || 0}"
+                  data-baseline-height="${vr.baselineHeight || 0}"
+                  data-actual-width="${vr.actualWidth || 0}"
+                  data-actual-height="${vr.actualHeight || 0}">
                   <div style="display:flex;gap:4px;padding:5px 6px;background:#0d0d0d;border-bottom:1px solid #1e1e1e">
                     <button class="vr-mb vr-mb-on" data-mode="slider">⟺ Slider</button>
                     <button class="vr-mb" data-mode="onion">👁 Onion</button>
                     <button class="vr-mb" data-mode="blink">💡 Blink</button>
+                    <button class="vr-mb" data-mode="heatmap" title="Heatmap overlay">🌡 Heatmap</button>
                   </div>
                   <div class="vr-m vr-m-slider">
                     <div class="vr-sl">
                       <img class="vr-sl-a" src="${afterSrc}"  alt="Actual"   loading="lazy" onerror="this.style.opacity='.2'">
                       <img class="vr-sl-b" src="${beforeSrc}" alt="Baseline" loading="lazy" onerror="this.style.opacity='.2'">
+                      <canvas class="vr-heat-canvas"></canvas>
                       <div class="vr-sl-d"></div>
                       <div class="vr-sl-k">⟺</div>
                       <div class="vr-sl-t"></div>
@@ -1208,6 +1245,9 @@ function buildDetailPanel(t, i, status, traceMode, runId) {
               ${(vr.totalSavedPixels && vr.totalSavedPixels > 0) ? '<div style=\\"margin-top:8px;padding:8px 10px;background:#0a1628;border-radius:6px;\\"><div style=\\"font-size:13px;font-weight:700;color:#22c55e;\\">&#128737; ' + (vr.totalRunsProtected||1) + ' false positive' + ((vr.totalRunsProtected||1) > 1 ? 's' : '') + ' prevented</div><div style=\\"font-size:11px;color:#64748b;margin-top:3px;\\">' + vr.totalSavedPixels.toLocaleString() + ' changed pixels neutralised this run</div>' + ((vr.totalRunsProtected > 1) ? '<div style=\\"font-size:11px;color:#4f46e5;margin-top:4px;border-top:1px solid #1e293b;padding-top:4px;\\">Total pixels saved across all runs: <strong style=\\"color:#818cf8;\\">' + (vr.totalPixelsSavedAllTime||0).toLocaleString() + '</strong></div>' : '') + '</div>' : ''}
               </div>` : ''}
           </div>
+          ${hasDiff ? `
+          <button class="vrt-ai-btn" onclick="vrAiAnalyse(this)">🤖 AI Analysis</button>
+          <div class="vrt-ai-panel"></div>` : ''}
         </div>`;
     }).join('');
     sections.push(`
@@ -1690,6 +1730,138 @@ document.addEventListener('keydown', function(e) {
   }
 }
 
+  // ── Heatmap & AI Analysis helpers ─────────────────────────────────────────
+  function vrDrawHeatOverlay(canvas, diffImgUrl) {
+    var img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = function () {
+      var w = img.naturalWidth, h = img.naturalHeight;
+      canvas.width = w; canvas.height = h;
+      var off = document.createElement('canvas');
+      off.width = w; off.height = h;
+      var ox = off.getContext('2d');
+      ox.drawImage(img, 0, 0);
+      var data = ox.getImageData(0, 0, w, h).data;
+      var ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, w, h);
+      for (var y = 0; y < h; y++) {
+        for (var x = 0; x < w; x++) {
+          var i = (y * w + x) * 4;
+          if (data[i] > 200 && data[i + 1] < 80 && data[i + 2] < 80) {
+            var v = Math.min(1, (data[i] - 200) / 55);
+            var g = Math.round(179 - v * 179);
+            ctx.fillStyle = 'rgba(239,' + g + ',0,' + (0.45 + v * 0.45).toFixed(2) + ')';
+            ctx.fillRect(x, y, 1, 1);
+          }
+        }
+      }
+      canvas.classList.add('vr-heat-on');
+    };
+    img.src = diffImgUrl;
+  }
+
+  function vrAiChipClass(label) {
+    var map = {
+      'Content Change': 'vrt-chip-content',
+      'Layout Shift': 'vrt-chip-layout',
+      'Style Drift': 'vrt-chip-style',
+      'Element Added': 'vrt-chip-added',
+      'Element Removed': 'vrt-chip-removed',
+      'Dynamic Data': 'vrt-chip-dynamic',
+      'Dimension Change': 'vrt-chip-dimension'
+    };
+    return map[label] || 'vrt-chip-content';
+  }
+
+  function vrAiRenderPanel(panelEl, data) {
+    var chips = (data.classifications || []).map(function (c) {
+      return '<span class="vrt-chip ' + vrAiChipClass(c) + '">' + c + '</span>';
+    }).join('');
+    var recClass = 'vrt-rec-' + (data.recommendation || 'review');
+    var recIcon = data.recommendation === 'approve' ? '✓' : data.recommendation === 'flag' ? '✗' : '⚠';
+    var recLabel = (data.recommendation || 'review').charAt(0).toUpperCase() + (data.recommendation || 'review').slice(1);
+    var html = '<div class="vrt-ai-panel-inner">'
+      + (chips ? '<div>' + chips + '</div>' : '')
+      + '<div class="vrt-rec ' + recClass + '">' + recIcon + ' ' + recLabel + '</div>'
+      + (data.recommendationReason ? '<div class="vrt-rec-reason">' + data.recommendationReason + '</div>' : '')
+      + '<hr class="vrt-ai-divider">';
+    if (data.stage === 'ai-enhanced') {
+      html += '<div class="vrt-ai-narrative">' + (data.narrative || '') + '<div class="vrt-model-tag">Model: ' + (data.model || '') + ' · Confidence: ' + (data.confidence || 0) + '%</div></div>';
+    } else {
+      html += '<button class="vrt-enhance-btn" onclick="vrAiEnhance(this)">✨ Enhance with AI</button>'
+        + '<div class="vrt-ai-narrative" style="display:none"></div>';
+    }
+    html += '</div>';
+    panelEl.innerHTML = html;
+  }
+
+  function vrAiAnalyse(btn) {
+    var card = btn.closest('[data-baseline-id]') || btn.closest('.vr-viewer') || btn.parentElement;
+    var baselineId = card.dataset.baselineId || card.getAttribute('data-baseline-id');
+    var cached = btn.dataset.cachedResult;
+    if (cached) {
+      var panel = btn.nextElementSibling;
+      panel.classList.toggle('vrt-ai-open');
+      return;
+    }
+    var runCtx = {
+      testName: card.dataset.testName || '',
+      locatorName: card.dataset.locatorName || '',
+      diffPct: parseFloat(card.dataset.diffPct || '0'),
+      diffPixels: parseInt(card.dataset.diffPixels || '0'),
+      totalPixels: parseInt(card.dataset.totalPixels || '0'),
+      baselineWidth: parseInt(card.dataset.baselineWidth || '0'),
+      baselineHeight: parseInt(card.dataset.baselineHeight || '0'),
+      actualWidth: parseInt(card.dataset.actualWidth || '0'),
+      actualHeight: parseInt(card.dataset.actualHeight || '0')
+    };
+    var panel = btn.nextElementSibling;
+    panel.classList.add('vrt-ai-open');
+    panel.innerHTML = '<div class="vrt-ai-panel-inner"><span class="vrt-ai-spin"></span> Analysing…</div>';
+    fetch('/api/visual-baselines/' + baselineId + '/ai-analysis', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enhance: false, runContext: runCtx })
+    }).then(function (r) { return r.json(); }).then(function (data) {
+      btn.dataset.cachedResult = '1';
+      vrAiRenderPanel(panel, data);
+    }).catch(function (err) {
+      panel.innerHTML = '<div class="vrt-ai-panel-inner"><div class="vrt-ai-error">Analysis failed: ' + err.message + '</div></div>';
+    });
+  }
+
+  function vrAiEnhance(enhanceBtn) {
+    enhanceBtn.disabled = true;
+    enhanceBtn.textContent = '⏳ Enhancing…';
+    var card = enhanceBtn.closest('[data-baseline-id]') || enhanceBtn.closest('.vr-viewer');
+    var baselineId = card.dataset.baselineId || card.getAttribute('data-baseline-id');
+    var runCtx = {
+      testName: card.dataset.testName || '',
+      locatorName: card.dataset.locatorName || '',
+      diffPct: parseFloat(card.dataset.diffPct || '0'),
+      diffPixels: parseInt(card.dataset.diffPixels || '0'),
+      totalPixels: parseInt(card.dataset.totalPixels || '0'),
+      baselineWidth: parseInt(card.dataset.baselineWidth || '0'),
+      baselineHeight: parseInt(card.dataset.baselineHeight || '0'),
+      actualWidth: parseInt(card.dataset.actualWidth || '0'),
+      actualHeight: parseInt(card.dataset.actualHeight || '0')
+    };
+    fetch('/api/visual-baselines/' + baselineId + '/ai-analysis', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enhance: true, runContext: runCtx })
+    }).then(function (r) { return r.json(); }).then(function (data) {
+      if (data.error && data.error.match(/No AI provider/i)) {
+        enhanceBtn.replaceWith(Object.assign(document.createElement('div'), { className: 'vrt-ai-error', innerHTML: data.error + ' <a href="/admin#settings-ai">Configure AI →</a>' }));
+        return;
+      }
+      var panel = enhanceBtn.closest('.vrt-ai-panel');
+      vrAiRenderPanel(panel, data);
+    }).catch(function (err) {
+      enhanceBtn.replaceWith(Object.assign(document.createElement('div'), { className: 'vrt-ai-error', textContent: err.message }));
+    });
+  }
+
   // ── Multi-Mode Viewer ──────────────────────────────────────────────────────
   function vsInit(el) {
     if (el.dataset.vsReady) return;
@@ -1703,6 +1875,30 @@ document.addEventListener('keydown', function(e) {
     function switchMode(m) {
       if (blinkTimer && m !== 'blink') stopBlink();
       mBtns.forEach(function(b){ applyMb(b, b.dataset.mode===m); });
+      // Clear heatmap canvas when switching away from heatmap
+      var heatCanvas = el.querySelector('.vr-heat-canvas');
+      if (m !== 'heatmap' && heatCanvas) {
+        heatCanvas.classList.remove('vr-heat-on');
+        var hctx = heatCanvas.getContext('2d');
+        if (hctx) hctx.clearRect(0, 0, heatCanvas.width, heatCanvas.height);
+      }
+      if (m === 'heatmap') {
+        // Show slider panel (actual image) with heatmap overlay
+        mPanels.forEach(function(p){ p.style.display = p.classList.contains('vr-m-slider')?'':'none'; });
+        // Hide baseline overlay so actual is full-width visible
+        if (slBase) slBase.style.clipPath = 'inset(0 100% 0 0)';
+        if (slDiv)  slDiv.style.display = 'none';
+        if (slKnob) slKnob.style.display = 'none';
+        // Draw heatmap
+        if (heatCanvas && diffUrl) {
+          vrDrawHeatOverlay(heatCanvas, diffUrl);
+        }
+        return;
+      }
+      // Restore slider controls when leaving heatmap
+      if (slDiv)  slDiv.style.display = '';
+      if (slKnob) slKnob.style.display = '';
+      if (slBase) setSlPos(50);
       mPanels.forEach(function(p){ p.style.display = p.classList.contains('vr-m-'+m)?'':'none'; });
     }
     mBtns.forEach(function(b){ b.addEventListener('click', function(e){ e.stopPropagation(); switchMode(b.dataset.mode); }); });
