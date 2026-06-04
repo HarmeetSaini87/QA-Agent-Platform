@@ -220,7 +220,8 @@ export function registerVisualRoutes(app: express.Application): void {
       };
 
       // Stage 1: rule-based classification
-      const classResult = await classifyDiff(id, ctx);
+      // OLD: const classResult = await classifyDiff(id, ctx);
+      const classResult = await classifyDiff(id, ctx, baseline?.projectId);
 
       if (!enhance) {
         return res.json(classResult);

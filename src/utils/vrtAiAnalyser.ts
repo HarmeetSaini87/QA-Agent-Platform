@@ -169,7 +169,7 @@ export async function analyseDiffPng(diffPngPath: string, ctx: RunContext): Prom
   return { classifications: [...new Set(classifications)], regionCount: regions.length };
 }
 
-export async function classifyDiff(baselineId: string, ctx: RunContext): Promise<ClassificationResult> {
+export async function classifyDiff(baselineId: string, ctx: RunContext, projectId?: string): Promise<ClassificationResult> {
   const classifications: ChangeClassification[] = [];
   let dimensionMismatch = false;
   let regionCount = 0;
@@ -180,7 +180,9 @@ export async function classifyDiff(baselineId: string, ctx: RunContext): Promise
   }
 
   if (!dimensionMismatch) {
-    const diffPngPath = path.join(process.cwd(), 'data', 'baselines', `${baselineId}-diff.png`);
+    // OLD: const diffPngPath = path.join(process.cwd(), 'data', 'baselines', `${baselineId}-diff.png`);
+    const projectSlug = projectId ?? 'default';
+    const diffPngPath = path.join(process.cwd(), 'data', 'visual-baselines', projectSlug, `${baselineId}-diff.png`);
     // OLD: const detected = await analyseDiffPng(diffPngPath, ctx);
     // OLD: classifications.push(...detected);
     const { classifications: detected, regionCount: rc } = await analyseDiffPng(diffPngPath, ctx);
