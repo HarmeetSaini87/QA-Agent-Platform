@@ -33,6 +33,36 @@ function decryptToken(envelope: string): string {
   return Buffer.concat([decipher.update(Buffer.from(encB64, 'base64')), decipher.final()]).toString('utf8');
 }
 
+// ── Merge locator-level nlAliases with Admin alias map ────────────────────────
+// Returns the merged alias map AND a Set of locator names that contributed
+// locator-level aliases (used for the +0.05 score boost in the rule engine).
+function buildMergedAliasMap(
+  projectLocators: Locator[],
+  adminAliasMap:   Record<string, string[]>,
+): { merged: Record<string, string[]>; locatorAliasNames: Set<string> } {
+  const merged: Record<string, string[]> = {};
+  const locatorAliasNames = new Set<string>();
+
+  // Source 1: locator-level aliases (highest priority — get +0.05 boost at engine level)
+  for (const loc of projectLocators) {
+    if (Array.isArray(loc.nlAliases) && loc.nlAliases.length > 0) {
+      merged[loc.name] = [...loc.nlAliases];
+      locatorAliasNames.add(loc.name);
+    }
+  }
+
+  // Source 2: Admin alias map (append to existing or add as new entry)
+  for (const [key, aliases] of Object.entries(adminAliasMap)) {
+    if (merged[key]) {
+      merged[key] = [...merged[key], ...aliases];
+    } else {
+      merged[key] = [...aliases];
+    }
+  }
+
+  return { merged, locatorAliasNames };
+}
+
 export function registerNlRoutes(app: express.Application): void {
   app.post('/api/nl/suggest', requireAuthOrApiKey, async (req: Request, res: Response) => {
     const { text, projectId } = req.body as { text?: string; projectId?: string };
@@ -54,10 +84,11 @@ export function registerNlRoutes(app: express.Application): void {
     const cacheKey = crypto.createHash('sha256').update(text + '|' + locVersion + '|' + kwVersion).digest('hex');
     const cached = _nlCache.get(cacheKey);
     if (cached && Date.now() < cached.expiresAt) { res.json({ ...cached.result, meta: { ...cached.result.meta, cached: true } }); return; }
-    const aliasMap = loadAliasMap();
+    const adminAliasMap = loadAliasMap();
+    const { merged: aliasMap, locatorAliasNames } = buildMergedAliasMap(projectLocators, adminAliasMap);
     const cfg = loadNlConfig();
     const t0 = Date.now();
-    const ruleSteps: SuggestedStep[] = sentences.map(s => ruleMatchSentence(s, allowedKeywords, locatorNames, aliasMap));
+    const ruleSteps: SuggestedStep[] = sentences.map(s => ruleMatchSentence(s, allowedKeywords, locatorNames, aliasMap, locatorAliasNames));
     const steps: SuggestedStep[] = [...ruleSteps];
     let providerLabel: string | undefined;
     let aiTimedOut = false;
