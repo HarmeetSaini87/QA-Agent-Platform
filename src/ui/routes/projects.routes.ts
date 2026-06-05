@@ -61,8 +61,8 @@ export function registerProjectsRoutes(app: express.Application): void {
   });
   app.put('/api/locators/:id', requireEditor, (req: Request, res: Response) => {
     const loc = findById<Locator>(LOCATORS, req.params.id); if (!loc) { res.status(404).json({ error: 'Not found' }); return; }
-    const { name, selector, selectorType, pageModule, projectId, description, alternatives, draft } = req.body as any;
-    if (name) { loc.name = sanitizeInput(name); loc.nameSource = 'user'; loc.updatedBy = (req as any).session?.username ?? 'unknown'; } if (selector) loc.selector = sanitizeInput(selector); if (selectorType) loc.selectorType = selectorType; if (pageModule !== undefined) loc.pageModule = sanitizeInput(pageModule); if (projectId !== undefined) loc.projectId = projectId; if (description !== undefined) loc.description = sanitizeInput(description); if (Array.isArray(alternatives)) loc.alternatives = alternatives; if (draft === false) loc.draft = false;
+    const { name, selector, selectorType, pageModule, projectId, description, alternatives, draft, nlAliases } = req.body as any;
+    if (name) { loc.name = sanitizeInput(name); loc.nameSource = 'user'; loc.updatedBy = (req as any).session?.username ?? 'unknown'; } if (selector) loc.selector = sanitizeInput(selector); if (selectorType) loc.selectorType = selectorType; if (pageModule !== undefined) loc.pageModule = sanitizeInput(pageModule); if (projectId !== undefined) loc.projectId = projectId; if (description !== undefined) loc.description = sanitizeInput(description); if (Array.isArray(alternatives)) loc.alternatives = alternatives; if (draft === false) loc.draft = false; if (Array.isArray(nlAliases)) loc.nlAliases = nlAliases.map((a: any) => String(a).trim()).filter(Boolean);
     loc.updatedAt = new Date().toISOString(); upsert(LOCATORS, loc); res.json({ success: true });
   });
   function cleanupOrphanedLocatorReferences(locatorIds: string[]) {
