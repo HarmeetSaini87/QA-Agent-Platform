@@ -357,12 +357,12 @@ describe('Section 8 — Alias Map', () => {
     expect(r.keyword).toBe('CLICK');
   });
 
-  // TC-NL-ALI-ADV-003: BUG — "click the button" → extractLocatorPhrase strips "click" then strips "button"
-  // leaving "the" which normalizes to "" → no locator match. Test guide expects one of the two locators.
-  it('TC-NL-ALI-ADV-003: duplicate phrase — noise-word strip prevents match (BUG)', () => {
+  // TC-NL-ALI-ADV-003: "click the button" → phrase "button" fuzzy-matches alias "the button" (→ "button")
+  // Both btn-a and btn-b share the same alias — engine returns the first match encountered.
+  it('TC-NL-ALI-ADV-003: duplicate phrase — both locators share alias, first match wins', () => {
     const aliasMap: NlAliasMap = { 'btn-a': ['the button'], 'btn-b': ['the button'] };
     const r = match('click the button', ['btn-a', 'btn-b'], aliasMap);
-    expect(r.locatorName).toBeNull(); // BUG: phrase normalizes to empty after noise-word strip
+    expect(['btn-a', 'btn-b']).toContain(r.locatorName); // either is valid — first alias wins
   });
 
   // TC-NL-ALI-ADV-004: very long alias phrase matched
@@ -554,5 +554,49 @@ describe('Section 10 — Security (unit-level)', () => {
   it('TC-NL-SEC-005: Unicode and emoji in text', () => {
     const r = match('click 🔐 the login button', ['login'], NO_ALIAS);
     expect(r).toBeDefined();
+  });
+});
+
+// ── Section 9 — Locator-level alias boost ─────────────────────────────────────
+describe('Section 9 — Locator-level alias boost', () => {
+  function matchWithBoost(
+    sentence: string,
+    locators: string[],
+    aliasMap: NlAliasMap,
+    locatorAliasNames: Set<string>,
+  ) {
+    return ruleMatchSentence(sentence, ['FILL', 'CLICK', 'GOTO', 'ASSERT TEXT'], locators, aliasMap, locatorAliasNames);
+  }
+
+  it('TC-NL-BOOST-001: locator-level alias wins over admin alias for same phrase', () => {
+    const aliasMap: NlAliasMap = {
+      'loc-a': ['login button'],
+      'loc-b': ['login button'],
+    };
+    const locatorAliasNames = new Set(['loc-a']);
+    const r = matchWithBoost('click login button', ['loc-a', 'loc-b'], aliasMap, locatorAliasNames);
+    expect(r.locatorName).toBe('loc-a');
+  });
+
+  it('TC-NL-BOOST-002: admin alias still resolves when no locator alias present', () => {
+    const aliasMap: NlAliasMap = { 'loc-b': ['submit btn'] };
+    const locatorAliasNames = new Set<string>();
+    const r = matchWithBoost('click submit btn', ['loc-b'], aliasMap, locatorAliasNames);
+    expect(r.locatorName).toBe('loc-b');
+  });
+
+  it('TC-NL-BOOST-003: exact locator alias gets score 0.95', () => {
+    const aliasMap: NlAliasMap = { 'username-field': ['username'] };
+    const locatorAliasNames = new Set(['username-field']);
+    const r = matchWithBoost('fill username', ['username-field'], aliasMap, locatorAliasNames);
+    expect(r.locatorName).toBe('username-field');
+    expect(r.confidenceBreakdown.locator).toBeGreaterThanOrEqual(0.94);
+  });
+
+  it('TC-NL-BOOST-004: empty locatorAliasNames set — no boost applied, existing behaviour', () => {
+    const aliasMap: NlAliasMap = { 'submit-btn': ['submit button'] };
+    const locatorAliasNames = new Set<string>();
+    const r = matchWithBoost('click submit button', ['submit-btn'], aliasMap, locatorAliasNames);
+    expect(r.locatorName).toBe('submit-btn');
   });
 });

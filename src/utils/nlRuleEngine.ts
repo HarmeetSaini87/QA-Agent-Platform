@@ -32,6 +32,33 @@ const VERB_PATTERNS: VerbPattern[] = [
 
 // ── Sentence splitter ─────────────────────────────────────────────────────────
 
+// Action verbs used for compound-object detection and sentence splitting
+const ACTION_VERB_RE = /^(?:click|enter|fill|type|navigate|go|verify|assert|check|hover|scroll|wait|press|select|clear|take|open|visit|add|set|put|double|right|capture|choose|pick|tick|uncheck|erase|empty|swipe|hit|tap)\b/i;
+
+// Fill-family verbs — "Fill X and Y" → two fill steps
+const FILL_VERB_RE = /^(fill|type|enter|input|write|add|set|put)\b/i;
+
+/**
+ * Expand a sentence like "Fill the username and Password" (one verb, two noun objects,
+ * no action verb after "and") into ["Fill the username", "Fill the Password"].
+ * Leaves sentences intact when "and" is followed by an action verb (already handled
+ * by the main splitter).
+ */
+function expandCompoundObjects(sentence: string): string[] {
+  // Match: FILL_VERB [the] NOUN1 and [the] NOUN2  (NOUN2 must NOT start with an action verb)
+  const m = sentence.match(
+    /^((?:fill|type|enter|input|write|add|set|put)\s+(?:the\s+)?)([\w][\w\s\-]*?)\s+and\s+(?:the\s+)?([\w][\w\s\-]*)$/i
+  );
+  if (!m) return [sentence];
+  const [, verbPrefix, noun1, noun2] = m;
+  // Only split if noun2 does NOT start with an action verb (those are already split upstream)
+  if (ACTION_VERB_RE.test(noun2.trim())) return [sentence];
+  return [
+    (verbPrefix + noun1).trim(),
+    (verbPrefix + noun2).trim(),
+  ];
+}
+
 export function splitSentences(text: string): string[] {
   // Protect decimal numbers and common abbreviations before splitting
   const protected_ = text
@@ -44,9 +71,12 @@ export function splitSentences(text: string): string[] {
     /(?<=[.!?;])\s+|\n+|,\s+(?=\w)|(?:\band\s+then\b|\bthen\b)\s+|(?<=\w)\s+and\s+(?=(?:click|enter|fill|type|navigate|go|verify|assert|check|hover|scroll|wait|press|select|clear|take|open|visit|add|set|put|double|right|capture|choose|pick|tick|uncheck|erase|empty|swipe|hit|tap)\b)/i
   );
 
-  return raw
+  const cleaned = raw
     .map(s => s.replace(/\x00/g, '.').replace(/\x01/g, '.').trim())
     .filter(s => s.length > 2);
+
+  // Expand compound-object fill sentences: "Fill username and Password" → 2 steps
+  return cleaned.flatMap(expandCompoundObjects);
 }
 
 // ── Jaro-Winkler similarity ───────────────────────────────────────────────────
@@ -91,11 +121,45 @@ function normalize(s: string): string {
   return s.toLowerCase().replace(/\b(the|a|an)\b/g, '').replace(/[_\-]/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+// Split camelCase/PascalCase into words: "usernameField" → "username field"
+function splitCamel(s: string): string {
+  return s
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+    .toLowerCase();
+}
+
+const UI_SUFFIXES = new Set(['field', 'input', 'button', 'btn', 'label', 'checkbox', 'dropdown', 'select', 'link', 'text', 'box', 'area', 'wrap', 'container']);
+
+/**
+ * Expand a raw locator name into a ranked list of normalized candidate strings
+ * for fuzzy matching. Handles camelCase, snake_case, PascalCase, and strips
+ * common UI suffixes.
+ * e.g. "usernameField" → ["username field", "username"]
+ *      "btn_submit"    → ["btn submit", "submit"]
+ *      "Click Login"   → ["click login", "login"]
+ */
+export function expandLocatorName(rawName: string): string[] {
+  const camelExpanded = splitCamel(rawName);
+  const base = normalize(camelExpanded);           // e.g. "username field", "btn submit"
+  const parts = base.split(' ').filter(p => p.length > 1);
+  const withoutSuffix = parts.filter(p => !UI_SUFFIXES.has(p));
+
+  const variants: string[] = [];
+  const push = (v: string) => { if (v && !variants.includes(v)) variants.push(v); };
+  push(base);
+  if (withoutSuffix.length && withoutSuffix.join(' ') !== base) push(withoutSuffix.join(' '));
+  // Individual meaningful tokens (length > 2, not a suffix)
+  for (const p of parts) if (p.length > 2 && !UI_SUFFIXES.has(p)) push(p);
+  return variants;
+}
+
 export function resolveLocator(
   phrase: string,
   locatorNames: string[],
   aliasMap: Record<string, string[]>,
   originalSentence?: string,
+  locatorAliasNames?: Set<string>,
 ): LocatorMatch | null {
   const norm = normalize(phrase);
   const normOriginal = originalSentence ? normalize(originalSentence) : null;
@@ -108,40 +172,71 @@ export function resolveLocator(
     }
   }
 
-  // Pass 2: alias — try both stripped phrase AND original sentence
-  // Original sentence needed when alias contains the verb (e.g. "click here to log-in!")
+  // Pass 2: alias — exact, substring, and fuzzy matching
+  // Checks both the extracted phrase AND the original sentence (verb-containing aliases).
+  // Also checks if the phrase CONTAINS an alias token or vice-versa (handles compound phrases
+  // like "username and password" containing alias token "password input").
+  const normParts = norm ? norm.split(' ').filter(p => p.length > 2) : [];
+  let bestAlias: LocatorMatch | null = null;
   for (const [locName, aliases] of Object.entries(aliasMap)) {
     for (const alias of aliases) {
       const normAlias = normalize(alias);
       if (!normAlias) continue;
-      if (norm && normAlias === norm) return { name: locName, score: 0.9 };
-      if (normOriginal && normAlias === normOriginal) return { name: locName, score: 0.9 };
+      // Exact match on phrase
+      if (norm && normAlias === norm) return { name: locName, score: locatorAliasNames?.has(locName) ? 0.95 : 0.9 };
+      // Exact match on full original sentence
+      if (normOriginal && normAlias === normOriginal) return { name: locName, score: locatorAliasNames?.has(locName) ? 0.95 : 0.9 };
+      // Alias is contained in phrase (e.g. phrase="username and password", alias="password input" → contains "password")
+      const aliasParts = normAlias.split(' ').filter(p => p.length > 2);
+      const aliasTokenHits = aliasParts.filter(ap => normParts.includes(ap)).length;
+      if (aliasParts.length > 0 && aliasTokenHits / aliasParts.length >= 0.6) {
+        const score = 0.7 + 0.15 * (aliasTokenHits / aliasParts.length);
+        if (!bestAlias || score > bestAlias.score) bestAlias = { name: locName, score };
+      }
       // Fuzzy alias match on original sentence for near-matches
-      if (normOriginal && jaroWinkler(normAlias, normOriginal) >= 0.9) return { name: locName, score: 0.88 };
+      if (normOriginal && jaroWinkler(normAlias, normOriginal) >= 0.9) return { name: locName, score: locatorAliasNames?.has(locName) ? 0.93 : 0.88 };
+      // Fuzzy alias match on phrase
+      if (norm) {
+        const aliasScore = jaroWinkler(normAlias, norm);
+        if (aliasScore >= 0.85 && (!bestAlias || aliasScore > bestAlias.score)) bestAlias = { name: locName, score: aliasScore };
+      }
     }
   }
+  // Apply +0.05 boost for locator-level alias matches
+  if (bestAlias && locatorAliasNames?.has(bestAlias.name)) {
+    bestAlias = { name: bestAlias.name, score: Math.min(1, bestAlias.score + 0.05) };
+  }
+  if (bestAlias && bestAlias.score >= 0.7) return bestAlias;
 
-  // Pass 3: fuzzy (Jaro-Winkler ≥ 0.85 on name or any alias)
-  // Also try suffix segments of normalized name to handle programmatic prefixes
-  // e.g. "inp_user_name" → ["inp user name", "user name", "name"]
+  // Pass 3: fuzzy (Jaro-Winkler ≥ 0.82 on name expanded variants or any alias)
+  // expandLocatorName handles camelCase/PascalCase/snake_case + suffix stripping.
+  // Also try suffix segments of normalized name to handle programmatic prefixes.
   let best: LocatorMatch | null = null;
   for (const name of locatorNames) {
-    const normName = normalize(name);
-    const segments = normName.split(' ');
-    const candidates = [normName];
-    for (let i = 1; i < segments.length; i++) candidates.push(segments.slice(i).join(' '));
+    // OLD: only split on spaces of normalized name — missed camelCase like "usernameField"
+    // const normName = normalize(name);
+    // const segments = normName.split(' ');
+    // const candidates = [normName];
+    // for (let i = 1; i < segments.length; i++) candidates.push(segments.slice(i).join(' '));
+    const candidates = expandLocatorName(name);
+    // Also add suffix-segment variants of the base (e.g. "inp user name" → "user name", "name")
+    const baseSegments = candidates[0].split(' ');
+    for (let i = 1; i < baseSegments.length; i++) {
+      const seg = baseSegments.slice(i).join(' ');
+      if (!candidates.includes(seg)) candidates.push(seg);
+    }
 
     for (const candidate of candidates) {
       const score = jaroWinkler(norm, candidate);
-      // Penalize segment matches slightly so full-name matches win ties
-      const adjusted = candidate === normName ? score : score * 0.95;
-      if (score >= 0.85 && (!best || adjusted > best.score)) best = { name, score: adjusted };
+      // Penalize segment/suffix matches slightly so full-name matches win ties
+      const adjusted = candidate === candidates[0] ? score : score * 0.95;
+      if (score >= 0.82 && (!best || adjusted > best.score)) best = { name, score: adjusted };
     }
 
     const aliases = aliasMap[name] || [];
     for (const alias of aliases) {
       const as = jaroWinkler(norm, normalize(alias));
-      if (as >= 0.85 && (!best || as > best.score)) best = { name, score: as };
+      if (as >= 0.82 && (!best || as > best.score)) best = { name, score: as };
     }
   }
   return best;
@@ -195,10 +290,11 @@ function extractLocatorPhrase(sentence: string): string {
 // ── Public API ────────────────────────────────────────────────────────────────
 
 export function ruleMatchSentence(
-  sentence:        string,
-  allowedKeywords: string[],
-  locatorNames:    string[],
-  aliasMap:        Record<string, string[]>,
+  sentence:           string,
+  allowedKeywords:    string[],
+  locatorNames:       string[],
+  aliasMap:           Record<string, string[]>,
+  locatorAliasNames?: Set<string>,
 ): SuggestedStep {
   // 1. Match verb
   let matchedKeyword: string | null = null;
@@ -211,9 +307,18 @@ export function ruleMatchSentence(
     }
   }
 
-  // 2. Resolve locator — pass original sentence so alias lookup can match verb-containing aliases
+  // 2. Resolve locator — pass original sentence so alias lookup can match verb-containing aliases.
+  // Also try sub-phrases when "and" appears (e.g. "username and password" → try "username", "password").
   const phrase = extractLocatorPhrase(sentence);
-  const locMatch = resolveLocator(phrase, locatorNames, aliasMap, sentence);
+  const phraseVariants: string[] = [phrase];
+  if (/\band\b/i.test(phrase)) {
+    phrase.split(/\s+and\s+/i).forEach(p => { const t = p.trim(); if (t && !phraseVariants.includes(t)) phraseVariants.push(t); });
+  }
+  let locMatch: ReturnType<typeof resolveLocator> = null;
+  for (const pv of phraseVariants) {
+    const m = resolveLocator(pv, locatorNames, aliasMap, sentence, locatorAliasNames);
+    if (!locMatch || (m && m.score > locMatch.score)) locMatch = m;
+  }
   const locScore = locMatch?.score ?? 0;
 
   // 3. Extract value
@@ -249,11 +354,12 @@ export function ruleMatchSentence(
  * pure rule engine — thresholds live in ruleMatchSentence logic).
  */
 export function suggestFromText(
-  sentence:  string,
-  keywords:  string[],
-  locators:  string[],
-  aliasMap:  NlAliasMap,
-  _config?: Partial<NlConfig>,
+  sentence:           string,
+  keywords:           string[],
+  locators:           string[],
+  aliasMap:           NlAliasMap,
+  _config?:           Partial<NlConfig>,
+  locatorAliasNames?: Set<string>,
 ): SuggestedStep {
-  return ruleMatchSentence(sentence, keywords, locators, aliasMap);
+  return ruleMatchSentence(sentence, keywords, locators, aliasMap, locatorAliasNames);
 }
