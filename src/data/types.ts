@@ -154,6 +154,7 @@ export interface Locator {
   // ── Name provenance (naming preservation feature) ─────────────────────────
   nameSource?:       'auto' | 'user';      // 'auto' = recorder-generated, 'user' = human-renamed (immutable to recorder)
   updatedBy?:        string;               // last editor username — audit trail, foundation for future optimistic locking
+  nlAliases?:        string[];              // SDET-defined NL nicknames for this locator
 }
 
 export interface CommonFunction {
