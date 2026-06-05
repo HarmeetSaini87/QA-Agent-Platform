@@ -5,6 +5,71 @@
 let allLocators = [];
 let selectedLocators = new Set();
 let editingLocatorId = null;
+
+// ── NL Hints chip state ───────────────────────────────────────────────────────
+let _locNlChips = []; // string[]
+
+function locNlToggle() {
+  const body = document.getElementById('loc-nl-body');
+  const icon = document.getElementById('loc-nl-toggle-icon');
+  if (!body) return;
+  const open = body.style.display !== 'none';
+  body.style.display = open ? 'none' : '';
+  if (icon) icon.textContent = open ? '▶' : '▼';
+}
+
+function locNlRenderChips() {
+  const wrap = document.getElementById('loc-nl-chip-wrap');
+  const input = document.getElementById('loc-nl-input');
+  if (!wrap || !input) return;
+  [...wrap.querySelectorAll('.loc-nl-chip')].forEach(c => c.remove());
+  _locNlChips.forEach((chip, i) => {
+    const el = document.createElement('span');
+    el.className = 'loc-nl-chip';
+    el.style.cssText = 'display:inline-flex;align-items:center;gap:4px;background:var(--accent-dim,#2a3a4a);color:var(--text,#ccc);border-radius:3px;padding:2px 6px;font-size:12px';
+    el.innerHTML = `${escHtml(chip)}<button type="button" onclick="locNlRemoveChip(${i})" style="background:none;border:none;cursor:pointer;color:var(--text-secondary,#aaa);padding:0;font-size:11px;line-height:1">✕</button>`;
+    wrap.insertBefore(el, input);
+  });
+}
+
+function locNlAddChip(raw) {
+  const phrases = raw.split(',').map(s => s.trim()).filter(Boolean);
+  let added = false;
+  phrases.forEach(phrase => {
+    if (phrase && !_locNlChips.includes(phrase)) {
+      _locNlChips.push(phrase);
+      added = true;
+    }
+  });
+  if (added) locNlRenderChips();
+}
+
+function locNlRemoveChip(idx) {
+  _locNlChips.splice(idx, 1);
+  locNlRenderChips();
+}
+
+function locNlInputKeydown(e) {
+  const input = e.target;
+  if (e.key === 'Enter' || e.key === ',') {
+    e.preventDefault();
+    const val = input.value.trim().replace(/,$/, '');
+    if (val) locNlAddChip(val);
+    input.value = '';
+  } else if (e.key === 'Backspace' && input.value === '' && _locNlChips.length > 0) {
+    locNlRemoveChip(_locNlChips.length - 1);
+  }
+}
+
+function locNlReset(aliases) {
+  _locNlChips = Array.isArray(aliases) ? [...aliases] : [];
+  locNlRenderChips();
+  const body = document.getElementById('loc-nl-body');
+  const icon = document.getElementById('loc-nl-toggle-icon');
+  if (body) body.style.display = _locNlChips.length > 0 ? '' : 'none';
+  if (icon) icon.textContent = _locNlChips.length > 0 ? '▼' : '▶';
+}
+
 let _locPage = 0;
 let LOC_PAGE_SIZE = 10;
 
@@ -419,6 +484,7 @@ function locatorOpenModal(id = null) {
   if (!id) {
     ['loc-name', 'loc-selector', 'loc-page', 'loc-desc'].forEach(i => document.getElementById(i).value = '');
     document.getElementById('loc-type').value = 'css';
+    locNlReset([]);
   }
   openModal('modal-locator');
 }
@@ -435,6 +501,7 @@ async function locatorEdit(id) {
   document.getElementById('loc-desc').value = loc.description || '';
   modClearAlert('loc-modal-alert');
   _locatorEditRenderAlts(loc);
+  locNlReset(loc.nlAliases);
   openModal('modal-locator');
 }
 
@@ -495,6 +562,7 @@ async function locatorSave() {
     pageModule: document.getElementById('loc-page').value.trim(),
     description: document.getElementById('loc-desc').value.trim(),
     projectId: currentProjectId || null,
+    nlAliases: [..._locNlChips],
   };
 
   // If a "Set Primary" swap was performed in the modal, include the updated alternatives
