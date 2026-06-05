@@ -155,12 +155,14 @@ function switchTab(tab) {
     'api-copilot': 'Copilot',
     'perf-dashboard': 'Performance',
     'locator-health': 'Locator Health',
+    'test-intelligence': 'Test Intelligence',
   }[tab] ?? tab;
-  if (tab === 'history')   histLoad();
-  if (tab === 'flaky')     flakyLoad();
-  if (tab === 'analytics') analyticsLoad();
-  if (tab === 'visual')    vrLoad();
-  if (tab === 'execution') execLoad();
+  if (tab === 'history')            histLoad();
+  if (tab === 'flaky')              flakyLoad();
+  if (tab === 'analytics')          analyticsLoad();
+  if (tab === 'visual')             vrLoad();
+  if (tab === 'execution')          execLoad();
+  if (tab === 'test-intelligence')  { if (typeof tiLoad === 'function') tiLoad(); }
   hideRunPanel();
 }
 

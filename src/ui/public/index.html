@@ -8,6 +8,86 @@
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   <link rel="stylesheet" href="styles.css" />
   <link rel="stylesheet" href="styles_addon.css" />
+  <style>
+/* ── Test Intelligence Dashboard ── */
+.ti-kpi-card {
+  background: var(--bg-2);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 14px 16px;
+}
+.ti-kpi-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  color: var(--neutral-500);
+  letter-spacing: 0.05em;
+  margin-bottom: 6px;
+}
+.ti-kpi-value {
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1;
+}
+.ti-kpi-sub {
+  font-size: 11px;
+  color: var(--neutral-400);
+  margin-top: 4px;
+}
+.ti-section-card {
+  background: var(--bg-2);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 14px 16px;
+}
+.ti-section-title {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--neutral-400);
+  letter-spacing: 0.05em;
+}
+.ti-flaky-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border-color);
+  font-size: 12px;
+}
+.ti-flaky-row:last-child { border-bottom: none; }
+.ti-heal-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border-color);
+  font-size: 12px;
+}
+.ti-heal-row:last-child { border-bottom: none; }
+.ti-vrt-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border-color);
+  font-size: 12px;
+}
+.ti-vrt-row:last-child { border-bottom: none; }
+.ti-empty {
+  font-size: 12px;
+  color: var(--neutral-500);
+  padding: 12px 0;
+  text-align: center;
+}
+.ti-score-pill {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 700;
+}
+  </style>
 </head>
 
 <body>
@@ -107,11 +187,17 @@
           <span>Execution History</span>
         </div>
 
+        <div class="nav-item" data-tab="test-intelligence">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+          </svg>
+          <span>Test Intelligence</span>
+        </div>
         <div class="nav-item" data-tab="flaky">
           <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
           </svg>
-          <span>Script Flakiness</span>
+          <span>Flaky Tests</span>
         </div>
         <div class="nav-item" data-tab="analytics">
           <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -128,13 +214,13 @@
             <circle cx="8.5" cy="8.5" r="1.5" />
             <polyline points="21 15 16 10 5 21" />
           </svg>
-          <span>Visual Baselines</span>
+          <span>Visual Regression</span>
         </div>
         <div class="nav-item" data-tab="locator-health">
           <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
           </svg>
-          <span>Locator Health</span>
+          <span>Locator &amp; Healing</span>
         </div>
         <div class="nav-item" data-tab="worker-health">
           <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07M8.46 8.46a5 5 0 0 0 0 7.07"/></svg>
@@ -852,6 +938,107 @@
         </div>
 
         <!-- ── Tab: Flaky Tests ──────────────────────────────────────────── -->
+        <!-- ══════════════════════════════════════════════════════════════════
+             TEST INTELLIGENCE DASHBOARD
+             ══════════════════════════════════════════════════════════════════ -->
+        <div class="panel" id="panel-test-intelligence">
+
+          <!-- Header card: filter + KPIs -->
+          <div class="card" style="margin-bottom:16px">
+            <div class="card-title" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+              <span>&#x1F9E0; Test Intelligence</span>
+              <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                <label style="font-size:12.5px;font-weight:600;color:var(--neutral-600)">Suite:</label>
+                <select id="ti-suite-filter" class="fm-input" style="width:160px;font-size:12.5px" onchange="tiLoad()">
+                  <option value="">All Suites</option>
+                </select>
+                <label style="font-size:12.5px;font-weight:600;color:var(--neutral-600)">Range:</label>
+                <select id="ti-days" class="fm-input" style="width:140px;font-size:12.5px" onchange="tiLoad()">
+                  <option value="7">Last 7 days</option>
+                  <option value="14">Last 14 days</option>
+                  <option value="30" selected>Last 30 days</option>
+                  <option value="60">Last 60 days</option>
+                  <option value="90">Last 90 days</option>
+                </select>
+                <button class="btn btn-outline btn-sm" onclick="tiLoad()" id="ti-refresh-btn">&#8635; Refresh</button>
+                <label style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--neutral-400);cursor:pointer">
+                  <input type="checkbox" id="ti-autorefresh" checked onchange="tiToggleAutoRefresh()">
+                  Auto-refresh
+                </label>
+                <span id="ti-refresh-countdown" style="font-size:11px;color:var(--neutral-500)"></span>
+                <span id="ti-last-updated" style="font-size:11px;color:var(--neutral-500)"></span>
+              </div>
+            </div>
+            <div id="ti-loading" style="display:none;color:var(--neutral-400);font-size:12.5px;text-align:center;padding:20px"></div>
+            <!-- KPI row -->
+            <div id="ti-kpi-row" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-top:16px">
+              <div class="analytics-kpi-card" id="ti-kpi-health">
+                <div class="analytics-kpi-val" id="ti-kpi-health-val">&#x2014;</div>
+                <div class="analytics-kpi-lbl">Health Score</div>
+                <div style="font-size:10px;color:var(--neutral-400);margin-top:2px" id="ti-kpi-health-sub"></div>
+              </div>
+              <div class="analytics-kpi-card" id="ti-kpi-passrate">
+                <div class="analytics-kpi-val" id="ti-kpi-passrate-val" style="color:#4ec9b0">&#x2014;</div>
+                <div class="analytics-kpi-lbl">Pass Rate</div>
+                <div style="font-size:10px;color:var(--neutral-400);margin-top:2px" id="ti-kpi-passrate-sub"></div>
+              </div>
+              <div class="analytics-kpi-card">
+                <div class="analytics-kpi-val" id="ti-kpi-flaky-val">&#x2014;</div>
+                <div class="analytics-kpi-lbl">Flaky Tests</div>
+                <div style="font-size:10px;color:var(--neutral-400);margin-top:2px" id="ti-kpi-flaky-sub"></div>
+              </div>
+              <div class="analytics-kpi-card">
+                <div class="analytics-kpi-val" id="ti-kpi-heals-val">&#x2014;</div>
+                <div class="analytics-kpi-lbl">Heals (period)</div>
+                <div style="font-size:10px;color:var(--neutral-400);margin-top:2px" id="ti-kpi-heals-sub"></div>
+              </div>
+              <div class="analytics-kpi-card">
+                <div class="analytics-kpi-val" id="ti-kpi-vrt-val">&#x2014;</div>
+                <div class="analytics-kpi-lbl">VRT Baselines</div>
+                <div style="font-size:10px;color:var(--neutral-400);margin-top:2px" id="ti-kpi-vrt-sub"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Intelligence Signals: 3 cards -->
+          <div id="ti-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;margin-bottom:16px">
+            <div class="card">
+              <div style="font-size:13px;font-weight:700;color:var(--neutral-700);margin-bottom:10px">&#x1F534; Top Flaky Tests</div>
+              <div id="ti-flaky-list"></div>
+            </div>
+            <div class="card">
+              <div style="font-size:13px;font-weight:700;color:var(--neutral-700);margin-bottom:10px">&#x1F527; Healing Activity</div>
+              <div id="ti-healing-list"></div>
+            </div>
+            <div class="card">
+              <div style="font-size:13px;font-weight:700;color:var(--neutral-700);margin-bottom:10px">&#x1F5BC; Visual Regression</div>
+              <div id="ti-vrt-list"></div>
+            </div>
+          </div>
+
+          <!-- Daily Pass Rate + Action Required -->
+          <div id="ti-bottom" style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+            <div class="card">
+              <div style="font-size:13px;font-weight:700;color:var(--neutral-700);margin-bottom:12px">&#x1F4C5; Daily Pass Rate (last 7 days)</div>
+              <div id="ti-trend-chart"></div>
+              <div id="ti-trend-empty" style="display:none;color:var(--neutral-400);font-size:12.5px;text-align:center;padding:20px">No run data in selected range.</div>
+            </div>
+            <div class="card">
+              <div style="font-size:13px;font-weight:700;color:var(--neutral-700);margin-bottom:10px">&#x26A0;&#xFE0F; Action Required</div>
+              <div style="overflow-x:auto">
+                <table class="data-table" style="font-size:12px">
+                  <thead><tr>
+                    <th>Item</th><th style="text-align:right;width:80px">Type</th>
+                  </tr></thead>
+                  <tbody id="ti-suite-tbody"></tbody>
+                </table>
+                <div id="ti-suite-empty" style="display:none;color:var(--neutral-400);font-size:12.5px;text-align:center;padding:16px">No actions needed.</div>
+              </div>
+            </div>
+          </div>
+
+        </div><!-- /panel-test-intelligence -->
+
         <div class="panel" id="panel-flaky">
           <div class="card">
             <div class="card-title" style="display:flex;align-items:center;gap:10px">

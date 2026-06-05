@@ -8,6 +8,8 @@ const _panelLoaded = new Set();
 const _HIDE_PROJ_DROPDOWN_TABS = new Set(['projects', 'admin', 'worker-health']);
 
 function onModuleTabSwitch(tab) {
+  const _tiPrevTab = document.querySelector('.panel:not([style*="display: none"])')?.id?.replace('panel-', '') ?? '';
+  if (_tiPrevTab === 'test-intelligence') tiOnTabInactive();
   if (tab === 'admin') usersLoad();
   if (tab === 'projects') projLoad();
   if (tab === 'locators') { locatorLoad(); proposalLoad(); }
@@ -19,6 +21,7 @@ function onModuleTabSwitch(tab) {
   if (tab === 'history') histLoad();
   if (tab === 'flaky') flakyLoad();
   if (tab === 'analytics') analyticsLoad();
+  if (tab === 'test-intelligence') tiOnTabActive();
   if (tab === 'visual') vrLoad();
   if (tab === 'locator-health') locatorHealthLoad();
   if (tab === 'api-envs') apiEnvLoad();
@@ -96,7 +99,7 @@ async function projDropdownLoad() {
 }
 
 // Panels that require a project to be selected before any interaction
-const PROJECT_SCOPED_TABS = new Set(['scripts', 'suites', 'locators', 'functions', 'commondata', 'history', 'flaky', 'analytics', 'visual', 'locator-health', 'api-envs', 'api-collections', 'api-runs', 'api-flakiness', 'api-suites']);
+const PROJECT_SCOPED_TABS = new Set(['scripts', 'suites', 'locators', 'functions', 'commondata', 'history', 'flaky', 'analytics', 'visual', 'locator-health', 'api-envs', 'api-collections', 'api-runs', 'api-flakiness', 'api-suites', 'test-intelligence']);
 
 const _PROJ_BANNER_ID = 'proj-required-banner';
 
@@ -145,6 +148,7 @@ function onProjectChange() {
   histLoad();
   flakyLoad();
   analyticsLoad();
+  if (typeof tiLoad === 'function') tiLoad();
   vrLoad();
   locatorHealthLoad();
   execLoad();

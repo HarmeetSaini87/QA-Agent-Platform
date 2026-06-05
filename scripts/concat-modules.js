@@ -40,6 +40,7 @@ const MANIFEST = [
   '29-worker-health.js',
   '31-api-plugins.js',
   '35-api-performance.js',
+  '32-test-intelligence.js',
 ];
 
 function build() {
